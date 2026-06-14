@@ -200,6 +200,7 @@ function whispersHeard(){ return Object.keys(save.loreSeen).length; }
 const Snd=(()=>{
   let AC=null,master=null,sfxBus=null,musBus=null,on=false;
   let musicNodes=[],musicPlaying=false;
+  let glideNodes=[];
   let uSounds={coin:false,bolt:false,death:false};
 
   // [bass root Hz, perfect 5th Hz, pad Hz, LFO breathe Hz]
@@ -226,7 +227,7 @@ const Snd=(()=>{
     const t=AC.currentTime;
 
     const mg=AC.createGain(); mg.gain.setValueAtTime(0,t);
-    mg.gain.linearRampToValueAtTime(0.7,t+2.5); mg.connect(musBus);
+    mg.gain.linearRampToValueAtTime(0.42,t+2.5); mg.connect(musBus);
     musicNodes.push(mg);
 
     const lpf=AC.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=230; lpf.connect(mg);
@@ -258,6 +259,41 @@ const Snd=(()=>{
     const t=AC?AC.currentTime:0;
     musicNodes.forEach(n=>{try{if(n.stop)n.stop(t+0.05);n.disconnect();}catch(e){}});
     musicNodes=[];
+    glideEnd();
+  }
+
+  /* ---------- glide sound (the melodic driving sound) ---------- */
+  // Starts when player soars, sustains as long as they hold the glide,
+  // fades out on landing. Chord = 4th/5th/6th harmonic of realm bass root.
+  function glideStart(realmId){
+    if(!on||!AC||glideNodes.length) return;
+    const [root]=REALM_AMB[realmId||0];
+    const t=AC.currentTime;
+    const mg=AC.createGain();
+    mg.gain.setValueAtTime(0,t);
+    mg.gain.linearRampToValueAtTime(0.38,t+0.20); // 200ms fade-in
+    mg.connect(musBus);
+    glideNodes.push(mg);
+    // harmonic chord — root×4,5,6 land in the mid/upper register
+    [[root*4,0.36],[root*5,0.22],[root*6,0.14]].forEach(([f,vol])=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f; g.gain.value=vol;
+      o.connect(g); g.connect(mg); o.start(t);
+      glideNodes.push(o,g);
+    });
+    // soft vibrato on top harmonic for warmth
+    const vib=AC.createOscillator(),vibG=AC.createGain();
+    vib.type='sine'; vib.frequency.value=5.2; vibG.gain.value=root*6*0.012;
+    vib.connect(vibG); vibG.connect(glideNodes[5].frequency);
+    vib.start(t); glideNodes.push(vib,vibG);
+  }
+
+  function glideEnd(){
+    if(!glideNodes.length||!AC) return;
+    const t=AC.currentTime, mg=glideNodes[0];
+    try{ mg.gain.setValueAtTime(mg.gain.value,t); mg.gain.linearRampToValueAtTime(0,t+0.28); }catch(e){}
+    const dead=glideNodes.splice(0);
+    setTimeout(()=>dead.forEach(n=>{try{if(n.stop)n.stop();n.disconnect();}catch(e){}}),360);
   }
 
   /* ---------- helpers ---------- */
@@ -407,11 +443,12 @@ const Snd=(()=>{
   return {
     boot, toggle, startMusic, stopMusic, syncUnlocks,
     jump, coin, bolt, bassHit, runeBlock, gateClear, death,
+    glideStart, glideEnd,
     get on(){ return on; }
   };
 })();
 
-function toggleSound(){ Snd.toggle(); }
+function toggleSound(){ Snd.toggle(); document.getElementById('snd-btn').blur(); }
 
 /* ============================================================
    LEVEL GENERATION
@@ -537,7 +574,7 @@ let ghostFrame=0;
 let showGhost=true;
 let screenFlash=0;        // 0..1, decays after big kill burst
 
-const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLeft:1,alive:true,flash:0};
+const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLeft:1,alive:true,flash:0,gliding:false};
 const bolts=[],particles=[];
 let boltCD=0;
 
@@ -597,7 +634,8 @@ function startRun(realm){
   shieldCharges=save.upgrades.shield>0?1:0;
   player.x=220; player.y=GROUND_Y-player.h; player.vy=0;
   player.onGround=true; player.coyote=0; player.jumpBuf=0;
-  player.jumpsLeft=1; player.alive=true; player.flash=0;
+  player.jumpsLeft=1; player.alive=true; player.flash=0; player.gliding=false;
+  keys.jump=false; keys.cast=false; keys.jumpEdge=false;
   const pool=(RUNE_LORE[realm.id]||RUNE_LORE[0]).whispers;
   const wi=(Math.random()*pool.length)|0;
   runWhisper={id:realm.id+":"+wi,text:pool[wi]};
@@ -692,7 +730,11 @@ function update(){
   }
   if(!keys.jump&&player.vy<-3.0) player.vy=-3.0;
 
+  const wasGliding=player.gliding;
   const gliding=!player.onGround&&player.vy>0&&keys.jump;
+  player.gliding=gliding;
+  if(gliding&&!wasGliding) Snd.glideStart(curRealm.id);
+  else if(!gliding&&wasGliding) Snd.glideEnd();
   const g=gliding?C.grav*C.glideMul:C.grav;
   const term=gliding?C.glideFall:C.maxFall;
   player.vy=Math.min(player.vy+g,term);
@@ -708,7 +750,7 @@ function update(){
       }
     }
   }
-  if(player.y>H+80){ endReason="You fell into the void."; Snd.death(); doDeath(); return; }
+  if(player.y>H+80){ endReason="You fell into the void."; Snd.glideEnd(); Snd.death(); doDeath(); return; }
 
   // casting
   if(boltCD>0) boltCD--;
@@ -777,7 +819,7 @@ function update(){
 
 function takeHit(){
   if(shieldCharges>0){ shieldCharges--; player.flash=18; spawnBurst(player.x,player.y,"#7fd4ff",18,3.5); return true; }
-  endReason="A shade caught you."; Snd.death(); doDeath(); return false;
+  endReason="A shade caught you."; Snd.glideEnd(); Snd.death(); doDeath(); return false;
 }
 function doDeath(){ spawnBurst(player.x,player.y,"#ff9a9a",26,4); endRun(false); }
 
