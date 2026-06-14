@@ -15,7 +15,6 @@
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
   canvas{background:#000;display:block;width:100%;height:100%;max-width:100vw;max-height:100vh;
     image-rendering:auto;touch-action:none;}
-  /* overlay menus */
   .screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
     justify-content:center;text-align:center;gap:18px;
     background:radial-gradient(120% 100% at 50% 0%, #1a1140 0%, #0b0a1f 70%);}
@@ -64,7 +63,7 @@
     <div class="row">
       <button class="btn primary" data-go="realm">Begin the Run</button>
     </div>
-    <p class="hint">Space / Click / Tap = Jump &nbsp;•&nbsp; J = Cast Rune (Realm 2+)</p>
+    <p class="hint">Space / Click / Tap = Jump &nbsp;•&nbsp; J = Cast Rune-Bolt</p>
   </div>
 
   <!-- REALM SELECT -->
@@ -102,8 +101,8 @@
 <script>
 "use strict";
 /* ============================================================
-   RUNE DASH — single-file auto-runner platformer prototype
-   Realms 1 (Sowilo) & 2 (Raidho) playable.
+   RUNE DASH — single-file auto-runner platformer
+   Realms 1–4 (Sowilo, Raidho, Hagalaz, Isa) playable.
    ============================================================ */
 
 const cv = document.getElementById("game");
@@ -114,10 +113,10 @@ const W = cv.width, H = cv.height;
 const SAVE_KEY = "runeDash.save.v1";
 const defaultSave = {
   essence: 0,
-  upgrades: { jump: 0, bolt: 0, shield: 0 }, // levels 0..3
-  realmsUnlocked: 1,                          // how many realms cleared+1
-  best: {},                                   // realmId -> best time (s)
-  loreSeen: {}                                // whisperId -> true (collected knowledge)
+  upgrades: { jump: 0, bolt: 0, shield: 0 },
+  realmsUnlocked: 1,
+  best: {},
+  loreSeen: {}
 };
 let save = load();
 function load(){
@@ -140,17 +139,17 @@ function upgCost(key){
 
 /* ---------- realm definitions ---------- */
 const REALMS = [
-  { id:0, name:"Sowilo", glyph:"ᛋ", sub:"Realm of the Sun", hue:42,
-    sky:["#241327","#5a2c4a","#c25e5e"], teachCast:false, len:5200 },
-  { id:1, name:"Raidho", glyph:"ᚱ", sub:"Realm of the Ride", hue:200,
-    sky:["#0c1330","#1b2c66","#3f7fb5"], teachCast:true, len:6000 },
-  { id:2, name:"Hagalaz", glyph:"ᚺ", sub:"Realm of Storms", hue:280,
-    sky:["#140b2a","#2a1a52","#5a3f9a"], teachCast:true, len:0, locked:true },
-  { id:3, name:"Isa", glyph:"ᛁ", sub:"Realm of Ice", hue:190,
-    sky:["#0a1a2a","#143a52","#3f9ab5"], teachCast:true, len:0, locked:true },
+  { id:0, name:"Sowilo",  glyph:"ᛋ", sub:"Realm of the Sun",     hue:42,
+    sky:["#241327","#5a2c4a","#c25e5e"], len:5200 },
+  { id:1, name:"Raidho",  glyph:"ᚱ", sub:"Realm of the Ride",    hue:200,
+    sky:["#0c1330","#1b2c66","#3f7fb5"], len:6000 },
+  { id:2, name:"Hagalaz", glyph:"ᚺ", sub:"Realm of Storms",      hue:280,
+    sky:["#140b2a","#2a1a52","#5a3f9a"], len:6800 },
+  { id:3, name:"Isa",     glyph:"ᛁ", sub:"Realm of Ice",         hue:190,
+    sky:["#0a1a2a","#143a52","#3f9ab5"], len:7500 },
 ];
 
-/* ---------- rune knowledge: a meaning + a pool of "whispers" surfaced each run ---------- */
+/* ---------- rune knowledge ---------- */
 const RUNE_LORE = {
   0: { meaning:"sun · guidance · victory", whispers:[
     "Sowilo is the sun-wheel — the unconquered light that guides the lost back home.",
@@ -182,76 +181,195 @@ function whispersHeard(){ return Object.keys(save.loreSeen).length; }
 
 /* ============================================================
    LEVEL GENERATION
-   A level = sequence of "chunks" laid left->right.
-   Ground is a set of platforms (segments) at GROUND_Y unless a gap.
    ============================================================ */
-const GROUND_Y = 430;          // top of ground
-const PHeight = 60;            // platform visual thickness
+const GROUND_Y = 430;
+const PHeight = 60;
+
 function buildLevel(realm){
-  const segs = [];   // {x,w,y}
-  const coins = [];  // {x,y,got}
-  const obs = [];    // {x,y,w,h} spikes/pillars (deadly)
-  const foes = [];   // {x,y,vy,dead,alive} drifting shades
-  const teach = [];  // {x, text}
+  const segs  = [];
+  const coins  = [];
+  const obs   = [];
+  const foes  = [];
+  const teach = [];
   let x = 0;
-  const teachCast = realm.teachCast;
+  let foeIdx = 0; // alternates excess/lack
 
-  function ground(w,y=GROUND_Y){ segs.push({x, w, y}); x += w; }
-  function gap(w){ x += w; }
-  function coinArc(cx,cy,n=3,step=44){ for(let i=0;i<n;i++) coins.push({x:cx+i*step,y:cy,got:false}); }
+  function ground(w,y=GROUND_Y){ segs.push({x,w,y}); x+=w; }
+  function gap(w){ x+=w; }
+  function coinArc(cx,cy,n=3,step=44){
+    for(let i=0;i<n;i++) coins.push({x:cx+i*step,y:cy,got:false});
+  }
+  function addFoe(wx,wy){
+    const type = (foeIdx++%2===0)?"excess":"lack";
+    foes.push({x:wx,y:wy,baseY:wy,dead:false,type});
+  }
 
-  // --- intro: long safe runway with a teach prompt ---
+  // ── INTRO: safe runway ──
   ground(620);
-  teach.push({x:120, text:"TAP / SPACE to JUMP"});
-  coinArc(360, GROUND_Y-70, 3);
+  teach.push({x:120, text:"SPACE to JUMP  •  Hold to SOAR"});
+  coinArc(340, GROUND_Y-70, 3);
 
-  // --- first small gap ---
-  gap(120); ground(360);
-  coinArc(x-300, GROUND_Y-90, 3);
+  // ── shared realm-flavored middle ──
+  const id = realm.id;
 
-  // --- a low pillar to hop ---
-  ground(80); obs.push({x:x-40-30, y:GROUND_Y-70, w:34, h:70}); ground(300);
-  coinArc(x-180, GROUND_Y-120, 3, 38);
+  if(id===0){
+    // SOWILO: flowing arcs, pillars, sun-warmed gaps
 
-  // --- raised platform section ---
-  gap(140);
-  segs.push({x, w:280, y:GROUND_Y-120}); coinArc(x+60, GROUND_Y-190,3); x+=280;
-  gap(150);
-  ground(300);
+    gap(120); ground(360);
+    coinArc(x-300, GROUND_Y-90, 3);
 
-  if(teachCast){
-    teach.push({x:x+40, text:"Press J to CAST a rune-bolt at shades"});
-    foes.push({x:x+240, y:GROUND_Y-150, baseY:GROUND_Y-150, dead:false});
+    ground(80); obs.push({x:x-40-30,y:GROUND_Y-70,w:34,h:70}); ground(300);
+    coinArc(x-180, GROUND_Y-120, 3, 38);
+
+    gap(140);
+    segs.push({x,w:280,y:GROUND_Y-120}); coinArc(x+60,GROUND_Y-190,3); x+=280;
+    gap(150); ground(300);
+
+    teach.push({x:x+40, text:"J to CAST a rune-bolt at shades"});
+    addFoe(x+240, GROUND_Y-150);
+
+    ground(220);
+    for(let i=0;i<5;i++){
+      obs.push({x:x-20,y:GROUND_Y-64,w:30,h:64});
+      ground(70); gap(90); ground(120);
+      coins.push({x:x-150,y:GROUND_Y-150,got:false});
+    }
+
+    ground(640);
+    for(let i=0;i<4;i++) addFoe(x-520+i*155, GROUND_Y-130-(i%2)*40);
+    coinArc(x-500, GROUND_Y-200, 5, 50);
+
+    gap(120);
+    for(let i=0;i<3;i++){
+      segs.push({x,w:160,y:GROUND_Y-60-i*60});
+      coins.push({x:x+70,y:GROUND_Y-130-i*60,got:false}); x+=160; gap(70);
+    }
+    ground(300);
+    for(let i=0;i<3;i++){ ground(160); gap(110); }
+    ground(520); coinArc(x-460,GROUND_Y-80,7,56);
+    for(let i=0;i<2;i++) addFoe(x-380+i*180, GROUND_Y-130);
+
+  } else if(id===1){
+    // RAIDHO: rhythm sections, longer gaps, more flying foes
+
+    gap(140); ground(400); coinArc(x-360,GROUND_Y-80,4);
+
+    // rhythm pillars — "the ride has a beat"
+    ground(200);
+    teach.push({x:x+60, text:"J to CAST a rune-bolt"});
+    for(let i=0;i<6;i++){
+      obs.push({x:x-20,y:GROUND_Y-60,w:28,h:60});
+      ground(60); gap(100); ground(110);
+      coins.push({x:x-100,y:GROUND_Y-140,got:false});
+    }
+
+    // aerial foe corridor
+    ground(720);
+    for(let i=0;i<5;i++) addFoe(x-650+i*138, GROUND_Y-120-(i%3)*30);
+    coinArc(x-620,GROUND_Y-190,6,54);
+
+    // wide gap + elevated platform
+    gap(160);
+    segs.push({x,w:220,y:GROUND_Y-110}); coinArc(x+50,GROUND_Y-180,3); x+=220;
+    gap(180); ground(280);
+
+    // stair-step run-up
+    for(let i=0;i<4;i++){
+      segs.push({x,w:140,y:GROUND_Y-55-i*55});
+      coins.push({x:x+60,y:GROUND_Y-120-i*55,got:false}); x+=140; gap(60);
+    }
+    ground(340); for(let i=0;i<2;i++) addFoe(x-260+i*120,GROUND_Y-130);
+
+    // final gallop
+    for(let i=0;i<4;i++){ ground(140); gap(120); }
+    ground(560); coinArc(x-500,GROUND_Y-80,8,52);
+    for(let i=0;i<4;i++) addFoe(x-460+i*118,GROUND_Y-130-(i%2)*36);
+
+  } else if(id===2){
+    // HAGALAZ: chaotic, dense, storm-burst gaps, lots of foes
+
+    gap(100); ground(300); coinArc(x-260,GROUND_Y-90,3);
+    addFoe(x-180, GROUND_Y-140);
+
+    teach.push({x:x+40, text:"J to CAST — shades are thick here"});
+
+    // storm surge: alternating gaps + spikes
+    for(let i=0;i<5;i++){
+      ground(140);
+      obs.push({x:x-90,y:GROUND_Y-78,w:32,h:78});
+      gap(110+(i%2)*40); ground(140);
+      coins.push({x:x-160+i*8,y:GROUND_Y-160,got:false});
+      addFoe(x-80,GROUND_Y-120);
+    }
+
+    // hail corridor — dense foes
+    ground(800);
+    for(let i=0;i<6;i++) addFoe(x-750+i*130, GROUND_Y-130-(i%3)*28);
+    coinArc(x-740,GROUND_Y-200,7,54);
+
+    // broken bridge: short platforms with gaps
+    for(let i=0;i<5;i++){
+      segs.push({x,w:120,y:GROUND_Y-(i%2)*70}); x+=120; gap(130);
+      coins.push({x:x-180,y:GROUND_Y-90-(i%2)*60,got:false});
+    }
+
+    ground(400); addFoe(x-300,GROUND_Y-130); addFoe(x-160,GROUND_Y-130);
+
+    // spike run
+    ground(300);
+    for(let i=0;i<3;i++){
+      obs.push({x:x-250+i*80,y:GROUND_Y-70,w:30,h:70});
+      coins.push({x:x-230+i*80,y:GROUND_Y-160,got:false});
+    }
+
+    // final storm wall
+    for(let i=0;i<5;i++){ ground(120); gap(100); }
+    ground(560); coinArc(x-500,GROUND_Y-80,8,50);
+    for(let i=0;i<5;i++) addFoe(x-500+i*110,GROUND_Y-130-(i%2)*40);
+
+  } else {
+    // ISA (id===3): long gliding gaps, ice bridges, slow drifters
+
+    gap(160); ground(360); coinArc(x-320,GROUND_Y-90,3);
+
+    teach.push({x:x+50, text:"Hold SPACE after jumping — soar the ice gaps"});
+
+    // long soar gap
+    gap(200);
+    segs.push({x,w:180,y:GROUND_Y-80}); coinArc(x+40,GROUND_Y-150,3); x+=180;
+    gap(230); ground(280);
+    addFoe(x-200,GROUND_Y-130);
+
+    teach.push({x:x+60, text:"J to CAST — frozen shades move slowly"});
+
+    // ice corridor
+    ground(700);
+    for(let i=0;i<5;i++) addFoe(x-650+i*142, GROUND_Y-118-(i%2)*42);
+    coinArc(x-660,GROUND_Y-200,7,56);
+
+    // spike + gap combos
+    for(let i=0;i<4;i++){
+      ground(160); obs.push({x:x-100,y:GROUND_Y-74,w:30,h:74});
+      gap(160+(i%2)*60); ground(160);
+      coins.push({x:x-200,y:GROUND_Y-160,got:false});
+    }
+
+    // ascending ice bridges
+    for(let i=0;i<5;i++){
+      segs.push({x,w:160,y:GROUND_Y-60-i*50});
+      coins.push({x:x+70,y:GROUND_Y-130-i*50,got:false}); x+=160; gap(90);
+    }
+    ground(380);
+    for(let i=0;i<3;i++) addFoe(x-320+i*120,GROUND_Y-130);
+
+    // serene final run
+    for(let i=0;i<4;i++){ ground(180); gap(130); }
+    ground(600); coinArc(x-540,GROUND_Y-80,9,52);
+    for(let i=0;i<5;i++) addFoe(x-520+i*118,GROUND_Y-125-(i%2)*38);
   }
-
-  // --- rhythm section: alternating pillars + gaps (the "groove") ---
-  ground(220);
-  for(let i=0;i<4;i++){
-    obs.push({x:x-20, y:GROUND_Y-64, w:30, h:64});
-    ground(70); gap(90); ground(120);
-    coins.push({x:x-150,y:GROUND_Y-150,got:false});
-  }
-
-  // --- foes drifting over a long stretch ---
-  ground(640);
-  for(let i=0;i<3;i++){
-    foes.push({x:x-520+i*180, y:GROUND_Y-130-(i%2)*40, baseY:GROUND_Y-130-(i%2)*40, dead:false});
-  }
-  coinArc(x-500, GROUND_Y-200, 5, 50);
-
-  // --- stair-step platforms up ---
-  gap(120);
-  for(let i=0;i<3;i++){ segs.push({x, w:160, y:GROUND_Y-60-i*60}); coins.push({x:x+70,y:GROUND_Y-130-i*60,got:false}); x+=160; gap(70);}
-  ground(300);
-
-  // --- final dash to the gate ---
-  for(let i=0;i<3;i++){ ground(160); gap(110); }
-  ground(520);
-  coinArc(x-460, GROUND_Y-80, 7, 56);
 
   const gateX = x - 160;
-  // pad end
-  ground(260);
+  ground(280);
 
   return { segs, coins, obs, foes, teach, gateX, len:x, realm };
 }
@@ -259,46 +377,42 @@ function buildLevel(realm){
 /* ============================================================
    GAME STATE
    ============================================================ */
-let state = "menu";          // "menu" | "play" | "dead" | "won"
+let state = "menu";
 let level = null;
-let cam = 0;                  // world scroll (px)
+let cam = 0;
 let runTime = 0;
 let runEssence = 0;
+let runKills = 0;
+let runCoins = 0;
 let curRealm = REALMS[0];
 let shieldCharges = 0;
 let endReason = "";
-let runWhisper = null;   // {id, text} knowledge surfaced this run
-let runScene = null;     // {hueShift, pieces:[{type,x,z,scale}]} per-run background imagery
-let introT = 0;          // run-intro lore card timer (seconds, counts down)
+let runWhisper = null;
+let runScene = null;
+let introPaused = false;  // game world freezes until player presses space
 
 const player = {
-  x: 220, y: 0, vy: 0,
-  w: 30, h: 44,
-  onGround: false,
-  coyote: 0,        // frames since left ground
-  jumpBuf: 0,       // jump pressed buffer
-  jumpsLeft: 1,
-  alive: true,
-  flash: 0,         // hit flash timer
+  x:220, y:0, vy:0, w:30, h:44,
+  onGround:false, coyote:0, jumpBuf:0, jumpsLeft:1,
+  alive:true, flash:0,
 };
 
-const bolts = [];   // {x,y,vx}
+const bolts = [];
 let boltCD = 0;
-const particles = []; // {x,y,vx,vy,life,max,c,r}
+const particles = [];
 
-/* tuned feel constants (modified by upgrades) */
 function cfg(){
   const j = save.upgrades.jump;
   return {
-    runSpeed: 3.3 + curRealm.id*0.38,   // ~25% slower pace
-    grav: 0.60,                          // floatier arc
-    jumpV: -14.6 - j*0.9,                // higher jump (clears the raised gaps)
+    runSpeed: (3.3 + curRealm.id*0.38) * 0.9,  // 10% slower overall
+    grav: 0.60,
+    jumpV: -14.6 - j*0.9,
     cutMul: 0.45,
     coyoteMax: 7,
     bufMax: 7,
     maxFall: 14,
-    glideMul: 0.2,                       // hold-to-soar: gentle glide while descending
-    glideFall: 2.3,                      // soft terminal velocity → ~3x longer glide distance
+    glideMul: 0.2,
+    glideFall: 2.3,
     boltCD: Math.max(14, 26 - save.upgrades.bolt*4),
     boltV: 9 + save.upgrades.bolt*1.2,
   };
@@ -306,23 +420,29 @@ function cfg(){
 
 /* ---------- input ---------- */
 const keys = { jump:false, jumpEdge:false, cast:false };
-function jumpDown(){ keys.jump=true; keys.jumpEdge=true; player.jumpBuf = cfg().bufMax; }
+function jumpDown(){
+  if(introPaused){ introPaused=false; return; }
+  keys.jump=true; keys.jumpEdge=true; player.jumpBuf=cfg().bufMax;
+}
 function jumpUp(){ keys.jump=false; }
 window.addEventListener("keydown",e=>{
   if(e.repeat) return;
-  if(e.code==="Space"||e.code==="ArrowUp"||e.code==="KeyW"){ e.preventDefault(); if(state==="play") jumpDown(); }
+  if(e.code==="Space"||e.code==="ArrowUp"||e.code==="KeyW"){
+    e.preventDefault();
+    if(state==="play"){ if(introPaused){ introPaused=false; } else jumpDown(); }
+  }
   if(e.code==="KeyJ"||e.code==="KeyK"||e.code==="ShiftLeft"){ if(state==="play") keys.cast=true; }
 });
 window.addEventListener("keyup",e=>{
   if(e.code==="Space"||e.code==="ArrowUp"||e.code==="KeyW") jumpUp();
   if(e.code==="KeyJ"||e.code==="KeyK"||e.code==="ShiftLeft") keys.cast=false;
 });
-// pointer: tap left 75% = jump, right side small = cast
 cv.addEventListener("pointerdown",e=>{
   if(state!=="play") return;
-  const r = cv.getBoundingClientRect();
-  const fx = (e.clientX - r.left)/r.width;
-  if(fx > 0.8 && curRealm.teachCast){ keys.cast=true; }
+  if(introPaused){ introPaused=false; return; }
+  const r=cv.getBoundingClientRect();
+  const fx=(e.clientX-r.left)/r.width;
+  if(fx>0.8){ keys.cast=true; }
   else jumpDown();
 });
 cv.addEventListener("pointerup",()=>{ jumpUp(); keys.cast=false; });
@@ -331,59 +451,58 @@ cv.addEventListener("pointerup",()=>{ jumpUp(); keys.cast=false; });
    START / END RUN
    ============================================================ */
 function startRun(realm){
-  curRealm = realm;
-  level = buildLevel(realm);
-  cam = 0; runTime = 0; runEssence = 0;
+  curRealm=realm;
+  level=buildLevel(realm);
+  cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0;
   bolts.length=0; particles.length=0; boltCD=0;
-  shieldCharges = save.upgrades.shield>0 ? 1 : 0;
+  shieldCharges=save.upgrades.shield>0?1:0;
   player.x=220; player.y=GROUND_Y-player.h; player.vy=0;
   player.onGround=true; player.coyote=0; player.jumpBuf=0;
   player.jumpsLeft=1; player.alive=true; player.flash=0;
-  // --- knowledge: pick a whisper for this run, mark it learned ---
-  const pool = (RUNE_LORE[realm.id]||RUNE_LORE[0]).whispers;
-  const wi = (Math.random()*pool.length)|0;
-  runWhisper = { id: realm.id+":"+wi, text: pool[wi] };
-  save.loreSeen[runWhisper.id] = true; persist();
-  // --- imagery: pick 2 background set-pieces + a hue drift, varying per run ---
-  const SCENES = ["yggdrasil","longship","serpent","ravens","stones","wolf"];
-  runScene = { hueShift: ((Math.random()*30)|0)-15, pieces: [] };
+  const pool=(RUNE_LORE[realm.id]||RUNE_LORE[0]).whispers;
+  const wi=(Math.random()*pool.length)|0;
+  runWhisper={ id:realm.id+":"+wi, text:pool[wi] };
+  save.loreSeen[runWhisper.id]=true; persist();
+  const SCENES=["yggdrasil","longship","serpent","ravens","stones","wolf"];
+  runScene={ hueShift:((Math.random()*30)|0)-15, pieces:[] };
   for(let i=0;i<2;i++){
     runScene.pieces.push({
-      type: SCENES[(Math.random()*SCENES.length)|0],
-      x: 700 + i*1900 + Math.random()*700,
-      z: 0.30 + Math.random()*0.14,
-      scale: 0.85 + Math.random()*0.5
+      type:SCENES[(Math.random()*SCENES.length)|0],
+      x:700+i*1900+Math.random()*700,
+      z:0.30+Math.random()*0.14,
+      scale:0.85+Math.random()*0.5
     });
   }
-  introT = 2.8;
+  introPaused=true;
   state="play";
   showScreen(null);
 }
+
 function endRun(won){
-  state = won ? "won" : "dead";
-  // award essence
-  save.essence += runEssence;
+  state=won?"won":"dead";
+  save.essence+=runEssence;
   if(won){
-    const t = runTime;
-    if(save.realmsUnlocked < curRealm.id+2 && curRealm.id+1 < REALMS.length && !REALMS[curRealm.id+1].locked){
-      save.realmsUnlocked = curRealm.id+2;
+    const t=runTime;
+    if(save.realmsUnlocked<curRealm.id+2 && curRealm.id+1<REALMS.length){
+      save.realmsUnlocked=curRealm.id+2;
     }
-    if(!save.best[curRealm.id] || t < save.best[curRealm.id]) save.best[curRealm.id]=t;
+    if(!save.best[curRealm.id]||t<save.best[curRealm.id]) save.best[curRealm.id]=t;
   }
   persist();
-  // fill results screen after a beat
   setTimeout(()=>{
-    document.getElementById("res-title").textContent = won ? "✦ Realm Cleared ✦" : "The run ends…";
-    const best = save.best[curRealm.id];
-    document.getElementById("res-body").innerHTML =
+    document.getElementById("res-title").textContent=won?"✦ Realm Cleared ✦":"The run ends…";
+    const best=save.best[curRealm.id];
+    document.getElementById("res-body").innerHTML=
       (won
-        ? `You crossed <b>${curRealm.name}</b> in <b>${runTime.toFixed(1)}s</b>.` +
-          (best!=null?` &nbsp;Best: <b>${best.toFixed(1)}s</b>.`:"")
-        : `${endReason||"A misstep."} You still kept the essence you gathered.`) +
-      `<br><br>Star-essence gained: <span class="ess">+${runEssence}</span>` +
-      `<br>Total: <span class="ess">${save.essence}</span>` +
-      (runWhisper ? `<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} “${runWhisper.text}”</span>` : "");
-    document.getElementById("res-again").onclick = ()=>startRun(curRealm);
+        ?`You crossed <b>${curRealm.name}</b> in <b>${runTime.toFixed(1)}s</b>.`+
+          (best!=null?` &nbsp;Best: <b>${best.toFixed(1)}s</b>`:"")+
+          `<br>Shades slain: <b>${runKills}</b> &nbsp;•&nbsp; Essence collected: <b>${runCoins}</b>`
+        :`${endReason||"A misstep."} You kept the essence you gathered.`+
+          `<br>Shades slain: <b>${runKills}</b> &nbsp;•&nbsp; Essence collected: <b>${runCoins}</b>`)+
+      `<br><br>Star-essence gained: <span class="ess">+${runEssence}</span>`+
+      `<br>Total: <span class="ess">${save.essence}</span>`+
+      (runWhisper?`<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} "${runWhisper.text}"</span>`:"");
+    document.getElementById("res-again").onclick=()=>startRun(curRealm);
     showScreen("result");
   }, won?500:650);
 }
@@ -392,7 +511,7 @@ function endRun(won){
    UPDATE
    ============================================================ */
 function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
-  return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by;
+  return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;
 }
 function spawnBurst(x,y,c,n=10,spd=3){
   for(let i=0;i<n;i++){
@@ -402,110 +521,110 @@ function spawnBurst(x,y,c,n=10,spd=3){
 }
 
 function update(){
-  if(state!=="play"){ return; }
-  const C = cfg();
-  runTime += 1/60;
-  if(introT>0) introT -= 1/60;
-  cam += C.runSpeed;
-  player.x = 220; // fixed screen x; world moves via cam
+  if(state!=="play") return;
+  if(introPaused){
+    // sky still animates (animT is set in loop); nothing else moves
+    return;
+  }
+  const C=cfg();
+  runTime+=1/60;
+  cam+=C.runSpeed;
+  player.x=220;
+  const px=player.x+cam;
 
-  // world-space player x
-  const px = player.x + cam;
-
-  // --- jump buffering / coyote ---
+  // --- jump / coyote ---
   if(player.jumpBuf>0) player.jumpBuf--;
   if(player.onGround){ player.coyote=C.coyoteMax; player.jumpsLeft=1; }
   else if(player.coyote>0) player.coyote--;
 
-  const canDouble = save.upgrades.jump>=2; // double-jump unlock at jump lvl2
+  const canDouble=save.upgrades.jump>=2;
   if(player.jumpBuf>0){
-    if(player.coyote>0 || player.onGround){
-      player.vy = C.jumpV; player.onGround=false; player.coyote=0; player.jumpBuf=0;
-      player.jumpsLeft = canDouble?1:0;
-      spawnBurst(px-cam, player.y+player.h, "#bfe9ff",6,2);
-    } else if(player.jumpsLeft>0 && canDouble){
-      player.vy = C.jumpV*0.9; player.jumpsLeft=0; player.jumpBuf=0;
-      spawnBurst(px-cam, player.y+player.h*0.5, "#ffe6a8",8,2.4);
+    if(player.coyote>0||player.onGround){
+      player.vy=C.jumpV; player.onGround=false; player.coyote=0; player.jumpBuf=0;
+      player.jumpsLeft=canDouble?1:0;
+      spawnBurst(px-cam,player.y+player.h,"#bfe9ff",6,2);
+    } else if(player.jumpsLeft>0&&canDouble){
+      player.vy=C.jumpV*0.9; player.jumpsLeft=0; player.jumpBuf=0;
+      spawnBurst(px-cam,player.y+player.h*0.5,"#ffe6a8",8,2.4);
     }
   }
-  // variable jump height: releasing early clips the rise for a short hop
-  if(!keys.jump && player.vy < -3.0) player.vy = -3.0;
+  if(!keys.jump&&player.vy<-3.0) player.vy=-3.0;
 
-  // gravity (hold jump while falling = gentle glide / "hold to soar")
-  const gliding = !player.onGround && player.vy > 0 && keys.jump;
-  const g = gliding ? C.grav * C.glideMul : C.grav;
-  const term = gliding ? C.glideFall : C.maxFall;
-  player.vy = Math.min(player.vy + g, term);
-  player.y += player.vy;
+  // gravity / glide
+  const gliding=!player.onGround&&player.vy>0&&keys.jump;
+  const g=gliding?C.grav*C.glideMul:C.grav;
+  const term=gliding?C.glideFall:C.maxFall;
+  player.vy=Math.min(player.vy+g,term);
+  player.y+=player.vy;
 
   // --- ground collision ---
   player.onGround=false;
-  let footY = player.y + player.h;
+  const footY=player.y+player.h;
   for(const s of level.segs){
-    if(px+player.w*0.5 > s.x && px+player.w*0.5 < s.x+s.w){
-      if(player.vy>=0 && footY>=s.y && footY <= s.y + 28 + player.vy){
-        player.y = s.y - player.h; player.vy=0; player.onGround=true;
+    if(px+player.w*0.5>s.x&&px+player.w*0.5<s.x+s.w){
+      if(player.vy>=0&&footY>=s.y&&footY<=s.y+28+player.vy){
+        player.y=s.y-player.h; player.vy=0; player.onGround=true;
       }
     }
   }
-  // fell in a gap?
-  if(player.y > H+80){ endReason="You fell into the void."; doDeath(); return; }
+  if(player.y>H+80){ endReason="You fell into the void."; doDeath(); return; }
 
-  // --- casting ---
+  // --- casting (all realms) ---
   if(boltCD>0) boltCD--;
-  if(keys.cast && curRealm.teachCast && boltCD<=0){
-    bolts.push({x:px+player.w, y:player.y+player.h*0.4, vx:C.boltV});
-    boltCD = C.boltCD;
-    spawnBurst(px-cam+player.w, player.y+player.h*0.4, "#7fd4ff",5,2);
+  if(keys.cast&&boltCD<=0){
+    bolts.push({x:px+player.w,y:player.y+player.h*0.4,vx:C.boltV});
+    boltCD=C.boltCD;
+    spawnBurst(px-cam+player.w,player.y+player.h*0.4,"#7fd4ff",5,2);
   }
   for(let i=bolts.length-1;i>=0;i--){
-    bolts[i].x += bolts[i].vx;
-    if(bolts[i].x - cam > W+40) bolts.splice(i,1);
+    bolts[i].x+=bolts[i].vx;
+    if(bolts[i].x-cam>W+40) bolts.splice(i,1);
   }
 
   // --- foes ---
   for(const f of level.foes){
     if(f.dead) continue;
-    f.y = f.baseY + Math.sin((cam+f.x)*0.01)*22;
-    // bolt hits
+    f.y=f.baseY+Math.sin((cam+f.x)*0.01)*22;
     for(let i=bolts.length-1;i>=0;i--){
-      if(rectHit(bolts[i].x,bolts[i].y,10,6, f.x,f.y,34,34)){
+      if(rectHit(bolts[i].x,bolts[i].y,10,6,f.x,f.y,34,34)){
         f.dead=true; bolts.splice(i,1);
         spawnBurst(f.x-cam+17,f.y+17,"#c9a3ff",16,3.5);
-        runEssence += 5;
+        runEssence+=5; runKills++;
         break;
       }
     }
-    // touches player?
-    if(!f.dead && rectHit(px,player.y,player.w,player.h, f.x,f.y,34,34)){
-      if(takeHit()) { f.dead=true; spawnBurst(f.x-cam+17,f.y+17,"#ff9a9a",14,3); }
+    if(!f.dead&&rectHit(px,player.y,player.w,player.h,f.x,f.y,34,34)){
+      if(takeHit()){ f.dead=true; spawnBurst(f.x-cam+17,f.y+17,"#ff9a9a",14,3); }
       else return;
     }
   }
 
-  // --- obstacles (deadly pillars/spikes) ---
+  // --- runestones: block forward progress, don't kill ---
   for(const o of level.obs){
-    if(rectHit(px,player.y,player.w,player.h, o.x,o.y,o.w,o.h)){
-      // allow landing on top
-      if(player.vy>0 && (player.y+player.h) - o.y < 16){
+    if(rectHit(px,player.y,player.w,player.h,o.x,o.y,o.w,o.h)){
+      const footYo=player.y+player.h;
+      if(player.vy>=0&&footYo-o.y<16){
+        // landing on top
         player.y=o.y-player.h; player.vy=0; player.onGround=true;
       } else {
-        if(!takeHit()) return;
+        // horizontal block: push cam back so player can't advance through
+        const maxCam=o.x-player.x-player.w;
+        if(cam>maxCam) cam=maxCam;
       }
     }
   }
 
-  // --- coins / essence ---
+  // --- coins ---
   for(const c of level.coins){
     if(c.got) continue;
-    if(rectHit(px,player.y,player.w,player.h, c.x-10,c.y-10,20,20)){
-      c.got=true; runEssence += 1;
+    if(rectHit(px,player.y,player.w,player.h,c.x-10,c.y-10,20,20)){
+      c.got=true; runEssence+=1; runCoins++;
       spawnBurst(c.x-cam,c.y,"#ffd479",8,2.4);
     }
   }
 
-  // --- reach gate ---
-  if(px >= level.gateX){ spawnBurst(level.gateX-cam, GROUND_Y-90,"#fff",30,5); endRun(true); return; }
+  // --- gate ---
+  if(px>=level.gateX){ spawnBurst(level.gateX-cam,GROUND_Y-90,"#fff",30,5); endRun(true); return; }
 
   // --- particles ---
   for(let i=particles.length-1;i>=0;i--){
@@ -520,31 +639,33 @@ function takeHit(){
   endReason="A shade caught you."; doDeath(); return false;
 }
 function doDeath(){
-  spawnBurst(player.x, player.y, "#ff9a9a", 26, 4);
+  spawnBurst(player.x,player.y,"#ff9a9a",26,4);
   endRun(false);
 }
 
 /* ============================================================
    RENDER
    ============================================================ */
-let animT = 0;   // wall-clock animation phase (seconds) — drives idle motion independent of run speed
+let animT=0;
 
-/* small render helpers */
-function glow(x,y,r,c0,c1){ const g=ctx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,c0); g.addColorStop(1,c1); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
-function hash(n){ const s=Math.sin(n*127.1+311.7)*43758.5453; return s-Math.floor(s); } // stable pseudo-random for terrain/peaks
+function glow(x,y,r,c0,c1){
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,c0); g.addColorStop(1,c1);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+}
+function hash(n){ const s=Math.sin(n*127.1+311.7)*43758.5453; return s-Math.floor(s); }
 
-/* background scenery data (generated once) */
-const stars = Array.from({length:80},()=>({x:Math.random()*W,y:Math.random()*H*0.72,r:Math.random()*1.3+0.3,tw:Math.random()*6.28,z:Math.random()*0.5+0.2}));
-const constLinks = (()=>{ const pts=Array.from({length:11},()=>({x:Math.random()*W,y:Math.random()*H*0.42+18})); const links=[]; for(let i=0;i<7;i++){ const a=pts[(i*3)%pts.length], b=pts[(i*5+2)%pts.length]; if(a!==b) links.push([a,b]); } return links; })();
-const monoliths = Array.from({length:7},()=>({x:Math.random()*5200,y:H*0.40+Math.random()*72,s:0.5+Math.random()*0.9,z:0.20+Math.random()*0.14}));
-const auroras = [ {y:H*0.23,amp:26,sp:0.55,a:0.11,hue:0}, {y:H*0.33,amp:36,sp:0.38,a:0.08,hue:40} ];
+const stars=Array.from({length:80},()=>({x:Math.random()*W,y:Math.random()*H*0.72,r:Math.random()*1.3+0.3,tw:Math.random()*6.28,z:Math.random()*0.5+0.2}));
+const constLinks=(()=>{ const pts=Array.from({length:11},()=>({x:Math.random()*W,y:Math.random()*H*0.42+18})); const links=[]; for(let i=0;i<7;i++){ const a=pts[(i*3)%pts.length],b=pts[(i*5+2)%pts.length]; if(a!==b) links.push([a,b]); } return links; })();
+const monoliths=Array.from({length:7},()=>({x:Math.random()*5200,y:H*0.40+Math.random()*72,s:0.5+Math.random()*0.9,z:0.20+Math.random()*0.14}));
+const auroras=[{y:H*0.23,amp:26,sp:0.55,a:0.11,hue:0},{y:H*0.33,amp:36,sp:0.38,a:0.08,hue:40}];
 
 function drawSky(realm){
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,realm.sky[0]); g.addColorStop(0.5,realm.sky[1]); g.addColorStop(1,realm.sky[2]);
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 
-  // --- aurora ribbons ---
+  // aurora ribbons
   ctx.save(); ctx.globalCompositeOperation="lighter";
   for(const a of auroras){
     ctx.beginPath();
@@ -559,7 +680,7 @@ function drawSky(realm){
   }
   ctx.restore();
 
-  // --- constellation links + twinkling stars ---
+  // constellation + stars
   const cpar=(cam*0.02)%W;
   ctx.strokeStyle=`hsla(${realm.hue},60%,82%,0.09)`; ctx.lineWidth=1; ctx.beginPath();
   for(const [a,b] of constLinks){ let ax=a.x-cpar; if(ax<0)ax+=W; let bx=b.x-cpar; if(bx<0)bx+=W; if(Math.abs(ax-bx)<W*0.4){ ctx.moveTo(ax,a.y); ctx.lineTo(bx,b.y); } }
@@ -571,7 +692,7 @@ function drawSky(realm){
   }
   ctx.globalAlpha=1;
 
-  // --- sun/moon disc with corona + slow runic ring ---
+  // sun/moon disc + runic ring — shows large realm rune inside
   const sx=W*0.76, sy=H*0.27, R=66;
   glow(sx,sy,150,`hsla(${realm.hue},90%,72%,0.26)`,`hsla(${realm.hue},90%,60%,0)`);
   const dg=ctx.createRadialGradient(sx-14,sy-14,6,sx,sy,R);
@@ -583,40 +704,42 @@ function drawSky(realm){
   ctx.strokeStyle=`hsla(${realm.hue},90%,92%,0.3)`;
   for(let i=0;i<16;i++){ ctx.rotate(Math.PI/8); ctx.beginPath(); ctx.moveTo(R+16,0); ctx.lineTo(R+22,0); ctx.stroke(); }
   ctx.restore();
+  // realm rune burned into the disc
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  ctx.fillStyle=`hsla(${realm.hue},20%,18%,0.82)`;
+  ctx.font="bold 54px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(realm.glyph, sx, sy+2);
+  ctx.restore();
 
-  // --- floating monoliths (distant parallax) ---
+  // floating monoliths with realm rune carved on face
   for(const m of monoliths){ let mx=(m.x-cam*m.z)%(W+420); if(mx<-210)mx+=W+420; drawMonolith(mx,m.y+Math.sin(animT*0.6+m.x)*4,m.s,realm); }
 
-  // --- per-run background set-pieces (imagery that varies each run) ---
   drawSetPieces(realm);
-
-  // --- near mountain ridges (two layers) ---
   drawRidge(0.16,H-64,"rgba(14,10,38,0.6)",300,150);
   drawRidge(0.30,H-24,"rgba(8,6,22,0.85)",210,108);
 }
+
 function drawSetPieces(realm){
   if(!runScene) return;
-  const hue = realm.hue + runScene.hueShift;
+  const hue=realm.hue+runScene.hueShift;
   for(const p of runScene.pieces){
-    const sx = p.x - cam*p.z; if(sx>W+220||sx<-220) continue;
-    drawSetPiece(p.type, sx, H-150, p.scale, hue);
+    const sx=p.x-cam*p.z; if(sx>W+220||sx<-220) continue;
+    drawSetPiece(p.type,sx,H-150,p.scale,hue);
   }
 }
-function drawSetPiece(type, x, baseY, s, hue){
+function drawSetPiece(type,x,baseY,s,hue){
   ctx.save(); ctx.translate(x,baseY); ctx.scale(s,s);
   const fill="rgba(12,9,30,0.85)", line=`hsla(${hue},70%,72%,0.55)`;
   ctx.fillStyle=fill; ctx.strokeStyle=line; ctx.lineWidth=2; ctx.lineCap="round";
   const lit=()=>{ ctx.save(); ctx.globalCompositeOperation="lighter"; };
   if(type==="yggdrasil"){
-    // world-tree: trunk + spreading crown + roots, glowing rune knot
     ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(-3,-70); ctx.lineTo(3,-70); ctx.lineTo(7,0); ctx.closePath(); ctx.fill();
     ctx.beginPath();
-    for(let a=-1.2;a<=1.2;a+=0.4){ ctx.moveTo(0,-66); ctx.lineTo(Math.sin(a)*60, -120-Math.cos(a)*18); }
+    for(let a=-1.2;a<=1.2;a+=0.4){ ctx.moveTo(0,-66); ctx.lineTo(Math.sin(a)*60,-120-Math.cos(a)*18); }
     ctx.moveTo(-6,0); ctx.lineTo(-30,24); ctx.moveTo(6,0); ctx.lineTo(28,22); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(0,-110,62,34,0,0,7); ctx.fillStyle="rgba(14,11,34,0.7)"; ctx.fill();
     lit(); glow(0,-66,10,`hsla(${hue},90%,80%,0.7)`,`hsla(${hue},90%,70%,0)`); ctx.restore();
   } else if(type==="longship"){
-    // viking longship: hull, mast, square sail, dragon prow
     ctx.beginPath(); ctx.moveTo(-70,0); ctx.quadraticCurveTo(-86,-20,-70,-22); ctx.lineTo(64,-22);
     ctx.quadraticCurveTo(96,-26,86,-46); ctx.quadraticCurveTo(70,-30,58,-30); ctx.lineTo(-58,-30);
     ctx.quadraticCurveTo(-78,-30,-70,0); ctx.closePath(); ctx.fill();
@@ -624,24 +747,19 @@ function drawSetPiece(type, x, baseY, s, hue){
     ctx.fillStyle="rgba(16,12,36,0.8)"; ctx.beginPath(); ctx.moveTo(-30,-86); ctx.lineTo(30,-86); ctx.lineTo(30,-44); ctx.lineTo(-30,-44); ctx.closePath(); ctx.fill();
     lit(); ctx.strokeStyle=`hsla(${hue},80%,76%,0.5)`; for(let i=-24;i<=24;i+=12){ ctx.beginPath(); ctx.moveTo(i,-84); ctx.lineTo(i,-46); ctx.stroke(); } ctx.restore();
   } else if(type==="serpent"){
-    // Jörmungandr: a coiling serpent arc across the horizon
     lit(); ctx.strokeStyle=`hsla(${hue},80%,72%,0.4)`; ctx.lineWidth=9;
     ctx.beginPath(); for(let t=0;t<=1;t+=0.04){ const px=(t-0.5)*340, py=-60+Math.sin(t*Math.PI*3+animT*0.5)*34; t===0?ctx.moveTo(px,py):ctx.lineTo(px,py); } ctx.stroke();
     ctx.restore();
     ctx.fillStyle=fill; ctx.beginPath(); ctx.ellipse(-170,-60,12,9,0,0,7); ctx.fill();
   } else if(type==="ravens"){
-    // Huginn & Muninn: two birds in flight
     ctx.strokeStyle=`hsla(${hue},60%,78%,0.6)`; ctx.lineWidth=3;
     for(const o of [[-40,-60],[26,-92]]){ const f=Math.sin(animT*3+o[0])*8;
       ctx.beginPath(); ctx.moveTo(o[0]-16,o[1]+f); ctx.quadraticCurveTo(o[0],o[1]-10,o[0]+16,o[1]+f);
       ctx.moveTo(o[0],o[1]-2); ctx.lineTo(o[0],o[1]+6); ctx.stroke(); }
   } else if(type==="stones"){
-    // standing-stone circle on the horizon
-    for(let i=-3;i<=3;i++){ const px=i*26, h=40-Math.abs(i)*4; ctx.fillStyle=fill;
-      ctx.fillRect(px-6,-h,12,h); }
+    for(let i=-3;i<=3;i++){ const px=i*26,h=40-Math.abs(i)*4; ctx.fillStyle=fill; ctx.fillRect(px-6,-h,12,h); }
     lit(); glow(0,-20,16,`hsla(${hue},85%,75%,0.4)`,`hsla(${hue},85%,70%,0)`); ctx.restore();
-  } else { // wolf
-    // great wolf silhouette upon a rise
+  } else {
     ctx.beginPath(); ctx.moveTo(-60,6); ctx.lineTo(-44,-16); ctx.lineTo(-50,-26); ctx.lineTo(-38,-22);
     ctx.lineTo(-30,-34); ctx.lineTo(-18,-22); ctx.lineTo(24,-26); ctx.lineTo(40,-40); ctx.lineTo(44,-22);
     ctx.lineTo(58,-8); ctx.lineTo(40,-6); ctx.lineTo(34,8); ctx.lineTo(28,-4); ctx.lineTo(-20,-2);
@@ -656,7 +774,12 @@ function drawMonolith(x,y,s,realm){
   ctx.moveTo(0,-26); ctx.lineTo(24,-6); ctx.lineTo(13,30); ctx.lineTo(-15,26); ctx.lineTo(-24,-4); ctx.closePath(); ctx.fill();
   ctx.fillStyle=`hsla(${realm.hue},55%,58%,0.5)`; ctx.beginPath();
   ctx.moveTo(0,-26); ctx.lineTo(24,-6); ctx.lineTo(-24,-4); ctx.closePath(); ctx.fill();
-  ctx.globalCompositeOperation="lighter"; glow(0,2,9,`hsla(${realm.hue},90%,80%,0.6)`,`hsla(${realm.hue},90%,70%,0)`);
+  ctx.globalCompositeOperation="lighter";
+  glow(0,2,9,`hsla(${realm.hue},90%,80%,0.6)`,`hsla(${realm.hue},90%,70%,0)`);
+  // faint realm rune carved into face
+  ctx.fillStyle=`hsla(${realm.hue},80%,70%,0.55)`;
+  ctx.font="bold 18px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(realm.glyph,0,8);
   ctx.restore(); ctx.globalAlpha=1;
 }
 function drawRidge(par,baseY,color,span,height){
@@ -669,12 +792,11 @@ function drawRidge(par,baseY,color,span,height){
 function drawGround(){
   for(const s of level.segs){
     const sx=s.x-cam; if(sx>W||sx+s.w<0) continue;
-    if(s.y < GROUND_Y-8){ drawCrystalPlatform(sx,s.y,s.w); continue; }
+    if(s.y<GROUND_Y-8){ drawCrystalPlatform(sx,s.y,s.w); continue; }
     const bottom=H+10;
     const g=ctx.createLinearGradient(0,s.y,0,bottom);
     g.addColorStop(0,"#2a2358"); g.addColorStop(0.25,"#1d1742"); g.addColorStop(1,"#100b26");
     ctx.fillStyle=g; ctx.fillRect(sx,s.y,s.w,bottom-s.y);
-    // crystalline facets (stable per world position)
     ctx.save(); ctx.beginPath(); ctx.rect(sx,s.y,s.w,bottom-s.y); ctx.clip();
     for(let i=Math.floor(s.x/70);i<(s.x+s.w)/70+1;i++){
       const fx=i*70-cam, t=hash(i);
@@ -692,7 +814,6 @@ function drawCrust(sx,sy,w){
   ctx.save(); ctx.globalCompositeOperation="lighter";
   ctx.strokeStyle=`hsla(${curRealm.hue},90%,76%,0.8)`; ctx.lineWidth=2;
   ctx.beginPath(); ctx.moveTo(sx,sy+1); ctx.lineTo(sx+w,sy+1); ctx.stroke();
-  // runic seam ticks (world-anchored little diamonds)
   ctx.fillStyle=`hsla(${curRealm.hue},90%,84%,0.85)`; const wx=sx+cam;
   for(let i=Math.ceil(wx/48);i*48<wx+w;i++){ const gx=i*48-cam; ctx.beginPath(); ctx.moveTo(gx,sy-3); ctx.lineTo(gx+3,sy+1); ctx.lineTo(gx,sy+5); ctx.lineTo(gx-3,sy+1); ctx.closePath(); ctx.fill(); }
   ctx.restore();
@@ -707,24 +828,174 @@ function drawCrystalPlatform(sx,sy,w){
   ctx.moveTo(sx,sy); ctx.lineTo(sx+w*0.5,sy+h); ctx.lineTo(sx+10,sy+h*0.5); ctx.closePath(); ctx.fill();
   drawCrust(sx,sy,w);
 }
+
 function drawObstacles(){
   for(const o of level.obs){
     const sx=o.x-cam; if(sx>W||sx+o.w<0) continue;
-    // tapered carved menhir
+    // tapered menhir / runestone
     const g=ctx.createLinearGradient(0,o.y,0,o.y+o.h);
     g.addColorStop(0,"#473a72"); g.addColorStop(1,"#1d1640");
     ctx.fillStyle=g; ctx.beginPath();
     ctx.moveTo(sx+4,o.y+o.h); ctx.lineTo(sx+o.w-4,o.y+o.h); ctx.lineTo(sx+o.w-1,o.y+8);
     ctx.lineTo(sx+o.w*0.5,o.y); ctx.lineTo(sx+1,o.y+8); ctx.closePath(); ctx.fill();
-    // carved warm rune (reads as danger)
+    // realm rune carved into the face (glowing amber — "power here, tread carefully")
     ctx.save(); ctx.globalCompositeOperation="lighter";
-    glow(sx+o.w*0.5,o.y+o.h*0.42,9,"rgba(255,120,150,0.7)","rgba(255,90,120,0)");
-    ctx.strokeStyle="rgba(255,160,180,0.9)"; ctx.lineWidth=2; ctx.beginPath();
-    ctx.moveTo(sx+o.w*0.5,o.y+9); ctx.lineTo(sx+o.w*0.5,o.y+o.h-9);
-    ctx.moveTo(sx+o.w*0.5,o.y+o.h*0.45); ctx.lineTo(sx+o.w-5,o.y+o.h*0.3); ctx.stroke();
+    glow(sx+o.w*0.5,o.y+o.h*0.42,11,"rgba(255,190,80,0.55)","rgba(255,140,40,0)");
+    ctx.fillStyle=`hsla(${curRealm.hue},90%,80%,0.9)`;
+    ctx.font=`bold ${Math.min(o.h-12,28)}px serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(curRealm.glyph, sx+o.w*0.5, o.y+o.h*0.44);
     ctx.restore();
   }
 }
+
+/* --- per-realm, per-type foe visuals --- */
+function drawFoes(){
+  for(const f of level.foes){
+    if(f.dead) continue;
+    const sx=f.x-cam; if(sx>W+50||sx<-50) continue;
+    drawFoe(f,sx);
+  }
+}
+function drawFoe(f,sx){
+  const cx=sx+17, cy=f.y+17;
+  const rid=curRealm.id, hue=curRealm.hue;
+  const excess=(f.type==="excess");
+
+  ctx.save();
+
+  if(rid===0){
+    // SOWILO — sun rune
+    // excess: scorching fire-wraith (too much sun = blazing, burning, overwhelming)
+    // lack:   shadow void (too little sun = cold dark mass)
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,32,"rgba(255,160,40,0.45)","rgba(255,100,0,0)");
+      glow(cx,cy,16,"rgba(255,220,140,0.70)","rgba(255,180,60,0)");
+      // corona spikes
+      ctx.strokeStyle="rgba(255,200,80,0.7)"; ctx.lineWidth=2;
+      for(let i=0;i<8;i++){
+        const a=i/8*Math.PI*2+animT*1.2;
+        ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*14,cy+Math.sin(a)*14);
+        ctx.lineTo(cx+Math.cos(a)*28,cy+Math.sin(a)*28); ctx.stroke();
+      }
+      // blazing core
+      const fg=ctx.createRadialGradient(cx,cy,2,cx,cy,16);
+      fg.addColorStop(0,"#fff8e0"); fg.addColorStop(0.5,"#ffb030"); fg.addColorStop(1,"rgba(255,80,0,0)");
+      ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(cx,cy,16,0,7); ctx.fill();
+    } else {
+      // shadow void
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,24,"rgba(40,20,80,0.35)","rgba(20,10,40,0)");
+      const bg=ctx.createRadialGradient(cx,cy,2,cx,cy,18);
+      bg.addColorStop(0,"#0a0618"); bg.addColorStop(1,"rgba(8,4,18,0)");
+      ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,18,0,7); ctx.fill();
+      // barely-visible cold outline
+      ctx.strokeStyle="rgba(120,80,200,0.4)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx,cy,14,0,7); ctx.stroke();
+      // dim eyes — cold blue-white
+      glow(cx-4,cy-2,3,"rgba(140,160,255,0.6)","rgba(100,120,220,0)");
+      glow(cx+4,cy-2,3,"rgba(140,160,255,0.6)","rgba(100,120,220,0)");
+    }
+
+  } else if(rid===1){
+    // RAIDHO — ride rune
+    // excess: frenzied rider (chaotic motion, motion-blur, leaning forward hard)
+    // lack:   lost wanderer (slumped, slow drift, no direction)
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,26,"rgba(80,140,255,0.35)","rgba(40,80,200,0)");
+      // motion-blur streaks (rider going too fast)
+      ctx.strokeStyle="rgba(100,180,255,0.35)"; ctx.lineWidth=3;
+      for(let k=1;k<=4;k++){
+        ctx.beginPath(); ctx.moveTo(cx-k*9,cy+2); ctx.lineTo(cx-k*9-12,cy+2); ctx.stroke();
+        ctx.globalAlpha=0.6/k;
+      }
+      ctx.globalAlpha=1;
+      // rider form: hunched forward dash
+      const bg2=ctx.createLinearGradient(cx-14,cy-18,cx+14,cy+14);
+      bg2.addColorStop(0,"#2a4a8a"); bg2.addColorStop(1,"#0e1f40");
+      ctx.fillStyle=bg2; ctx.beginPath();
+      ctx.moveTo(cx-10,cy+12); ctx.lineTo(cx-6,cy-16); ctx.lineTo(cx+14,cy-6); ctx.lineTo(cx+12,cy+12); ctx.closePath(); ctx.fill();
+      glow(cx+6,cy-10,4,"rgba(120,200,255,0.8)","rgba(80,160,255,0)");
+    } else {
+      // lost wanderer: hunched, drooping
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,20,"rgba(60,80,140,0.25)","rgba(30,40,100,0)");
+      const bg3=ctx.createLinearGradient(cx-10,cy-14,cx+10,cy+16);
+      bg3.addColorStop(0,"#1a2248"); bg3.addColorStop(1,"#0a1028");
+      ctx.fillStyle=bg3; ctx.beginPath();
+      // droopy, asymmetric slump
+      const sway2=Math.sin(animT*1.2+f.x)*5;
+      ctx.moveTo(cx-10+sway2,cy+14); ctx.quadraticCurveTo(cx-14+sway2,cy,cx-4+sway2,cy-12);
+      ctx.quadraticCurveTo(cx+8+sway2,cy-14,cx+8+sway2,cy-4); ctx.lineTo(cx+6+sway2,cy+14); ctx.closePath(); ctx.fill();
+      // dim wandering eyes
+      glow(cx-3,cy-5,2.5,"rgba(100,120,200,0.5)","rgba(80,100,160,0)");
+      glow(cx+4,cy-4,2.5,"rgba(100,120,200,0.5)","rgba(80,100,160,0)");
+    }
+
+  } else if(rid===2){
+    // HAGALAZ — hail/storm rune
+    // excess: hail shard elemental (jagged, crackling, destructive storm)
+    // lack:   passive fog wisp (after the storm, barely there)
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,28,"rgba(180,100,255,0.45)","rgba(120,60,200,0)");
+      // jagged shard body
+      ctx.fillStyle="#5a2c8a"; ctx.beginPath();
+      ctx.moveTo(cx,cy-20); ctx.lineTo(cx+10,cy-6); ctx.lineTo(cx+18,cy+2); ctx.lineTo(cx+8,cy+14);
+      ctx.lineTo(cx-2,cy+18); ctx.lineTo(cx-14,cy+8); ctx.lineTo(cx-16,cy-4); ctx.lineTo(cx-6,cy-18); ctx.closePath(); ctx.fill();
+      // crackling edges
+      ctx.strokeStyle="rgba(220,160,255,0.85)"; ctx.lineWidth=1.5;
+      const shards=[[-16,-4],[-6,-18],[0,-20],[10,-6],[18,2],[8,14],[-2,18],[-14,8]];
+      for(let i=0;i<shards.length;i++){
+        const [ax,ay]=shards[i], [bx,by]=shards[(i+1)%shards.length];
+        if(hash(i+animT*2|0)>0.4){
+          ctx.beginPath(); ctx.moveTo(cx+ax,cy+ay); ctx.lineTo(cx+(ax+bx)/2+(hash(i*7)*8-4),cy+(ay+by)/2+(hash(i*13)*8-4)); ctx.lineTo(cx+bx,cy+by); ctx.stroke();
+        }
+      }
+      glow(cx,cy,8,"rgba(255,240,255,0.7)","rgba(200,160,255,0)");
+    } else {
+      // fog wisp: soft translucent circle, barely visible
+      ctx.globalCompositeOperation="lighter";
+      const fa=0.18+Math.sin(animT*1.8+f.x)*0.08;
+      glow(cx,cy,22,`rgba(160,140,200,${fa})`,`rgba(120,100,180,0)`);
+      ctx.strokeStyle=`rgba(180,160,220,${fa*1.4})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(cx,cy,12+Math.sin(animT*2.5+f.x)*3,0,7); ctx.stroke();
+    }
+
+  } else {
+    // ISA — ice rune
+    // excess: ice-locked crystal (rigid, geometric, blue-white)
+    // lack:   melting shade (drooping, watery, pale)
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,26,"rgba(140,220,255,0.40)","rgba(80,160,220,0)");
+      // hexagonal crystal form
+      ctx.strokeStyle="rgba(200,240,255,0.9)"; ctx.lineWidth=2;
+      ctx.fillStyle="rgba(60,100,160,0.7)";
+      ctx.beginPath();
+      for(let i=0;i<6;i++){ const a=i/6*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(cx+Math.cos(a)*16,cy+Math.sin(a)*16):ctx.lineTo(cx+Math.cos(a)*16,cy+Math.sin(a)*16); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      // inner ice cross
+      ctx.strokeStyle="rgba(220,248,255,0.7)"; ctx.lineWidth=1;
+      for(let i=0;i<3;i++){ const a=i/3*Math.PI; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*16,cy+Math.sin(a)*16); ctx.lineTo(cx-Math.cos(a)*16,cy-Math.sin(a)*16); ctx.stroke(); }
+      glow(cx,cy,5,"rgba(240,252,255,0.9)","rgba(180,230,255,0)");
+    } else {
+      // melting shade
+      ctx.globalCompositeOperation="lighter";
+      const melt=Math.sin(animT*1.4+f.x)*0.12;
+      glow(cx,cy+8,20,"rgba(80,160,200,0.25)","rgba(40,100,160,0)");
+      ctx.strokeStyle="rgba(160,220,240,0.45)"; ctx.lineWidth=2;
+      // droopy ellipse that wobbles
+      ctx.beginPath(); ctx.ellipse(cx,cy+4,10+melt*20,16-melt*8,0,0,7); ctx.stroke();
+      glow(cx,cy-6,4,"rgba(180,230,255,0.55)","rgba(120,190,220,0)");
+    }
+  }
+
+  ctx.restore();
+}
+
 function drawCoins(){
   for(const c of level.coins){
     if(c.got) continue;
@@ -742,28 +1013,6 @@ function drawCoins(){
     if(Math.abs(spin)<0.16){ ctx.strokeStyle="rgba(255,255,255,0.9)"; ctx.beginPath(); ctx.moveTo(sx-7,cy); ctx.lineTo(sx+7,cy); ctx.moveTo(sx,cy-7); ctx.lineTo(sx,cy+7); ctx.stroke(); }
   }
 }
-function drawFoes(){
-  for(const f of level.foes){
-    if(f.dead) continue;
-    const sx=f.x-cam; if(sx>W+50||sx<-50) continue;
-    const cx=sx+17, cy=f.y+17;
-    ctx.save(); ctx.globalCompositeOperation="lighter";
-    glow(cx,cy,24,"rgba(150,110,220,0.30)","rgba(120,80,200,0)"); ctx.restore();
-    // tattered cloak body
-    const bg=ctx.createLinearGradient(0,cy-20,0,cy+20);
-    bg.addColorStop(0,"#3a2466"); bg.addColorStop(1,"#160d2e");
-    ctx.fillStyle=bg; ctx.beginPath();
-    ctx.moveTo(cx-14,cy-2); ctx.quadraticCurveTo(cx-16,cy-20,cx,cy-22); ctx.quadraticCurveTo(cx+16,cy-20,cx+14,cy-2);
-    for(let i=0;i<=6;i++){ const hx=cx+14-((28*i)/6); const hy=cy+8+((i%2)?10:2)+Math.sin(animT*4+i+f.x)*2; ctx.lineTo(hx,hy); }
-    ctx.closePath(); ctx.fill();
-    // hood point
-    ctx.fillStyle="#241540"; ctx.beginPath(); ctx.moveTo(cx,cy-22); ctx.lineTo(cx-9,cy-6); ctx.lineTo(cx+9,cy-6); ctx.closePath(); ctx.fill();
-    // glowing eyes
-    ctx.save(); ctx.globalCompositeOperation="lighter";
-    glow(cx-4,cy-9,3,"rgba(255,140,200,0.95)","rgba(255,120,180,0)");
-    glow(cx+4,cy-9,3,"rgba(255,140,200,0.95)","rgba(255,120,180,0)"); ctx.restore();
-  }
-}
 function drawBolts(){
   for(const b of bolts){
     const sx=b.x-cam;
@@ -778,23 +1027,19 @@ function drawBolts(){
 function drawGate(){
   const sx=level.gateX-cam; if(sx>W+120||sx<-160) return;
   const cx=sx+30, top=GROUND_Y-180, baseY=GROUND_Y, midY=(top+baseY)/2;
-  // shimmer veil between pillars
   const vg=ctx.createLinearGradient(0,top,0,baseY);
   vg.addColorStop(0,`hsla(${curRealm.hue},90%,75%,0.05)`); vg.addColorStop(0.5,`hsla(${curRealm.hue},90%,70%,0.22)`); vg.addColorStop(1,`hsla(${curRealm.hue},90%,60%,0.05)`);
   ctx.fillStyle=vg; ctx.fillRect(cx-26,top+12,52,baseY-top-12);
   ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.strokeStyle=`hsla(${curRealm.hue},90%,85%,0.28)`; ctx.lineWidth=1;
   for(let i=0;i<4;i++){ ctx.beginPath(); for(let y=top+12;y<baseY;y+=10){ const xx=cx-20+i*12+Math.sin(y*0.06+animT*2+i)*4; y===top+12?ctx.moveTo(xx,y):ctx.lineTo(xx,y); } ctx.stroke(); }
   ctx.restore();
-  // standing-stone pillars
   for(const side of [-1,1]){ const p=cx+side*34;
     const g=ctx.createLinearGradient(p-9,0,p+9,0);
     g.addColorStop(0,"#241c4a"); g.addColorStop(0.5,"#4a3f80"); g.addColorStop(1,"#1f183f");
     ctx.fillStyle=g; ctx.beginPath();
     ctx.moveTo(p-9,baseY); ctx.lineTo(p+9,baseY); ctx.lineTo(p+7,top+18); ctx.lineTo(p,top+8); ctx.lineTo(p-7,top+18); ctx.closePath(); ctx.fill();
   }
-  // lintel arch
   ctx.strokeStyle="#4a3f80"; ctx.lineWidth=10; ctx.beginPath(); ctx.arc(cx,top+24,40,Math.PI*1.06,Math.PI*1.94); ctx.stroke();
-  // rotating rune ring + glyph
   ctx.save(); ctx.translate(cx,midY); ctx.globalCompositeOperation="lighter";
   ctx.strokeStyle=`hsla(${curRealm.hue},90%,80%,0.5)`; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,30,0,7); ctx.stroke();
   ctx.rotate(animT*0.4); for(let i=0;i<8;i++){ ctx.rotate(Math.PI/4); ctx.beginPath(); ctx.moveTo(34,0); ctx.lineTo(40,0); ctx.stroke(); }
@@ -806,12 +1051,10 @@ function drawGate(){
 }
 
 function drawPlayer(){
-  if(player.flash>0 && (player.flash>>1)&1) return; // blink on hit
+  if(player.flash>0&&(player.flash>>1)&1) return;
   const x=player.x, cx=x+15, feet=player.y+player.h, air=!player.onGround, hue=curRealm.hue;
   const stride=cam*0.2, headY=feet-44;
-  // subtle rim aura (not a bulb)
   ctx.save(); ctx.globalCompositeOperation="lighter"; glow(cx,feet-22,26,`hsla(${hue},90%,78%,0.16)`,`hsla(${hue},90%,70%,0)`); ctx.restore();
-  // legs
   ctx.strokeStyle="#15102e"; ctx.lineWidth=6; ctx.lineCap="round";
   const hipY=feet-20, hipX=cx-1;
   if(air){
@@ -822,7 +1065,6 @@ function drawPlayer(){
     ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+a*8,feet-6-Math.abs(a)*3); ctx.lineTo(hipX+a*12,feet); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+b*8,feet-6-Math.abs(b)*3); ctx.lineTo(hipX+b*12,feet); ctx.stroke();
   }
-  // cloak (flowing, billows in air)
   const billow=air?-10:0, sway=Math.sin(animT*4)*3;
   const cg=ctx.createLinearGradient(cx-22,headY,cx+10,feet);
   cg.addColorStop(0,"#2a2058"); cg.addColorStop(1,"#120d2e");
@@ -835,21 +1077,17 @@ function drawPlayer(){
   ctx.closePath(); ctx.fill();
   ctx.strokeStyle=`hsla(${hue},90%,78%,0.7)`; ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2); ctx.stroke();
-  // hood + head glow
   ctx.fillStyle="#1b1440"; ctx.beginPath();
   ctx.moveTo(cx-8,headY+12); ctx.quadraticCurveTo(cx-2,headY-6,cx+8,headY+2);
   ctx.quadraticCurveTo(cx+10,headY+12,cx+4,headY+16); ctx.lineTo(cx-6,headY+16); ctx.closePath(); ctx.fill();
   ctx.save(); ctx.globalCompositeOperation="lighter"; glow(cx-1,headY+9,6,`hsla(${hue},95%,82%,0.85)`,`hsla(${hue},95%,75%,0)`); ctx.restore();
-  // chest rune
   ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.strokeStyle=`hsla(${hue},90%,82%,0.9)`; ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(cx,feet-30); ctx.lineTo(cx,feet-20); ctx.moveTo(cx,feet-27); ctx.lineTo(cx+4,feet-24); ctx.stroke(); ctx.restore();
-  // staff with glowing tip (flares when casting)
   const handX=cx+6, handY=feet-24, tipX=cx+18, tipY=headY-2;
   ctx.strokeStyle="#6b5a36"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(handX,handY); ctx.lineTo(tipX,tipY); ctx.stroke();
   ctx.save(); ctx.globalCompositeOperation="lighter";
   const cast=boltCD>0?Math.min(1,boltCD/12):0.4;
   glow(tipX,tipY,6+cast*6,`hsla(${hue},95%,82%,${0.55+cast*0.4})`,`hsla(${hue},95%,72%,0)`); ctx.restore();
-  // trailing wisp
   ctx.strokeStyle=`hsla(${hue},90%,75%,0.5)`; ctx.lineWidth=2; ctx.beginPath();
   ctx.moveTo(cx-6,feet-30); ctx.quadraticCurveTo(cx-22-Math.sin(animT*5)*5,feet-26,cx-32,feet-34+Math.sin(animT*4)*4); ctx.stroke();
   ctx.lineCap="butt";
@@ -869,19 +1107,16 @@ function drawVignette(){
   g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,0.42)");
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 }
-
 function drawTeach(){
   for(const t of level.teach){
     const sx=t.x-cam; if(sx>W||sx<-220) continue;
     const a=Math.max(0,Math.min(1,1-Math.abs(sx-300)/360));
     ctx.globalAlpha=a*0.9;
-    ctx.fillStyle="rgba(10,8,28,0.7)";
-    ctx.font="bold 20px Segoe UI";
+    ctx.fillStyle="rgba(10,8,28,0.7)"; ctx.font="bold 20px Segoe UI";
     const tw=ctx.measureText(t.text).width;
-    roundRect(sx-tw/2-14, 120, tw+28, 38, 10); ctx.fill();
+    roundRect(sx-tw/2-14,120,tw+28,38,10); ctx.fill();
     ctx.fillStyle="#cfe0ff"; ctx.textAlign="center";
-    ctx.fillText(t.text, sx, 145); ctx.textAlign="left";
-    ctx.globalAlpha=1;
+    ctx.fillText(t.text,sx,145); ctx.textAlign="left"; ctx.globalAlpha=1;
   }
 }
 function roundRect(x,y,w,h,r){
@@ -889,58 +1124,54 @@ function roundRect(x,y,w,h,r){
   ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
 }
-
 function drawHUD(){
-  // objective banner
   ctx.fillStyle="rgba(10,8,28,0.55)"; ctx.fillRect(0,0,W,46);
   ctx.fillStyle="#fff"; ctx.font="bold 18px Segoe UI"; ctx.textAlign="left";
-  ctx.fillText(`${curRealm.glyph}  Reach the ${curRealm.name}-Gate`, 16, 29);
-  // essence
+  ctx.fillText(`${curRealm.glyph}  Reach the ${curRealm.name}-Gate`,16,29);
   ctx.textAlign="right"; ctx.fillStyle="#ffd479";
-  ctx.fillText(`✦ ${runEssence}`, W-16, 29);
-  // shield pip
-  if(shieldCharges>0){ ctx.fillStyle="#7fd4ff"; ctx.fillText(`◈ Ward`, W-110, 29); }
-  ctx.textAlign="left";
+  ctx.fillText(`✦ ${runEssence}`,W-16,29);
+  if(shieldCharges>0){ ctx.fillStyle="#7fd4ff"; ctx.fillText(`◈`,W-72,29); }
+  // kills + coins sub-line
+  ctx.textAlign="left"; ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI";
+  ctx.fillText(`Shades: ${runKills}  •  Coins: ${runCoins}`,16,58);
+  ctx.textAlign="center"; ctx.fillStyle="#9a98c8";
+  ctx.fillText(`${runTime.toFixed(1)}s`,W/2,58); ctx.textAlign="left";
   // progress bar
   const prog=Math.min(1,(player.x+cam)/level.gateX);
-  ctx.fillStyle="rgba(255,255,255,0.15)"; ctx.fillRect(16,36,W-32,5);
-  ctx.fillStyle=`hsl(${curRealm.hue},90%,70%)`; ctx.fillRect(16,36,(W-32)*prog,5);
-  // time
-  ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI"; ctx.textAlign="center";
-  ctx.fillText(`${runTime.toFixed(1)}s`, W/2, 60); ctx.textAlign="left";
+  ctx.fillStyle="rgba(255,255,255,0.15)"; ctx.fillRect(16,34,W-32,5);
+  ctx.fillStyle=`hsl(${curRealm.hue},90%,70%)`; ctx.fillRect(16,34,(W-32)*prog,5);
 }
 
 function drawIntroCard(){
-  if(introT<=0 || !runWhisper) return;
-  // fade in over first 0.3s, hold, fade out over last 0.6s of the 2.8s window
-  const a = Math.min(1, Math.min((2.8-introT)/0.3, introT/0.6));
-  if(a<=0) return;
-  ctx.save(); ctx.globalAlpha=a;
+  if(!introPaused||!runWhisper) return;
   const cx=W/2, cy=H*0.40, hue=curRealm.hue;
   // panel
-  ctx.fillStyle="rgba(8,6,24,0.72)"; roundRect(cx-260,cy-92,520,184,18); ctx.fill();
-  ctx.strokeStyle=`hsla(${hue},80%,70%,0.5)`; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.save();
+  ctx.fillStyle="rgba(8,6,24,0.85)"; roundRect(cx-270,cy-100,540,210,18); ctx.fill();
+  ctx.strokeStyle=`hsla(${hue},80%,70%,0.55)`; ctx.lineWidth=1.5; ctx.stroke();
   // big rune glyph
   ctx.save(); ctx.globalCompositeOperation="lighter";
-  glow(cx-188,cy,40,`hsla(${hue},90%,72%,0.5)`,`hsla(${hue},90%,65%,0)`);
+  glow(cx-196,cy,44,`hsla(${hue},90%,72%,0.5)`,`hsla(${hue},90%,65%,0)`);
   ctx.fillStyle=`hsl(${hue},90%,85%)`; ctx.font="bold 84px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.fillText(curRealm.glyph, cx-188, cy+4); ctx.restore();
+  ctx.fillText(curRealm.glyph,cx-196,cy+4); ctx.restore();
   // name + meaning
   ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-  ctx.fillStyle="#fff"; ctx.font="bold 26px Segoe UI"; ctx.fillText(curRealm.name, cx-128, cy-46);
+  ctx.fillStyle="#fff"; ctx.font="bold 26px Segoe UI"; ctx.fillText(curRealm.name,cx-136,cy-54);
   ctx.fillStyle=`hsl(${hue},70%,78%)`; ctx.font="italic 15px Segoe UI";
-  ctx.fillText((RUNE_LORE[curRealm.id]||RUNE_LORE[0]).meaning, cx-128, cy-24);
-  // whisper (wrapped)
+  ctx.fillText((RUNE_LORE[curRealm.id]||RUNE_LORE[0]).meaning,cx-136,cy-30);
   ctx.fillStyle="#cfd3f0"; ctx.font="15px Segoe UI";
-  wrapText(runWhisper.text, cx-128, cy+2, 372, 20);
-  // learned tag
+  wrapText(runWhisper.text,cx-136,cy-6,380,20);
   ctx.fillStyle=`hsla(${hue},80%,80%,0.85)`; ctx.font="12px Segoe UI";
-  ctx.fillText(`✦ whisper learned — ${whispersHeard()}/${TOTAL_WHISPERS}`, cx-128, cy+74);
+  ctx.fillText(`✦ whisper learned — ${whispersHeard()}/${TOTAL_WHISPERS}`,cx-136,cy+68);
+  // press to begin prompt
+  const pulse=0.65+0.35*Math.sin(animT*3);
+  ctx.fillStyle=`rgba(255,255,255,${pulse})`; ctx.font="bold 15px Segoe UI"; ctx.textAlign="center";
+  ctx.fillText("PRESS SPACE  /  TAP  TO  BEGIN",cx,cy+96);
   ctx.restore();
 }
 function wrapText(text,x,y,maxW,lh){
   const words=text.split(" "); let line="", yy=y;
-  for(const w of words){ const t=line?line+" "+w:w; if(ctx.measureText(t).width>maxW && line){ ctx.fillText(line,x,yy); line=w; yy+=lh; } else line=t; }
+  for(const w of words){ const t=line?line+" "+w:w; if(ctx.measureText(t).width>maxW&&line){ ctx.fillText(line,x,yy); line=w; yy+=lh; } else line=t; }
   if(line) ctx.fillText(line,x,yy);
 }
 
@@ -956,25 +1187,39 @@ function render(){
   }
 }
 
-/* ---------- main loop (fixed step) ---------- */
-let acc=0,last=performance.now(),running=true;
+/* ---------- main loop ---------- */
+let acc=0,last=performance.now(),running=true,loopErr=null;
 function loop(now){
-  animT = now*0.001;
-  acc += Math.min(now-last,50); last=now;
-  while(acc>=1000/60){ update(); acc-=1000/60; }
-  render();
+  try {
+    animT=now*0.001;
+    acc+=Math.min(now-last,50); last=now;
+    let steps=0;
+    while(acc>=1000/60&&steps<5){ update(); acc-=1000/60; steps++; }
+    render();
+  } catch(err){
+    if(!loopErr){ loopErr=err; console.error("Rune Dash frame error:",err); }
+    try {
+      ctx.fillStyle="rgba(10,8,28,0.92)"; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle="#ff9ad1"; ctx.font="bold 18px Segoe UI"; ctx.textAlign="center";
+      ctx.fillText("A frame hiccuped — the run keeps going.",W/2,H/2-10);
+      ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI";
+      ctx.fillText(String(loopErr&&loopErr.message||loopErr).slice(0,90),W/2,H/2+16);
+      ctx.textAlign="left";
+    } catch(_){}
+  }
   if(running) requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ last=performance.now(); } });
 
-/* dev bridge — lets tooling freeze a frame to screenshot (the rAF loop otherwise never idles) */
-window.__dev = {
+window.__dev={
   start:i=>startRun(REALMS[i]),
   jump:()=>jumpDown(),
   step:(n=1)=>{ for(let k=0;k<n;k++) update(); render(); },
   freeze:()=>{ running=false; },
   thaw:()=>{ if(!running){ running=true; last=performance.now(); requestAnimationFrame(loop); } },
   setCam:v=>{ cam=v; },
+  skipIntro:()=>{ introPaused=false; },
 };
 
 /* ============================================================
@@ -998,14 +1243,14 @@ function openRealm(){
   document.getElementById("r-lore").textContent=`${whispersHeard()}/${TOTAL_WHISPERS}`;
   const list=document.getElementById("realm-list"); list.innerHTML="";
   REALMS.forEach(r=>{
-    const unlocked = r.id < save.realmsUnlocked && !r.locked;
+    const unlocked=r.id<save.realmsUnlocked;
     const card=document.createElement("div");
     card.className="realmcard"+(unlocked?"":" locked");
     const best=save.best[r.id];
     card.innerHTML=`<div class="glyph" style="color:hsl(${r.hue},90%,75%)">${r.glyph}</div>
       <div class="nm">${r.name}</div>
       <div class="meta">${r.sub}</div>
-      <div class="meta">${r.locked?"— coming soon —":(unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked")}</div>`;
+      <div class="meta">${unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked"}</div>`;
     if(unlocked) card.addEventListener("click",()=>startRun(r));
     list.appendChild(card);
   });
@@ -1031,11 +1276,8 @@ function openShrine(){
   showScreen("shrine");
 }
 
-/* responsive canvas crispness */
 function fit(){
-  const r=cv.getBoundingClientRect();
-  const dpr=Math.min(window.devicePixelRatio||1,2);
-  // keep internal res fixed (960x540); CSS scales. Nothing needed beyond letterbox.
+  // internal res fixed 960x540; CSS letterboxes
 }
 window.addEventListener("resize",fit); fit();
 </script>
