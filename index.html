@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0b0a1f" />
 <title>Rune Dash</title>
 <style>
   :root{
@@ -50,11 +53,15 @@
   .hint{font-size:13px;color:var(--dim);}
   #snd-btn{position:absolute;bottom:14px;right:16px;z-index:20;
     background:rgba(10,8,28,0.72);border:1px solid #3a3270;color:#9a98c8;
-    font-size:14px;padding:6px 13px;border-radius:9px;cursor:pointer;
+    font-size:14px;padding:10px 16px;border-radius:9px;cursor:pointer;min-height:44px;
     font-family:"Segoe UI",system-ui,sans-serif;letter-spacing:.04em;
     transition:border-color .15s,color .15s;}
   #snd-btn:hover{border-color:#7c6fd6;color:#e8e6ff;}
   #snd-btn.on{color:#7fd4ff;border-color:#7fd4ff;}
+  .ad-btn{border-color:rgba(255,212,121,0.45)!important;color:#ffd479!important;
+    font-size:15px;letter-spacing:.02em;}
+  .ad-btn:hover{border-color:rgba(255,212,121,0.8)!important;background:#1e1a08!important;}
+  .ad-btn:disabled{opacity:.5;}
 </style>
 </head>
 <body>
@@ -70,7 +77,7 @@
     <div class="row">
       <button class="btn primary" data-go="realm">Begin the Run</button>
     </div>
-    <p class="hint">Space / Click / Tap = Jump &nbsp;•&nbsp; J = Cast Rune-Bolt &nbsp;•&nbsp; M = Sound</p>
+    <p class="hint">Tap = Jump &nbsp;•&nbsp; Tap right edge = Cast &nbsp;•&nbsp; Hold to Soar &nbsp;•&nbsp; M / ♪ = Sound</p>
   </div>
 
   <!-- REALM SELECT -->
@@ -102,6 +109,11 @@
       <button class="btn primary" id="res-again">Run Again</button>
       <button class="btn" data-go="realm">Realm Select</button>
     </div>
+    <div id="ad-essence-row" style="display:none;margin-top:4px;">
+      <button class="btn ad-btn" id="ad-essence-btn" style="min-width:280px;">
+        ✦ Claim Bonus Essence — Watch a short ad
+      </button>
+    </div>
   </div>
 </div>
 
@@ -117,7 +129,7 @@ const ctx = cv.getContext("2d");
 const W = cv.width, H = cv.height;
 
 /* ---------- persistent save ---------- */
-const SAVE_KEY = "runeDash.save.v1";
+const SAVE_KEY = "runeDash.save.v2"; // v2: realm reorder (Wunjo inserted at id:2)
 const defaultSave = {
   essence:0, upgrades:{jump:0,bolt:0,shield:0},
   sounds:{ward:false,echo:false,shimmer:false},
@@ -146,15 +158,24 @@ function upgCost(key){
   return lv>=3?null:u.cost[lv];
 }
 
-/* ---------- realms ---------- */
+/* ---------- realms — 3 Acts × 3 Realms, 9 total ---------- */
+// speed: per-realm multiplier on base runSpeed (thematic pacing)
 const REALMS=[
-  {id:0,name:"Sowilo", glyph:"ᛋ",sub:"Realm of the Sun",  hue:42,  sky:["#241327","#5a2c4a","#c25e5e"]},
-  {id:1,name:"Raidho", glyph:"ᚱ",sub:"Realm of the Ride", hue:200, sky:["#0c1330","#1b2c66","#3f7fb5"]},
-  {id:2,name:"Hagalaz",glyph:"ᚺ",sub:"Realm of Storms",   hue:280, sky:["#140b2a","#2a1a52","#5a3f9a"]},
-  {id:3,name:"Isa",    glyph:"ᛁ",sub:"Realm of Ice",      hue:190, sky:["#0a1a2a","#143a52","#3f9ab5"]},
+  // ACT 1 — The Awakening (Freya's Aett) — no checkpoints
+  {id:0,name:"Sowilo", glyph:"ᛋ",sub:"Realm of the Sun",       hue:42,  sky:["#241327","#5a2c4a","#c25e5e"], act:1,speed:1.00},
+  {id:1,name:"Raidho", glyph:"ᚱ",sub:"Realm of the Ride",      hue:200, sky:["#0c1330","#1b2c66","#3f7fb5"], act:1,speed:1.10},
+  {id:2,name:"Wunjo",  glyph:"ᚹ",sub:"Realm of Joy",           hue:85,  sky:["#121a06","#263c10","#5a8a1e"], act:1,speed:1.05},
+  // ACT 2 — The Crossing (Heimdall's Aett) — 1 checkpoint each
+  {id:3,name:"Hagalaz",glyph:"ᚺ",sub:"Realm of Storms",        hue:280, sky:["#140b2a","#2a1a52","#5a3f9a"], act:2,speed:1.22},
+  {id:4,name:"Isa",    glyph:"ᛁ",sub:"Realm of Ice",           hue:190, sky:["#0a1a2a","#143a52","#3f9ab5"], act:2,speed:0.90},
+  {id:5,name:"Algiz",  glyph:"ᛉ",sub:"Realm of Protection",    hue:130, sky:["#0a1c0e","#143a1e","#2a7840"], act:2,speed:1.08},
+  // ACT 3 — The Mastery (Tyr's Aett) — 2-3 checkpoints each
+  {id:6,name:"Tiwaz",  glyph:"ᛏ",sub:"Realm of Justice",       hue:4,   sky:["#1e0a0a","#3a1010","#8a2828"], act:3,speed:1.18},
+  {id:7,name:"Laguz",  glyph:"ᛚ",sub:"Realm of Flow",          hue:220, sky:["#060a18","#0e1830","#1a3060"], act:3,speed:1.00},
+  {id:8,name:"Dagaz",  glyph:"ᛞ",sub:"Realm of Dawn",          hue:48,  sky:["#1a1606","#36300c","#a07c18"], act:3,speed:1.28},
 ];
 
-/* ---------- rune lore ---------- */
+/* ---------- rune lore — 9 realms ---------- */
 const RUNE_LORE={
   0:{meaning:"sun · guidance · victory", phonetic:"SOH-wee-loh",
     lifeMeaning:"Clarity returns. Energy aligns. Move toward what lights you — victory is already turning your way.",
@@ -172,7 +193,15 @@ const RUNE_LORE={
     "Raidho governs right timing: moving with the world rather than against it.",
     "Old riders carved Raidho to keep their road true and their horses sure.",
     "To ride Raidho is to find the steady rhythm beneath all motion."]},
-  2:{meaning:"hail · disruption · renewal", phonetic:"HAH-gah-lahz",
+  2:{meaning:"joy · harmony · well-being", phonetic:"WOON-yoh",
+    lifeMeaning:"The storm has passed. Something is aligning. Let yourself receive what is already here — you have earned it.",
+    whispers:[
+    "Wunjo is the banner rune — joy shared between kin, the feast after the long crossing.",
+    "Where Wunjo shines, the fractured find common rhythm again.",
+    "It is not grasping joy but allowing it — the way a field does not reach for the sun.",
+    "Wunjo warns: too much brightness too soon can blind. Joy without roots has no staying.",
+    "The Norse flew Wunjo's banner over the mead-hall when the long voyage was finally done."]},
+  3:{meaning:"hail · disruption · renewal", phonetic:"HAH-gah-lahz",
     lifeMeaning:"A disruption is arriving or passing. Let it clear. What breaks now was never built to last.",
     whispers:[
     "Hagalaz is the hailstone — ruin that melts to water the spring to come.",
@@ -180,7 +209,7 @@ const RUNE_LORE={
     "Even the gods bend before Hagalaz; the Norns answer to it alone.",
     "What survives the hail was always the thing meant to endure.",
     "Hagalaz warns that chaos is never the end — only the turning."]},
-  3:{meaning:"ice · stillness · patience", phonetic:"EE-sah",
+  4:{meaning:"ice · stillness · patience", phonetic:"EE-sah",
     lifeMeaning:"A pause is being asked of you. Do not force movement. Clarity and strength are found in stillness.",
     whispers:[
     "Isa is ice — the great stillness, the world holding its breath.",
@@ -188,6 +217,38 @@ const RUNE_LORE={
     "In Isa all things pause, and the wise learn to listen in the silence.",
     "Ice preserves as surely as fire destroys.",
     "Isa is the rune of waiting — and of the clarity found in stillness."]},
+  5:{meaning:"protection · the elk · divine shelter", phonetic:"AL-geez",
+    lifeMeaning:"You are more protected than you know. Hold your ground. What reaches for you now will not find purchase.",
+    whispers:[
+    "Algiz is the elk-sedge — a grass so sharp that grasping it cuts the hand that grabs.",
+    "It is drawn as antlers raised: the sacred warding of those under divine watch.",
+    "Warriors tattooed Algiz before battle not for invincibility but for clarity in danger.",
+    "Algiz teaches that the best protection is attentiveness — to see the threat before it arrives.",
+    "Under Algiz, nothing can reach you that you have not first seen coming."]},
+  6:{meaning:"justice · sacrifice · Tyr the one-handed", phonetic:"TEE-wahz",
+    lifeMeaning:"Something asks you to hold the line. A cost is real. Pay it willingly — what follows is earned.",
+    whispers:[
+    "Tiwaz is Tyr, who placed his hand in the great wolf's mouth so the gods could bind it.",
+    "It is the north star — the fixed point by which wanderers navigate the dark.",
+    "Tiwaz does not promise victory. It promises that the right action is its own reward.",
+    "Justice without sacrifice is simply preference. Tiwaz asks what you will actually give.",
+    "The sword rune: to carry Tiwaz is to carry the weight of choosing rightly."]},
+  7:{meaning:"water · flow · deep intuition", phonetic:"LAH-gooz",
+    lifeMeaning:"Stop directing. Let it carry you. The answer you are forcing already knows the way.",
+    whispers:[
+    "Laguz is the lake, the river, the deep ocean — all water that finds its own path.",
+    "It governs the tidal pull of intuition, the knowing that cannot be reasoned into.",
+    "Old Norse ships bore Laguz to ask the sea for safe passage and honest depths.",
+    "Laguz warns against fighting the current. The river reaches the sea either way.",
+    "In Laguz, wisdom is not built — it is remembered. The body knows before the mind does."]},
+  8:{meaning:"dawn · breakthrough · the threshold between", phonetic:"DAH-gahz",
+    lifeMeaning:"You are at the turning point. Whatever felt impossible is already shifting. Step through.",
+    whispers:[
+    "Dagaz is the horizon moment — that breath between night and the very first light.",
+    "It is paradox made visible: the point where darkness and light are the same thing.",
+    "Dagaz marks irreversible change — the breakthrough that cannot be undone.",
+    "To cross a Dagaz threshold is to become the next version of yourself before you name it.",
+    "The sun's two-faced rune: the völva walks between worlds and finds the new one waiting."]},
 };
 const TOTAL_WHISPERS=Object.values(RUNE_LORE).reduce((n,r)=>n+r.whispers.length,0);
 function whispersHeard(){ return Object.keys(save.loreSeen).length; }
@@ -206,10 +267,15 @@ const Snd=(()=>{
 
   // [bass root Hz, 5th Hz, pad Hz, LFO Hz, BPM]
   const REALM_AMB=[
-    [55, 82,  220, 0.55, 88],  // Sowilo  A1 — warm, steady
-    [49, 73,  196, 0.80, 108], // Raidho  G1 — driving forward
-    [41, 61,  164, 1.10, 126], // Hagalaz E1 — storm pulse
-    [46, 69,  185, 0.38, 70],  // Isa     Bb1 — slow, patient
+    [55, 82,  220, 0.55,  88],  // 0 Sowilo  A1  — warm, steady
+    [49, 73,  196, 0.80, 108],  // 1 Raidho  G1  — driving forward
+    [37, 55,  147, 0.65,  96],  // 2 Wunjo   D1  — festive lift
+    [41, 61,  164, 1.10, 126],  // 3 Hagalaz E1  — storm pulse
+    [46, 69,  185, 0.38,  70],  // 4 Isa     Bb1 — slow, patient
+    [44, 66,  175, 0.72,  84],  // 5 Algiz   Ab1 — protective pulse
+    [34, 51,  138, 0.92, 112],  // 6 Tiwaz   C#1 — martial drive
+    [29, 44,  117, 0.48,  76],  // 7 Laguz   Bb0 — deep flow
+    [55, 82,  220, 0.55,  88],  // 8 Dagaz   A1  — sun returns (mirrors Sowilo)
   ];
 
   function boot(){
@@ -643,6 +709,25 @@ function buildLevel(realm){
     for(let i=0;i<4;i++) addFoe(x-460+i*118,GROUND_Y-130-(i%2)*36);
 
   } else if(id===2){
+    // Wunjo — joy · harmony — open, abundant, pairs of shades, vertical variety
+    gap(100); ground(380); coinArc(x-340,GROUND_Y-80,5,48);
+    teach.push({x:x+60,text:"Hold SPACE to SOAR over wide gaps"});
+    gap(170); segs.push({x,w:220,y:GROUND_Y-100}); coinArc(x+50,GROUND_Y-170,4,44); x+=220;
+    gap(150); ground(300); coinArc(x-260,GROUND_Y-90,4,44);
+    teach.push({x:x+50,text:"J to CAST — joyful shades run in pairs"});
+    addFoe(x+100,GROUND_Y-130); addFoe(x+170,GROUND_Y-120);
+    ground(480);
+    for(let i=0;i<4;i++) addFoe(x-460+i*122,GROUND_Y-125-(i%2)*32);
+    coinArc(x-440,GROUND_Y-195,7,52);
+    gap(150);
+    for(let i=0;i<4;i++){ segs.push({x,w:170,y:GROUND_Y-65-i*55}); coinArc(x+45,GROUND_Y-135-i*55,3,42); x+=170; gap(75); }
+    ground(360); addFoe(x-280,GROUND_Y-130); addFoe(x-150,GROUND_Y-130); addFoe(x-75,GROUND_Y-125);
+    for(let i=0;i<3;i++){ ground(140); gap(110); }
+    ground(560); coinArc(x-500,GROUND_Y-80,9,52);
+    for(let i=0;i<5;i++) addFoe(x-490+i*112,GROUND_Y-130-(i%2)*38);
+
+  } else if(id===3){
+    // Hagalaz — hail · disruption — dense obstacles, chaotic, hard
     gap(100); ground(300); coinArc(x-260,GROUND_Y-90,3);
     addFoe(x-180,GROUND_Y-140);
     teach.push({x:x+40,text:"J to CAST — shades are thick here"});
@@ -663,7 +748,8 @@ function buildLevel(realm){
     ground(560); coinArc(x-500,GROUND_Y-80,8,50);
     for(let i=0;i<5;i++) addFoe(x-500+i*110,GROUND_Y-130-(i%2)*40);
 
-  } else {
+  } else if(id===4){
+    // Isa — ice · stillness — slow pace, wide soar gaps, patience rewarded
     gap(160); ground(360); coinArc(x-320,GROUND_Y-90,3);
     teach.push({x:x+50,text:"Hold SPACE after jumping — soar the ice gaps"});
     gap(200); segs.push({x,w:180,y:GROUND_Y-80}); coinArc(x+40,GROUND_Y-150,3); x+=180;
@@ -672,6 +758,23 @@ function buildLevel(realm){
     ground(700);
     for(let i=0;i<5;i++) addFoe(x-650+i*142,GROUND_Y-118-(i%2)*42);
     coinArc(x-660,GROUND_Y-200,7,56);
+    for(let i=0;i<4;i++){ ground(160); obs.push({x:x-100,y:GROUND_Y-74,w:30,h:74}); gap(160+(i%2)*60); ground(160); coins.push({x:x-200,y:GROUND_Y-160,got:false}); }
+    for(let i=0;i<5;i++){ segs.push({x,w:160,y:GROUND_Y-60-i*50}); coins.push({x:x+70,y:GROUND_Y-130-i*50,got:false}); x+=160; gap(90); }
+    ground(380); for(let i=0;i<3;i++) addFoe(x-320+i*120,GROUND_Y-130);
+    for(let i=0;i<4;i++){ ground(180); gap(130); }
+    ground(600); coinArc(x-540,GROUND_Y-80,9,52);
+    for(let i=0;i<5;i++) addFoe(x-520+i*118,GROUND_Y-125-(i%2)*38);
+
+  } else {
+    // Algiz/Tiwaz/Laguz/Dagaz — Act 2-3 stubs (full layouts coming per RD-#016+)
+    gap(160); ground(340); coinArc(x-300,GROUND_Y-90,3);
+    teach.push({x:x+50,text:"Hold SPACE after jumping — soar the gaps"});
+    gap(200); segs.push({x,w:180,y:GROUND_Y-80}); coinArc(x+40,GROUND_Y-150,3); x+=180;
+    gap(240); ground(280); addFoe(x-200,GROUND_Y-130);
+    teach.push({x:x+60,text:"J to CAST — this realm is still waking"});
+    ground(700);
+    for(let i=0;i<5;i++) addFoe(x-660+i*140,GROUND_Y-120-(i%2)*40);
+    coinArc(x-660,GROUND_Y-200,7,54);
     for(let i=0;i<4;i++){ ground(160); obs.push({x:x-100,y:GROUND_Y-74,w:30,h:74}); gap(160+(i%2)*60); ground(160); coins.push({x:x-200,y:GROUND_Y-160,got:false}); }
     for(let i=0;i<5;i++){ segs.push({x,w:160,y:GROUND_Y-60-i*50}); coins.push({x:x+70,y:GROUND_Y-130-i*50,got:false}); x+=160; gap(90); }
     ground(380); for(let i=0;i<3;i++) addFoe(x-320+i*120,GROUND_Y-130);
@@ -706,7 +809,7 @@ let boltCD=0;
 function cfg(){
   const j=save.upgrades.jump;
   return {
-    runSpeed:(3.3+curRealm.id*0.38)*0.765,
+    runSpeed:3.3*(curRealm.speed||1)*0.85,
     grav:0.60, jumpV:-14.6-j*0.9, cutMul:0.45,
     coyoteMax:7, bufMax:7, maxFall:14,
     glideMul:0.2, glideFall:2.3,
@@ -747,6 +850,22 @@ cv.addEventListener("pointerdown",e=>{
   else jumpDown();
 });
 cv.addEventListener("pointerup",()=>{ jumpUp(); keys.cast=false; });
+
+/* ============================================================
+   ADS — rewarded video stub
+   In a real mobile build, set window.adProvider = { showRewarded(onReward,onSkip){...} }
+   before the game loads (AdMob, Unity Ads, AppLovin MAX, etc.).
+   The stub auto-rewards so dev flow is uninterrupted.
+   ============================================================ */
+const Ads={
+  showRewarded(onReward,onSkip){
+    if(window.adProvider&&window.adProvider.showRewarded){
+      window.adProvider.showRewarded(onReward,onSkip);
+    } else {
+      onReward(); // dev/web: instant reward, no real ad
+    }
+  }
+};
 
 /* ============================================================
    START / END RUN
@@ -803,6 +922,25 @@ function endRun(won){
       (runWhisper?`<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} "${runWhisper.text}"</span>`:"");
     document.getElementById("res-again").onclick=()=>startRun(curRealm);
     showScreen("result");
+    // Rewarded-ad bonus — show when run earned enough to make the offer meaningful
+    const adRow=document.getElementById('ad-essence-row');
+    const adBtn=document.getElementById('ad-essence-btn');
+    const adBonus=Math.floor(runEssence*0.5);
+    if(adBonus>0){
+      adRow.style.display='flex';
+      adBtn.textContent=`✦ Claim +${adBonus} Bonus Essence — Watch a short ad`;
+      adBtn.disabled=false;
+      adBtn.onclick=()=>{
+        Ads.showRewarded(()=>{
+          save.essence+=adBonus; persist();
+          adBtn.textContent=`✦ +${adBonus} ✦ Claimed!`;
+          adBtn.disabled=true;
+          document.getElementById('r-ess').textContent=save.essence;
+        });
+      };
+    } else {
+      adRow.style.display='none';
+    }
   },won?500:650);
 }
 
@@ -1220,6 +1358,24 @@ function drawFoe(f,sx){
       glow(cx+4,cy-4,2.5,"rgba(100,120,200,0.5)","rgba(80,100,160,0)");
     }
   } else if(rid===2){
+    // Wunjo — excess: manic spinning radiance; lack: dim flickering spark
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,30,"rgba(160,220,60,0.40)","rgba(80,160,20,0)");
+      ctx.strokeStyle="rgba(200,255,100,0.65)"; ctx.lineWidth=2;
+      for(let i=0;i<6;i++){ const a=i/6*Math.PI*2+animT*1.4; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*10,cy+Math.sin(a)*10); ctx.lineTo(cx+Math.cos(a)*26,cy+Math.sin(a)*26); ctx.stroke(); }
+      const wg=ctx.createRadialGradient(cx,cy,2,cx,cy,14);
+      wg.addColorStop(0,"#f0ffb0"); wg.addColorStop(1,"rgba(140,220,40,0)");
+      ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(cx,cy,14,0,7); ctx.fill();
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      const flicker=0.10+Math.abs(Math.sin(animT*3.8+f.x))*0.14;
+      glow(cx,cy,16,`rgba(120,180,40,${flicker})`,`rgba(60,120,20,0)`);
+      ctx.strokeStyle=`rgba(160,220,80,${flicker*1.6})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(cx,cy,9+Math.sin(animT*4+f.x)*2,0,7); ctx.stroke();
+    }
+  } else if(rid===3){
+    // Hagalaz — excess: crystalline shard storm; lack: fading ghost ring
     if(excess){
       ctx.globalCompositeOperation="lighter";
       glow(cx,cy,28,"rgba(180,100,255,0.45)","rgba(120,60,200,0)");
@@ -1236,7 +1392,8 @@ function drawFoe(f,sx){
       ctx.strokeStyle=`rgba(180,160,220,${fa*1.4})`; ctx.lineWidth=1.5;
       ctx.beginPath(); ctx.arc(cx,cy,12+Math.sin(animT*2.5+f.x)*3,0,7); ctx.stroke();
     }
-  } else {
+  } else if(rid===4){
+    // Isa — excess: solid ice hexagon; lack: melting ellipse
     if(excess){
       ctx.globalCompositeOperation="lighter";
       glow(cx,cy,26,"rgba(140,220,255,0.40)","rgba(80,160,220,0)");
@@ -1254,6 +1411,23 @@ function drawFoe(f,sx){
       ctx.strokeStyle="rgba(160,220,240,0.45)"; ctx.lineWidth=2;
       ctx.beginPath(); ctx.ellipse(cx,cy+4,10+melt*20,16-melt*8,0,0,7); ctx.stroke();
       glow(cx,cy-6,4,"rgba(180,230,255,0.55)","rgba(120,190,220,0)");
+    }
+  } else {
+    // Generic for Act 2-3 new realms — hue-tinted glow body, readable at any palette
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,28,`hsla(${hue},80%,65%,0.40)`,`hsla(${hue},80%,50%,0)`);
+      ctx.strokeStyle=`hsla(${hue},90%,80%,0.75)`; ctx.lineWidth=2;
+      for(let i=0;i<5;i++){ const a=i/5*Math.PI*2+animT*0.9; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*12,cy+Math.sin(a)*12); ctx.lineTo(cx+Math.cos(a)*24,cy+Math.sin(a)*24); ctx.stroke(); }
+      const gg=ctx.createRadialGradient(cx,cy,2,cx,cy,14);
+      gg.addColorStop(0,`hsla(${hue},100%,90%,0.8)`); gg.addColorStop(1,`hsla(${hue},80%,60%,0)`);
+      ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(cx,cy,14,0,7); ctx.fill();
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      const fa=0.12+Math.sin(animT*2.2+f.x)*0.07;
+      glow(cx,cy,20,`hsla(${hue},70%,55%,${fa})`,`hsla(${hue},70%,40%,0)`);
+      ctx.strokeStyle=`hsla(${hue},80%,72%,${fa*1.8})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(cx,cy,11+Math.sin(animT*2.8+f.x)*2.5,0,7); ctx.stroke();
     }
   }
   // Universal bright eyes — always readable regardless of foe type
@@ -1426,6 +1600,10 @@ function drawIntroCard(){
   const pulse=0.65+0.35*Math.sin(animT*3);
   ctx.fillStyle=`rgba(255,255,255,${pulse})`; ctx.font="bold 14px Segoe UI"; ctx.textAlign="center";
   ctx.fillText("PRESS SPACE  /  TAP  TO  BEGIN",cx,cy+128);
+  if(navigator.maxTouchPoints>0){
+    ctx.fillStyle=`rgba(127,212,255,${pulse*0.65})`; ctx.font="12px Segoe UI";
+    ctx.fillText("TAP RIGHT SIDE OF SCREEN  TO  CAST",cx,cy+148);
+  }
   ctx.restore();
 }
 function wrapText(text,x,y,maxW,lh){
@@ -1502,7 +1680,17 @@ function openRealm(){
   document.getElementById("r-ess").textContent=save.essence;
   document.getElementById("r-lore").textContent=`${whispersHeard()}/${TOTAL_WHISPERS}`;
   const list=document.getElementById("realm-list"); list.innerHTML="";
+  const ACT_LABELS={1:"Act I — The Awakening",2:"Act II — The Crossing",3:"Act III — The Mastery"};
+  let lastAct=0;
   REALMS.forEach(r=>{
+    if(r.act!==lastAct){
+      lastAct=r.act;
+      const lbl=document.createElement("div");
+      lbl.style.cssText="width:100%;text-align:center;color:var(--dim);font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin:10px 0 2px;padding-top:6px;border-top:1px solid #252060;";
+      if(r.act===1) lbl.style.borderTop="none";
+      lbl.textContent=ACT_LABELS[r.act]||`Act ${r.act}`;
+      list.appendChild(lbl);
+    }
     const unlocked=r.id<save.realmsUnlocked;
     const card=document.createElement("div");
     card.className="realmcard"+(unlocked?"":" locked");
