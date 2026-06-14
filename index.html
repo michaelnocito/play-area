@@ -199,16 +199,16 @@ function whispersHeard(){ return Object.keys(save.loreSeen).length; }
    ============================================================ */
 const Snd=(()=>{
   let AC=null,master=null,sfxBus=null,musBus=null,on=false;
-  let musicNodes=[],musicPlaying=false;
+  let musicNodes=[],musicPlaying=false,schedTimer=null;
   let glideNodes=[];
-  let uSounds={coin:false,bolt:false,death:false};
+  let uSounds={ward:false,echo:false,shimmer:false};
 
-  // [bass root Hz, perfect 5th Hz, pad Hz, LFO breathe Hz]
+  // [bass root Hz, 5th Hz, pad Hz, LFO Hz, BPM]
   const REALM_AMB=[
-    [55, 82,  220, 0.55], // Sowilo  A1 — warm sun
-    [49, 73,  196, 0.80], // Raidho  G1 — driving ride
-    [41, 61,  164, 1.10], // Hagalaz E1 — storm chaos
-    [46, 69,  185, 0.38], // Isa     Bb1 — cold still
+    [55, 82,  220, 0.55, 88],  // Sowilo  A1 — warm, steady
+    [49, 73,  196, 0.80, 108], // Raidho  G1 — driving forward
+    [41, 61,  164, 1.10, 126], // Hagalaz E1 — storm pulse
+    [46, 69,  185, 0.38, 70],  // Isa     Bb1 — slow, patient
   ];
 
   function boot(){
@@ -219,43 +219,63 @@ const Snd=(()=>{
     musBus=AC.createGain(); musBus.gain.value=0.42; musBus.connect(master);
   }
 
-  /* ---------- ambient drone music ---------- */
+  /* ---------- music: light rhythmic beat + thin pad ---------- */
+  // Internal percussives — NOT exported, only used by startMusic
+  function _kick(t,vol=0.18){
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(82,t); o.frequency.exponentialRampToValueAtTime(40,t+0.072);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.007);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.10);
+    o.connect(g); g.connect(musBus); o.start(t); o.stop(t+0.11);
+  }
+  function _hat(t,vol=0.06){
+    const sz=Math.ceil(AC.sampleRate*0.016);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=Math.random()*2-1;
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const hpf=AC.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=9000;
+    const g=AC.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.016);
+    src.connect(hpf); hpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+0.020);
+  }
+
   function startMusic(realmId){
     stopMusic();
     if(!on||!AC) return;
-    const [root,fifth,pad,lfoHz]=REALM_AMB[realmId]||REALM_AMB[0];
+    const [root,,pad,lfoHz,bpm]=REALM_AMB[realmId]||REALM_AMB[0];
     const t=AC.currentTime;
+    musicPlaying=true;
 
+    // Thin, airy pad — tonal context only, not bass-heavy
     const mg=AC.createGain(); mg.gain.setValueAtTime(0,t);
-    mg.gain.linearRampToValueAtTime(0.42,t+2.5); mg.connect(musBus);
+    mg.gain.linearRampToValueAtTime(0.12,t+1.5); mg.connect(musBus);
     musicNodes.push(mg);
-
-    const lpf=AC.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=230; lpf.connect(mg);
-
-    // bass drone: root (x2 detuned) + fifth
-    [[root,0],[root,6],[fifth,-2]].forEach(([f,det])=>{
-      const o=AC.createOscillator(); o.type='sawtooth';
-      o.frequency.value=f; o.detune.value=det;
-      o.connect(lpf); o.start(t); musicNodes.push(o);
-    });
-
-    // LFO breathing on master music gain
+    const padOsc=AC.createOscillator(),padG=AC.createGain();
+    padOsc.type='triangle'; padOsc.frequency.value=root*4; padG.gain.value=0.40;
+    padOsc.connect(padG); padG.connect(mg); padOsc.start(t); musicNodes.push(padOsc,padG);
     const lfo=AC.createOscillator(),lfoG=AC.createGain();
-    lfo.type='sine'; lfo.frequency.value=lfoHz; lfoG.gain.value=0.09;
+    lfo.type='sine'; lfo.frequency.value=lfoHz*0.4; lfoG.gain.value=0.04;
     lfo.connect(lfoG); lfoG.connect(mg.gain); lfo.start(t); musicNodes.push(lfo);
 
-    // soft pad layer: triangle at octave up, filtered
-    const padLPF=AC.createBiquadFilter(); padLPF.type='bandpass';
-    padLPF.frequency.value=pad; padLPF.Q.value=1.4; padLPF.connect(mg);
-    const padOsc=AC.createOscillator(),padG=AC.createGain();
-    padOsc.type='triangle'; padOsc.frequency.value=pad; padG.gain.value=0.07;
-    padOsc.connect(padG); padG.connect(padLPF); padOsc.start(t); musicNodes.push(padOsc);
-
-    musicPlaying=true;
+    // Rhythmic beat: kick on 1+3, hat on 2+4 — steady forward pulse
+    const beatDur=60/bpm;
+    let nextBeat=t+0.08, beat=0;
+    function sched(){
+      if(!musicPlaying) return;
+      const ahead=AC.currentTime+0.36;
+      while(nextBeat<ahead){
+        const b=beat%4;
+        if(b===0||b===2) _kick(nextBeat,0.17);
+        else             _hat(nextBeat,0.065);
+        nextBeat+=beatDur; beat++;
+      }
+      schedTimer=setTimeout(sched,90);
+    }
+    sched();
   }
 
   function stopMusic(){
     musicPlaying=false;
+    if(schedTimer){clearTimeout(schedTimer);schedTimer=null;}
     const t=AC?AC.currentTime:0;
     musicNodes.forEach(n=>{try{if(n.stop)n.stop(t+0.05);n.disconnect();}catch(e){}});
     musicNodes=[];
