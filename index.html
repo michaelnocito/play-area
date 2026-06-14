@@ -262,8 +262,8 @@ function cfg(){
     coyoteMax: 7,
     bufMax: 7,
     maxFall: 14,
-    glideMul: 0.5,                       // hold-to-soar: gentle glide while descending
-    glideFall: 7,                        // softer terminal velocity while gliding
+    glideMul: 0.2,                       // hold-to-soar: gentle glide while descending
+    glideFall: 2.3,                      // soft terminal velocity → ~3x longer glide distance
     boltCD: Math.max(14, 26 - save.upgrades.bolt*4),
     boltV: 9 + save.upgrades.bolt*1.2,
   };
