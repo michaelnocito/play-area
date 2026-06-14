@@ -73,7 +73,7 @@
   <div class="screen on" id="s-title">
     <h1>RUNE DASH</h1>
     <p class="sub">The völva runs the bridge of realms. Tap to leap, hold to soar.
-      Gather star-essence and grow your power. One run at a time.</p>
+      Gather amber and grow your power. One run at a time.</p>
     <div class="row">
       <button class="btn primary" data-go="realm">Begin the Run</button>
     </div>
@@ -83,7 +83,7 @@
   <!-- REALM SELECT -->
   <div class="screen" id="s-realm">
     <h2>Choose a Realm</h2>
-    <p class="sub">Star-essence: <span class="ess" id="r-ess">0</span>
+    <p class="sub">Amber: <span class="ess" id="r-ess">0</span>
       &nbsp;•&nbsp; Whispers heard: <span style="color:var(--rune)" id="r-lore">0/0</span></p>
     <div class="row" id="realm-list"></div>
     <div class="row">
@@ -95,8 +95,8 @@
   <!-- SHRINE -->
   <div class="screen" id="s-shrine">
     <h2>Shrine of Skills</h2>
-    <p class="sub">Spend star-essence to deepen the run.
-      Star-essence: <span class="ess" id="sh-ess">0</span></p>
+    <p class="sub">Spend amber to deepen the run.
+      Amber: <span class="ess" id="sh-ess">0</span></p>
     <div id="shrine-list" style="display:flex;flex-direction:column;gap:12px;"></div>
     <button class="btn" data-go="realm">Back</button>
   </div>
@@ -111,7 +111,7 @@
     </div>
     <div id="ad-essence-row" style="display:none;margin-top:4px;">
       <button class="btn ad-btn" id="ad-essence-btn" style="min-width:280px;">
-        ✦ Claim Bonus Essence — Watch a short ad
+        ✦ Claim Bonus Amber — Watch a short ad
       </button>
     </div>
   </div>
@@ -131,10 +131,12 @@ const W = cv.width, H = cv.height;
 /* ---------- persistent save ---------- */
 const SAVE_KEY = "runeDash.save.v2"; // v2: realm reorder (Wunjo inserted at id:2)
 const defaultSave = {
-  essence:0, upgrades:{jump:0,bolt:0,shield:0},
+  essence:0, upgrades:{jump:0,bolt:0,shield:0}, // 'essence' kept as code id; player-facing name = Amber
   sounds:{ward:false,echo:false,shimmer:false},
+  boons:{shield:0,surge:0,twin:0}, // consumable provisions, banked + auto-used next run
   realmsUnlocked:1, best:{}, loreSeen:{}
 };
+const CUR="Amber"; // player-facing currency name (Freya's tears)
 let save = load();
 function load(){
   try{ return Object.assign({},defaultSave,JSON.parse(localStorage.getItem(SAVE_KEY))||{}); }
@@ -152,6 +154,13 @@ const SOUND_PACKS=[
   {key:"ward",   name:"Ward Pulse",   desc:"A resonant bell chord when your shield absorbs a hit.", cost:15},
   {key:"echo",   name:"Double Echo",  desc:"A rising chime accent on your second jump.",            cost:15},
   {key:"shimmer",name:"Gate Shimmer", desc:"Shimmering high overtones when you clear the gate.",    cost:20},
+];
+// Provisions — consumable boons. Bought at the Shrine, banked, auto-applied to your next run.
+// This is the EVERGREEN sink: always something to spend Amber on, run after run.
+const BOONS=[
+  {key:"shield",name:"Ember Ward",  desc:"Begin your next run shielded from one hit.",  cost:12},
+  {key:"surge", name:"Amber Surge", desc:"Double all Amber gathered on your next run.",  cost:20},
+  {key:"twin",  name:"Twin Leap",   desc:"Gain a second jump for your next run.",        cost:15},
 ];
 function upgCost(key){
   const u=UPGRADES.find(u=>u.key===key), lv=save.upgrades[key];
@@ -859,6 +868,7 @@ function buildLevel(realm){
    ============================================================ */
 let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0,footstepDist=0;
 let curRealm=REALMS[0],shieldCharges=0,endReason="",runWhisper=null,runScene=null;
+let runBoons={shield:false,surge:false,twin:false}; // boons active this run
 let introPaused=false;
 // ghost system (session-only, not persisted)
 const ghostData={};       // realmId -> [{cam,y}] from best run
@@ -942,7 +952,11 @@ function startRun(realm){
   level.obs.forEach(o=>{o.health=2;o.destroyed=false;});
   cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
   bolts.length=0; particles.length=0; boltCD=0;
-  shieldCharges=save.upgrades.shield>0?1:0;
+  // consume banked provisions for this run
+  if(!save.boons) save.boons={shield:0,surge:0,twin:0};
+  runBoons={shield:false,surge:false,twin:false};
+  BOONS.forEach(b=>{ if(save.boons[b.key]>0){ runBoons[b.key]=true; save.boons[b.key]--; } });
+  shieldCharges=(save.upgrades.shield>0?1:0)+(runBoons.shield?1:0);
   player.x=220; player.y=GROUND_Y-player.h; player.vy=0;
   player.onGround=true; player.coyote=0; player.jumpBuf=0;
   player.jumpsLeft=1; player.alive=true; player.flash=0; player.gliding=false;
@@ -965,6 +979,7 @@ function startRun(realm){
 
 function endRun(won){
   state=won?"won":"dead";
+  if(runBoons.surge) runEssence=Math.round(runEssence*2); // Amber Surge doubles the haul
   save.essence+=runEssence;
   if(won){
     const t=runTime;
@@ -981,9 +996,10 @@ function endRun(won){
     document.getElementById("res-body").innerHTML=
       (won
         ?`You crossed <b>${curRealm.name}</b> in <b>${runTime.toFixed(1)}s</b>.`+(best!=null?` &nbsp;Best: <b>${best.toFixed(1)}s</b>`:"")
-        :`${endReason||"A misstep."} You kept the essence you gathered.`)+
-      `<br>Shades slain: <b>${runKills}</b> &nbsp;•&nbsp; Coins: <b>${runCoins}</b>`+
-      `<br><br>Star-essence gained: <span class="ess">+${runEssence}</span>`+
+        :`${endReason||"A misstep."} You kept the amber you gathered.`)+
+      `<br>Shades slain: <b>${runKills}</b> &nbsp;•&nbsp; Amber drops: <b>${runCoins}</b>`+
+      (runBoons.surge?`<br><span style="color:var(--gold)">Amber Surge doubled your haul!</span>`:"")+
+      `<br><br>Amber gathered: <span class="ess">+${runEssence}</span>`+
       `<br>Total: <span class="ess">${save.essence}</span>`+
       (runWhisper?`<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} "${runWhisper.text}"</span>`:"");
     document.getElementById("res-again").onclick=()=>startRun(curRealm);
@@ -994,7 +1010,7 @@ function endRun(won){
     const adBonus=Math.floor(runEssence*0.5);
     if(adBonus>0){
       adRow.style.display='flex';
-      adBtn.textContent=`✦ Claim +${adBonus} Bonus Essence — Watch a short ad`;
+      adBtn.textContent=`✦ Claim +${adBonus} Bonus Amber — Watch a short ad`;
       adBtn.disabled=false;
       adBtn.onclick=()=>{
         Ads.showRewarded(()=>{
@@ -1048,7 +1064,7 @@ function update(){
   if(player.onGround){ player.coyote=C.coyoteMax; player.jumpsLeft=1; }
   else if(player.coyote>0) player.coyote--;
 
-  const canDouble=save.upgrades.jump>=2;
+  const canDouble=save.upgrades.jump>=2||runBoons.twin;
   if(player.jumpBuf>0){
     if(player.coyote>0||player.onGround){
       player.vy=C.jumpV; player.onGround=false; player.coyote=0; player.jumpBuf=0;
@@ -1351,19 +1367,31 @@ function drawObstacles(){
 }
 
 function drawCoins(){
+  // Amber droplets (Freya's tears) — warm resin teardrops with an inner sun-glow
   for(const c of level.coins){
     if(c.got) continue;
     const sx=c.x-cam; if(sx>W+20||sx<-20) continue;
     const cy=c.y+Math.sin(animT*2+c.x*0.05)*3;
-    const spin=Math.cos(animT*3+c.x*0.3),ww=2.5+Math.abs(spin)*5;
+    const breathe=1+Math.sin(animT*3+c.x*0.3)*0.07; // gentle pulse instead of coin-spin
+    const s=12*breathe;
     ctx.save(); ctx.globalCompositeOperation="lighter";
-    glow(sx,cy,13,"rgba(255,222,150,0.45)","rgba(255,200,110,0)"); ctx.restore();
-    const cg=ctx.createLinearGradient(sx,cy-11,sx,cy+11);
-    cg.addColorStop(0,"#fff3cf"); cg.addColorStop(0.5,"#ffd06b"); cg.addColorStop(1,"#e9a23a");
-    ctx.fillStyle=cg; ctx.beginPath(); ctx.moveTo(sx,cy-11); ctx.lineTo(sx+ww,cy); ctx.lineTo(sx,cy+11); ctx.lineTo(sx-ww,cy); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle="rgba(255,255,255,0.7)"; ctx.lineWidth=1; ctx.stroke();
-    ctx.strokeStyle="rgba(255,255,255,0.3)"; ctx.beginPath(); ctx.moveTo(sx,cy-11); ctx.lineTo(sx,cy+11); ctx.stroke();
-    if(Math.abs(spin)<0.16){ ctx.strokeStyle="rgba(255,255,255,0.9)"; ctx.beginPath(); ctx.moveTo(sx-7,cy); ctx.lineTo(sx+7,cy); ctx.moveTo(sx,cy-7); ctx.lineTo(sx,cy+7); ctx.stroke(); }
+    glow(sx,cy+2,17,"rgba(255,180,70,0.45)","rgba(255,140,30,0)"); ctx.restore();
+    // teardrop body
+    const g=ctx.createLinearGradient(sx,cy-s,sx,cy+s);
+    g.addColorStop(0,"#fff0c8"); g.addColorStop(0.45,"#ffb83c"); g.addColorStop(1,"#b85e12");
+    ctx.fillStyle=g; ctx.beginPath();
+    ctx.moveTo(sx,cy-s);
+    ctx.quadraticCurveTo(sx+s*0.95,cy,sx+s*0.6,cy+s*0.72);
+    ctx.quadraticCurveTo(sx,cy+s*1.28,sx-s*0.6,cy+s*0.72);
+    ctx.quadraticCurveTo(sx-s*0.95,cy,sx,cy-s);
+    ctx.closePath(); ctx.fill();
+    // inner warm core
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    glow(sx,cy+s*0.2,s*0.5,"rgba(255,235,180,0.7)","rgba(255,190,90,0)"); ctx.restore();
+    // rim + highlight
+    ctx.strokeStyle="rgba(255,240,200,0.6)"; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle="rgba(255,255,255,0.6)"; ctx.beginPath();
+    ctx.ellipse(sx-s*0.26,cy-s*0.1,s*0.16,s*0.32,0.4,0,7); ctx.fill();
   }
 }
 
@@ -1609,15 +1637,39 @@ function roundRect(x,y,w,h,r){
   ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
 }
+function drawAmberDrop(x,y,s){
+  // small amber teardrop icon (point up, round bottom)
+  ctx.save();
+  ctx.globalCompositeOperation="lighter";
+  glow(x,y+s*0.2,s*1.6,"rgba(255,180,70,0.5)","rgba(255,150,40,0)");
+  ctx.restore();
+  const g=ctx.createLinearGradient(x,y-s,x,y+s);
+  g.addColorStop(0,"#ffe6a8"); g.addColorStop(0.5,"#ffb030"); g.addColorStop(1,"#c8741a");
+  ctx.fillStyle=g; ctx.beginPath();
+  ctx.moveTo(x,y-s);
+  ctx.quadraticCurveTo(x+s*0.95,y,x+s*0.6,y+s*0.7);
+  ctx.quadraticCurveTo(x,y+s*1.25,x-s*0.6,y+s*0.7);
+  ctx.quadraticCurveTo(x-s*0.95,y,x,y-s);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.beginPath();
+  ctx.ellipse(x-s*0.22,y-s*0.05,s*0.18,s*0.3,0.4,0,7); ctx.fill();
+}
 function drawHUD(){
   ctx.fillStyle="rgba(10,8,28,0.55)"; ctx.fillRect(0,0,W,46);
   ctx.fillStyle="#fff"; ctx.font="bold 18px Segoe UI"; ctx.textAlign="left";
   ctx.fillText(`${curRealm.glyph}  Reach the ${curRealm.name}-Gate`,16,29);
-  ctx.textAlign="right"; ctx.fillStyle="#ffd479"; ctx.fillText(`✦ ${runEssence}`,W-16,29);
-  if(shieldCharges>0){ ctx.fillStyle="#7fd4ff"; ctx.fillText(`◈`,W-72,29); }
-  if(ghostPlayback){ ctx.fillStyle=showGhost?`hsla(${curRealm.hue},80%,75%,0.8)`:"rgba(120,110,180,0.5)"; ctx.fillText(showGhost?"◑ Ghost":"◑ Ghost off",W-160,29); }
+  ctx.textAlign="right"; ctx.fillStyle="#ffd479"; ctx.font="bold 18px Segoe UI";
+  ctx.fillText(`${runEssence}`,W-16,29);
+  const numW=ctx.measureText(`${runEssence}`).width;
+  drawAmberDrop(W-16-numW-12,22,6);
+  let rx=W-72-numW;
+  if(shieldCharges>0){ ctx.fillStyle="#7fd4ff"; ctx.fillText(`◈×${shieldCharges}`,rx,29); rx-=48; }
+  if(ghostPlayback){ ctx.fillStyle=showGhost?`hsla(${curRealm.hue},80%,75%,0.8)`:"rgba(120,110,180,0.5)"; ctx.fillText(showGhost?"◑ Ghost":"◑ off",rx,29); }
   ctx.textAlign="left"; ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI";
-  ctx.fillText(`Shades: ${runKills}  •  Coins: ${runCoins}`,16,58);
+  ctx.fillText(`Shades: ${runKills}  •  Drops: ${runCoins}`,16,58);
+  // active boon badges
+  const badges=[]; if(runBoons.surge) badges.push("⟡ Surge"); if(runBoons.twin) badges.push("⟡ Twin Leap"); if(runBoons.shield) badges.push("⟡ Ward");
+  if(badges.length){ ctx.textAlign="right"; ctx.fillStyle=`hsla(${curRealm.hue},70%,78%,0.85)`; ctx.fillText(badges.join("   "),W-16,58); ctx.textAlign="left"; }
   ctx.textAlign="center"; ctx.fillStyle="#9a98c8"; ctx.fillText(`${runTime.toFixed(1)}s`,W/2,58); ctx.textAlign="left";
   const prog=Math.min(1,(player.x+cam)/level.gateX);
   ctx.fillStyle="rgba(255,255,255,0.15)"; ctx.fillRect(16,34,W-32,5);
@@ -1783,6 +1835,22 @@ function openShrine(){
     if(cost==null){ btn.textContent="MAX"; btn.disabled=true; }
     else { btn.textContent=`${cost} ✦`; btn.disabled=save.essence<cost;
       btn.onclick=()=>{ save.essence-=cost; save.upgrades[u.key]++; persist(); openShrine(); }; }
+    row.appendChild(btn); list.appendChild(row);
+  });
+  // Provisions divider — consumable boons (the evergreen sink)
+  if(!save.boons) save.boons={shield:0,surge:0,twin:0};
+  const pdiv=document.createElement("div");
+  pdiv.style.cssText="width:min(520px,92vw);border-top:1px solid #3a3270;margin:8px 0 2px;text-align:center;padding-top:10px;";
+  pdiv.innerHTML=`<span style="color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase;">⟡ Provisions — used on your next run</span>`;
+  list.appendChild(pdiv);
+  BOONS.forEach(b=>{
+    const held=save.boons[b.key]||0;
+    const row=document.createElement("div"); row.className="shrine-row";
+    row.innerHTML=`<div class="info"><b>${b.name}</b>${held>0?` <span style="color:var(--gold);font-size:13px;">×${held} held</span>`:''}
+        <div class="lvl">${b.desc}</div></div>`;
+    const btn=document.createElement("button"); btn.className="btn"; btn.style.minWidth="120px";
+    btn.textContent=`${b.cost} ✦`; btn.disabled=save.essence<b.cost;
+    btn.onclick=()=>{ save.essence-=b.cost; save.boons[b.key]=(save.boons[b.key]||0)+1; persist(); openShrine(); };
     row.appendChild(btn); list.appendChild(row);
   });
   // Sound Forge divider
