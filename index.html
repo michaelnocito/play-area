@@ -255,13 +255,15 @@ const particles = []; // {x,y,vx,vy,life,max,c,r}
 function cfg(){
   const j = save.upgrades.jump;
   return {
-    runSpeed: 4.4 + curRealm.id*0.5,
-    grav: 0.78,
-    jumpV: -13.2 - j*0.9,
+    runSpeed: 3.3 + curRealm.id*0.38,   // ~25% slower pace
+    grav: 0.60,                          // floatier arc
+    jumpV: -14.6 - j*0.9,                // higher jump (clears the raised gaps)
     cutMul: 0.45,
     coyoteMax: 7,
     bufMax: 7,
-    maxFall: 16,
+    maxFall: 14,
+    glideMul: 0.5,                       // hold-to-soar: gentle glide while descending
+    glideFall: 7,                        // softer terminal velocity while gliding
     boltCD: Math.max(14, 26 - save.upgrades.bolt*4),
     boltV: 9 + save.upgrades.bolt*1.2,
   };
@@ -375,8 +377,11 @@ function update(){
   // variable jump height: releasing early clips the rise for a short hop
   if(!keys.jump && player.vy < -3.0) player.vy = -3.0;
 
-  // gravity
-  player.vy = Math.min(player.vy + C.grav, C.maxFall);
+  // gravity (hold jump while falling = gentle glide / "hold to soar")
+  const gliding = !player.onGround && player.vy > 0 && keys.jump;
+  const g = gliding ? C.grav * C.glideMul : C.grav;
+  const term = gliding ? C.glideFall : C.maxFall;
+  player.vy = Math.min(player.vy + g, term);
   player.y += player.vy;
 
   // --- ground collision ---
