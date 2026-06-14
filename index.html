@@ -202,6 +202,7 @@ const Snd=(()=>{
   let musicNodes=[],musicPlaying=false,schedTimer=null;
   let glideNodes=[];
   let uSounds={ward:false,echo:false,shimmer:false};
+  let activityScore=0; // bumped by player actions, decays over time → reactive beat
 
   // [bass root Hz, 5th Hz, pad Hz, LFO Hz, BPM]
   const REALM_AMB=[
@@ -219,8 +220,7 @@ const Snd=(()=>{
     musBus=AC.createGain(); musBus.gain.value=0.42; musBus.connect(master);
   }
 
-  /* ---------- music: light rhythmic beat + thin pad ---------- */
-  // Internal percussives — NOT exported, only used by startMusic
+  /* ---------- music: hybrid drone + rhythmic beat, player-reactive ---------- */
   function _kick(t,vol=0.18){
     const o=AC.createOscillator(),g=AC.createGain();
     o.type='sine'; o.frequency.setValueAtTime(82,t); o.frequency.exponentialRampToValueAtTime(40,t+0.072);
@@ -245,29 +245,45 @@ const Snd=(()=>{
     const t=AC.currentTime;
     musicPlaying=true;
 
-    // Thin, airy pad — tonal context only, not bass-heavy
-    const mg=AC.createGain(); mg.gain.setValueAtTime(0,t);
-    mg.gain.linearRampToValueAtTime(0.12,t+1.5); mg.connect(musBus);
-    musicNodes.push(mg);
-    const padOsc=AC.createOscillator(),padG=AC.createGain();
-    padOsc.type='triangle'; padOsc.frequency.value=root*4; padG.gain.value=0.40;
-    padOsc.connect(padG); padG.connect(mg); padOsc.start(t); musicNodes.push(padOsc,padG);
+    // Sawtooth sub-bass drone (old style but quiet — warmth + texture)
+    const dg=AC.createGain(); dg.gain.setValueAtTime(0,t);
+    dg.gain.linearRampToValueAtTime(0.17,t+2.0); dg.connect(musBus);
+    musicNodes.push(dg);
+    const dlpf=AC.createBiquadFilter(); dlpf.type='lowpass'; dlpf.frequency.value=240; dlpf.connect(dg);
+    [[root,0],[root,5],[root*1.5,-3]].forEach(([f,det])=>{
+      const o=AC.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det;
+      o.connect(dlpf); o.start(t); musicNodes.push(o);
+    });
     const lfo=AC.createOscillator(),lfoG=AC.createGain();
-    lfo.type='sine'; lfo.frequency.value=lfoHz*0.4; lfoG.gain.value=0.04;
-    lfo.connect(lfoG); lfoG.connect(mg.gain); lfo.start(t); musicNodes.push(lfo);
+    lfo.type='sine'; lfo.frequency.value=lfoHz*0.5; lfoG.gain.value=0.04;
+    lfo.connect(lfoG); lfoG.connect(dg.gain); lfo.start(t); musicNodes.push(lfo);
 
-    // Rhythmic beat: kick on 1+3, hat on 2+4 — steady forward pulse
+    // Thin mid-register pad (tonal context)
+    const pg=AC.createGain(); pg.gain.setValueAtTime(0,t);
+    pg.gain.linearRampToValueAtTime(0.09,t+2.5); pg.connect(musBus);
+    musicNodes.push(pg);
+    const po=AC.createOscillator(),pog=AC.createGain();
+    po.type='triangle'; po.frequency.value=root*4; pog.gain.value=0.45;
+    po.connect(pog); pog.connect(pg); po.start(t); musicNodes.push(po,pog);
+
+    // Rhythmic beat — reactive to activityScore
     const beatDur=60/bpm;
     let nextBeat=t+0.08, beat=0;
     function sched(){
       if(!musicPlaying) return;
       const ahead=AC.currentTime+0.36;
+      const act=Math.min(activityScore,8);
       while(nextBeat<ahead){
         const b=beat%4;
-        if(b===0||b===2) _kick(nextBeat,0.17);
-        else             _hat(nextBeat,0.065);
+        const kv=0.15+act*0.014; // kick gets louder with activity
+        const hv=0.050+act*0.009;
+        if(b===0||b===2) _kick(nextBeat,kv);
+        else _hat(nextBeat,hv);
+        // 8th-note hi-hats fill in when player is active
+        if(act>3) _hat(nextBeat+beatDur*0.5, hv*0.45);
         nextBeat+=beatDur; beat++;
       }
+      activityScore=Math.max(0,activityScore-0.14); // slow decay toward calm
       schedTimer=setTimeout(sched,90);
     }
     sched();
@@ -502,6 +518,28 @@ const Snd=(()=>{
     if(uSounds.echo) _sweep(880,660,'triangle',0.16,0.18);
   }
 
+  // Runestone destroy reward: ascending arpeggio
+  function runeDestroy(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const root=(typeof curRealm!=='undefined')?REALM_AMB[curRealm.id][0]:55;
+    [root*4,root*5,root*6,root*8].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.07); g.gain.linearRampToValueAtTime(0.30,t+i*0.07+0.025);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.07+0.42);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.07); o.stop(t+i*0.07+0.46);
+    });
+    // Sub-boom underneath
+    const ob=AC.createOscillator(),gb=AC.createGain();
+    ob.type='sine'; ob.frequency.setValueAtTime(root*2,t); ob.frequency.exponentialRampToValueAtTime(root*0.7,t+0.28);
+    gb.gain.setValueAtTime(0.5,t); gb.gain.exponentialRampToValueAtTime(0.001,t+0.38);
+    ob.connect(gb); gb.connect(musBus); ob.start(t); ob.stop(t+0.42);
+  }
+
+  // Called by any player action to make the beat more energetic
+  function activityBump(){ activityScore=Math.min(activityScore+1.8,10); }
+
   function syncUnlocks(s){
     uSounds={
       ward:!!(s.sounds&&s.sounds.ward),
@@ -526,8 +564,8 @@ const Snd=(()=>{
   }
 
   return {
-    boot, toggle, startMusic, stopMusic, syncUnlocks,
-    jump, doubleJump, coin, bolt, bassHit, runeBlock, gateClear, death,
+    boot, toggle, startMusic, stopMusic, syncUnlocks, activityBump,
+    jump, doubleJump, coin, bolt, bassHit, runeBlock, runeDestroy, gateClear, death,
     footstep, land, shieldAbsorb,
     glideStart, glideEnd,
     get on(){ return on; }
@@ -681,7 +719,7 @@ const keys={jump:false,jumpEdge:false,cast:false};
 function jumpDown(){
   if(introPaused){ introPaused=false; return; }
   keys.jump=true; keys.jumpEdge=true; player.jumpBuf=cfg().bufMax;
-  Snd.jump();
+  Snd.jump(); Snd.activityBump();
 }
 function jumpUp(){ keys.jump=false; }
 
@@ -715,6 +753,7 @@ cv.addEventListener("pointerup",()=>{ jumpUp(); keys.cast=false; });
 function startRun(realm){
   curRealm=realm;
   level=buildLevel(realm);
+  level.obs.forEach(o=>{o.health=2;o.destroyed=false;});
   cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
   bolts.length=0; particles.length=0; boltCD=0;
   shieldCharges=save.upgrades.shield>0?1:0;
@@ -846,7 +885,7 @@ function update(){
     bolts.push({x:px+player.w,y:player.y+player.h*0.4,vx:C.boltV});
     boltCD=C.boltCD;
     spawnBurst(px-cam+player.w,player.y+player.h*0.4,"#7fd4ff",5,2);
-    Snd.bolt();
+    Snd.bolt(); Snd.activityBump();
   }
   for(let i=bolts.length-1;i>=0;i--){ bolts[i].x+=bolts[i].vx; if(bolts[i].x-cam>W+40) bolts.splice(i,1); }
 
@@ -859,7 +898,7 @@ function update(){
         f.dead=true; bolts.splice(i,1);
         spawnDeathBurst(f.x-cam+17,f.y+17);
         runEssence+=5; runKills++;
-        Snd.bassHit();
+        Snd.bassHit(); Snd.activityBump(); Snd.activityBump(); // kills pump it harder
         break;
       }
     }
@@ -869,8 +908,30 @@ function update(){
     }
   }
 
-  // runestones — block, don't kill
+  // bolts vs runestones
+  for(let i=bolts.length-1;i>=0;i--){
+    for(const o of level.obs){
+      if(o.destroyed) continue;
+      if(rectHit(bolts[i].x,bolts[i].y,10,6,o.x,o.y,o.w,o.h)){
+        o.health--;
+        bolts.splice(i,1);
+        if(o.health<=0){
+          o.destroyed=true;
+          spawnDeathBurst(o.x-cam+o.w*0.5,o.y+o.h*0.5);
+          Snd.runeDestroy(); Snd.activityBump(); Snd.activityBump();
+          runEssence+=8;
+        } else {
+          spawnBurst(o.x-cam+o.w*0.5,o.y+o.h*0.4,"#ff8830",10,2.8);
+          Snd.runeBlock();
+        }
+        break;
+      }
+    }
+  }
+
+  // runestones — block player (skip destroyed)
   for(const o of level.obs){
+    if(o.destroyed) continue;
     if(rectHit(px,player.y,player.w,player.h,o.x,o.y,o.w,o.h)){
       if(player.vy>=0&&(player.y+player.h)-o.y<16){
         player.y=o.y-player.h; player.vy=0; player.onGround=true;
@@ -1056,14 +1117,28 @@ function drawCrystalPlatform(sx,sy,w){
 
 function drawObstacles(){
   for(const o of level.obs){
+    if(o.destroyed) continue;
     const sx=o.x-cam; if(sx>W||sx+o.w<0) continue;
-    const g=ctx.createLinearGradient(0,o.y,0,o.y+o.h);
-    g.addColorStop(0,"#473a72"); g.addColorStop(1,"#1d1640");
-    ctx.fillStyle=g; ctx.beginPath();
-    ctx.moveTo(sx+4,o.y+o.h); ctx.lineTo(sx+o.w-4,o.y+o.h); ctx.lineTo(sx+o.w-1,o.y+8); ctx.lineTo(sx+o.w*0.5,o.y); ctx.lineTo(sx+1,o.y+8); ctx.closePath(); ctx.fill();
+    const cracked=(o.health<=1);
+    const grad=ctx.createLinearGradient(0,o.y,0,o.y+o.h);
+    if(cracked){ grad.addColorStop(0,"#7a3818"); grad.addColorStop(1,"#3a1408"); }
+    else        { grad.addColorStop(0,"#473a72"); grad.addColorStop(1,"#1d1640"); }
+    ctx.fillStyle=grad; ctx.beginPath();
+    ctx.moveTo(sx+4,o.y+o.h); ctx.lineTo(sx+o.w-4,o.y+o.h); ctx.lineTo(sx+o.w-1,o.y+8);
+    ctx.lineTo(sx+o.w*0.5,o.y); ctx.lineTo(sx+1,o.y+8); ctx.closePath(); ctx.fill();
     ctx.save(); ctx.globalCompositeOperation="lighter";
-    glow(sx+o.w*0.5,o.y+o.h*0.42,11,"rgba(255,190,80,0.55)","rgba(255,140,40,0)");
-    ctx.fillStyle=`hsla(${curRealm.hue},90%,80%,0.9)`; ctx.font=`bold ${Math.min(o.h-12,28)}px serif`;
+    if(cracked){
+      glow(sx+o.w*0.5,o.y+o.h*0.42,16,"rgba(255,90,10,0.85)","rgba(255,40,0,0)");
+      // crack lines
+      ctx.strokeStyle="rgba(255,160,40,0.75)"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(sx+o.w*0.5,o.y+4); ctx.lineTo(sx+o.w*0.34,o.y+o.h*0.55); ctx.lineTo(sx+o.w*0.60,o.y+o.h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx+o.w*0.34,o.y+o.h*0.3); ctx.lineTo(sx+o.w*0.14,o.y+o.h*0.72); ctx.stroke();
+      ctx.fillStyle="rgba(255,130,40,0.9)";
+    } else {
+      glow(sx+o.w*0.5,o.y+o.h*0.42,11,"rgba(255,190,80,0.55)","rgba(255,140,40,0)");
+      ctx.fillStyle=`hsla(${curRealm.hue},90%,80%,0.9)`;
+    }
+    ctx.font=`bold ${Math.min(o.h-12,28)}px serif`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(curRealm.glyph,sx+o.w*0.5,o.y+o.h*0.44); ctx.restore();
   }
@@ -1096,6 +1171,10 @@ function drawFoes(){
 function drawFoe(f,sx){
   const cx=sx+17,cy=f.y+17,rid=curRealm.id,hue=curRealm.hue,excess=(f.type==="excess");
   ctx.save();
+  // Universal visibility base: pulsing silhouette ring so foes are never invisible
+  ctx.strokeStyle=`hsla(${hue},80%,72%,0.55)`;
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(cx,cy,21+Math.sin(animT*2.1+f.x*0.7)*2.5,0,7); ctx.stroke();
   if(rid===0){
     if(excess){
       ctx.globalCompositeOperation="lighter";
@@ -1175,6 +1254,12 @@ function drawFoe(f,sx){
       glow(cx,cy-6,4,"rgba(180,230,255,0.55)","rgba(120,190,220,0)");
     }
   }
+  // Universal bright eyes — always readable regardless of foe type
+  ctx.globalCompositeOperation="lighter";
+  glow(cx-5,cy-3,7,`hsla(${(hue+40)%360},100%,90%,0.80)`,"rgba(0,0,0,0)");
+  glow(cx+5,cy-3,7,`hsla(${(hue+40)%360},100%,90%,0.80)`,"rgba(0,0,0,0)");
+  ctx.fillStyle="#ffffff"; ctx.beginPath(); ctx.arc(cx-5,cy-3,2.8,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+5,cy-3,2.8,0,7); ctx.fill();
   ctx.restore();
 }
 
