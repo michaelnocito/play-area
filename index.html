@@ -468,130 +468,288 @@ function doDeath(){
 /* ============================================================
    RENDER
    ============================================================ */
-const stars = Array.from({length:90},()=>({x:Math.random()*W,y:Math.random()*H*0.8,z:Math.random()*0.7+0.3,r:Math.random()*1.6+0.4}));
+let animT = 0;   // wall-clock animation phase (seconds) — drives idle motion independent of run speed
+
+/* small render helpers */
+function glow(x,y,r,c0,c1){ const g=ctx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,c0); g.addColorStop(1,c1); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+function hash(n){ const s=Math.sin(n*127.1+311.7)*43758.5453; return s-Math.floor(s); } // stable pseudo-random for terrain/peaks
+
+/* background scenery data (generated once) */
+const stars = Array.from({length:80},()=>({x:Math.random()*W,y:Math.random()*H*0.72,r:Math.random()*1.3+0.3,tw:Math.random()*6.28,z:Math.random()*0.5+0.2}));
+const constLinks = (()=>{ const pts=Array.from({length:11},()=>({x:Math.random()*W,y:Math.random()*H*0.42+18})); const links=[]; for(let i=0;i<7;i++){ const a=pts[(i*3)%pts.length], b=pts[(i*5+2)%pts.length]; if(a!==b) links.push([a,b]); } return links; })();
+const monoliths = Array.from({length:7},()=>({x:Math.random()*5200,y:H*0.40+Math.random()*72,s:0.5+Math.random()*0.9,z:0.20+Math.random()*0.14}));
+const auroras = [ {y:H*0.23,amp:26,sp:0.55,a:0.11,hue:0}, {y:H*0.33,amp:36,sp:0.38,a:0.08,hue:40} ];
 
 function drawSky(realm){
   const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,realm.sky[0]); g.addColorStop(0.55,realm.sky[1]); g.addColorStop(1,realm.sky[2]);
+  g.addColorStop(0,realm.sky[0]); g.addColorStop(0.5,realm.sky[1]); g.addColorStop(1,realm.sky[2]);
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  // big soft sun/moon
-  const sx=W*0.74, sy=H*0.3, R=120;
-  const sg=ctx.createRadialGradient(sx,sy,10,sx,sy,R);
-  sg.addColorStop(0,`hsla(${realm.hue},90%,80%,0.9)`); sg.addColorStop(1,`hsla(${realm.hue},90%,60%,0)`);
-  ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(sx,sy,R,0,7); ctx.fill();
-  // stars w/ parallax
+
+  // --- aurora ribbons ---
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  for(const a of auroras){
+    ctx.beginPath();
+    for(let x=0;x<=W;x+=22){ const y=a.y+Math.sin(x*0.012+animT*a.sp)*a.amp+Math.sin(x*0.031-animT*a.sp*1.6)*a.amp*0.4; x===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    for(let x=W;x>=0;x-=22){ const y=a.y+Math.sin(x*0.012+animT*a.sp)*a.amp+Math.sin(x*0.031-animT*a.sp*1.6)*a.amp*0.4+72; ctx.lineTo(x,y); }
+    ctx.closePath();
+    const ag=ctx.createLinearGradient(0,a.y-a.amp,0,a.y+a.amp+72);
+    ag.addColorStop(0,`hsla(${realm.hue+a.hue},90%,72%,0)`);
+    ag.addColorStop(0.5,`hsla(${realm.hue+a.hue},90%,68%,${a.a})`);
+    ag.addColorStop(1,`hsla(${realm.hue+a.hue+30},90%,58%,0)`);
+    ctx.fillStyle=ag; ctx.fill();
+  }
+  ctx.restore();
+
+  // --- constellation links + twinkling stars ---
+  const cpar=(cam*0.02)%W;
+  ctx.strokeStyle=`hsla(${realm.hue},60%,82%,0.09)`; ctx.lineWidth=1; ctx.beginPath();
+  for(const [a,b] of constLinks){ let ax=a.x-cpar; if(ax<0)ax+=W; let bx=b.x-cpar; if(bx<0)bx+=W; if(Math.abs(ax-bx)<W*0.4){ ctx.moveTo(ax,a.y); ctx.lineTo(bx,b.y); } }
+  ctx.stroke();
   for(const s of stars){
-    const x=(s.x - cam*0.05*s.z)%W; const xx = x<0?x+W:x;
-    ctx.globalAlpha=0.5+0.5*Math.sin((cam*0.01+s.x));
-    ctx.fillStyle="#cfe0ff"; ctx.beginPath(); ctx.arc(xx,s.y,s.r,0,7); ctx.fill();
+    let x=(s.x-cam*0.03*s.z)%W; if(x<0)x+=W;
+    ctx.globalAlpha=0.45+0.55*(0.5+0.5*Math.sin(animT*2+s.tw));
+    ctx.fillStyle="#e3ecff"; ctx.beginPath(); ctx.arc(x,s.y,s.r,0,7); ctx.fill();
   }
   ctx.globalAlpha=1;
-  // distant mountains parallax
-  ctx.fillStyle="rgba(20,14,50,0.55)";
-  const off=(cam*0.15)%240;
-  for(let i=-1;i<W/240+2;i++){
-    const bx=i*240-off; ctx.beginPath(); ctx.moveTo(bx,H);
-    ctx.lineTo(bx+120,H-120); ctx.lineTo(bx+240,H); ctx.closePath(); ctx.fill();
-  }
+
+  // --- sun/moon disc with corona + slow runic ring ---
+  const sx=W*0.76, sy=H*0.27, R=66;
+  glow(sx,sy,150,`hsla(${realm.hue},90%,72%,0.26)`,`hsla(${realm.hue},90%,60%,0)`);
+  const dg=ctx.createRadialGradient(sx-14,sy-14,6,sx,sy,R);
+  dg.addColorStop(0,`hsl(${realm.hue},92%,88%)`); dg.addColorStop(1,`hsl(${realm.hue},80%,60%)`);
+  ctx.fillStyle=dg; ctx.beginPath(); ctx.arc(sx,sy,R,0,7); ctx.fill();
+  ctx.save(); ctx.translate(sx,sy); ctx.rotate(animT*0.04);
+  ctx.strokeStyle=`hsla(${realm.hue},90%,90%,0.4)`; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,0,R+12,0,7); ctx.stroke();
+  ctx.strokeStyle=`hsla(${realm.hue},90%,92%,0.3)`;
+  for(let i=0;i<16;i++){ ctx.rotate(Math.PI/8); ctx.beginPath(); ctx.moveTo(R+16,0); ctx.lineTo(R+22,0); ctx.stroke(); }
+  ctx.restore();
+
+  // --- floating monoliths (distant parallax) ---
+  for(const m of monoliths){ let mx=(m.x-cam*m.z)%(W+420); if(mx<-210)mx+=W+420; drawMonolith(mx,m.y+Math.sin(animT*0.6+m.x)*4,m.s,realm); }
+
+  // --- near mountain ridges (two layers) ---
+  drawRidge(0.16,H-64,"rgba(14,10,38,0.6)",300,150);
+  drawRidge(0.30,H-24,"rgba(8,6,22,0.85)",210,108);
+}
+function drawMonolith(x,y,s,realm){
+  ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.globalAlpha=0.5;
+  ctx.fillStyle="rgba(20,16,46,0.95)"; ctx.beginPath();
+  ctx.moveTo(0,-26); ctx.lineTo(24,-6); ctx.lineTo(13,30); ctx.lineTo(-15,26); ctx.lineTo(-24,-4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=`hsla(${realm.hue},55%,58%,0.5)`; ctx.beginPath();
+  ctx.moveTo(0,-26); ctx.lineTo(24,-6); ctx.lineTo(-24,-4); ctx.closePath(); ctx.fill();
+  ctx.globalCompositeOperation="lighter"; glow(0,2,9,`hsla(${realm.hue},90%,80%,0.6)`,`hsla(${realm.hue},90%,70%,0)`);
+  ctx.restore(); ctx.globalAlpha=1;
+}
+function drawRidge(par,baseY,color,span,height){
+  ctx.fillStyle=color; ctx.beginPath(); ctx.moveTo(-span,H);
+  const startI=Math.floor((cam*par-span)/span);
+  for(let i=startI;i*span-cam*par<W+span;i++){ const bx=i*span-cam*par; const h=height*(0.55+0.45*hash(i)); ctx.lineTo(bx,baseY); ctx.lineTo(bx+span*0.5,baseY-h); }
+  ctx.lineTo(W+span,baseY); ctx.lineTo(W+span,H); ctx.closePath(); ctx.fill();
 }
 
 function drawGround(){
   for(const s of level.segs){
-    const sx=s.x-cam;
-    if(sx>W||sx+s.w<0) continue;
-    const g=ctx.createLinearGradient(0,s.y,0,s.y+PHeight);
-    g.addColorStop(0,"#2c2358"); g.addColorStop(1,"#16102f");
-    ctx.fillStyle=g; ctx.fillRect(sx,s.y,s.w,PHeight+40);
-    ctx.fillStyle="rgba(127,212,255,0.5)"; ctx.fillRect(sx,s.y,s.w,3);
+    const sx=s.x-cam; if(sx>W||sx+s.w<0) continue;
+    if(s.y < GROUND_Y-8){ drawCrystalPlatform(sx,s.y,s.w); continue; }
+    const bottom=H+10;
+    const g=ctx.createLinearGradient(0,s.y,0,bottom);
+    g.addColorStop(0,"#2a2358"); g.addColorStop(0.25,"#1d1742"); g.addColorStop(1,"#100b26");
+    ctx.fillStyle=g; ctx.fillRect(sx,s.y,s.w,bottom-s.y);
+    // crystalline facets (stable per world position)
+    ctx.save(); ctx.beginPath(); ctx.rect(sx,s.y,s.w,bottom-s.y); ctx.clip();
+    for(let i=Math.floor(s.x/70);i<(s.x+s.w)/70+1;i++){
+      const fx=i*70-cam, t=hash(i);
+      ctx.fillStyle=t>0.5?"rgba(255,255,255,0.035)":"rgba(0,0,0,0.13)";
+      ctx.beginPath(); ctx.moveTo(fx,s.y+6); ctx.lineTo(fx+50,s.y+30+t*34); ctx.lineTo(fx-10,s.y+90); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    drawCrust(sx,s.y,s.w);
   }
+}
+function drawCrust(sx,sy,w){
+  const cg=ctx.createLinearGradient(0,sy-2,0,sy+12);
+  cg.addColorStop(0,`hsl(${curRealm.hue},55%,42%)`); cg.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=cg; ctx.fillRect(sx,sy,w,12);
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  ctx.strokeStyle=`hsla(${curRealm.hue},90%,76%,0.8)`; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(sx,sy+1); ctx.lineTo(sx+w,sy+1); ctx.stroke();
+  // runic seam ticks (world-anchored little diamonds)
+  ctx.fillStyle=`hsla(${curRealm.hue},90%,84%,0.85)`; const wx=sx+cam;
+  for(let i=Math.ceil(wx/48);i*48<wx+w;i++){ const gx=i*48-cam; ctx.beginPath(); ctx.moveTo(gx,sy-3); ctx.lineTo(gx+3,sy+1); ctx.lineTo(gx,sy+5); ctx.lineTo(gx-3,sy+1); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+function drawCrystalPlatform(sx,sy,w){
+  const h=44;
+  const g=ctx.createLinearGradient(0,sy,0,sy+h);
+  g.addColorStop(0,`hsl(${curRealm.hue},45%,34%)`); g.addColorStop(1,"#0e0a24");
+  ctx.fillStyle=g; ctx.beginPath();
+  ctx.moveTo(sx,sy); ctx.lineTo(sx+w,sy); ctx.lineTo(sx+w-10,sy+h*0.5); ctx.lineTo(sx+w*0.5,sy+h); ctx.lineTo(sx+10,sy+h*0.5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.beginPath();
+  ctx.moveTo(sx,sy); ctx.lineTo(sx+w*0.5,sy+h); ctx.lineTo(sx+10,sy+h*0.5); ctx.closePath(); ctx.fill();
+  drawCrust(sx,sy,w);
 }
 function drawObstacles(){
   for(const o of level.obs){
     const sx=o.x-cam; if(sx>W||sx+o.w<0) continue;
-    ctx.fillStyle="#3a2c66";
-    ctx.fillRect(sx,o.y,o.w,o.h);
-    ctx.fillStyle="rgba(255,120,160,0.9)";
-    // glowing top edge to read as danger
-    ctx.fillRect(sx,o.y,o.w,4);
+    // tapered carved menhir
+    const g=ctx.createLinearGradient(0,o.y,0,o.y+o.h);
+    g.addColorStop(0,"#473a72"); g.addColorStop(1,"#1d1640");
+    ctx.fillStyle=g; ctx.beginPath();
+    ctx.moveTo(sx+4,o.y+o.h); ctx.lineTo(sx+o.w-4,o.y+o.h); ctx.lineTo(sx+o.w-1,o.y+8);
+    ctx.lineTo(sx+o.w*0.5,o.y); ctx.lineTo(sx+1,o.y+8); ctx.closePath(); ctx.fill();
+    // carved warm rune (reads as danger)
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    glow(sx+o.w*0.5,o.y+o.h*0.42,9,"rgba(255,120,150,0.7)","rgba(255,90,120,0)");
+    ctx.strokeStyle="rgba(255,160,180,0.9)"; ctx.lineWidth=2; ctx.beginPath();
+    ctx.moveTo(sx+o.w*0.5,o.y+9); ctx.lineTo(sx+o.w*0.5,o.y+o.h-9);
+    ctx.moveTo(sx+o.w*0.5,o.y+o.h*0.45); ctx.lineTo(sx+o.w-5,o.y+o.h*0.3); ctx.stroke();
+    ctx.restore();
   }
 }
 function drawCoins(){
   for(const c of level.coins){
     if(c.got) continue;
     const sx=c.x-cam; if(sx>W+20||sx<-20) continue;
-    const pulse=2+Math.sin(cam*0.05+c.x)*1.2;
-    const g=ctx.createRadialGradient(sx,c.y,1,sx,c.y,10+pulse);
-    g.addColorStop(0,"#fff4cf"); g.addColorStop(0.4,"#ffd479"); g.addColorStop(1,"rgba(255,212,121,0)");
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(sx,c.y,10+pulse,0,7); ctx.fill();
+    const cy=c.y+Math.sin(animT*2+c.x*0.05)*3;
+    const spin=Math.cos(animT*3+c.x*0.3), ww=2.5+Math.abs(spin)*5;
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    glow(sx,cy,13,"rgba(255,222,150,0.45)","rgba(255,200,110,0)"); ctx.restore();
+    const cg=ctx.createLinearGradient(sx,cy-11,sx,cy+11);
+    cg.addColorStop(0,"#fff3cf"); cg.addColorStop(0.5,"#ffd06b"); cg.addColorStop(1,"#e9a23a");
+    ctx.fillStyle=cg; ctx.beginPath();
+    ctx.moveTo(sx,cy-11); ctx.lineTo(sx+ww,cy); ctx.lineTo(sx,cy+11); ctx.lineTo(sx-ww,cy); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle="rgba(255,255,255,0.7)"; ctx.lineWidth=1; ctx.stroke();
+    ctx.strokeStyle="rgba(255,255,255,0.3)"; ctx.beginPath(); ctx.moveTo(sx,cy-11); ctx.lineTo(sx,cy+11); ctx.stroke();
+    if(Math.abs(spin)<0.16){ ctx.strokeStyle="rgba(255,255,255,0.9)"; ctx.beginPath(); ctx.moveTo(sx-7,cy); ctx.lineTo(sx+7,cy); ctx.moveTo(sx,cy-7); ctx.lineTo(sx,cy+7); ctx.stroke(); }
   }
 }
 function drawFoes(){
   for(const f of level.foes){
     if(f.dead) continue;
-    const sx=f.x-cam; if(sx>W+40||sx<-40) continue;
+    const sx=f.x-cam; if(sx>W+50||sx<-50) continue;
     const cx=sx+17, cy=f.y+17;
-    const g=ctx.createRadialGradient(cx,cy,2,cx,cy,20);
-    g.addColorStop(0,"rgba(201,163,255,0.95)"); g.addColorStop(1,"rgba(120,80,200,0)");
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,20,0,7); ctx.fill();
-    // core
-    ctx.fillStyle="#2a1740"; ctx.beginPath(); ctx.arc(cx,cy,8,0,7); ctx.fill();
-    ctx.fillStyle="#ff9ad1"; ctx.beginPath(); ctx.arc(cx-3,cy-2,2,0,7); ctx.arc(cx+3,cy-2,2,0,7); ctx.fill();
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    glow(cx,cy,24,"rgba(150,110,220,0.30)","rgba(120,80,200,0)"); ctx.restore();
+    // tattered cloak body
+    const bg=ctx.createLinearGradient(0,cy-20,0,cy+20);
+    bg.addColorStop(0,"#3a2466"); bg.addColorStop(1,"#160d2e");
+    ctx.fillStyle=bg; ctx.beginPath();
+    ctx.moveTo(cx-14,cy-2); ctx.quadraticCurveTo(cx-16,cy-20,cx,cy-22); ctx.quadraticCurveTo(cx+16,cy-20,cx+14,cy-2);
+    for(let i=0;i<=6;i++){ const hx=cx+14-((28*i)/6); const hy=cy+8+((i%2)?10:2)+Math.sin(animT*4+i+f.x)*2; ctx.lineTo(hx,hy); }
+    ctx.closePath(); ctx.fill();
+    // hood point
+    ctx.fillStyle="#241540"; ctx.beginPath(); ctx.moveTo(cx,cy-22); ctx.lineTo(cx-9,cy-6); ctx.lineTo(cx+9,cy-6); ctx.closePath(); ctx.fill();
+    // glowing eyes
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    glow(cx-4,cy-9,3,"rgba(255,140,200,0.95)","rgba(255,120,180,0)");
+    glow(cx+4,cy-9,3,"rgba(255,140,200,0.95)","rgba(255,120,180,0)"); ctx.restore();
   }
 }
 function drawBolts(){
   for(const b of bolts){
     const sx=b.x-cam;
-    const g=ctx.createRadialGradient(sx,b.y,1,sx,b.y,12);
-    g.addColorStop(0,"#eaffff"); g.addColorStop(0.4,"#7fd4ff"); g.addColorStop(1,"rgba(127,212,255,0)");
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(sx,b.y,12,0,7); ctx.fill();
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    for(let k=1;k<=3;k++) glow(sx-k*9,b.y,7-k,`rgba(127,212,255,${0.22/k})`,"rgba(127,212,255,0)");
+    glow(sx,b.y,12,"rgba(200,245,255,0.7)","rgba(127,212,255,0)");
+    ctx.fillStyle="#eaffff"; ctx.beginPath();
+    ctx.moveTo(sx+12,b.y); ctx.lineTo(sx,b.y-5); ctx.lineTo(sx-8,b.y); ctx.lineTo(sx,b.y+5); ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 }
 function drawGate(){
-  const sx=level.gateX-cam; if(sx>W+80) return;
-  const gy=GROUND_Y-150;
-  const t=cam*0.04;
-  for(let i=0;i<3;i++){
-    const r=46+i*14+Math.sin(t+i)*4;
-    ctx.strokeStyle=`hsla(${curRealm.hue},90%,75%,${0.6-i*0.15})`;
-    ctx.lineWidth=4; ctx.beginPath(); ctx.arc(sx+30,gy+70,r,0,7); ctx.stroke();
+  const sx=level.gateX-cam; if(sx>W+120||sx<-160) return;
+  const cx=sx+30, top=GROUND_Y-180, baseY=GROUND_Y, midY=(top+baseY)/2;
+  // shimmer veil between pillars
+  const vg=ctx.createLinearGradient(0,top,0,baseY);
+  vg.addColorStop(0,`hsla(${curRealm.hue},90%,75%,0.05)`); vg.addColorStop(0.5,`hsla(${curRealm.hue},90%,70%,0.22)`); vg.addColorStop(1,`hsla(${curRealm.hue},90%,60%,0.05)`);
+  ctx.fillStyle=vg; ctx.fillRect(cx-26,top+12,52,baseY-top-12);
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.strokeStyle=`hsla(${curRealm.hue},90%,85%,0.28)`; ctx.lineWidth=1;
+  for(let i=0;i<4;i++){ ctx.beginPath(); for(let y=top+12;y<baseY;y+=10){ const xx=cx-20+i*12+Math.sin(y*0.06+animT*2+i)*4; y===top+12?ctx.moveTo(xx,y):ctx.lineTo(xx,y); } ctx.stroke(); }
+  ctx.restore();
+  // standing-stone pillars
+  for(const side of [-1,1]){ const p=cx+side*34;
+    const g=ctx.createLinearGradient(p-9,0,p+9,0);
+    g.addColorStop(0,"#241c4a"); g.addColorStop(0.5,"#4a3f80"); g.addColorStop(1,"#1f183f");
+    ctx.fillStyle=g; ctx.beginPath();
+    ctx.moveTo(p-9,baseY); ctx.lineTo(p+9,baseY); ctx.lineTo(p+7,top+18); ctx.lineTo(p,top+8); ctx.lineTo(p-7,top+18); ctx.closePath(); ctx.fill();
   }
-  ctx.fillStyle="#fff"; ctx.font="bold 54px serif"; ctx.textAlign="center";
-  ctx.fillText(curRealm.glyph, sx+30, gy+90);
-  ctx.textAlign="left";
+  // lintel arch
+  ctx.strokeStyle="#4a3f80"; ctx.lineWidth=10; ctx.beginPath(); ctx.arc(cx,top+24,40,Math.PI*1.06,Math.PI*1.94); ctx.stroke();
+  // rotating rune ring + glyph
+  ctx.save(); ctx.translate(cx,midY); ctx.globalCompositeOperation="lighter";
+  ctx.strokeStyle=`hsla(${curRealm.hue},90%,80%,0.5)`; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,30,0,7); ctx.stroke();
+  ctx.rotate(animT*0.4); for(let i=0;i<8;i++){ ctx.rotate(Math.PI/4); ctx.beginPath(); ctx.moveTo(34,0); ctx.lineTo(40,0); ctx.stroke(); }
+  ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.fillStyle=`hsl(${curRealm.hue},90%,86%)`;
+  ctx.font="bold 44px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(curRealm.glyph,cx,midY); ctx.restore();
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
 }
 
 function drawPlayer(){
-  const x=player.x, y=player.y;
-  if(player.flash>0 && (player.flash>>1)&1){ /* blink */ } else {
-    // aura
-    const g=ctx.createRadialGradient(x+15,y+22,2,x+15,y+22,30);
-    g.addColorStop(0,`hsla(${curRealm.hue},90%,80%,0.5)`); g.addColorStop(1,"rgba(0,0,0,0)");
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x+15,y+22,30,0,7); ctx.fill();
-    // hooded völva: cloak triangle + head
-    ctx.fillStyle="#1b1440";
-    ctx.beginPath();
-    ctx.moveTo(x+15,y);            // hood top
-    ctx.lineTo(x+player.w,y+player.h);
-    ctx.lineTo(x,y+player.h);
-    ctx.closePath(); ctx.fill();
-    // hood opening glow
-    ctx.fillStyle=`hsl(${curRealm.hue},90%,82%)`;
-    ctx.beginPath(); ctx.arc(x+15,y+15,6,0,7); ctx.fill();
-    // trailing scarf
-    ctx.strokeStyle=`hsla(${curRealm.hue},90%,75%,0.8)`; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(x+6,y+14);
-    ctx.quadraticCurveTo(x-18-Math.sin(cam*0.2)*6,y+18, x-30,y+10+Math.sin(cam*0.15)*5);
-    ctx.stroke();
+  if(player.flash>0 && (player.flash>>1)&1) return; // blink on hit
+  const x=player.x, cx=x+15, feet=player.y+player.h, air=!player.onGround, hue=curRealm.hue;
+  const stride=cam*0.2, headY=feet-44;
+  // subtle rim aura (not a bulb)
+  ctx.save(); ctx.globalCompositeOperation="lighter"; glow(cx,feet-22,26,`hsla(${hue},90%,78%,0.16)`,`hsla(${hue},90%,70%,0)`); ctx.restore();
+  // legs
+  ctx.strokeStyle="#15102e"; ctx.lineWidth=6; ctx.lineCap="round";
+  const hipY=feet-20, hipX=cx-1;
+  if(air){
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX-6,feet-9); ctx.lineTo(hipX+2,feet-3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+8,feet-11); ctx.lineTo(hipX+14,feet-7); ctx.stroke();
+  } else {
+    const a=Math.sin(stride), b=Math.sin(stride+Math.PI);
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+a*8,feet-6-Math.abs(a)*3); ctx.lineTo(hipX+a*12,feet); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+b*8,feet-6-Math.abs(b)*3); ctx.lineTo(hipX+b*12,feet); ctx.stroke();
   }
+  // cloak (flowing, billows in air)
+  const billow=air?-10:0, sway=Math.sin(animT*4)*3;
+  const cg=ctx.createLinearGradient(cx-22,headY,cx+10,feet);
+  cg.addColorStop(0,"#2a2058"); cg.addColorStop(1,"#120d2e");
+  ctx.fillStyle=cg; ctx.beginPath();
+  ctx.moveTo(cx+6,headY+6);
+  ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2);
+  ctx.lineTo(cx-6,feet-2);
+  ctx.quadraticCurveTo(cx-22+sway,feet-6+billow,cx-26+sway,feet-18+billow);
+  ctx.quadraticCurveTo(cx-14,headY+10,cx-6,headY+6);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle=`hsla(${hue},90%,78%,0.7)`; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2); ctx.stroke();
+  // hood + head glow
+  ctx.fillStyle="#1b1440"; ctx.beginPath();
+  ctx.moveTo(cx-8,headY+12); ctx.quadraticCurveTo(cx-2,headY-6,cx+8,headY+2);
+  ctx.quadraticCurveTo(cx+10,headY+12,cx+4,headY+16); ctx.lineTo(cx-6,headY+16); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.globalCompositeOperation="lighter"; glow(cx-1,headY+9,6,`hsla(${hue},95%,82%,0.85)`,`hsla(${hue},95%,75%,0)`); ctx.restore();
+  // chest rune
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.strokeStyle=`hsla(${hue},90%,82%,0.9)`; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(cx,feet-30); ctx.lineTo(cx,feet-20); ctx.moveTo(cx,feet-27); ctx.lineTo(cx+4,feet-24); ctx.stroke(); ctx.restore();
+  // staff with glowing tip (flares when casting)
+  const handX=cx+6, handY=feet-24, tipX=cx+18, tipY=headY-2;
+  ctx.strokeStyle="#6b5a36"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(handX,handY); ctx.lineTo(tipX,tipY); ctx.stroke();
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  const cast=boltCD>0?Math.min(1,boltCD/12):0.4;
+  glow(tipX,tipY,6+cast*6,`hsla(${hue},95%,82%,${0.55+cast*0.4})`,`hsla(${hue},95%,72%,0)`); ctx.restore();
+  // trailing wisp
+  ctx.strokeStyle=`hsla(${hue},90%,75%,0.5)`; ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(cx-6,feet-30); ctx.quadraticCurveTo(cx-22-Math.sin(animT*5)*5,feet-26,cx-32,feet-34+Math.sin(animT*4)*4); ctx.stroke();
+  ctx.lineCap="butt";
 }
 
 function drawParticles(){
+  ctx.save(); ctx.globalCompositeOperation="lighter";
   for(const p of particles){
-    const a=1-p.life/p.max;
-    ctx.globalAlpha=Math.max(0,a);
-    ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
+    const a=Math.max(0,1-p.life/p.max);
+    ctx.globalAlpha=a; ctx.fillStyle=p.c;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*a+0.4,0,7); ctx.fill();
   }
-  ctx.globalAlpha=1;
+  ctx.restore(); ctx.globalAlpha=1;
+}
+function drawVignette(){
+  const g=ctx.createRadialGradient(W/2,H*0.46,H*0.36,W/2,H*0.5,H*0.86);
+  g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,0.42)");
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 }
 
 function drawTeach(){
@@ -639,19 +797,33 @@ function render(){
   drawSky(curRealm);
   if(state==="play"||state==="won"||state==="dead"){
     drawGround(); drawGate(); drawObstacles(); drawCoins(); drawFoes();
-    drawBolts(); drawTeach(); drawPlayer(); drawParticles(); drawHUD();
+    drawBolts(); drawPlayer(); drawParticles();
+    drawVignette(); drawTeach(); drawHUD();
+  } else {
+    drawVignette();
   }
 }
 
 /* ---------- main loop (fixed step) ---------- */
-let acc=0,last=performance.now();
+let acc=0,last=performance.now(),running=true;
 function loop(now){
+  animT = now*0.001;
   acc += Math.min(now-last,50); last=now;
   while(acc>=1000/60){ update(); acc-=1000/60; }
   render();
-  requestAnimationFrame(loop);
+  if(running) requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+/* dev bridge — lets tooling freeze a frame to screenshot (the rAF loop otherwise never idles) */
+window.__dev = {
+  start:i=>startRun(REALMS[i]),
+  jump:()=>jumpDown(),
+  step:(n=1)=>{ for(let k=0;k<n;k++) update(); render(); },
+  freeze:()=>{ running=false; },
+  thaw:()=>{ if(!running){ running=true; last=performance.now(); requestAnimationFrame(loop); } },
+  setCam:v=>{ cam=v; },
+};
 
 /* ============================================================
    MENUS

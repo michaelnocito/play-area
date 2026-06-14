@@ -33,6 +33,34 @@ NES/SNES-era feel: instantly readable, ~1–2 buttons, short loops, persistent p
 ## Feel tuning knobs (in `cfg()`)
 `runSpeed`, `grav`, `jumpV`, `cutMul`, `coyoteMax`, `bufMax`, `maxFall`, `boltCD`, `boltV`.
 
+## Visual art direction (psychedelic-celestial) + Godot-handoff mapping
+All art is **procedural canvas vector geometry** (no raster sprite assets yet), so it ports
+cleanly to Godot primitives and leaves seams to drop in Mike's hand-drawn art later.
+`animT` (wall-clock seconds, set in `loop()`) drives idle motion; `cam` drives world scroll.
+
+| Element | HTML draw fn | Godot equivalent |
+|---|---|---|
+| Sky gradient + vignette | `drawSky` / `drawVignette` | `ColorRect` + gradient shader / `CanvasModulate` |
+| Aurora ribbons | `drawSky` (sine-displaced bands) | `Line2D`/`Polygon2D` + wave shader, `lighter` = additive blend |
+| Constellation + stars | `drawSky` | `Points`/`Line2D`, parallax via `ParallaxLayer` |
+| Sun/moon + runic ring | `drawSky` | `Sprite2D` + rotating `Node2D` of `Line2D` ticks |
+| Floating monoliths / ridges | `drawMonolith` / `drawRidge` | `ParallaxLayer` sprites (hash() seed → fixed peaks) |
+| Crystalline ground / platforms | `drawGround` / `drawCrust` / `drawCrystalPlatform` | `Polygon2D` tiles + glowing `Line2D` seam |
+| Carved menhir hazards | `drawObstacles` | `Polygon2D` + `PointLight2D` |
+| Rune-crystal essence | `drawCoins` (spinning diamond) | `AnimatedSprite2D` or `Polygon2D` + spin tween |
+| Wraith foes | `drawFoes` (tattered cloak + eyes) | `Polygon2D` skeleton or `GPUParticles2D` |
+| Rune-bolt | `drawBolts` (shard + trail) | `Sprite2D` + `GPUParticles2D` trail |
+| Rune-gate | `drawGate` (pillars + veil + ring) | scene: `StaticBody2D` + shader veil + rotating ring |
+| Völva player | `drawPlayer` | `Skeleton2D` rig (legs/cloak/hood/staff), or hand-drawn frames |
+
+**Handoff rule:** keep gameplay (`update`, hitboxes, `cfg`) separate from rendering (`draw*`).
+A Godot port reimplements only the `draw*` layer + scene tree; the sim logic maps 1:1.
+Per-element hitboxes are unchanged by visuals (player 30×44, foes 34×34, coins 20×20).
+
+## Dev/test bridge
+`window.__dev` (bottom of script): `start(i)`, `jump()`, `step(n)`, `freeze()`, `thaw()`, `setCam(v)`.
+Lets tooling freeze a single frame for inspection (the rAF loop never idles otherwise).
+
 ## Next ideas (backlog)
 - 3rd/4th realm content (Hagalaz, Isa stubs exist in `REALMS`).
 - Daily-seed run + leaderboard for Sköll-style score chase.
