@@ -61,7 +61,22 @@ Per-element hitboxes are unchanged by visuals (player 30×44, foes 34×34, coins
 `window.__dev` (bottom of script): `start(i)`, `jump()`, `step(n)`, `freeze()`, `thaw()`, `setCam(v)`.
 Lets tooling freeze a single frame for inspection (the rAF loop never idles otherwise).
 
+## Level-design roadmap (research-backed, RD-#005)
+Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, Tadeas Jun
+2D level design, gamedesignskills, 300mind endless-runner, LinkedIn pacing/rhythm):
+1. **Teach → test → combine** (Mario method) — safe intro of each mechanic, low-stakes first
+   challenge, ramp, then combine with earlier mechanics. Extend the jump-teach to glide + cast.
+2. **Tension & release rhythm** — author each realm as a wave: breather → groove stretch →
+   intense burst → release. Avoid uniform difficulty.
+3. **Risk/reward optional routes** — upper path with extra essence + a rune-crystal that
+   *requires the glide* to reach.
+4. **Authored chunks + seeded variation** *(top pick)* — library of hand-tuned segment chunks
+   assembled per-run with a seed + difficulty weighting; fresh but fair. Pairs with per-run imagery.
+5. **In-run ramp + telegraphing** — gently scale speed/density through a run; telegraph hazards.
+
 ## Next ideas (backlog)
+- Implement the level-design roadmap above (start with #4 chunk library).
+- Lore as a collectible gallery screen (view all whispers heard); locked realms show meaning.
 - 3rd/4th realm content (Hagalaz, Isa stubs exist in `REALMS`).
 - Daily-seed run + leaderboard for Sköll-style score chase.
 - Board/art-pack skins using Mike's celestial artwork.
