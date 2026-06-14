@@ -74,13 +74,34 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
    assembled per-run with a seed + difficulty weighting; fresh but fair. Pairs with per-run imagery.
 5. **In-run ramp + telegraphing** — gently scale speed/density through a run; telegraph hazards.
 
+## Audio design (RD-#008)
+
+**Style:** CodeKeys-style ambient focus bed, NOT chiptune sequences.
+A warm droning bass + breathing LFO pad that shifts per realm — the background is always
+atmospheric, never melodic. Your keystrokes ARE the music.
+
+**Keystroke beats:** every jump fires a tight percussive click (bandpass-filtered noise snap)
+that sits rhythmically on the drone. You become the rhythm track.
+
+**Kill bass hit:** deep 808-style sub-bass sine sweep (root → root×0.6, ~1s decay) + mid
+square body + impact transient. The kill IS a beat drop. Loud, meaty, extended.
+
+**Free SFX (always on):** jump snap, kill bass hit, runestone block thud, gate clear chord.
+**Sound Forge (buy at Shrine):** Coin Chime (15✦), Bolt Crack (15✦), Death Knell (20✦).
+Fewer default sounds so the player's ear locks onto the core set fast.
+
+**Per-realm drone frequencies:**
+- Sowilo A1 (55 Hz), 5th E2 (82 Hz), pad A3 (220 Hz), LFO 0.55 Hz
+- Raidho G1 (49 Hz), 5th D2 (73 Hz), pad G3 (196 Hz), LFO 0.80 Hz
+- Hagalaz E1 (41 Hz), 5th B1 (61 Hz), pad E3 (164 Hz), LFO 1.10 Hz
+- Isa Bb1 (46 Hz), 5th F2 (69 Hz), pad Bb3 (185 Hz), LFO 0.38 Hz
+
 ## Next ideas (backlog)
 - Implement the level-design roadmap above (start with #4 chunk library).
 - Lore as a collectible gallery screen (view all whispers heard); locked realms show meaning.
 - 3rd/4th realm content (Hagalaz, Isa stubs exist in `REALMS`).
 - Daily-seed run + leaderboard for Sköll-style score chase.
 - Board/art-pack skins using Mike's celestial artwork.
-- Sound (jump, coin, cast, gate) — keep default OFF, toggle on.
 - Godot 4.6 port once feel is locked.
 
 ## Local serve

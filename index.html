@@ -120,6 +120,7 @@ const W = cv.width, H = cv.height;
 const SAVE_KEY = "runeDash.save.v1";
 const defaultSave = {
   essence:0, upgrades:{jump:0,bolt:0,shield:0},
+  sounds:{coin:false,bolt:false,death:false},
   realmsUnlocked:1, best:{}, loreSeen:{}
 };
 let save = load();
@@ -134,6 +135,11 @@ const UPGRADES=[
   {key:"jump",  name:"Wind-Step", desc:"Higher, floatier jumps.",         cost:[40,90,160]},
   {key:"bolt",  name:"Rune-Bolt", desc:"Faster casting, stronger bolts.", cost:[40,90,160]},
   {key:"shield",name:"Ward",      desc:"Start each run with a shield.",   cost:[60,120,220]},
+];
+const SOUND_PACKS=[
+  {key:"coin",  name:"Coin Chime",  desc:"A bright chime when you gather star-essence.", cost:15},
+  {key:"bolt",  name:"Bolt Crack",  desc:"A sharp crack when you cast the rune-bolt.",  cost:15},
+  {key:"death", name:"Death Knell", desc:"A descending toll when the run ends.",         cost:20},
 ];
 function upgCost(key){
   const u=UPGRADES.find(u=>u.key===key), lv=save.upgrades[key];
@@ -187,136 +193,203 @@ const TOTAL_WHISPERS=Object.values(RUNE_LORE).reduce((n,r)=>n+r.whispers.length,
 function whispersHeard(){ return Object.keys(save.loreSeen).length; }
 
 /* ============================================================
-   AUDIO — Web Audio API, default OFF. M key or button to toggle.
+   AUDIO — Ambient focus bed + keystroke beats. Default OFF.
+   FREE: jump snap, kill bass hit, block thud, gate chord.
+   UNLOCKABLE at Shrine: coin chime, bolt crack, death knell.
    ============================================================ */
 const Snd=(()=>{
-  let AC=null,sfxBus=null,musBus=null,on=false;
-  let schedTimer=null,musicPlaying=false,stepTime=0,stepIdx=0;
+  let AC=null,master=null,sfxBus=null,musBus=null,on=false;
+  let musicNodes=[],musicPlaying=false;
+  let uSounds={coin:false,bolt:false,death:false};
 
-  function _tone(freq,type,start,dur,vol,dest){
-    if(!AC) return;
-    const o=AC.createOscillator(),g=AC.createGain();
-    o.type=type; o.frequency.value=freq;
-    const att=Math.min(0.012,dur*0.1);
-    g.gain.setValueAtTime(0,start);
-    g.gain.linearRampToValueAtTime(vol,start+att);
-    g.gain.setValueAtTime(vol,start+dur*0.65);
-    g.gain.linearRampToValueAtTime(0,start+dur);
-    o.connect(g); g.connect(dest||sfxBus);
-    o.start(start); o.stop(start+dur+0.02);
-  }
-
-  /* --- SFX --- */
-  function jump(){
-    if(!on||!AC) return;
-    const t=AC.currentTime;
-    _tone(210,'triangle',t,0.11,0.30);
-    _tone(370,'sine',t+0.04,0.07,0.14);
-  }
-  function coin(){
-    if(!on||!AC) return;
-    const t=AC.currentTime;
-    _tone(880,'sine',t,0.055,0.22);
-    _tone(1320,'sine',t+0.045,0.07,0.16);
-  }
-  function bolt(){
-    if(!on||!AC) return;
-    const t=AC.currentTime;
-    const o=AC.createOscillator(),g=AC.createGain();
-    o.type='sawtooth';
-    o.frequency.setValueAtTime(580,t);
-    o.frequency.exponentialRampToValueAtTime(190,t+0.12);
-    g.gain.setValueAtTime(0.26,t);
-    g.gain.linearRampToValueAtTime(0,t+0.12);
-    o.connect(g); g.connect(sfxBus);
-    o.start(t); o.stop(t+0.13);
-  }
-  function shadeDie(){
-    if(!on||!AC) return;
-    const t=AC.currentTime;
-    _tone(440,'triangle',t,0.12,0.22);
-    [220,175,135].forEach((f,i)=>_tone(f,'sawtooth',t+i*0.04,0.09,0.18));
-  }
-  function runeBlock(){
-    if(!on||!AC) return;
-    const t=AC.currentTime;
-    _tone(85,'square',t,0.07,0.38);
-    _tone(115,'square',t+0.025,0.06,0.20);
-  }
-  function gateClear(){
-    if(!on||!AC) return;
-    const t=AC.currentTime;
-    [523,659,784,1047].forEach((f,i)=>_tone(f,'triangle',t+i*0.09,0.65,0.26,sfxBus));
-    _tone(1568,'sine',t+0.42,0.85,0.20,sfxBus);
-  }
-  function death(){
-    if(!on||!AC) return;
-    const t=AC.currentTime;
-    [290,230,180,145].forEach((f,i)=>_tone(f,'triangle',t+i*0.11,0.14,0.28));
-  }
-
-  /* --- MUSIC (16-step, 16th-note patterns) --- */
-  const MUSIC=[
-    { // Sowilo: warm, A-major pentatonic, 88 BPM
-      bpm:88,
-      mel:[440,0,554,0,659,0,554,440,0,493,554,0,440,0,493,0],
-      bas:[110,0,0,110,0,0,147,0,110,0,0,110,0,0,165,0],
-      mt:'triangle',bt:'sine',mv:0.10,bv:0.08
-    },
-    { // Raidho: driving E-minor, 108 BPM
-      bpm:108,
-      mel:[330,0,370,0,330,392,0,330,294,0,330,0,370,392,440,0],
-      bas:[110,0,0,110,0,0,110,0,147,0,0,147,0,0,110,0],
-      mt:'square',bt:'triangle',mv:0.075,bv:0.085
-    },
-    { // Hagalaz: storm, D-minor fast, 126 BPM
-      bpm:126,
-      mel:[311,349,0,370,311,0,329,349,0,370,415,0,349,311,0,329],
-      bas:[73,0,98,0,73,0,98,0,82,0,73,0,82,0,98,0],
-      mt:'sawtooth',bt:'square',mv:0.065,bv:0.075
-    },
-    { // Isa: sparse, B-minor pentatonic, 66 BPM
-      bpm:66,
-      mel:[370,0,0,0,466,0,0,0,554,0,0,0,466,0,415,0],
-      bas:[92,0,0,0,0,0,92,0,123,0,0,0,0,0,92,0],
-      mt:'sine',bt:'sine',mv:0.13,bv:0.065
-    },
+  // [bass root Hz, perfect 5th Hz, pad Hz, LFO breathe Hz]
+  const REALM_AMB=[
+    [55, 82,  220, 0.55], // Sowilo  A1 — warm sun
+    [49, 73,  196, 0.80], // Raidho  G1 — driving ride
+    [41, 61,  164, 1.10], // Hagalaz E1 — storm chaos
+    [46, 69,  185, 0.38], // Isa     Bb1 — cold still
   ];
-
-  function _sched(m,beatDur){
-    const ahead=AC.currentTime+0.35;
-    while(stepTime<ahead){
-      const i=stepIdx%m.mel.length;
-      if(m.mel[i]) _tone(m.mel[i],m.mt,stepTime,beatDur*0.72,m.mv,musBus);
-      if(m.bas[i]) _tone(m.bas[i],m.bt,stepTime,beatDur*1.45,m.bv,musBus);
-      stepTime+=beatDur;
-      stepIdx++;
-    }
-    if(musicPlaying) schedTimer=setTimeout(()=>_sched(m,beatDur),100);
-  }
-
-  function startMusic(id){
-    stopMusic();
-    if(!on||!AC) return;
-    const m=MUSIC[id]||MUSIC[0];
-    const beatDur=60/m.bpm/4;
-    stepTime=AC.currentTime+0.1;
-    stepIdx=0; musicPlaying=true;
-    _sched(m,beatDur);
-  }
-  function stopMusic(){
-    musicPlaying=false;
-    if(schedTimer){clearTimeout(schedTimer);schedTimer=null;}
-  }
 
   function boot(){
     if(AC) return;
     AC=new(window.AudioContext||window.webkitAudioContext)();
-    const master=AC.createGain(); master.gain.value=0.55; master.connect(AC.destination);
-    sfxBus=AC.createGain(); sfxBus.gain.value=0.70; sfxBus.connect(master);
-    musBus=AC.createGain(); musBus.gain.value=0.28; musBus.connect(master);
+    master=AC.createGain(); master.gain.value=0.55; master.connect(AC.destination);
+    sfxBus=AC.createGain(); sfxBus.gain.value=0.72; sfxBus.connect(master);
+    musBus=AC.createGain(); musBus.gain.value=0.42; musBus.connect(master);
   }
 
+  /* ---------- ambient drone music ---------- */
+  function startMusic(realmId){
+    stopMusic();
+    if(!on||!AC) return;
+    const [root,fifth,pad,lfoHz]=REALM_AMB[realmId]||REALM_AMB[0];
+    const t=AC.currentTime;
+
+    const mg=AC.createGain(); mg.gain.setValueAtTime(0,t);
+    mg.gain.linearRampToValueAtTime(0.7,t+2.5); mg.connect(musBus);
+    musicNodes.push(mg);
+
+    const lpf=AC.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=230; lpf.connect(mg);
+
+    // bass drone: root (x2 detuned) + fifth
+    [[root,0],[root,6],[fifth,-2]].forEach(([f,det])=>{
+      const o=AC.createOscillator(); o.type='sawtooth';
+      o.frequency.value=f; o.detune.value=det;
+      o.connect(lpf); o.start(t); musicNodes.push(o);
+    });
+
+    // LFO breathing on master music gain
+    const lfo=AC.createOscillator(),lfoG=AC.createGain();
+    lfo.type='sine'; lfo.frequency.value=lfoHz; lfoG.gain.value=0.09;
+    lfo.connect(lfoG); lfoG.connect(mg.gain); lfo.start(t); musicNodes.push(lfo);
+
+    // soft pad layer: triangle at octave up, filtered
+    const padLPF=AC.createBiquadFilter(); padLPF.type='bandpass';
+    padLPF.frequency.value=pad; padLPF.Q.value=1.4; padLPF.connect(mg);
+    const padOsc=AC.createOscillator(),padG=AC.createGain();
+    padOsc.type='triangle'; padOsc.frequency.value=pad; padG.gain.value=0.07;
+    padOsc.connect(padG); padG.connect(padLPF); padOsc.start(t); musicNodes.push(padOsc);
+
+    musicPlaying=true;
+  }
+
+  function stopMusic(){
+    musicPlaying=false;
+    const t=AC?AC.currentTime:0;
+    musicNodes.forEach(n=>{try{if(n.stop)n.stop(t+0.05);n.disconnect();}catch(e){}});
+    musicNodes=[];
+  }
+
+  /* ---------- helpers ---------- */
+  function _click(cf,Q,dur,vol){
+    if(!AC) return;
+    const t=AC.currentTime;
+    const sz=Math.ceil(AC.sampleRate*dur);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=Math.random()*2-1;
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const bpf=AC.createBiquadFilter(); bpf.type='bandpass'; bpf.frequency.value=cf; bpf.Q.value=Q;
+    const g=AC.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    src.connect(bpf); bpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+dur+0.01);
+  }
+
+  function _sweep(f0,f1,type,dur,vol,dest){
+    if(!AC) return;
+    const t=AC.currentTime;
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type=type; o.frequency.setValueAtTime(f0,t);
+    if(f1!==f0) o.frequency.exponentialRampToValueAtTime(f1,t+dur*0.72);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g); g.connect(dest||sfxBus); o.start(t); o.stop(t+dur+0.02);
+  }
+
+  /* ---------- FREE sfx ---------- */
+
+  // Jump: tight keystroke snap (the player's rhythm input)
+  function jump(){
+    if(!on||!AC) return;
+    _click(3000,4,0.042,0.34);       // crisp percussive click
+    _sweep(255,155,'triangle',0.07,0.20); // soft pitch pop beneath
+  }
+
+  // Kill: deep extended 808-style bass drop (the main beat-drop moment)
+  function bassHit(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const root=(typeof curRealm!=='undefined')?REALM_AMB[curRealm.id][0]:55;
+
+    // sub-bass sine: punches in then decays long (~1s)
+    const o1=AC.createOscillator(),g1=AC.createGain();
+    o1.type='sine';
+    o1.frequency.setValueAtTime(root*2.4,t);
+    o1.frequency.exponentialRampToValueAtTime(root,t+0.07);
+    o1.frequency.exponentialRampToValueAtTime(root*0.62,t+0.90);
+    g1.gain.setValueAtTime(0,t);
+    g1.gain.linearRampToValueAtTime(1.0,t+0.012);
+    g1.gain.setValueAtTime(0.88,t+0.06);
+    g1.gain.exponentialRampToValueAtTime(0.001,t+1.0);
+    o1.connect(g1); g1.connect(musBus); o1.start(t); o1.stop(t+1.1);
+
+    // impact transient: hi-mid click for presence
+    _click(1700,3,0.038,0.60);
+
+    // body mid: square into lowpass for meatiness
+    const o3=AC.createOscillator(),lpf=AC.createBiquadFilter(),g3=AC.createGain();
+    o3.type='square'; o3.frequency.setValueAtTime(root*1.9,t);
+    o3.frequency.exponentialRampToValueAtTime(root*0.88,t+0.24);
+    lpf.type='lowpass'; lpf.frequency.value=340;
+    g3.gain.setValueAtTime(0.30,t); g3.gain.exponentialRampToValueAtTime(0.001,t+0.42);
+    o3.connect(lpf); lpf.connect(g3); g3.connect(sfxBus); o3.start(t); o3.stop(t+0.45);
+  }
+
+  // Runestone block: dull low thud
+  function runeBlock(){
+    if(!on||!AC) return;
+    _sweep(98,52,'sine',0.24,0.52,musBus);
+    _click(230,2,0.055,0.22);
+  }
+
+  // Gate clear: rising chord swell → shimmer (big reward)
+  function gateClear(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const root=(typeof curRealm!=='undefined')?REALM_AMB[curRealm.id][0]:55;
+    [root,root*1.25,root*1.5,root*2,root*3].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.07);
+      g.gain.linearRampToValueAtTime(0.28-i*0.04,t+i*0.07+0.18);
+      g.gain.setValueAtTime(0.28-i*0.04,t+0.88);
+      g.gain.linearRampToValueAtTime(0,t+2.3);
+      o.connect(g); g.connect(musBus); o.start(t+i*0.07); o.stop(t+2.4);
+    });
+    const os=AC.createOscillator(),gs=AC.createGain();
+    os.type='triangle'; os.frequency.value=root*6;
+    gs.gain.setValueAtTime(0,t+0.38); gs.gain.linearRampToValueAtTime(0.15,t+0.48);
+    gs.gain.linearRampToValueAtTime(0,t+1.9);
+    os.connect(gs); gs.connect(sfxBus); os.start(t+0.38); os.stop(t+2.0);
+  }
+
+  /* ---------- UNLOCKABLE sfx ---------- */
+  function coin(){
+    if(!on||!AC||!uSounds.coin) return;
+    const t=AC.currentTime;
+    [880,1320,1760].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.042); g.gain.linearRampToValueAtTime(0.20,t+i*0.042+0.012);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.042+0.24);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.042); o.stop(t+i*0.042+0.26);
+    });
+  }
+
+  function bolt(){
+    if(!on||!AC||!uSounds.bolt) return;
+    _sweep(660,160,'sawtooth',0.13,0.28);
+    _click(1500,5,0.028,0.38);
+  }
+
+  function death(){
+    if(!on||!AC||!uSounds.death) return;
+    const t=AC.currentTime;
+    [280,220,174,138].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.14); g.gain.linearRampToValueAtTime(0.30,t+i*0.14+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.14+0.40);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.14); o.stop(t+i*0.14+0.44);
+    });
+  }
+
+  function syncUnlocks(s){
+    uSounds={
+      coin:!!(s.sounds&&s.sounds.coin),
+      bolt:!!(s.sounds&&s.sounds.bolt),
+      death:!!(s.sounds&&s.sounds.death),
+    };
+  }
+
+  /* ---------- toggle ---------- */
   function toggle(){
     boot(); AC.resume();
     on=!on;
@@ -332,8 +405,8 @@ const Snd=(()=>{
   }
 
   return {
-    boot, toggle, startMusic, stopMusic,
-    jump, coin, bolt, shadeDie, runeBlock, gateClear, death,
+    boot, toggle, startMusic, stopMusic, syncUnlocks,
+    jump, coin, bolt, bassHit, runeBlock, gateClear, death,
     get on(){ return on; }
   };
 })();
@@ -535,6 +608,7 @@ function startRun(realm){
   introPaused=true;
   ghostPlayback=ghostData[realm.id]||null;
   ghostRecording=[]; ghostFrame=0;
+  Snd.syncUnlocks(save);
   Snd.startMusic(realm.id);
   state="play"; showScreen(null);
 }
@@ -655,7 +729,7 @@ function update(){
         f.dead=true; bolts.splice(i,1);
         spawnDeathBurst(f.x-cam+17,f.y+17);
         runEssence+=5; runKills++;
-        Snd.shadeDie();
+        Snd.bassHit();
         break;
       }
     }
@@ -1233,6 +1307,28 @@ function openShrine(){
     if(cost==null){ btn.textContent="MAX"; btn.disabled=true; }
     else { btn.textContent=`${cost} ✦`; btn.disabled=save.essence<cost;
       btn.onclick=()=>{ save.essence-=cost; save.upgrades[u.key]++; persist(); openShrine(); }; }
+    row.appendChild(btn); list.appendChild(row);
+  });
+  // Sound Forge divider
+  const div=document.createElement("div");
+  div.style.cssText="width:min(520px,92vw);border-top:1px solid #3a3270;margin:8px 0 2px;text-align:center;padding-top:10px;";
+  div.innerHTML=`<span style="color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase;">♪ Sound Forge</span>`;
+  list.appendChild(div);
+  if(!Snd.on){
+    const note=document.createElement("p"); note.className="hint";
+    note.style.margin="0 0 4px"; note.textContent="Enable sound (M key) to hear unlocked packs.";
+    list.appendChild(note);
+  }
+  SOUND_PACKS.forEach(sp=>{
+    if(!save.sounds) save.sounds={};
+    const owned=!!save.sounds[sp.key];
+    const row=document.createElement("div"); row.className="shrine-row";
+    row.innerHTML=`<div class="info"><b>${sp.name}</b>${owned?' <span style="color:var(--rune);font-size:13px;">♪ active</span>':''}
+        <div class="lvl">${sp.desc}</div></div>`;
+    const btn=document.createElement("button"); btn.className="btn"; btn.style.minWidth="120px";
+    if(owned){ btn.textContent="Owned"; btn.disabled=true; }
+    else{ btn.textContent=`${sp.cost} ✦`; btn.disabled=save.essence<sp.cost;
+      btn.onclick=()=>{ save.essence-=sp.cost; save.sounds[sp.key]=true; Snd.syncUnlocks(save); persist(); openShrine(); }; }
     row.appendChild(btn); list.appendChild(row);
   });
   showScreen("shrine");
