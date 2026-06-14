@@ -70,7 +70,8 @@
   <!-- REALM SELECT -->
   <div class="screen" id="s-realm">
     <h2>Choose a Realm</h2>
-    <p class="sub">Star-essence: <span class="ess" id="r-ess">0</span></p>
+    <p class="sub">Star-essence: <span class="ess" id="r-ess">0</span>
+      &nbsp;•&nbsp; Whispers heard: <span style="color:var(--rune)" id="r-lore">0/0</span></p>
     <div class="row" id="realm-list"></div>
     <div class="row">
       <button class="btn" data-go="shrine">✦ Shrine of Skills</button>
@@ -115,7 +116,8 @@ const defaultSave = {
   essence: 0,
   upgrades: { jump: 0, bolt: 0, shield: 0 }, // levels 0..3
   realmsUnlocked: 1,                          // how many realms cleared+1
-  best: {}                                    // realmId -> best time (s)
+  best: {},                                   // realmId -> best time (s)
+  loreSeen: {}                                // whisperId -> true (collected knowledge)
 };
 let save = load();
 function load(){
@@ -147,6 +149,36 @@ const REALMS = [
   { id:3, name:"Isa", glyph:"ᛁ", sub:"Realm of Ice", hue:190,
     sky:["#0a1a2a","#143a52","#3f9ab5"], teachCast:true, len:0, locked:true },
 ];
+
+/* ---------- rune knowledge: a meaning + a pool of "whispers" surfaced each run ---------- */
+const RUNE_LORE = {
+  0: { meaning:"sun · guidance · victory", whispers:[
+    "Sowilo is the sun-wheel — the unconquered light that guides the lost back home.",
+    "The Norse named the sun Sól, who flees forever before the wolf Sköll.",
+    "Sailors carved Sowilo into their hulls for clear horizons and safe passage.",
+    "Twin Sowilo runes were bound together as a sigil of victory.",
+    "Where Sowilo burns, the old said, despair can find no root." ] },
+  1: { meaning:"the ride · rhythm · the right path", whispers:[
+    "Raidho is the rune of the ride — the wagon, the road, the rhythm of travel.",
+    "It teaches that the journey itself, not the destination, is what shapes us.",
+    "Raidho governs right timing: moving with the world rather than against it.",
+    "Old riders carved Raidho to keep their road true and their horses sure.",
+    "To ride Raidho is to find the steady rhythm beneath all motion." ] },
+  2: { meaning:"hail · disruption · renewal", whispers:[
+    "Hagalaz is the hailstone — ruin that melts to water the spring to come.",
+    "It is the rune of storms that break the old to clear room for the new.",
+    "Even the gods bend before Hagalaz; the Norns answer to it alone.",
+    "What survives the hail was always the thing meant to endure.",
+    "Hagalaz warns that chaos is never the end — only the turning." ] },
+  3: { meaning:"ice · stillness · patience", whispers:[
+    "Isa is ice — the great stillness, the world holding its breath.",
+    "It teaches patience: even frozen rivers keep moving beneath the surface.",
+    "In Isa all things pause, and the wise learn to listen in the silence.",
+    "Ice preserves as surely as fire destroys.",
+    "Isa is the rune of waiting — and of the clarity found in stillness." ] },
+};
+const TOTAL_WHISPERS = Object.values(RUNE_LORE).reduce((n,r)=>n+r.whispers.length,0);
+function whispersHeard(){ return Object.keys(save.loreSeen).length; }
 
 /* ============================================================
    LEVEL GENERATION
@@ -235,6 +267,9 @@ let runEssence = 0;
 let curRealm = REALMS[0];
 let shieldCharges = 0;
 let endReason = "";
+let runWhisper = null;   // {id, text} knowledge surfaced this run
+let runScene = null;     // {hueShift, pieces:[{type,x,z,scale}]} per-run background imagery
+let introT = 0;          // run-intro lore card timer (seconds, counts down)
 
 const player = {
   x: 220, y: 0, vy: 0,
@@ -304,6 +339,23 @@ function startRun(realm){
   player.x=220; player.y=GROUND_Y-player.h; player.vy=0;
   player.onGround=true; player.coyote=0; player.jumpBuf=0;
   player.jumpsLeft=1; player.alive=true; player.flash=0;
+  // --- knowledge: pick a whisper for this run, mark it learned ---
+  const pool = (RUNE_LORE[realm.id]||RUNE_LORE[0]).whispers;
+  const wi = (Math.random()*pool.length)|0;
+  runWhisper = { id: realm.id+":"+wi, text: pool[wi] };
+  save.loreSeen[runWhisper.id] = true; persist();
+  // --- imagery: pick 2 background set-pieces + a hue drift, varying per run ---
+  const SCENES = ["yggdrasil","longship","serpent","ravens","stones","wolf"];
+  runScene = { hueShift: ((Math.random()*30)|0)-15, pieces: [] };
+  for(let i=0;i<2;i++){
+    runScene.pieces.push({
+      type: SCENES[(Math.random()*SCENES.length)|0],
+      x: 700 + i*1900 + Math.random()*700,
+      z: 0.30 + Math.random()*0.14,
+      scale: 0.85 + Math.random()*0.5
+    });
+  }
+  introT = 2.8;
   state="play";
   showScreen(null);
 }
@@ -329,7 +381,8 @@ function endRun(won){
           (best!=null?` &nbsp;Best: <b>${best.toFixed(1)}s</b>.`:"")
         : `${endReason||"A misstep."} You still kept the essence you gathered.`) +
       `<br><br>Star-essence gained: <span class="ess">+${runEssence}</span>` +
-      `<br>Total: <span class="ess">${save.essence}</span>`;
+      `<br>Total: <span class="ess">${save.essence}</span>` +
+      (runWhisper ? `<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} “${runWhisper.text}”</span>` : "");
     document.getElementById("res-again").onclick = ()=>startRun(curRealm);
     showScreen("result");
   }, won?500:650);
@@ -352,6 +405,7 @@ function update(){
   if(state!=="play"){ return; }
   const C = cfg();
   runTime += 1/60;
+  if(introT>0) introT -= 1/60;
   cam += C.runSpeed;
   player.x = 220; // fixed screen x; world moves via cam
 
@@ -533,9 +587,68 @@ function drawSky(realm){
   // --- floating monoliths (distant parallax) ---
   for(const m of monoliths){ let mx=(m.x-cam*m.z)%(W+420); if(mx<-210)mx+=W+420; drawMonolith(mx,m.y+Math.sin(animT*0.6+m.x)*4,m.s,realm); }
 
+  // --- per-run background set-pieces (imagery that varies each run) ---
+  drawSetPieces(realm);
+
   // --- near mountain ridges (two layers) ---
   drawRidge(0.16,H-64,"rgba(14,10,38,0.6)",300,150);
   drawRidge(0.30,H-24,"rgba(8,6,22,0.85)",210,108);
+}
+function drawSetPieces(realm){
+  if(!runScene) return;
+  const hue = realm.hue + runScene.hueShift;
+  for(const p of runScene.pieces){
+    const sx = p.x - cam*p.z; if(sx>W+220||sx<-220) continue;
+    drawSetPiece(p.type, sx, H-150, p.scale, hue);
+  }
+}
+function drawSetPiece(type, x, baseY, s, hue){
+  ctx.save(); ctx.translate(x,baseY); ctx.scale(s,s);
+  const fill="rgba(12,9,30,0.85)", line=`hsla(${hue},70%,72%,0.55)`;
+  ctx.fillStyle=fill; ctx.strokeStyle=line; ctx.lineWidth=2; ctx.lineCap="round";
+  const lit=()=>{ ctx.save(); ctx.globalCompositeOperation="lighter"; };
+  if(type==="yggdrasil"){
+    // world-tree: trunk + spreading crown + roots, glowing rune knot
+    ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(-3,-70); ctx.lineTo(3,-70); ctx.lineTo(7,0); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    for(let a=-1.2;a<=1.2;a+=0.4){ ctx.moveTo(0,-66); ctx.lineTo(Math.sin(a)*60, -120-Math.cos(a)*18); }
+    ctx.moveTo(-6,0); ctx.lineTo(-30,24); ctx.moveTo(6,0); ctx.lineTo(28,22); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0,-110,62,34,0,0,7); ctx.fillStyle="rgba(14,11,34,0.7)"; ctx.fill();
+    lit(); glow(0,-66,10,`hsla(${hue},90%,80%,0.7)`,`hsla(${hue},90%,70%,0)`); ctx.restore();
+  } else if(type==="longship"){
+    // viking longship: hull, mast, square sail, dragon prow
+    ctx.beginPath(); ctx.moveTo(-70,0); ctx.quadraticCurveTo(-86,-20,-70,-22); ctx.lineTo(64,-22);
+    ctx.quadraticCurveTo(96,-26,86,-46); ctx.quadraticCurveTo(70,-30,58,-30); ctx.lineTo(-58,-30);
+    ctx.quadraticCurveTo(-78,-30,-70,0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0,-30); ctx.lineTo(0,-92); ctx.stroke();
+    ctx.fillStyle="rgba(16,12,36,0.8)"; ctx.beginPath(); ctx.moveTo(-30,-86); ctx.lineTo(30,-86); ctx.lineTo(30,-44); ctx.lineTo(-30,-44); ctx.closePath(); ctx.fill();
+    lit(); ctx.strokeStyle=`hsla(${hue},80%,76%,0.5)`; for(let i=-24;i<=24;i+=12){ ctx.beginPath(); ctx.moveTo(i,-84); ctx.lineTo(i,-46); ctx.stroke(); } ctx.restore();
+  } else if(type==="serpent"){
+    // Jörmungandr: a coiling serpent arc across the horizon
+    lit(); ctx.strokeStyle=`hsla(${hue},80%,72%,0.4)`; ctx.lineWidth=9;
+    ctx.beginPath(); for(let t=0;t<=1;t+=0.04){ const px=(t-0.5)*340, py=-60+Math.sin(t*Math.PI*3+animT*0.5)*34; t===0?ctx.moveTo(px,py):ctx.lineTo(px,py); } ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle=fill; ctx.beginPath(); ctx.ellipse(-170,-60,12,9,0,0,7); ctx.fill();
+  } else if(type==="ravens"){
+    // Huginn & Muninn: two birds in flight
+    ctx.strokeStyle=`hsla(${hue},60%,78%,0.6)`; ctx.lineWidth=3;
+    for(const o of [[-40,-60],[26,-92]]){ const f=Math.sin(animT*3+o[0])*8;
+      ctx.beginPath(); ctx.moveTo(o[0]-16,o[1]+f); ctx.quadraticCurveTo(o[0],o[1]-10,o[0]+16,o[1]+f);
+      ctx.moveTo(o[0],o[1]-2); ctx.lineTo(o[0],o[1]+6); ctx.stroke(); }
+  } else if(type==="stones"){
+    // standing-stone circle on the horizon
+    for(let i=-3;i<=3;i++){ const px=i*26, h=40-Math.abs(i)*4; ctx.fillStyle=fill;
+      ctx.fillRect(px-6,-h,12,h); }
+    lit(); glow(0,-20,16,`hsla(${hue},85%,75%,0.4)`,`hsla(${hue},85%,70%,0)`); ctx.restore();
+  } else { // wolf
+    // great wolf silhouette upon a rise
+    ctx.beginPath(); ctx.moveTo(-60,6); ctx.lineTo(-44,-16); ctx.lineTo(-50,-26); ctx.lineTo(-38,-22);
+    ctx.lineTo(-30,-34); ctx.lineTo(-18,-22); ctx.lineTo(24,-26); ctx.lineTo(40,-40); ctx.lineTo(44,-22);
+    ctx.lineTo(58,-8); ctx.lineTo(40,-6); ctx.lineTo(34,8); ctx.lineTo(28,-4); ctx.lineTo(-20,-2);
+    ctx.lineTo(-30,12); ctx.lineTo(-36,-2); ctx.lineTo(-48,6); ctx.closePath(); ctx.fill();
+    lit(); glow(38,-34,5,"rgba(255,170,140,0.8)","rgba(255,150,120,0)"); ctx.restore();
+  }
+  ctx.restore();
 }
 function drawMonolith(x,y,s,realm){
   ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.globalAlpha=0.5;
@@ -797,13 +910,47 @@ function drawHUD(){
   ctx.fillText(`${runTime.toFixed(1)}s`, W/2, 60); ctx.textAlign="left";
 }
 
+function drawIntroCard(){
+  if(introT<=0 || !runWhisper) return;
+  // fade in over first 0.3s, hold, fade out over last 0.6s of the 2.8s window
+  const a = Math.min(1, Math.min((2.8-introT)/0.3, introT/0.6));
+  if(a<=0) return;
+  ctx.save(); ctx.globalAlpha=a;
+  const cx=W/2, cy=H*0.40, hue=curRealm.hue;
+  // panel
+  ctx.fillStyle="rgba(8,6,24,0.72)"; roundRect(cx-260,cy-92,520,184,18); ctx.fill();
+  ctx.strokeStyle=`hsla(${hue},80%,70%,0.5)`; ctx.lineWidth=1.5; ctx.stroke();
+  // big rune glyph
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  glow(cx-188,cy,40,`hsla(${hue},90%,72%,0.5)`,`hsla(${hue},90%,65%,0)`);
+  ctx.fillStyle=`hsl(${hue},90%,85%)`; ctx.font="bold 84px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(curRealm.glyph, cx-188, cy+4); ctx.restore();
+  // name + meaning
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  ctx.fillStyle="#fff"; ctx.font="bold 26px Segoe UI"; ctx.fillText(curRealm.name, cx-128, cy-46);
+  ctx.fillStyle=`hsl(${hue},70%,78%)`; ctx.font="italic 15px Segoe UI";
+  ctx.fillText((RUNE_LORE[curRealm.id]||RUNE_LORE[0]).meaning, cx-128, cy-24);
+  // whisper (wrapped)
+  ctx.fillStyle="#cfd3f0"; ctx.font="15px Segoe UI";
+  wrapText(runWhisper.text, cx-128, cy+2, 372, 20);
+  // learned tag
+  ctx.fillStyle=`hsla(${hue},80%,80%,0.85)`; ctx.font="12px Segoe UI";
+  ctx.fillText(`✦ whisper learned — ${whispersHeard()}/${TOTAL_WHISPERS}`, cx-128, cy+74);
+  ctx.restore();
+}
+function wrapText(text,x,y,maxW,lh){
+  const words=text.split(" "); let line="", yy=y;
+  for(const w of words){ const t=line?line+" "+w:w; if(ctx.measureText(t).width>maxW && line){ ctx.fillText(line,x,yy); line=w; yy+=lh; } else line=t; }
+  if(line) ctx.fillText(line,x,yy);
+}
+
 function render(){
   ctx.clearRect(0,0,W,H);
   drawSky(curRealm);
   if(state==="play"||state==="won"||state==="dead"){
     drawGround(); drawGate(); drawObstacles(); drawCoins(); drawFoes();
     drawBolts(); drawPlayer(); drawParticles();
-    drawVignette(); drawTeach(); drawHUD();
+    drawVignette(); drawTeach(); drawHUD(); drawIntroCard();
   } else {
     drawVignette();
   }
@@ -848,6 +995,7 @@ document.querySelectorAll("[data-go]").forEach(b=>{
 
 function openRealm(){
   document.getElementById("r-ess").textContent=save.essence;
+  document.getElementById("r-lore").textContent=`${whispersHeard()}/${TOTAL_WHISPERS}`;
   const list=document.getElementById("realm-list"); list.innerHTML="";
   REALMS.forEach(r=>{
     const unlocked = r.id < save.realmsUnlocked && !r.locked;
