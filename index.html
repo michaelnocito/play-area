@@ -62,6 +62,51 @@
     font-size:15px;letter-spacing:.02em;}
   .ad-btn:hover{border-color:rgba(255,212,121,0.8)!important;background:#1e1a08!important;}
   .ad-btn:disabled{opacity:.5;}
+  /* ---- Rune Forecaster ---- */
+  .fc-scroll{width:min(560px,94vw);max-height:78vh;overflow-y:auto;display:flex;
+    flex-direction:column;gap:14px;padding:4px 2px;}
+  .fc-card{background:var(--panel);border:1px solid #3a3270;border-radius:16px;padding:16px 18px;
+    text-align:left;display:flex;flex-direction:column;gap:8px;}
+  .fc-card.weekly{border-color:#6a5cc0;box-shadow:0 0 28px rgba(127,212,255,.12);}
+  .fc-tag{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);}
+  .fc-head{display:flex;align-items:center;gap:14px;}
+  .fc-glyph{font-size:46px;line-height:1;width:54px;text-align:center;}
+  .fc-nm{font-weight:700;font-size:19px;}
+  .fc-phon{font-size:12px;color:var(--dim);}
+  .fc-mean{font-size:13px;font-style:italic;}
+  .fc-life{font-size:13px;line-height:1.5;color:#d6dcf6;}
+  .fc-streak{color:var(--gold);font-weight:700;}
+  .fc-spread-row{display:flex;gap:10px;}
+  .fc-spread-row .col{flex:1;background:#191347;border:1px solid #3a3270;border-radius:12px;
+    padding:10px 8px;text-align:center;min-width:0;}
+  .fc-spread-row .col .pos{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);}
+  .fc-spread-row .col .g{font-size:30px;}
+  .fc-spread-row .col .n{font-size:13px;font-weight:700;}
+  .fc-spread-row .col .m{font-size:11px;color:var(--dim);}
+  .fc-locked{filter:blur(4px);opacity:.5;}
+  .btn.sm{min-width:0;padding:10px 18px;font-size:15px;}
+  /* ---- Carry / Practice card ---- */
+  #s-carry .screen-inner{display:flex;flex-direction:column;align-items:center;gap:16px;
+    max-width:520px;padding:0 18px;}
+  .carry-glyph{font-size:108px;line-height:1;color:#fff;
+    text-shadow:0 0 50px hsla(var(--h,210),90%,70%,.6);}
+  .breath-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;margin:4px 0;}
+  .breath-circle{width:128px;height:128px;border-radius:50%;
+    background:radial-gradient(circle at 50% 38%, hsla(var(--h,210),90%,72%,.55),
+      hsla(var(--h,210),80%,50%,.12) 70%, transparent);
+    border:1.5px solid hsla(var(--h,210),85%,72%,.5);
+    animation:breathe 9s ease-in-out infinite;}
+  @keyframes breathe{0%{transform:scale(.58);}50%{transform:scale(1);}100%{transform:scale(.58);}}
+  .breath-labels{position:relative;height:24px;width:260px;text-align:center;}
+  .breath-labels span{position:absolute;left:0;right:0;font-size:15px;color:var(--ink);font-weight:600;}
+  .breath-labels .lin{animation:lblIn 9s ease-in-out infinite;}
+  .breath-labels .lout{animation:lblOut 9s ease-in-out infinite;}
+  @keyframes lblIn{0%{opacity:1}44%{opacity:1}52%{opacity:0}100%{opacity:0}}
+  @keyframes lblOut{0%{opacity:0}44%{opacity:0}52%{opacity:1}96%{opacity:1}100%{opacity:0}}
+  .carry-phrases{display:flex;flex-direction:column;gap:8px;width:100%;}
+  .carry-phrases .ph{background:var(--panel);border:1px solid #3a3270;border-radius:12px;
+    padding:11px 16px;font-size:15px;text-align:center;color:#e9ecff;}
+  .carry-draw{font-size:13px;color:var(--dim);text-align:center;line-height:1.5;max-width:420px;}
 </style>
 </head>
 <body>
@@ -87,6 +132,7 @@
       &nbsp;•&nbsp; Whispers heard: <span style="color:var(--rune)" id="r-lore">0/0</span></p>
     <div class="row" id="realm-list"></div>
     <div class="row">
+      <button class="btn" data-go="forecast">ᛜ Rune Forecaster</button>
       <button class="btn" data-go="shrine">✦ Shrine of Skills</button>
       <button class="btn" data-go="title">Back</button>
     </div>
@@ -115,6 +161,19 @@
       </button>
     </div>
   </div>
+
+  <!-- RUNE FORECASTER -->
+  <div class="screen" id="s-forecast">
+    <h2>Rune Forecaster</h2>
+    <div class="fc-scroll" id="fc-list"></div>
+    <button class="btn" data-go="realm">Back</button>
+  </div>
+
+  <!-- CARRY / PRACTICE CARD -->
+  <div class="screen" id="s-carry">
+    <div class="screen-inner" id="carry-inner"></div>
+    <button class="btn" id="carry-done">Done</button>
+  </div>
 </div>
 
 <script>
@@ -134,6 +193,7 @@ const defaultSave = {
   essence:0, upgrades:{jump:0,bolt:0,shield:0}, // 'essence' kept as code id; player-facing name = Amber
   sounds:{ward:false,echo:false,shimmer:false},
   boons:{shield:0,surge:0,twin:0}, // consumable provisions, banked + auto-used next run
+  forecast:{weekKey:"",weeklyRune:0,weeklyHistory:[],lastDailyKey:"",dailyRune:0,streak:0},
   realmsUnlocked:1, best:{}, loreSeen:{}
 };
 const CUR="Amber"; // player-facing currency name (Freya's tears)
@@ -261,6 +321,19 @@ const RUNE_LORE={
 };
 const TOTAL_WHISPERS=Object.values(RUNE_LORE).reduce((n,r)=>n+r.whispers.length,0);
 function whispersHeard(){ return Object.keys(save.loreSeen).length; }
+
+/* ---------- rune growth practice (vowel breath-mantra + 3 phrases to draw & keep) ---------- */
+const RUNE_GROWTH={
+  0:{mantra:{in:"OH",out:"EE"}, phrases:["The light returns.","I move toward what lights me.","Victory is already turning my way."]},
+  1:{mantra:{in:"AI",out:"OH"}, phrases:["I trust the timing.","The journey is shaping me.","The right road reveals itself."]},
+  2:{mantra:{in:"OO",out:"OH"}, phrases:["The storm has passed.","I receive what I have earned.","Joy needs no grasping."]},
+  3:{mantra:{in:"AH",out:"AH"}, phrases:["What breaks was never mine to keep.","I let the storm clear the way.","Chaos is only the turning."]},
+  4:{mantra:{in:"EE",out:"AH"}, phrases:["I do not force the pause.","Stillness holds its own strength.","Beneath the ice, the river still moves."]},
+  5:{mantra:{in:"AH",out:"EE"}, phrases:["I am more protected than I know.","I see the threat before it arrives.","I hold my ground."]},
+  6:{mantra:{in:"EE",out:"AH"}, phrases:["I hold the line.","Right action is its own reward.","I give what is mine to give."]},
+  7:{mantra:{in:"AH",out:"OO"}, phrases:["I stop directing and let it carry me.","The current already knows the way.","My body knows before my mind."]},
+  8:{mantra:{in:"AH",out:"AH"}, phrases:["I am at the turning point.","What felt impossible is shifting.","I step through into the new."]},
+};
 
 /* ============================================================
    AUDIO — Adaptive Norse score: calm base, big payoffs. Default ON.
@@ -1790,6 +1863,7 @@ document.querySelectorAll("[data-go]").forEach(b=>{
     const t=b.dataset.go;
     if(t==="realm") openRealm();
     else if(t==="shrine") openShrine();
+    else if(t==="forecast") openForecast();
     else showScreen(t);
   });
 });
@@ -1877,6 +1951,175 @@ function openShrine(){
   });
   showScreen("shrine");
 }
+
+/* ============================================================
+   RUNE FORECASTER — spaced-repetition rune practice
+   Free weekly focus rune (held all week) + free daily draw (streak)
+   + ad/Amber-gated Norns' spread. Carry card = breath-mantra + 3 phrases.
+   ============================================================ */
+const FC_DECK=Object.keys(RUNE_LORE).map(Number); // the 9 lore runes
+function fcSave(){ if(!save.forecast) save.forecast={weekKey:"",weeklyRune:0,weeklyHistory:[],lastDailyKey:"",dailyRune:0,streak:0}; return save.forecast; }
+function strHash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0; }
+function isoWeekKey(d){
+  const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day=dt.getUTCDay()||7; dt.setUTCDate(dt.getUTCDate()+4-day);
+  const ys=new Date(Date.UTC(dt.getUTCFullYear(),0,1));
+  const wk=Math.ceil((((dt-ys)/86400000)+1)/7);
+  return dt.getUTCFullYear()+"-W"+String(wk).padStart(2,"0");
+}
+function dayKeyOf(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+
+// Spaced repetition: choose the rune surfaced LEAST recently as weekly focus.
+function pickWeekly(weekKey){
+  const f=fcSave(), hist=f.weeklyHistory||[];
+  let best=FC_DECK[0], bestRank=Infinity;
+  for(const id of FC_DECK){
+    const li=hist.lastIndexOf(id);            // -1 = never shown → oldest
+    const rank=(li<0?-1:li);
+    const tie=strHash(weekKey+":"+id)%1000;   // deterministic tiebreak per week
+    const score=rank*1000+tie;
+    if(score<bestRank){ bestRank=score; best=id; }
+  }
+  return best;
+}
+function ensureWeekly(){
+  const f=fcSave(), wk=isoWeekKey(new Date());
+  if(f.weekKey!==wk){
+    f.weeklyRune=pickWeekly(wk);
+    f.weekKey=wk;
+    f.weeklyHistory=(f.weeklyHistory||[]).concat(f.weeklyRune).slice(-18);
+    persist();
+  }
+  return f.weeklyRune;
+}
+function doDailyDraw(){
+  const f=fcSave(), now=new Date(), today=dayKeyOf(now);
+  if(f.lastDailyKey===today) return false; // already drawn today
+  const yest=dayKeyOf(new Date(now.getTime()-86400000));
+  f.streak=(f.lastDailyKey===yest)?(f.streak||0)+1:1;
+  f.lastDailyKey=today;
+  f.dailyRune=strHash(today+"|day")%FC_DECK.length;
+  persist();
+  Snd.boot(); Snd.coin();
+  return true;
+}
+function castSpread(){
+  // 3 distinct runes — the Norns: Urd (past) · Verdandi (present) · Skuld (future)
+  const pool=FC_DECK.slice(), pick=[];
+  for(let i=0;i<3&&pool.length;i++){ const j=Math.floor(Math.random()*pool.length); pick.push(pool.splice(j,1)[0]); }
+  spreadResult=pick;
+  Snd.boot(); Snd.runeDestroy();
+  openForecast();
+}
+let spreadResult=null;
+
+function runeCardHTML(id,tag,extra=""){
+  const r=RUNE_LORE[id], realm=REALMS[id];
+  return `<div class="fc-card ${tag==='WEEKLY FOCUS'?'weekly':''}">
+    <div class="fc-tag">${tag}</div>
+    <div class="fc-head">
+      <div class="fc-glyph" style="color:hsl(${realm.hue},90%,76%)">${realm.glyph}</div>
+      <div><div class="fc-nm">${realm.name}</div>
+      <div class="fc-phon">[ ${r.phonetic} ] · ${r.meaning}</div></div>
+    </div>
+    <div class="fc-life">${r.lifeMeaning}</div>${extra}
+  </div>`;
+}
+
+function openForecast(){
+  const f=fcSave();
+  const weekly=ensureWeekly();
+  const today=dayKeyOf(new Date());
+  const drawnToday=(f.lastDailyKey===today);
+  const list=document.getElementById("fc-list"); list.innerHTML="";
+
+  // intro / method note
+  const intro=document.createElement("p");
+  intro.className="hint"; intro.style.margin="0 0 2px"; intro.style.maxWidth="520px";
+  intro.innerHTML=`One rune to align with each week — held, breathed, and carried. <span style="color:var(--rune)">Free, always.</span>`;
+  list.appendChild(intro);
+
+  // WEEKLY FOCUS (free)
+  const wWrap=document.createElement("div");
+  wWrap.innerHTML=runeCardHTML(weekly,"WEEKLY FOCUS",
+    `<button class="btn sm primary" style="margin-top:6px;align-self:flex-start;" id="fc-carry-btn">Practice &amp; carry this rune ›</button>`);
+  list.appendChild(wWrap);
+  wWrap.querySelector("#fc-carry-btn").onclick=()=>openCarry(weekly);
+
+  // DAILY DRAW (free 1/day, streak)
+  const dCard=document.createElement("div"); dCard.className="fc-card";
+  dCard.innerHTML=`<div class="fc-tag">Daily Draw &nbsp;·&nbsp; <span class="fc-streak">🔥 ${f.streak||0} day streak</span></div>`;
+  if(drawnToday){
+    const r=RUNE_LORE[f.dailyRune],realm=REALMS[f.dailyRune];
+    dCard.innerHTML+=`<div class="fc-head"><div class="fc-glyph" style="color:hsl(${realm.hue},90%,76%)">${realm.glyph}</div>
+      <div><div class="fc-nm">${realm.name}</div><div class="fc-phon">[ ${r.phonetic} ] · ${r.meaning}</div></div></div>
+      <div class="fc-life">${r.lifeMeaning}</div>
+      <div class="hint" style="margin-top:2px">Return tomorrow to keep your streak.</div>`;
+  } else {
+    dCard.innerHTML+=`<p class="fc-mean" style="margin:2px 0">Draw one rune for today's awareness.</p>`;
+  }
+  list.appendChild(dCard);
+  if(!drawnToday){
+    const b=document.createElement("button"); b.className="btn sm primary"; b.style.alignSelf="flex-start";
+    b.textContent="✦ Draw today's rune (free)";
+    b.onclick=()=>{ if(doDailyDraw()) openForecast(); };
+    dCard.appendChild(b);
+  }
+
+  // NORNS' SPREAD (ad / Amber gated)
+  const sCard=document.createElement("div"); sCard.className="fc-card";
+  sCard.innerHTML=`<div class="fc-tag">The Norns' Spread &nbsp;·&nbsp; past · present · future</div>`;
+  if(spreadResult){
+    const labels=["Urd — what was","Verdandi — what is","Skuld — what shall be"];
+    let cols=`<div class="fc-spread-row">`;
+    spreadResult.forEach((id,i)=>{ const realm=REALMS[id],r=RUNE_LORE[id];
+      cols+=`<div class="col"><div class="pos">${labels[i]}</div>
+        <div class="g" style="color:hsl(${realm.hue},90%,76%)">${realm.glyph}</div>
+        <div class="n">${realm.name}</div><div class="m">${r.meaning}</div></div>`; });
+    cols+=`</div>`;
+    sCard.innerHTML+=cols;
+    const again=document.createElement("button"); again.className="btn sm"; again.style.alignSelf="flex-start";
+    again.textContent="Clear spread"; again.onclick=()=>{ spreadResult=null; openForecast(); };
+    sCard.appendChild(again);
+  } else {
+    sCard.innerHTML+=`<p class="fc-mean" style="margin:2px 0">A deeper reading across the threads of fate.</p>`;
+    const row=document.createElement("div"); row.className="row"; row.style.justifyContent="flex-start";
+    const adB=document.createElement("button"); adB.className="btn sm ad-btn";
+    adB.textContent="▶ Watch a short ad"; adB.onclick=()=>Ads.showRewarded(()=>castSpread());
+    const payB=document.createElement("button"); payB.className="btn sm";
+    payB.textContent="✦ 25 Amber"; payB.disabled=save.essence<25;
+    payB.onclick=()=>{ save.essence-=25; persist(); castSpread(); };
+    row.appendChild(adB); row.appendChild(payB); sCard.appendChild(row);
+  }
+  list.appendChild(sCard);
+
+  showScreen("forecast");
+}
+
+function openCarry(id){
+  const r=RUNE_LORE[id], g=RUNE_GROWTH[id], realm=REALMS[id];
+  const inner=document.getElementById("carry-inner");
+  inner.style.setProperty("--h",realm.hue);
+  inner.innerHTML=`
+    <div class="fc-tag">Carry this rune as long as you wish its influence</div>
+    <div class="carry-glyph">${realm.glyph}</div>
+    <div style="text-align:center"><div class="fc-nm" style="font-size:22px">${realm.name}</div>
+      <div class="fc-phon">[ ${r.phonetic} ] · ${r.meaning}</div></div>
+    <div class="breath-wrap">
+      <div class="breath-circle"></div>
+      <div class="breath-labels">
+        <span class="lin">Breathe in — “${g.mantra.in}”</span>
+        <span class="lout">Breathe out — “${g.mantra.out}”</span>
+      </div>
+    </div>
+    <div class="carry-phrases">
+      ${g.phrases.map(p=>`<div class="ph">${p}</div>`).join("")}
+    </div>
+    <div class="carry-draw">Draw ${realm.glyph} on paper with these three phrases.
+      Leave it where you'll see it — let the rune work as you go about your week.</div>`;
+  showScreen("carry");
+}
+document.getElementById("carry-done").addEventListener("click",()=>openForecast());
 
 window.addEventListener("resize",()=>{});
 </script>
