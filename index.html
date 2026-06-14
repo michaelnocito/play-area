@@ -84,6 +84,16 @@
   .fc-spread-row .col .n{font-size:13px;font-weight:700;}
   .fc-spread-row .col .m{font-size:11px;color:var(--dim);}
   .fc-locked{filter:blur(4px);opacity:.5;}
+  .fc-read{background:#191347;border:1px solid #3a3270;border-radius:12px;padding:12px 14px;
+    display:flex;flex-direction:column;gap:6px;}
+  .fc-read-head{display:flex;align-items:center;gap:12px;}
+  .fc-read-glyph{font-size:34px;line-height:1;width:40px;text-align:center;}
+  .fc-read-pos{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);}
+  .fc-read-nm{display:block;font-size:16px;font-weight:700;}
+  .fc-read-txt{font-size:13px;line-height:1.55;color:#e1e6fb;}
+  .fc-synth{background:rgba(106,92,192,0.12);border:1px solid #6a5cc0;border-radius:12px;
+    padding:12px 14px;display:flex;flex-direction:column;gap:6px;}
+  .fc-synth .fc-tag{color:#b9adf0;}
   .btn.sm{min-width:0;padding:10px 18px;font-size:15px;}
   /* ---- Carry / Practice card ---- */
   #s-carry .screen-inner{display:flex;flex-direction:column;align-items:center;gap:16px;
@@ -321,6 +331,46 @@ const RUNE_LORE={
 };
 const TOTAL_WHISPERS=Object.values(RUNE_LORE).reduce((n,r)=>n+r.whispers.length,0);
 function whispersHeard(){ return Object.keys(save.loreSeen).length; }
+
+/* ---------- spread readings: each rune read IN a position + a 'thread' clause for the weave ---------- */
+const RUNE_READING={
+  0:{past:"A guiding light carried you through a darker stretch — the clarity you hold now was hard-won.",
+     present:"The sun is on you. Your direction is clear and momentum is with you; act while the way is lit.",
+     future:"A real moment of clarity or victory is coming — keep moving toward what lights you and it will meet you.",
+     thread:"the light that has guided you"},
+  1:{past:"The road you travelled had its own rhythm, and it shaped you more than any destination could.",
+     present:"You are in motion. Trust the timing and move with the world instead of forcing against it.",
+     future:"The right road reveals itself as you go; what lies ahead rewards steady rhythm over haste.",
+     thread:"the road you have been travelling"},
+  2:{past:"Hard-won harmony helped bring you here — a joy you may not have fully let yourself receive.",
+     present:"Well-being is here for you now. Receive it without grasping; it doesn't need to be earned again.",
+     future:"A season of genuine joy is ahead — let it root slowly, for brightness without foundation won't last.",
+     thread:"the joy you are allowed to keep"},
+  3:{past:"A disruption broke something open behind you; what shattered was never built to last.",
+     present:"You are in the storm. Let it pass through rather than bracing against it — this chaos is only the turning.",
+     future:"What survives the coming upheaval is what was always meant to endure; renewal waits beyond it.",
+     thread:"the storm that clears the way"},
+  4:{past:"A necessary pause held you still, and what looked like waiting was quietly preparing you.",
+     present:"Stillness is being asked of you. Don't force movement — clarity is forming beneath the surface.",
+     future:"The thaw comes in its own time; the patience you keep now is what carries you into what's next.",
+     thread:"the stillness you are keeping"},
+  5:{past:"You were more protected than you knew through a vulnerable stretch you've now come past.",
+     present:"You are shielded. Stay attentive, and nothing reaches you that you don't first see coming.",
+     future:"Hold your ground in what's ahead; your safety lies in awareness, not in retreat.",
+     thread:"the protection that surrounds you"},
+  6:{past:"A real cost was paid behind you — you held the line when it counted, and that still steadies you.",
+     present:"You're being asked to stand for what's right, even at a price; right action now is its own reward.",
+     future:"The way forward asks you to give willingly what is yours to give — what follows will be honestly earned.",
+     thread:"the line you are holding"},
+  7:{past:"Your intuition carried you further than reason could; the current already knew the way.",
+     present:"Stop steering and let the flow carry you — your body knows the answer before your mind names it.",
+     future:"What's ahead asks you to trust the tide; the river reaches the sea whether or not you fight it.",
+     thread:"the current that carries you"},
+  8:{past:"A threshold was already crossed behind you — you are not who you were before that turning.",
+     present:"You stand between night and day; the change you sense is real and already underway.",
+     future:"A breakthrough is coming that can't be undone — step through, and a new self waits on the other side.",
+     thread:"the dawn that is breaking"},
+};
 
 /* ---------- rune growth practice (vowel breath-mantra + 3 phrases to draw & keep) ---------- */
 const RUNE_GROWTH={
@@ -2071,13 +2121,22 @@ function openForecast(){
   sCard.innerHTML=`<div class="fc-tag">The Norns' Spread &nbsp;·&nbsp; past · present · future</div>`;
   if(spreadResult){
     const labels=["Urd — what was","Verdandi — what is","Skuld — what shall be"];
-    let cols=`<div class="fc-spread-row">`;
-    spreadResult.forEach((id,i)=>{ const realm=REALMS[id],r=RUNE_LORE[id];
-      cols+=`<div class="col"><div class="pos">${labels[i]}</div>
-        <div class="g" style="color:hsl(${realm.hue},90%,76%)">${realm.glyph}</div>
-        <div class="n">${realm.name}</div><div class="m">${r.meaning}</div></div>`; });
-    cols+=`</div>`;
-    sCard.innerHTML+=cols;
+    const poss=["past","present","future"];
+    let html="";
+    spreadResult.forEach((id,i)=>{ const realm=REALMS[id],rd=RUNE_READING[id];
+      html+=`<div class="fc-read">
+        <div class="fc-read-head">
+          <span class="fc-read-glyph" style="color:hsl(${realm.hue},90%,76%)">${realm.glyph}</span>
+          <span><span class="fc-read-pos">${labels[i]}</span><span class="fc-read-nm">${realm.name}</span></span>
+        </div>
+        <div class="fc-read-txt">${rd[poss[i]]}</div></div>`;
+    });
+    // woven synthesis — the three read together as one arc, landing on the future rune's guidance
+    const [a,b,c]=spreadResult;
+    const syn=`Behind you: ${RUNE_READING[a].thread}. Around you now: ${RUNE_READING[b].thread}. Ahead: ${RUNE_READING[c].thread}. `+
+      `Woven together, the threads turn toward ${REALMS[c].name} — ${RUNE_LORE[c].lifeMeaning}`;
+    html+=`<div class="fc-synth"><div class="fc-tag">The threads, woven</div><div class="fc-read-txt">${syn}</div></div>`;
+    sCard.innerHTML+=html;
     const again=document.createElement("button"); again.className="btn sm"; again.style.alignSelf="flex-start";
     again.textContent="Clear spread"; again.onclick=()=>{ spreadResult=null; openForecast(); };
     sCard.appendChild(again);
