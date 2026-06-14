@@ -254,9 +254,11 @@ const TOTAL_WHISPERS=Object.values(RUNE_LORE).reduce((n,r)=>n+r.whispers.length,
 function whispersHeard(){ return Object.keys(save.loreSeen).length; }
 
 /* ============================================================
-   AUDIO — Ambient focus bed + keystroke beats. Default OFF.
-   FREE: jump snap, kill bass hit, block thud, gate chord.
-   UNLOCKABLE at Shrine: coin chime, bolt crack, death knell.
+   AUDIO — Adaptive Norse score: calm base, big payoffs. Default ON.
+   Base: warm drone + frame-drum pulse + seed shaker + woven bone-flute
+   motif that IS each rune's signature melody (the audio teaches the runes).
+   Payoffs: kill = war-horn boom; gate = drum+flute flourish.
+   FREE sfx; UNLOCKABLE at Shrine: ward bell, double echo, gate shimmer.
    ============================================================ */
 const Snd=(()=>{
   let AC=null,master=null,sfxBus=null,musBus=null,on=true;
@@ -278,6 +280,22 @@ const Snd=(()=>{
     [55, 82,  220, 0.55,  88],  // 8 Dagaz   A1  — sun returns (mirrors Sowilo)
   ];
 
+  // Pentatonic ratios for the bone-flute motif (root, +2, +4, +5, +6, octave)
+  const PENTA=[1, 1.125, 1.25, 1.5, 1.6667, 2];
+  // Per-rune signature motif — a short flute phrase that IS each rune's musical identity.
+  // Values index PENTA. Distinct contour per realm so the ear learns the rune by its melody.
+  const REALM_MOTIF=[
+    [0,2,3,4],     // 0 Sowilo  — rising, victorious
+    [0,1,2,1],     // 1 Raidho  — steady travel
+    [2,4,3,2],     // 2 Wunjo   — joyful leap
+    [4,2,3,0],     // 3 Hagalaz — unsettled, falling
+    [0,0,2],       // 4 Isa     — still, sparse
+    [0,2,4],       // 5 Algiz   — guarded, upward
+    [3,0,3,0],     // 6 Tiwaz   — martial, resolute
+    [2,3,4,3,2],   // 7 Laguz   — flowing wave
+    [0,2,4,5],     // 8 Dagaz   — rising to the octave dawn
+  ];
+
   function boot(){
     if(AC) return;
     AC=new(window.AudioContext||window.webkitAudioContext)();
@@ -287,67 +305,101 @@ const Snd=(()=>{
   }
 
   /* ---------- music: hybrid drone + rhythmic beat, player-reactive ---------- */
+  // Frame drum (bodhrán-style) — woody low thud with a soft skin slap
   function _kick(t,vol=0.18){
     const o=AC.createOscillator(),g=AC.createGain();
-    o.type='sine'; o.frequency.setValueAtTime(82,t); o.frequency.exponentialRampToValueAtTime(40,t+0.072);
-    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.007);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.10);
-    o.connect(g); g.connect(musBus); o.start(t); o.stop(t+0.11);
+    o.type='sine'; o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(66,t+0.10);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.20);
+    o.connect(g); g.connect(musBus); o.start(t); o.stop(t+0.22);
+    // skin slap — soft lowpassed noise body
+    const sz=Math.ceil(AC.sampleRate*0.05);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=(Math.random()*2-1)*(1-i/sz);
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1500;
+    const sg=AC.createGain(); sg.gain.setValueAtTime(vol*0.5,t); sg.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+    src.connect(lp); lp.connect(sg); sg.connect(musBus); src.start(t); src.stop(t+0.06);
   }
+  // Seed shaker — soft woody rustle (replaces the metallic hi-hat)
   function _hat(t,vol=0.06){
-    const sz=Math.ceil(AC.sampleRate*0.016);
+    const sz=Math.ceil(AC.sampleRate*0.04);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=(Math.random()*2-1)*(1-i/sz);
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const hpf=AC.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=5200;
+    const g=AC.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.042);
+    src.connect(hpf); hpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+0.05);
+  }
+  // Bone flute — breathy triangle tone with a soft scoop and air noise. The rune's voice.
+  function _flute(t,freq,vol=0.12){
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='triangle';
+    o.frequency.setValueAtTime(freq*0.992,t); o.frequency.linearRampToValueAtTime(freq,t+0.06);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.05);
+    g.gain.setValueAtTime(vol,t+0.18); g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+    o.connect(g); g.connect(musBus); o.start(t); o.stop(t+0.55);
+    // breath layer
+    const sz=Math.ceil(AC.sampleRate*0.4);
     const buf=AC.createBuffer(1,sz,AC.sampleRate);
     const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=Math.random()*2-1;
     const src=AC.createBufferSource(); src.buffer=buf;
-    const hpf=AC.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=9000;
-    const g=AC.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.016);
-    src.connect(hpf); hpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+0.020);
+    const bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=freq*2; bp.Q.value=0.8;
+    const bg=AC.createGain(); bg.gain.setValueAtTime(vol*0.16,t); bg.gain.exponentialRampToValueAtTime(0.001,t+0.3);
+    src.connect(bp); bp.connect(bg); bg.connect(musBus); src.start(t); src.stop(t+0.4);
   }
 
   function startMusic(realmId){
     stopMusic();
     if(!on||!AC) return;
     try{ AC.resume(); }catch(e){}
-    const [root,,pad,lfoHz,bpm]=REALM_AMB[realmId]||REALM_AMB[0];
+    const [root,fifth,pad,lfoHz,bpm]=REALM_AMB[realmId]||REALM_AMB[0];
+    const motif=REALM_MOTIF[realmId]||REALM_MOTIF[0];
     const t=AC.currentTime;
     musicPlaying=true;
 
-    // Sawtooth sub-bass drone (old style but quiet — warmth + texture)
+    // Warm organic drone — layered sine/triangle (throat-sung / horn feel), gently filtered.
     const dg=AC.createGain(); dg.gain.setValueAtTime(0,t);
-    dg.gain.linearRampToValueAtTime(0.17,t+2.0); dg.connect(musBus);
+    dg.gain.linearRampToValueAtTime(0.15,t+2.4); dg.connect(musBus);
     musicNodes.push(dg);
-    const dlpf=AC.createBiquadFilter(); dlpf.type='lowpass'; dlpf.frequency.value=240; dlpf.connect(dg);
-    [[root,0],[root,5],[root*1.5,-3]].forEach(([f,det])=>{
-      const o=AC.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det;
-      o.connect(dlpf); o.start(t); musicNodes.push(o);
+    const dlpf=AC.createBiquadFilter(); dlpf.type='lowpass'; dlpf.frequency.value=300; dlpf.connect(dg);
+    [['sine',root,0,1.0],['triangle',root,6,0.5],['sine',fifth,-4,0.4]].forEach(([type,f,det,a])=>{
+      const o=AC.createOscillator(),og=AC.createGain();
+      o.type=type; o.frequency.value=f; o.detune.value=det; og.gain.value=a;
+      o.connect(og); og.connect(dlpf); o.start(t); musicNodes.push(o,og);
     });
     const lfo=AC.createOscillator(),lfoG=AC.createGain();
-    lfo.type='sine'; lfo.frequency.value=lfoHz*0.5; lfoG.gain.value=0.04;
+    lfo.type='sine'; lfo.frequency.value=lfoHz*0.5; lfoG.gain.value=0.045;
     lfo.connect(lfoG); lfoG.connect(dg.gain); lfo.start(t); musicNodes.push(lfo);
 
     // Thin mid-register pad (tonal context)
     const pg=AC.createGain(); pg.gain.setValueAtTime(0,t);
-    pg.gain.linearRampToValueAtTime(0.09,t+2.5); pg.connect(musBus);
+    pg.gain.linearRampToValueAtTime(0.07,t+2.8); pg.connect(musBus);
     musicNodes.push(pg);
     const po=AC.createOscillator(),pog=AC.createGain();
-    po.type='triangle'; po.frequency.value=root*4; pog.gain.value=0.45;
+    po.type='triangle'; po.frequency.value=pad; pog.gain.value=0.45;
     po.connect(pog); pog.connect(pg); po.start(t); musicNodes.push(po,pog);
 
-    // Rhythmic beat — reactive to activityScore
-    const beatDur=60/bpm;
-    let nextBeat=t+0.08, beat=0;
+    // Frame-drum pulse + shaker + woven bone-flute motif — reactive to activityScore
+    const beatDur=60/bpm, fluteBase=root*4;
+    let nextBeat=t+0.08, beat=0, motifPos=0;
     function sched(){
       if(!musicPlaying) return;
       const ahead=AC.currentTime+0.36;
       const act=Math.min(activityScore,8);
       while(nextBeat<ahead){
         const b=beat%4;
-        const kv=0.15+act*0.014; // kick gets louder with activity
-        const hv=0.050+act*0.009;
+        const kv=0.14+act*0.012;  // drum swells with activity
+        const hv=0.045+act*0.008;
         if(b===0||b===2) _kick(nextBeat,kv);
         else _hat(nextBeat,hv);
-        // 8th-note hi-hats fill in when player is active
-        if(act>3) _hat(nextBeat+beatDur*0.5, hv*0.45);
+        if(act>3) _hat(nextBeat+beatDur*0.5, hv*0.45); // off-beat shaker when busy
+        // bone-flute motif — one note every 2 beats, the rune's signature line
+        if(beat%2===0){
+          const idx=motif[motifPos%motif.length];
+          _flute(nextBeat, fluteBase*PENTA[idx], 0.085+act*0.004);
+          motifPos++;
+        }
         nextBeat+=beatDur; beat++;
       }
       activityScore=Math.max(0,activityScore-0.14); // slow decay toward calm
@@ -459,6 +511,17 @@ const Snd=(()=>{
     lpf.type='lowpass'; lpf.frequency.value=340;
     g3.gain.setValueAtTime(0.30,t); g3.gain.exponentialRampToValueAtTime(0.001,t+0.42);
     o3.connect(lpf); lpf.connect(g3); g3.connect(sfxBus); o3.start(t); o3.stop(t+0.45);
+
+    // war-horn swell — the triumphant Norse payoff over the drum-boom
+    const oh=AC.createOscillator(),hlp=AC.createBiquadFilter(),gh=AC.createGain();
+    oh.type='sawtooth'; oh.frequency.setValueAtTime(root*3,t);
+    hlp.type='lowpass';
+    hlp.frequency.setValueAtTime(420,t);
+    hlp.frequency.linearRampToValueAtTime(1300,t+0.12);
+    hlp.frequency.linearRampToValueAtTime(520,t+0.5);
+    gh.gain.setValueAtTime(0,t); gh.gain.linearRampToValueAtTime(0.20,t+0.05);
+    gh.gain.setValueAtTime(0.16,t+0.26); gh.gain.exponentialRampToValueAtTime(0.001,t+0.6);
+    oh.connect(hlp); hlp.connect(gh); gh.connect(musBus); oh.start(t); oh.stop(t+0.65);
   }
 
   // Runestone block: dull low thud
@@ -482,6 +545,9 @@ const Snd=(()=>{
       g.gain.linearRampToValueAtTime(0,t+2.3);
       o.connect(g); g.connect(musBus); o.start(t+i*0.07); o.stop(t+2.4);
     });
+    // Norse flourish — three frame-drum hits + an ascending flute run up the rune's octave
+    _kick(t,0.22); _kick(t+0.17,0.20); _kick(t+0.33,0.26);
+    [root*4,root*5,root*6,root*8].forEach((f,i)=>_flute(t+0.12+i*0.12,f,0.15));
     const os=AC.createOscillator(),gs=AC.createGain();
     os.type='triangle'; os.frequency.value=root*6;
     gs.gain.setValueAtTime(0,t+0.38); gs.gain.linearRampToValueAtTime(0.15,t+0.48);
