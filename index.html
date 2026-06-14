@@ -60,7 +60,7 @@
 <body>
 <div id="wrap">
   <canvas id="game" width="960" height="540"></canvas>
-  <button id="snd-btn" onclick="toggleSound()">♪ Sound: OFF</button>
+  <button id="snd-btn" class="on" onclick="toggleSound()">♪ Sound: ON</button>
 
   <!-- TITLE -->
   <div class="screen on" id="s-title">
@@ -198,7 +198,7 @@ function whispersHeard(){ return Object.keys(save.loreSeen).length; }
    UNLOCKABLE at Shrine: coin chime, bolt crack, death knell.
    ============================================================ */
 const Snd=(()=>{
-  let AC=null,master=null,sfxBus=null,musBus=null,on=false;
+  let AC=null,master=null,sfxBus=null,musBus=null,on=true;
   let musicNodes=[],musicPlaying=false,schedTimer=null;
   let glideNodes=[];
   let uSounds={ward:false,echo:false,shimmer:false};
@@ -241,6 +241,7 @@ const Snd=(()=>{
   function startMusic(realmId){
     stopMusic();
     if(!on||!AC) return;
+    try{ AC.resume(); }catch(e){}
     const [root,,pad,lfoHz,bpm]=REALM_AMB[realmId]||REALM_AMB[0];
     const t=AC.currentTime;
     musicPlaying=true;
@@ -705,7 +706,7 @@ let boltCD=0;
 function cfg(){
   const j=save.upgrades.jump;
   return {
-    runSpeed:(3.3+curRealm.id*0.38)*0.9,
+    runSpeed:(3.3+curRealm.id*0.38)*0.765,
     grav:0.60, jumpV:-14.6-j*0.9, cutMul:0.45,
     coyoteMax:7, bufMax:7, maxFall:14,
     glideMul:0.2, glideFall:2.3,
@@ -771,6 +772,7 @@ function startRun(realm){
   introPaused=true;
   ghostPlayback=ghostData[realm.id]||null;
   ghostRecording=[]; ghostFrame=0;
+  Snd.boot();
   Snd.syncUnlocks(save);
   Snd.startMusic(realm.id);
   state="play"; showScreen(null);
