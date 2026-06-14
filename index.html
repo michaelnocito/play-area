@@ -120,7 +120,7 @@ const W = cv.width, H = cv.height;
 const SAVE_KEY = "runeDash.save.v1";
 const defaultSave = {
   essence:0, upgrades:{jump:0,bolt:0,shield:0},
-  sounds:{coin:false,bolt:false,death:false},
+  sounds:{ward:false,echo:false,shimmer:false},
   realmsUnlocked:1, best:{}, loreSeen:{}
 };
 let save = load();
@@ -137,9 +137,9 @@ const UPGRADES=[
   {key:"shield",name:"Ward",      desc:"Start each run with a shield.",   cost:[60,120,220]},
 ];
 const SOUND_PACKS=[
-  {key:"coin",  name:"Coin Chime",  desc:"A bright chime when you gather star-essence.", cost:15},
-  {key:"bolt",  name:"Bolt Crack",  desc:"A sharp crack when you cast the rune-bolt.",  cost:15},
-  {key:"death", name:"Death Knell", desc:"A descending toll when the run ends.",         cost:20},
+  {key:"ward",   name:"Ward Pulse",   desc:"A resonant bell chord when your shield absorbs a hit.", cost:15},
+  {key:"echo",   name:"Double Echo",  desc:"A rising chime accent on your second jump.",            cost:15},
+  {key:"shimmer",name:"Gate Shimmer", desc:"Shimmering high overtones when you clear the gate.",    cost:20},
 ];
 function upgCost(key){
   const u=UPGRADES.find(u=>u.key===key), lv=save.upgrades[key];
@@ -384,11 +384,23 @@ const Snd=(()=>{
     gs.gain.setValueAtTime(0,t+0.38); gs.gain.linearRampToValueAtTime(0.15,t+0.48);
     gs.gain.linearRampToValueAtTime(0,t+1.9);
     os.connect(gs); gs.connect(sfxBus); os.start(t+0.38); os.stop(t+2.0);
+    // PAID: shimmer high overtones
+    if(uSounds.shimmer){
+      [root*9,root*12,root*15].forEach((f,i)=>{
+        const o2=AC.createOscillator(),g2=AC.createGain();
+        o2.type='triangle'; o2.frequency.value=f;
+        g2.gain.setValueAtTime(0,t+0.22+i*0.14); g2.gain.linearRampToValueAtTime(0.09,t+0.32+i*0.14);
+        g2.gain.linearRampToValueAtTime(0,t+1.5+i*0.22);
+        o2.connect(g2); g2.connect(sfxBus); o2.start(t+0.22+i*0.14); o2.stop(t+1.75+i*0.22);
+      });
+    }
   }
 
-  /* ---------- UNLOCKABLE sfx ---------- */
+  /* ---------- always-free sfx ---------- */
+
+  // Coin: bright rising chime
   function coin(){
-    if(!on||!AC||!uSounds.coin) return;
+    if(!on||!AC) return;
     const t=AC.currentTime;
     [880,1320,1760].forEach((f,i)=>{
       const o=AC.createOscillator(),g=AC.createGain();
@@ -399,14 +411,16 @@ const Snd=(()=>{
     });
   }
 
+  // Bolt: sawtooth sweep + crack
   function bolt(){
-    if(!on||!AC||!uSounds.bolt) return;
+    if(!on||!AC) return;
     _sweep(660,160,'sawtooth',0.13,0.28);
     _click(1500,5,0.028,0.38);
   }
 
+  // Death: descending sine toll
   function death(){
-    if(!on||!AC||!uSounds.death) return;
+    if(!on||!AC) return;
     const t=AC.currentTime;
     [280,220,174,138].forEach((f,i)=>{
       const o=AC.createOscillator(),g=AC.createGain();
@@ -417,11 +431,62 @@ const Snd=(()=>{
     });
   }
 
+  // Footstep: barely audible soft tap while running on ground
+  function footstep(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const sz=Math.ceil(AC.sampleRate*0.018);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=Math.random()*2-1;
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const lpf=AC.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=480;
+    const g=AC.createGain(); g.gain.setValueAtTime(0.065,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.018);
+    src.connect(lpf); lpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+0.022);
+  }
+
+  // Land: soft low thud on hitting the ground
+  function land(){
+    if(!on||!AC) return;
+    _sweep(155,68,'sine',0.13,0.36,musBus);
+    _click(400,2,0.030,0.12);
+  }
+
+  // Shield absorb: resonant pulse (+ optional paid bell chord)
+  function shieldAbsorb(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const o=AC.createOscillator(),bpf=AC.createBiquadFilter(),g=AC.createGain();
+    o.type='sine'; o.frequency.value=520;
+    bpf.type='bandpass'; bpf.frequency.value=520; bpf.Q.value=10;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.42,t+0.014);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.28);
+    o.connect(bpf); bpf.connect(g); g.connect(sfxBus); o.start(t); o.stop(t+0.30);
+    _click(980,4,0.025,0.20);
+    // PAID: resonant bell chord overtone
+    if(uSounds.ward){
+      [260,390,520].forEach((f,i)=>{
+        const o2=AC.createOscillator(),g2=AC.createGain();
+        o2.type='sine'; o2.frequency.value=f;
+        g2.gain.setValueAtTime(0,t+i*0.022); g2.gain.linearRampToValueAtTime(0.16,t+i*0.022+0.03);
+        g2.gain.exponentialRampToValueAtTime(0.001,t+i*0.022+0.5);
+        o2.connect(g2); g2.connect(sfxBus); o2.start(t+i*0.022); o2.stop(t+i*0.022+0.55);
+      });
+    }
+  }
+
+  // Double jump: airy burst distinct from regular tap (+ optional paid chime)
+  function doubleJump(){
+    if(!on||!AC) return;
+    _click(2200,6,0.055,0.20);
+    _sweep(340,220,'sine',0.09,0.16);
+    if(uSounds.echo) _sweep(880,660,'triangle',0.16,0.18);
+  }
+
   function syncUnlocks(s){
     uSounds={
-      coin:!!(s.sounds&&s.sounds.coin),
-      bolt:!!(s.sounds&&s.sounds.bolt),
-      death:!!(s.sounds&&s.sounds.death),
+      ward:!!(s.sounds&&s.sounds.ward),
+      echo:!!(s.sounds&&s.sounds.echo),
+      shimmer:!!(s.sounds&&s.sounds.shimmer),
     };
   }
 
@@ -442,7 +507,8 @@ const Snd=(()=>{
 
   return {
     boot, toggle, startMusic, stopMusic, syncUnlocks,
-    jump, coin, bolt, bassHit, runeBlock, gateClear, death,
+    jump, doubleJump, coin, bolt, bassHit, runeBlock, gateClear, death,
+    footstep, land, shieldAbsorb,
     glideStart, glideEnd,
     get on(){ return on; }
   };
@@ -563,7 +629,7 @@ function buildLevel(realm){
 /* ============================================================
    GAME STATE
    ============================================================ */
-let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0;
+let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0,footstepDist=0;
 let curRealm=REALMS[0],shieldCharges=0,endReason="",runWhisper=null,runScene=null;
 let introPaused=false;
 // ghost system (session-only, not persisted)
@@ -629,7 +695,7 @@ cv.addEventListener("pointerup",()=>{ jumpUp(); keys.cast=false; });
 function startRun(realm){
   curRealm=realm;
   level=buildLevel(realm);
-  cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0;
+  cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
   bolts.length=0; particles.length=0; boltCD=0;
   shieldCharges=save.upgrades.shield>0?1:0;
   player.x=220; player.y=GROUND_Y-player.h; player.vy=0;
@@ -726,6 +792,7 @@ function update(){
     } else if(player.jumpsLeft>0&&canDouble){
       player.vy=C.jumpV*0.9; player.jumpsLeft=0; player.jumpBuf=0;
       spawnBurst(px-cam,player.y+player.h*0.5,"#ffe6a8",8,2.4);
+      Snd.doubleJump();
     }
   }
   if(!keys.jump&&player.vy<-3.0) player.vy=-3.0;
@@ -741,6 +808,7 @@ function update(){
   player.y+=player.vy;
 
   // ground
+  const wasOnGround=player.onGround;
   player.onGround=false;
   const footY=player.y+player.h;
   for(const s of level.segs){
@@ -793,6 +861,11 @@ function update(){
     }
   }
 
+  // landing + footstep
+  if(!wasOnGround&&player.onGround) Snd.land();
+  footstepDist+=C.runSpeed;
+  if(player.onGround&&footstepDist>=42){ Snd.footstep(); footstepDist=0; }
+
   // coins
   for(const c of level.coins){
     if(c.got) continue;
@@ -818,7 +891,7 @@ function update(){
 }
 
 function takeHit(){
-  if(shieldCharges>0){ shieldCharges--; player.flash=18; spawnBurst(player.x,player.y,"#7fd4ff",18,3.5); return true; }
+  if(shieldCharges>0){ shieldCharges--; player.flash=18; spawnBurst(player.x,player.y,"#7fd4ff",18,3.5); Snd.shieldAbsorb(); return true; }
   endReason="A shade caught you."; Snd.glideEnd(); Snd.death(); doDeath(); return false;
 }
 function doDeath(){ spawnBurst(player.x,player.y,"#ff9a9a",26,4); endRun(false); }
