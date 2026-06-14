@@ -150,25 +150,33 @@ const REALMS=[
 
 /* ---------- rune lore ---------- */
 const RUNE_LORE={
-  0:{meaning:"sun · guidance · victory",whispers:[
+  0:{meaning:"sun · guidance · victory", phonetic:"SOH-wee-loh",
+    lifeMeaning:"Clarity returns. Energy aligns. Move toward what lights you — victory is already turning your way.",
+    whispers:[
     "Sowilo is the sun-wheel — the unconquered light that guides the lost back home.",
     "The Norse named the sun Sól, who flees forever before the wolf Sköll.",
     "Sailors carved Sowilo into their hulls for clear horizons and safe passage.",
     "Twin Sowilo runes were bound as a sigil of victory in battle.",
     "Where Sowilo burns, the old said, despair can find no root."]},
-  1:{meaning:"the ride · rhythm · the right path",whispers:[
+  1:{meaning:"the ride · rhythm · the right path", phonetic:"RYE-thoh",
+    lifeMeaning:"Something is in motion. Trust the timing. The right road reveals itself to those who keep moving.",
+    whispers:[
     "Raidho is the rune of the ride — the wagon, the road, the rhythm of travel.",
     "It teaches that the journey itself, not the destination, is what shapes us.",
     "Raidho governs right timing: moving with the world rather than against it.",
     "Old riders carved Raidho to keep their road true and their horses sure.",
     "To ride Raidho is to find the steady rhythm beneath all motion."]},
-  2:{meaning:"hail · disruption · renewal",whispers:[
+  2:{meaning:"hail · disruption · renewal", phonetic:"HAH-gah-lahz",
+    lifeMeaning:"A disruption is arriving or passing. Let it clear. What breaks now was never built to last.",
+    whispers:[
     "Hagalaz is the hailstone — ruin that melts to water the spring to come.",
     "It is the rune of storms that break the old to clear room for the new.",
     "Even the gods bend before Hagalaz; the Norns answer to it alone.",
     "What survives the hail was always the thing meant to endure.",
     "Hagalaz warns that chaos is never the end — only the turning."]},
-  3:{meaning:"ice · stillness · patience",whispers:[
+  3:{meaning:"ice · stillness · patience", phonetic:"EE-sah",
+    lifeMeaning:"A pause is being asked of you. Do not force movement. Clarity and strength are found in stillness.",
+    whispers:[
     "Isa is ice — the great stillness, the world holding its breath.",
     "It teaches patience: even frozen rivers keep moving beneath the surface.",
     "In Isa all things pause, and the wise learn to listen in the silence.",
@@ -448,6 +456,13 @@ function buildLevel(realm){
 let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0;
 let curRealm=REALMS[0],shieldCharges=0,endReason="",runWhisper=null,runScene=null;
 let introPaused=false;
+// ghost system (session-only, not persisted)
+const ghostData={};       // realmId -> [{cam,y}] from best run
+let ghostRecording=[];    // frames recorded this run
+let ghostPlayback=null;   // ghost to replay this run
+let ghostFrame=0;
+let showGhost=true;
+let screenFlash=0;        // 0..1, decays after big kill burst
 
 const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLeft:1,alive:true,flash:0};
 const bolts=[],particles=[];
@@ -477,6 +492,7 @@ function jumpUp(){ keys.jump=false; }
 window.addEventListener("keydown",e=>{
   if(e.repeat) return;
   if(e.code==="KeyM"){ e.preventDefault(); Snd.toggle(); return; }
+  if(e.code==="KeyG"){ showGhost=!showGhost; return; }
   if(e.code==="Space"||e.code==="ArrowUp"||e.code==="KeyW"){
     e.preventDefault();
     if(state==="play"){ if(introPaused){ Snd.boot(); introPaused=false; } else jumpDown(); }
@@ -517,6 +533,8 @@ function startRun(realm){
   runScene={hueShift:((Math.random()*30)|0)-15,pieces:[]};
   for(let i=0;i<2;i++) runScene.pieces.push({type:SCENES[(Math.random()*SCENES.length)|0],x:700+i*1900+Math.random()*700,z:0.30+Math.random()*0.14,scale:0.85+Math.random()*0.5});
   introPaused=true;
+  ghostPlayback=ghostData[realm.id]||null;
+  ghostRecording=[]; ghostFrame=0;
   Snd.startMusic(realm.id);
   state="play"; showScreen(null);
 }
@@ -527,7 +545,10 @@ function endRun(won){
   if(won){
     const t=runTime;
     if(save.realmsUnlocked<curRealm.id+2&&curRealm.id+1<REALMS.length) save.realmsUnlocked=curRealm.id+2;
-    if(!save.best[curRealm.id]||t<save.best[curRealm.id]) save.best[curRealm.id]=t;
+    if(!save.best[curRealm.id]||t<save.best[curRealm.id]){
+      save.best[curRealm.id]=t;
+      ghostData[curRealm.id]=ghostRecording.slice(); // new best run → save as ghost
+    }
   }
   persist(); Snd.stopMusic();
   setTimeout(()=>{
@@ -550,6 +571,18 @@ function endRun(won){
    UPDATE
    ============================================================ */
 function rectHit(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by; }
+function spawnDeathBurst(x,y){
+  const hue=curRealm.hue;
+  // white core flash
+  for(let i=0;i<16;i++){ const a=Math.random()*Math.PI*2,s=Math.random()*8+4; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:0,max:16+Math.random()*10,c:"#ffffff",r:Math.random()*4+2}); }
+  // realm-color spread
+  for(let i=0;i<32;i++){ const a=Math.random()*Math.PI*2,s=Math.random()*10+3; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:0,max:28+Math.random()*16,c:`hsl(${hue},90%,74%)`,r:Math.random()*5+2.5}); }
+  // gold sparkles
+  for(let i=0;i<20;i++){ const a=Math.random()*Math.PI*2,s=Math.random()*7+5; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2.5,life:0,max:18+Math.random()*12,c:"#ffd479",r:Math.random()*3+1.5}); }
+  // evenly-spread ring burst
+  for(let i=0;i<24;i++){ const a=i/24*Math.PI*2,s=11+Math.random()*5; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0,max:22+Math.random()*10,c:"#c9a3ff",r:Math.random()*3.5+2}); }
+  screenFlash=0.42;
+}
 function spawnBurst(x,y,c,n=10,spd=3){
   for(let i=0;i<n;i++){
     const a=Math.random()*Math.PI*2,s=Math.random()*spd+0.6;
@@ -562,6 +595,9 @@ function update(){
   const C=cfg();
   runTime+=1/60;
   cam+=C.runSpeed;
+  ghostRecording.push({cam,y:player.y});
+  if(ghostPlayback&&ghostFrame<ghostPlayback.length-1) ghostFrame++;
+  if(screenFlash>0) screenFlash=Math.max(0,screenFlash-0.045);
   player.x=220;
   const px=player.x+cam;
 
@@ -617,7 +653,7 @@ function update(){
     for(let i=bolts.length-1;i>=0;i--){
       if(rectHit(bolts[i].x,bolts[i].y,10,6,f.x,f.y,34,34)){
         f.dead=true; bolts.splice(i,1);
-        spawnBurst(f.x-cam+17,f.y+17,"#c9a3ff",16,3.5);
+        spawnDeathBurst(f.x-cam+17,f.y+17);
         runEssence+=5; runKills++;
         Snd.shadeDie();
         break;
@@ -991,6 +1027,27 @@ function drawPlayer(){
   ctx.lineCap="butt";
 }
 
+function drawGhost(){
+  if(!showGhost||!ghostPlayback||ghostFrame>=ghostPlayback.length) return;
+  const g=ghostPlayback[ghostFrame];
+  const gsx=220+g.cam-cam;
+  if(gsx<-70||gsx>W+50) return;
+  const hue=curRealm.hue,cx=gsx+15,feet=g.y+player.h,headY=feet-44;
+  ctx.save(); ctx.globalAlpha=0.30; ctx.globalCompositeOperation="lighter";
+  // cloak silhouette
+  const cg=ctx.createLinearGradient(cx-22,headY,cx+10,feet);
+  cg.addColorStop(0,`hsla(${hue},80%,72%,0.7)`); cg.addColorStop(1,`hsla(${hue},80%,52%,0.2)`);
+  ctx.fillStyle=cg; ctx.beginPath();
+  ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2);
+  ctx.lineTo(cx-6,feet-2); ctx.quadraticCurveTo(cx-22,feet-14,cx-26,feet-22);
+  ctx.quadraticCurveTo(cx-14,headY+10,cx-6,headY+6); ctx.closePath(); ctx.fill();
+  // hood
+  ctx.fillStyle=`hsla(${hue},80%,76%,0.55)`; ctx.beginPath();
+  ctx.moveTo(cx-8,headY+12); ctx.quadraticCurveTo(cx-2,headY-6,cx+8,headY+2);
+  ctx.quadraticCurveTo(cx+10,headY+12,cx+4,headY+16); ctx.lineTo(cx-6,headY+16); ctx.closePath(); ctx.fill();
+  glow(cx-1,headY+9,10,`hsla(${hue},95%,86%,0.5)`,`hsla(${hue},95%,75%,0)`);
+  ctx.restore();
+}
 function drawParticles(){
   ctx.save(); ctx.globalCompositeOperation="lighter";
   for(const p of particles){ const a=Math.max(0,1-p.life/p.max); ctx.globalAlpha=a; ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.r*a+0.4,0,7); ctx.fill(); }
@@ -1022,6 +1079,7 @@ function drawHUD(){
   ctx.fillText(`${curRealm.glyph}  Reach the ${curRealm.name}-Gate`,16,29);
   ctx.textAlign="right"; ctx.fillStyle="#ffd479"; ctx.fillText(`✦ ${runEssence}`,W-16,29);
   if(shieldCharges>0){ ctx.fillStyle="#7fd4ff"; ctx.fillText(`◈`,W-72,29); }
+  if(ghostPlayback){ ctx.fillStyle=showGhost?`hsla(${curRealm.hue},80%,75%,0.8)`:"rgba(120,110,180,0.5)"; ctx.fillText(showGhost?"◑ Ghost":"◑ Ghost off",W-160,29); }
   ctx.textAlign="left"; ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI";
   ctx.fillText(`Shades: ${runKills}  •  Coins: ${runCoins}`,16,58);
   ctx.textAlign="center"; ctx.fillStyle="#9a98c8"; ctx.fillText(`${runTime.toFixed(1)}s`,W/2,58); ctx.textAlign="left";
@@ -1031,25 +1089,47 @@ function drawHUD(){
 }
 function drawIntroCard(){
   if(!introPaused||!runWhisper) return;
-  const cx=W/2,cy=H*0.40,hue=curRealm.hue;
+  const cx=W/2,cy=H*0.42,hue=curRealm.hue;
+  const lore=RUNE_LORE[curRealm.id]||RUNE_LORE[0];
   ctx.save();
-  ctx.fillStyle="rgba(8,6,24,0.85)"; roundRect(cx-270,cy-100,540,210,18); ctx.fill();
+  // panel — taller to fit phonetic + life meaning
+  ctx.fillStyle="rgba(8,6,24,0.88)"; roundRect(cx-270,cy-118,540,292,18); ctx.fill();
   ctx.strokeStyle=`hsla(${hue},80%,70%,0.55)`; ctx.lineWidth=1.5; ctx.stroke();
+  // big rune glyph left column
   ctx.save(); ctx.globalCompositeOperation="lighter";
-  glow(cx-196,cy,44,`hsla(${hue},90%,72%,0.5)`,`hsla(${hue},90%,65%,0)`);
+  glow(cx-196,cy-10,46,`hsla(${hue},90%,72%,0.5)`,`hsla(${hue},90%,65%,0)`);
   ctx.fillStyle=`hsl(${hue},90%,85%)`; ctx.font="bold 84px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.fillText(curRealm.glyph,cx-196,cy+4); ctx.restore();
-  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-  ctx.fillStyle="#fff"; ctx.font="bold 26px Segoe UI"; ctx.fillText(curRealm.name,cx-136,cy-54);
-  ctx.fillStyle=`hsl(${hue},70%,78%)`; ctx.font="italic 15px Segoe UI";
-  ctx.fillText((RUNE_LORE[curRealm.id]||RUNE_LORE[0]).meaning,cx-136,cy-30);
-  ctx.fillStyle="#cfd3f0"; ctx.font="15px Segoe UI";
-  wrapText(runWhisper.text,cx-136,cy-6,380,20);
-  ctx.fillStyle=`hsla(${hue},80%,80%,0.85)`; ctx.font="12px Segoe UI";
-  ctx.fillText(`✦ whisper learned — ${whispersHeard()}/${TOTAL_WHISPERS}`,cx-136,cy+68);
+  ctx.fillText(curRealm.glyph,cx-196,cy-10); ctx.restore();
+  // phonetic under glyph
+  ctx.fillStyle=`hsla(${hue},60%,68%,0.8)`; ctx.font="13px Segoe UI"; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  ctx.fillText(`[ ${lore.phonetic} ]`,cx-196,cy+46);
+  // right column
+  ctx.textAlign="left";
+  ctx.fillStyle="#fff"; ctx.font="bold 26px Segoe UI"; ctx.fillText(curRealm.name,cx-136,cy-72);
+  ctx.fillStyle=`hsl(${hue},70%,78%)`; ctx.font="italic 14px Segoe UI";
+  ctx.fillText(lore.meaning,cx-136,cy-50);
+  // divider
+  ctx.strokeStyle=`hsla(${hue},60%,60%,0.25)`; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx-136,cy-38); ctx.lineTo(cx+190,cy-38); ctx.stroke();
+  // whisper
+  ctx.fillStyle="#cfd3f0"; ctx.font="14px Segoe UI";
+  wrapText(runWhisper.text,cx-136,cy-22,366,19);
+  // divider
+  ctx.strokeStyle=`hsla(${hue},60%,60%,0.20)`; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx-136,cy+30); ctx.lineTo(cx+190,cy+30); ctx.stroke();
+  // life meaning header
+  ctx.fillStyle=`hsla(${hue},75%,72%,0.9)`; ctx.font="bold 11px Segoe UI";
+  ctx.fillText("IF THIS RUNE APPEARS IN YOUR LIFE:",cx-136,cy+44);
+  // life meaning text
+  ctx.fillStyle=`hsl(${hue+15},65%,82%)`; ctx.font="italic 13px Segoe UI";
+  wrapText(lore.lifeMeaning,cx-136,cy+60,366,18);
+  // whisper learned tag
+  ctx.fillStyle=`hsla(${hue},80%,80%,0.75)`; ctx.font="11px Segoe UI";
+  ctx.fillText(`✦ whisper learned — ${whispersHeard()}/${TOTAL_WHISPERS}`,cx-136,cy+102);
+  // press to begin
   const pulse=0.65+0.35*Math.sin(animT*3);
-  ctx.fillStyle=`rgba(255,255,255,${pulse})`; ctx.font="bold 15px Segoe UI"; ctx.textAlign="center";
-  ctx.fillText("PRESS SPACE  /  TAP  TO  BEGIN",cx,cy+96);
+  ctx.fillStyle=`rgba(255,255,255,${pulse})`; ctx.font="bold 14px Segoe UI"; ctx.textAlign="center";
+  ctx.fillText("PRESS SPACE  /  TAP  TO  BEGIN",cx,cy+128);
   ctx.restore();
 }
 function wrapText(text,x,y,maxW,lh){
@@ -1063,8 +1143,9 @@ function render(){
   drawSky(curRealm);
   if(state==="play"||state==="won"||state==="dead"){
     drawGround(); drawGate(); drawObstacles(); drawCoins(); drawFoes();
-    drawBolts(); drawPlayer(); drawParticles();
+    drawBolts(); drawGhost(); drawPlayer(); drawParticles();
     drawVignette(); drawTeach(); drawHUD(); drawIntroCard();
+    if(screenFlash>0){ ctx.fillStyle=`rgba(200,140,255,${screenFlash*0.16})`; ctx.fillRect(0,0,W,H); }
   } else {
     drawVignette();
   }
