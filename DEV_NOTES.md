@@ -102,17 +102,27 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
   jump that run). Banked in `save.boons`, auto-consumed at `startRun` → `runBoons`. Bought in
   Shrine "Provisions". Surge = spend-to-earn loop that pairs with the watch-ad bonus.
 
-## Rune Forecaster (RD-#017, #019) — spaced-repetition rune practice
-- **Learning-science anchor = SPACED REPETITION.** Realm Select → "ᛜ Rune Forecaster".
-- **Weekly Focus Rune** (free): `ensureWeekly()`/`pickWeekly()` surface the least-recently-shown
-  rune, held all week, cycling all 9 over ~9 weeks.
-- **Daily Draw** (free 1/day): `doDailyDraw()` with 🔥 streak.
-- **Norns' Spread** (ad OR 25 Amber): Urd/Verdandi/Skuld. RD-#019 made it a real reading —
-  `RUNE_READING[id]` = a full sentence per position + a `thread` clause; renders 3 positional
-  readings + a "threads, woven" synthesis landing on the future rune's `lifeMeaning`.
-- **Carry/Practice card** (`openCarry`): CSS breathing circle synced to per-rune vowel mantra
-  (`RUNE_GROWTH.mantra`) + 3 phrases (`RUNE_GROWTH.phrases`) + draw-and-keep prompt.
-- Data-driven (`FC_DECK`/`RUNE_LORE`/`RUNE_READING`/`RUNE_GROWTH`) → **Tarot clone = deck swap**.
+## Rune Reading shapes the run (RD-#024) — replaces the personal Forecaster
+**Pivot (Mike):** the old self-diagnosis "Forecaster" (daily/weekly/Norns life-reading) was
+RETIRED in #024/#025 — "AI apps do that better." The runes now teach you to *read* them by
+shaping the road ahead.
+- **Learning-science anchor = GENERATION EFFECT** (predict before reveal) + dual-coding (meaning
+  + felt gameplay effect). Honors "learn to read, not self-diagnose."
+- **Flow:** pick a realm → `openReading(realm)` → völva casts 3 runes face-up on the cloth →
+  tap one to READ it (predict its meaning, 3 choices) → reveal teaches the meaning + the omen →
+  "Walk this path" applies the omen and `startRun`. "Read another" lets you study the others.
+  Wrong answers still teach (no mastery credit, no block). "Run Again" re-reads each run.
+- **`RUNE_OMEN[id]`** = `{glyph,name,read,omen,desc,fx}`. `fx` primitives applied across
+  `startRun`/`cfg`/`endRun`/foe-shatter: `essMul` (Sowilo 1.5 / Hagalaz 2.0), `speedMul`
+  (Raidho 1.12 / Isa 0.85), `twin` (Wunjo), `startShield` (Algiz), `noShield` (Hagalaz),
+  `killBonus` (Tiwaz +6/shade), `glide` (Laguz softer soar), `gateBonus` (Dagaz +40 on clear).
+- **Mastery:** `save.runeMastery[id]` = correct reads; reading screen shows "Runes you can read: N/9";
+  `pickReadingRunes()` biases toward least-read runes (light spaced practice). Intro card now
+  shows the chosen omen (replaced the old "IF THIS RUNE APPEARS IN YOUR LIFE" text).
+- **Monetization rethink (TODO):** the ad/Amber hook should become **re-cast the omen** (reroll
+  the modifier — Balatro/Hades reroll). Phase-2 ideas: 2-3 rune spreads (combined omens), richer
+  *visual* omens (weather/density), lore gallery, mastery rewards.
+- Note: `RUNE_LORE[id].lifeMeaning` fields are now dead data (kept, inert) — purge later.
 
 ## Session log RD-#014 → #019
 - **#014** mobile foundation + ad hooks (`Ads`/`window.adProvider`) + 9-realm scaffold (SAVE_KEY v2)
@@ -132,6 +142,8 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
   shade is a safe **stepping-stone** — descending onto it bounces you (`vy=jumpV*0.78`); side
   contact is harmless. Unfrozen shades still damage. Attack renamed **Rune Bolt** everywhere
   (teach prompts, title hint, intro overlay, Shrine upgrade). New onboarding teach card.
+- **#024** **Rune Reading shapes the run** (read-to-choose pre-level omen) — see section above.
+- **#025** Removed the retired Forecaster (–382 lines: JS, markup, CSS, `RUNE_READING`/`RUNE_GROWTH`).
 
 ## Heroes (RD-#020) — cosmetic völva reskins
 - **Cosmetic only** (same hitbox/powers). `HEROES` table = `{id,name,lore,cost,pal}`;
