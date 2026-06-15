@@ -177,7 +177,7 @@
     <div class="row">
       <button class="btn primary" data-go="realm">Begin the Run</button>
     </div>
-    <p class="hint">Tap = Jump &nbsp;•&nbsp; Tap right edge = Cast &nbsp;•&nbsp; Hold to Soar &nbsp;•&nbsp; M / ♪ = Sound</p>
+    <p class="hint">Tap = Jump &nbsp;•&nbsp; Tap right edge = Rune Bolt &nbsp;•&nbsp; Hold to Soar &nbsp;•&nbsp; M / ♪ = Sound</p>
   </div>
 
   <!-- REALM SELECT -->
@@ -266,7 +266,7 @@ function persist(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(save)); }c
 /* ---------- upgrades ---------- */
 const UPGRADES=[
   {key:"jump",  name:"Wind-Step", desc:"Higher, floatier jumps.",         cost:[40,90,160]},
-  {key:"bolt",  name:"Rune-Bolt", desc:"Faster casting, stronger bolts.", cost:[40,90,160]},
+  {key:"bolt",  name:"Rune Bolt", desc:"Faster, stronger Rune Bolts.", cost:[40,90,160]},
   {key:"shield",name:"Ward",      desc:"Start each run with a shield.",   cost:[60,120,220]},
 ];
 const SOUND_PACKS=[
@@ -917,7 +917,7 @@ function buildLevel(realm){
   function gap(w){ x+=w; }
   function coinArc(cx,cy,n=3,step=44){ for(let i=0;i<n;i++) coins.push({x:cx+i*step,y:cy,got:false}); }
   function addFoe(wx,wy){
-    foes.push({x:wx,y:wy,baseY:wy,dead:false,type:(foeIdx++%2===0)?"excess":"lack"});
+    foes.push({x:wx,y:wy,baseY:wy,dead:false,frozen:false,type:(foeIdx++%2===0)?"excess":"lack"});
   }
 
   // shared intro
@@ -933,8 +933,9 @@ function buildLevel(realm){
     coinArc(x-180,GROUND_Y-120,3,38);
     gap(140); segs.push({x,w:280,y:GROUND_Y-120}); coinArc(x+60,GROUND_Y-190,3); x+=280;
     gap(150); ground(300);
-    teach.push({x:x+40,text:"J to CAST a rune-bolt at shades"});
+    teach.push({x:x+40,text:"J / tap right = Rune Bolt — freezes a shade"});
     addFoe(x+240,GROUND_Y-150);
+    teach.push({x:x+430,text:"Bolt it again to shatter — or leap off the frozen shade!"});
     ground(220);
     for(let i=0;i<5;i++){
       obs.push({x:x-20,y:GROUND_Y-64,w:30,h:64});
@@ -954,7 +955,7 @@ function buildLevel(realm){
   } else if(id===1){
     gap(140); ground(400); coinArc(x-360,GROUND_Y-80,4);
     ground(200);
-    teach.push({x:x+60,text:"J to CAST a rune-bolt"});
+    teach.push({x:x+60,text:"Rune Bolt: J or tap the right edge"});
     for(let i=0;i<6;i++){
       obs.push({x:x-20,y:GROUND_Y-60,w:28,h:60});
       ground(60); gap(100); ground(110);
@@ -977,7 +978,7 @@ function buildLevel(realm){
     teach.push({x:x+60,text:"Hold SPACE to SOAR over wide gaps"});
     gap(170); segs.push({x,w:220,y:GROUND_Y-100}); coinArc(x+50,GROUND_Y-170,4,44); x+=220;
     gap(150); ground(300); coinArc(x-260,GROUND_Y-90,4,44);
-    teach.push({x:x+50,text:"J to CAST — joyful shades run in pairs"});
+    teach.push({x:x+50,text:"Rune Bolt the joyful shades — they run in pairs"});
     addFoe(x+100,GROUND_Y-130); addFoe(x+170,GROUND_Y-120);
     ground(480);
     for(let i=0;i<4;i++) addFoe(x-460+i*122,GROUND_Y-125-(i%2)*32);
@@ -993,7 +994,7 @@ function buildLevel(realm){
     // Hagalaz — hail · disruption — dense obstacles, chaotic, hard
     gap(100); ground(300); coinArc(x-260,GROUND_Y-90,3);
     addFoe(x-180,GROUND_Y-140);
-    teach.push({x:x+40,text:"J to CAST — shades are thick here"});
+    teach.push({x:x+40,text:"Rune Bolt — shades are thick here"});
     for(let i=0;i<5;i++){
       ground(140); obs.push({x:x-90,y:GROUND_Y-78,w:32,h:78});
       gap(110+(i%2)*40); ground(140);
@@ -1017,7 +1018,7 @@ function buildLevel(realm){
     teach.push({x:x+50,text:"Hold SPACE after jumping — soar the ice gaps"});
     gap(200); segs.push({x,w:180,y:GROUND_Y-80}); coinArc(x+40,GROUND_Y-150,3); x+=180;
     gap(230); ground(280); addFoe(x-200,GROUND_Y-130);
-    teach.push({x:x+60,text:"J to CAST — frozen shades drift slowly"});
+    teach.push({x:x+60,text:"Rune Bolt — these shades drift slowly"});
     ground(700);
     for(let i=0;i<5;i++) addFoe(x-650+i*142,GROUND_Y-118-(i%2)*42);
     coinArc(x-660,GROUND_Y-200,7,56);
@@ -1034,7 +1035,7 @@ function buildLevel(realm){
     teach.push({x:x+50,text:"Hold SPACE after jumping — soar the gaps"});
     gap(200); segs.push({x,w:180,y:GROUND_Y-80}); coinArc(x+40,GROUND_Y-150,3); x+=180;
     gap(240); ground(280); addFoe(x-200,GROUND_Y-130);
-    teach.push({x:x+60,text:"J to CAST — this realm is still waking"});
+    teach.push({x:x+60,text:"Rune Bolt — this realm is still waking"});
     ground(700);
     for(let i=0;i<5;i++) addFoe(x-660+i*140,GROUND_Y-120-(i%2)*40);
     coinArc(x-660,GROUND_Y-200,7,54);
@@ -1302,22 +1303,42 @@ function update(){
   }
   for(let i=bolts.length-1;i>=0;i--){ bolts[i].x+=bolts[i].vx; if(bolts[i].x-cam>W+40) bolts.splice(i,1); }
 
-  // foes
+  // foes — Rune Bolt freezes a shade (1st hit), shatters it (2nd hit).
+  // A frozen shade hangs still and is safe to leap off (stomp = bounce).
   for(const f of level.foes){
     if(f.dead) continue;
-    f.y=f.baseY+Math.sin((cam+f.x)*0.01)*22;
+    if(!f.frozen) f.y=f.baseY+Math.sin((cam+f.x)*0.01)*22; // frozen shades stop drifting
     for(let i=bolts.length-1;i>=0;i--){
       if(rectHit(bolts[i].x,bolts[i].y,10,6,f.x,f.y,34,34)){
-        f.dead=true; bolts.splice(i,1);
-        spawnDeathBurst(f.x-cam+17,f.y+17);
-        runEssence+=5; runKills++;
-        Snd.bassHit(); Snd.activityBump(); Snd.activityBump(); // kills pump it harder
+        bolts.splice(i,1);
+        if(!f.frozen){                       // 1st hit → freeze
+          f.frozen=true;
+          spawnBurst(f.x-cam+17,f.y+17,"#bfe9ff",12,2.6);
+          Snd.runeBlock(); Snd.activityBump();
+        } else {                             // 2nd hit → shatter
+          f.dead=true;
+          spawnDeathBurst(f.x-cam+17,f.y+17);
+          spawnBurst(f.x-cam+17,f.y+17,"#cfeeff",14,3.2);
+          runEssence+=5; runKills++;
+          Snd.bassHit(); Snd.activityBump(); Snd.activityBump();
+        }
         break;
       }
     }
-    if(!f.dead&&rectHit(px,player.y,player.w,player.h,f.x,f.y,34,34)){
-      if(takeHit()){ f.dead=true; spawnBurst(f.x-cam+17,f.y+17,"#ff9a9a",14,3); }
-      else return;
+    if(f.dead) continue;
+    if(rectHit(px,player.y,player.w,player.h,f.x,f.y,34,34)){
+      if(f.frozen){
+        // Frozen = a safe stepping-stone. Coming down onto it bounces you up.
+        const feet=player.y+player.h;
+        if(player.vy>0 && feet-player.vy<=f.y+18){
+          player.y=f.y-player.h; player.vy=C.jumpV*0.78; player.onGround=false;
+          player.coyote=0; player.jumpsLeft=canDouble?1:0;
+          spawnBurst(f.x-cam+17,f.y,"#bfe9ff",8,2.4); Snd.jump(); Snd.activityBump();
+        }
+        // side / underside contact with a frozen shade is harmless — pass through
+      } else if(takeHit()){
+        f.dead=true; spawnBurst(f.x-cam+17,f.y+17,"#ff9a9a",14,3);
+      } else return;
     }
   }
 
@@ -1593,8 +1614,33 @@ function drawFoes(){
     drawFoe(f,sx);
   }
 }
+function drawFrozenFoe(cx,cy){
+  // shade trapped inside a pale ice crystal — clearly readable as "frozen / safe to land on"
+  ctx.save();
+  ctx.globalAlpha=0.5; ctx.fillStyle="rgba(28,38,68,0.7)";
+  ctx.beginPath(); ctx.arc(cx,cy,11,0,7); ctx.fill(); ctx.globalAlpha=1;
+  const r=21;
+  ctx.beginPath();
+  for(let i=0;i<6;i++){ const a=i/6*Math.PI*2-Math.PI/2,px=cx+Math.cos(a)*r,py=cy+Math.sin(a)*r; i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+  ctx.closePath();
+  const ig=ctx.createLinearGradient(cx,cy-r,cx,cy+r);
+  ig.addColorStop(0,"rgba(214,242,255,0.82)"); ig.addColorStop(0.5,"rgba(150,210,250,0.5)"); ig.addColorStop(1,"rgba(120,180,235,0.66)");
+  ctx.fillStyle=ig; ctx.fill();
+  ctx.strokeStyle="rgba(236,250,255,0.9)"; ctx.lineWidth=2; ctx.stroke();
+  ctx.strokeStyle="rgba(255,255,255,0.5)"; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(cx,cy-r); ctx.lineTo(cx,cy+r);
+  ctx.moveTo(cx-r*0.86,cy-r*0.5); ctx.lineTo(cx+r*0.86,cy+r*0.5);
+  ctx.moveTo(cx+r*0.86,cy-r*0.5); ctx.lineTo(cx-r*0.86,cy+r*0.5);
+  ctx.stroke();
+  ctx.globalCompositeOperation="lighter";
+  glow(cx-6,cy-7,4,"rgba(255,255,255,0.9)","rgba(200,240,255,0)");
+  glow(cx+5,cy+4,3,"rgba(220,245,255,0.7)","rgba(180,230,255,0)");
+  ctx.restore();
+}
 function drawFoe(f,sx){
   const cx=sx+17,cy=f.y+17,rid=curRealm.id,hue=curRealm.hue,excess=(f.type==="excess");
+  if(f.frozen){ drawFrozenFoe(cx,cy); return; }
   ctx.save();
   // Universal visibility base: pulsing silhouette ring so foes are never invisible
   ctx.strokeStyle=`hsla(${hue},80%,72%,0.55)`;
@@ -1912,7 +1958,7 @@ function drawIntroCard(){
   ctx.fillText("PRESS SPACE  /  TAP  TO  BEGIN",cx,cy+128);
   if(navigator.maxTouchPoints>0){
     ctx.fillStyle=`rgba(127,212,255,${pulse*0.65})`; ctx.font="12px Segoe UI";
-    ctx.fillText("TAP RIGHT SIDE OF SCREEN  TO  CAST",cx,cy+148);
+    ctx.fillText("TAP RIGHT SIDE OF SCREEN  =  RUNE BOLT",cx,cy+148);
   }
   ctx.restore();
 }
