@@ -4,15 +4,22 @@ A calm, low-friction auto-runner platformer. The völva runs the bridge of realm
 **tap to leap, hold to soar**, gather star-essence, grow your power one run at a time.
 NES/SNES-era feel: instantly readable, ~1–2 buttons, short loops, persistent progression.
 
-## Status
+## Status (current — through RD-#019)
 - **Web prototype, single file** — `index.html` (no build step). Open it or serve the folder.
-- Realms **1 (Sowilo)** and **2 (Raidho)** are playable, complete start-to-gate.
-- Verified: rendering, all menu transitions, run start, jump physics + collision + ground,
-  survival, shrine/upgrade UI, localStorage save. (Feel/tuning is for playtesting.)
+- **9 Realms across 3 Acts** (REALMS array). Fully built: Sowilo(0), Raidho(1), Wunjo(2).
+  Stubs w/ real layouts but placeholder content: Hagalaz(3), Isa(4), Algiz(5), Tiwaz(6),
+  Laguz(7), Dagaz(8). Per-realm `speed` field sets pacing. Each realm has a hero rune +
+  thematic identity; 24 Elder Futhark runes mapped across the 9 (see memory file for the table).
+- **Commercial direction (confirmed):** calm auto-runner for adults; hook = "we teach you the
+  runes"; target = mobile via Godot port; HTML5 portals (CrazyGames/Poki) for soft launch.
+  Free + rewarded ads + one-time IAP (~$2.99 ad-free+sound). `window.adProvider` hook in place.
+- **Mobile testing DEFERRED** (Mike's call). file:// on mobile froze; RD-#018 hardened it
+  (persist try/catch + on-screen error bar). When he returns: make repo public → GitHub Pages.
 
 ## Controls
 - **Jump:** Space / W / ↑ / Click / Tap. Hold for a higher jump (variable height).
-- **Cast rune-bolt:** J / K / Shift (Realm 2+), or tap the right edge of the screen.
+- **Cast rune-bolt:** J / K / Shift, or tap the right ~20% of the screen.
+- **Sound:** M or the ♪ button (on by default). **Ghost toggle:** G.
 
 ## Replay / come-back hooks
 - **Star-essence** from coins + slain shades → spent at the **Shrine of Skills**.
@@ -74,35 +81,51 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
    assembled per-run with a seed + difficulty weighting; fresh but fair. Pairs with per-run imagery.
 5. **In-run ramp + telegraphing** — gently scale speed/density through a run; telegraph hazards.
 
-## Audio design (RD-#008)
+## Audio design (RD-#015 — Adaptive Norse score; supersedes RD-#008)
 
-**Style:** CodeKeys-style ambient focus bed, NOT chiptune sequences.
-A warm droning bass + breathing LFO pad that shifts per realm — the background is always
-atmospheric, never melodic. Your keystrokes ARE the music.
+**CodeKeys ambient bed KILLED.** Now an adaptive Norse score: **calm base, big payoffs**.
+- **Base:** warm layered sine/triangle drone (throat-sung/horn feel) + frame-drum pulse
+  (`_kick` = woody thud + skin slap) + seed shaker (`_hat`) + woven **bone-flute motif**
+  (`_flute`). `PENTA` + `REALM_MOTIF` give each rune a signature melody (audio teaches runes).
+- **Payoffs:** kill (`bassHit`) = war-horn swell over a drum-boom; gate (`gateClear`) =
+  3 frame-drum hits + ascending flute run. Glide = sustained melodic chord.
+- `REALM_AMB` (9 entries): `[root Hz, 5th Hz, pad Hz, LFO Hz, BPM]`. `activityScore` (bumped
+  by actions, decays) drives reactive drum/flute density. Sound ON by default.
+- Sound Forge (Shrine): Ward Pulse / Double Echo / Gate Shimmer.
 
-**Keystroke beats:** every jump fires a tight percussive click (bandpass-filtered noise snap)
-that sits rhythmically on the drone. You become the rhythm track.
+## Economy (RD-#016)
+- **Currency = Amber** (Freya's tears; re-themed from star-essence). Code id stays `essence`
+  to preserve saves. Collectible art = amber teardrop (`drawCoins`).
+- **Single currency + evergreen sink ladder** (research-backed: taps/sinks, pinch point,
+  "always something to spend on"). Fix for currency stagnation = **Provisions** (`BOONS`):
+  Ember Ward (12, start shielded), Amber Surge (20, 2× amber that run), Twin Leap (15, double-
+  jump that run). Banked in `save.boons`, auto-consumed at `startRun` → `runBoons`. Bought in
+  Shrine "Provisions". Surge = spend-to-earn loop that pairs with the watch-ad bonus.
 
-**Kill bass hit:** deep 808-style sub-bass sine sweep (root → root×0.6, ~1s decay) + mid
-square body + impact transient. The kill IS a beat drop. Loud, meaty, extended.
+## Rune Forecaster (RD-#017, #019) — spaced-repetition rune practice
+- **Learning-science anchor = SPACED REPETITION.** Realm Select → "ᛜ Rune Forecaster".
+- **Weekly Focus Rune** (free): `ensureWeekly()`/`pickWeekly()` surface the least-recently-shown
+  rune, held all week, cycling all 9 over ~9 weeks.
+- **Daily Draw** (free 1/day): `doDailyDraw()` with 🔥 streak.
+- **Norns' Spread** (ad OR 25 Amber): Urd/Verdandi/Skuld. RD-#019 made it a real reading —
+  `RUNE_READING[id]` = a full sentence per position + a `thread` clause; renders 3 positional
+  readings + a "threads, woven" synthesis landing on the future rune's `lifeMeaning`.
+- **Carry/Practice card** (`openCarry`): CSS breathing circle synced to per-rune vowel mantra
+  (`RUNE_GROWTH.mantra`) + 3 phrases (`RUNE_GROWTH.phrases`) + draw-and-keep prompt.
+- Data-driven (`FC_DECK`/`RUNE_LORE`/`RUNE_READING`/`RUNE_GROWTH`) → **Tarot clone = deck swap**.
 
-**Free SFX (always on):** jump snap, kill bass hit, runestone block thud, gate clear chord.
-**Sound Forge (buy at Shrine):** Coin Chime (15✦), Bolt Crack (15✦), Death Knell (20✦).
-Fewer default sounds so the player's ear locks onto the core set fast.
-
-**Per-realm drone frequencies:**
-- Sowilo A1 (55 Hz), 5th E2 (82 Hz), pad A3 (220 Hz), LFO 0.55 Hz
-- Raidho G1 (49 Hz), 5th D2 (73 Hz), pad G3 (196 Hz), LFO 0.80 Hz
-- Hagalaz E1 (41 Hz), 5th B1 (61 Hz), pad E3 (164 Hz), LFO 1.10 Hz
-- Isa Bb1 (46 Hz), 5th F2 (69 Hz), pad Bb3 (185 Hz), LFO 0.38 Hz
+## Session log RD-#014 → #019
+- **#014** mobile foundation + ad hooks (`Ads`/`window.adProvider`) + 9-realm scaffold (SAVE_KEY v2)
+- **#015** adaptive Norse audio · **#016** Amber + Provisions · **#017** Rune Forecaster
+- **#018** mobile-freeze hardening (persist try/catch + on-screen error bar)
+- **#019** Norns' Spread cohesive-sentence reading
 
 ## Next ideas (backlog)
-- Implement the level-design roadmap above (start with #4 chunk library).
-- Lore as a collectible gallery screen (view all whispers heard); locked realms show meaning.
-- 3rd/4th realm content (Hagalaz, Isa stubs exist in `REALMS`).
-- Daily-seed run + leaderboard for Sköll-style score chase.
-- Board/art-pack skins using Mike's celestial artwork.
-- Godot 4.6 port once feel is locked.
+- **RD-#020 hero unlocks** (NEXT): cosmetic-first völva reskins (berserker/Thor/Odin), ad-OR-Amber.
+- Checkpoint system (totem mid-run, respawn from CP, lore card) for Act 2-3 realms.
+- Flesh out stub realms Hagalaz(3)/Isa(4)/Algiz(5)/Tiwaz(6)/Laguz(7)/Dagaz(8) with real layouts.
+- Mobile/deploy when Mike returns: make repo public → GitHub Pages; add landscape hint.
+- Give daily/weekly the richer "reading" voice; lore gallery; Tarot clone; Godot port.
 
 ## Local serve
 `npx serve -p 4209 .`  (preview config: launch name `rune-dash`, port 4209)
