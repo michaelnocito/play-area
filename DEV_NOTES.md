@@ -127,6 +127,11 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
   from the hand and land on the seer's cloth (CSS `#s-cast` screen) before the reading shows.
   Wired into the daily draw (1 stone) + Norns' spread (3 stones); tap-to-skip; `Snd.land` thud
   per stone + `Snd.coin` on reveal.
+- **#023** Combat reshape: **Rune Bolt** freezes a shade on the 1st hit (`f.frozen`, drifting
+  stops, ice-crystal `drawFrozenFoe`), **shatters** it on the 2nd (kill + 5 amber). A frozen
+  shade is a safe **stepping-stone** — descending onto it bounces you (`vy=jumpV*0.78`); side
+  contact is harmless. Unfrozen shades still damage. Attack renamed **Rune Bolt** everywhere
+  (teach prompts, title hint, intro overlay, Shrine upgrade). New onboarding teach card.
 
 ## Heroes (RD-#020) — cosmetic völva reskins
 - **Cosmetic only** (same hitbox/powers). `HEROES` table = `{id,name,lore,cost,pal}`;
