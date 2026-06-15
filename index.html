@@ -921,22 +921,44 @@ function buildLevel(realm){
     for(let i=0;i<5;i++) addFoe(x-520+i*118,GROUND_Y-125-(i%2)*38);
 
   } else {
-    // Algiz/Tiwaz/Laguz/Dagaz — Act 2-3 stubs (full layouts coming per RD-#016+)
-    gap(160); ground(340); coinArc(x-300,GROUND_Y-90,3);
-    teach.push({x:x+50,text:"Hold SPACE after jumping — soar the gaps"});
-    gap(200); segs.push({x,w:180,y:GROUND_Y-80}); coinArc(x+40,GROUND_Y-150,3); x+=180;
-    gap(240); ground(280); addFoe(x-200,GROUND_Y-130);
-    teach.push({x:x+60,text:"Rune Bolt — this realm is still waking"});
-    ground(700);
-    for(let i=0;i<5;i++) addFoe(x-660+i*140,GROUND_Y-120-(i%2)*40);
-    coinArc(x-660,GROUND_Y-200,7,54);
-    for(let i=0;i<4;i++){ ground(160); obs.push({x:x-100,y:GROUND_Y-74,w:30,h:74}); gap(160+(i%2)*60); ground(160); coins.push({x:x-200,y:GROUND_Y-160,got:false}); }
-    for(let i=0;i<5;i++){ segs.push({x,w:160,y:GROUND_Y-60-i*50}); coins.push({x:x+70,y:GROUND_Y-130-i*50,got:false}); x+=160; gap(90); }
-    ground(380); for(let i=0;i<3;i++) addFoe(x-320+i*120,GROUND_Y-130);
-    for(let i=0;i<4;i++){ ground(180); gap(130); }
-    ground(600); coinArc(x-540,GROUND_Y-80,9,52);
-    for(let i=0;i<5;i++) addFoe(x-520+i*118,GROUND_Y-125-(i%2)*38);
+    // Act 2-3 — per-realm layouts differentiated by id-seeded knobs (RD-#029; were identical for 4-8)
+    const K=n=>0.5+0.5*Math.sin(id*1.7+n);   // deterministic 0..1 knob, distinct per realm
+    const obsHeavy=(id%2===0);               // alternate obstacle gauntlet vs sky-platform climb
+    const cluster=3+(id%3);                  // foe cluster size 3..5
+    gap(110+Math.round(K(0)*70)); ground(300+Math.round(K(1)*150)); coinArc(x-280,GROUND_Y-90,3+(id%2));
+    teach.push({x:x+40,text:"Rune Bolt — "+REALMS[id].sub.toLowerCase()});
+    addFoe(x-150,GROUND_Y-118-Math.round(K(2)*44));
+    gap(150+Math.round(K(3)*70)); ground(260+Math.round(K(4)*120));
+    if(obsHeavy){                            // signature: carved-menhir gauntlet
+      for(let i=0;i<4+(id%3);i++){
+        ground(150); obs.push({x:x-100,y:GROUND_Y-70-Math.round(K(i)*14),w:30,h:70+Math.round(K(i)*14)});
+        gap(120+Math.round(K(i+1)*60)); ground(150); coins.push({x:x-220,y:GROUND_Y-150,got:false});
+      }
+    } else {                                 // signature: ascending sky platforms
+      for(let i=0;i<4+(id%3);i++){
+        segs.push({x,w:150,y:GROUND_Y-55-i*46}); coinArc(x+38,GROUND_Y-118-i*46,2,40); x+=150; gap(80+Math.round(K(i)*40));
+      }
+      ground(220);
+    }
+    ground(560+Math.round(K(5)*160)); coinArc(x-Math.round(440+K(6)*110),GROUND_Y-90,7+(id%3),52);
+    for(let i=0;i<cluster;i++) addFoe(x-520+i*120,GROUND_Y-120-Math.round(K(i)*50));
+    for(let i=0;i<3+(id%2);i++){ ground(160+Math.round(K(i)*60)); gap(120+Math.round(K(i)*40)); }
+    ground(520);
+    for(let i=0;i<cluster;i++) addFoe(x-460+i*116,GROUND_Y-125-(i%2)*36);
   }
+
+  // RD-#028: kill the dead air — seed amber into long empty stretches above ANY walkable surface
+  (function fillDeadAir(){
+    const endX=x;
+    const marks=[...coins.map(c=>c.x),...foes.map(f=>f.x),...obs.map(o=>o.x),620,endX].sort((a,b)=>a-b);
+    const segAt=q=>{ for(const s of segs){ if(q>=s.x+30 && q<=s.x+s.w-30) return s; } return null; };
+    for(let i=1;i<marks.length;i++){
+      for(let cx=marks[i-1]+500; cx<marks[i]-200; cx+=460){ // ~every 2.2s of void → amber to chase
+        const s=segAt(cx);
+        if(s){ if(s.w>=260) coinArc(cx-80,s.y-90,5,40); else coins.push({x:cx,y:s.y-90,got:false}); }
+      }
+    }
+  })();
 
   const gateX=x-160;
   ground(280);
