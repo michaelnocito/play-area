@@ -28,8 +28,11 @@ This is the dev-owned backlog. Mike = creative director + playtest gate. Claude 
 
 ## The pipeline (gated — we do not skip the gate)
 
-**Stage 0 — Define "saleable" + the bar.** *(decision pending)* Pick the first commercial target
-(web portal vs mobile vs premium) and lock the **Ratings-Safe Gate** below. One week.
+**Stage 0 — Define "saleable" + the bar.** ✅ **LOCKED 2026-06-15: web portals first**
+(CrazyGames / Poki / itch.io). Rationale: already HTML5 → fastest to a revenue-earning release
+(ad rev-share + sponsorships), no port, lowest friction. Mobile + Steam are post-launch. "Saleable"
+v1 = a portal-accepted build that passes the Ratings-Safe Gate. Stage-3 launch prep targets portal
+requirements (SDK hooks, capsule/thumbnail, no broken external links, sane aspect ratio).
 
 **Stage 1 — First-Hour Polish (protects ratings).** Onboarding clarity, zero dead-ends/softlocks,
 responsive controls, stable framerate, fast load, mobile/touch, save reliability, the reading
@@ -102,8 +105,8 @@ Fail → fix the failing item, retest. Then post-launch: more realms, mobile/Ste
 - ✅ RD-#023 Rune Bolt freezes→shatters shades + leap off frozen + unified "Rune Bolt" naming
 - ✅ RD-#024/#025 Pre-level Rune Reading shapes the run; retired personal divination
 - ☐ RD-#026 Re-cast-the-omen monetization hook (NOW)
-- ☐ This ask: research-backed dev plan + go-to-market + organize the backlog (this file)
-- ☐ Decision pending: first commercial target / definition of "saleable" (see Stage 0)
+- ✅ This ask: research-backed dev plan + go-to-market + organize the backlog (this file)
+- ✅ Decision: first commercial target = **web portals first** (CrazyGames/Poki/itch) — Stage 0 locked
 
 ## Research sources
 Solo-AI pipeline: aibuzz.blog/ai-in-gaming-game-development, altheragames.com/en/blog/ai-game-development-2026 ·
