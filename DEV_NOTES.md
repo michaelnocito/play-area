@@ -119,9 +119,17 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
 - **#015** adaptive Norse audio · **#016** Amber + Provisions · **#017** Rune Forecaster
 - **#018** mobile-freeze hardening (persist try/catch + on-screen error bar)
 - **#019** Norns' Spread cohesive-sentence reading
+- **#020** Hero unlocks — cosmetic völva reskins (Völva/Berserker/Thor/Odin), ad-OR-Amber
+
+## Heroes (RD-#020) — cosmetic völva reskins
+- **Cosmetic only** (same hitbox/powers). `HEROES` table = `{id,name,lore,cost,pal}`;
+  `pal` = `{cloakTop,cloakBot,hood}` swapped into `drawPlayer` (aura stays realm-hued).
+- 4 skins: Völva (free/default), Berserker (60), Thor's Chosen (120), Odin's Eye (200).
+- Unlock = **Amber OR one rewarded ad** (`unlockHero`); `equipHero` sets `save.hero`.
+- Save: `save.hero` (equipped id) + `save.heroes` (unlocked ids, default `[0]`). Shrine
+  "⚔ Heroes" section between Provisions and Sound Forge (swatch chip + Wear/Ad/✦ buttons).
 
 ## Next ideas (backlog)
-- **RD-#020 hero unlocks** (NEXT): cosmetic-first völva reskins (berserker/Thor/Odin), ad-OR-Amber.
 - Checkpoint system (totem mid-run, respawn from CP, lore card) for Act 2-3 realms.
 - Flesh out stub realms Hagalaz(3)/Isa(4)/Algiz(5)/Tiwaz(6)/Laguz(7)/Dagaz(8) with real layouts.
 - Mobile/deploy when Mike returns: make repo public → GitHub Pages; add landscape hint.
