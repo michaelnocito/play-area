@@ -162,6 +162,33 @@
     background:radial-gradient(circle,hsla(var(--sh,210),95%,72%,.65),transparent 70%);
     opacity:0;animation:castPuff .6s ease both;}
   @keyframes castPuff{0%{opacity:0;transform:scale(.3)}40%{opacity:.85}100%{opacity:0;transform:scale(7)}}
+  /* ---- Pre-level rune reading (RD-#024) — read a rune to choose your omen ---- */
+  #s-reading{justify-content:safe center;}
+  .read-cloth{display:flex;gap:clamp(10px,3vw,22px);align-items:center;justify-content:center;
+    padding:clamp(16px,4vw,26px) clamp(18px,5vw,32px);border-radius:18px 22px 14px 20px;
+    transform:rotate(-1deg);
+    background:radial-gradient(125% 130% at 50% 26%, #efe6cb 0%, #d6c8a2 58%, #b1a279 100%);
+    box-shadow:0 22px 60px rgba(0,0,0,.5), inset 0 0 44px rgba(120,96,52,.32), inset 0 2px 0 rgba(255,250,235,.5);}
+  .read-stone{width:clamp(56px,15vw,80px);aspect-ratio:.92;border-radius:32% 26% 30% 28%;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;
+    background:linear-gradient(155deg,#f4eede,#cabd9a 68%,#a89a72);
+    box-shadow:0 7px 16px rgba(0,0,0,.4), inset 0 2px 3px rgba(255,255,255,.6), inset 0 -3px 5px rgba(90,70,40,.32);
+    transition:transform .12s, box-shadow .15s; animation:stoneDrop .5s cubic-bezier(.2,.7,.25,1) both;}
+  .read-stone.settled{animation:none;}
+  .read-stone:hover{transform:translateY(-4px) rotate(-1deg);}
+  .read-stone.chosen{box-shadow:0 0 0 3px hsla(var(--sh,210),85%,66%,.95), 0 10px 22px rgba(0,0,0,.45);}
+  .read-stone .g{font-size:clamp(30px,8vw,44px);font-weight:800;color:hsl(var(--sh,210),44%,30%);
+    text-shadow:0 1px 0 rgba(255,255,255,.5),0 0 12px hsla(var(--sh,210),85%,60%,.5);}
+  @keyframes stoneDrop{0%{opacity:0;transform:translateY(-40px) rotate(-28deg) scale(.7)}
+    100%{opacity:1;transform:translateY(0) rotate(-1deg) scale(1)}}
+  .read-panel{width:min(520px,92vw);background:var(--panel);border:1px solid #3a3270;border-radius:16px;
+    padding:15px 18px;text-align:center;display:flex;flex-direction:column;gap:11px;align-items:center;}
+  .read-q{font-size:16px;color:#e9ecff;line-height:1.45;} .read-q b{color:#fff;}
+  .read-opts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:360px;}
+  .read-omen{font-size:15px;color:var(--gold);font-weight:700;}
+  .read-desc{font-size:14px;color:#d6dcf6;line-height:1.5;}
+  .read-correct{color:#8fe6a0;font-weight:700;} .read-wrong{color:#ffc08a;font-weight:700;}
+  .read-master{font-size:12px;color:var(--dim);letter-spacing:.04em;}
 </style>
 </head>
 <body>
@@ -187,7 +214,6 @@
       &nbsp;•&nbsp; Whispers heard: <span style="color:var(--rune)" id="r-lore">0/0</span></p>
     <div class="row" id="realm-list"></div>
     <div class="row">
-      <button class="btn" data-go="forecast">ᛜ Rune Forecaster</button>
       <button class="btn" data-go="shrine">✦ Shrine of Skills</button>
       <button class="btn" data-go="title">Back</button>
     </div>
@@ -232,6 +258,9 @@
 
   <!-- RUNE CASTING ANIMATION (transient — stones thrown onto the cloth) -->
   <div class="screen" id="s-cast"></div>
+
+  <!-- PRE-LEVEL RUNE READING — read a rune to choose your omen (shapes the run) -->
+  <div class="screen" id="s-reading"></div>
 </div>
 
 <script>
@@ -252,7 +281,7 @@ const defaultSave = {
   sounds:{ward:false,echo:false,shimmer:false},
   boons:{shield:0,surge:0,twin:0}, // consumable provisions, banked + auto-used next run
   hero:0, heroes:[0], // RD-#020: equipped völva skin + unlocked skin ids (cosmetic only)
-  forecast:{weekKey:"",weeklyRune:0,weeklyHistory:[],lastDailyKey:"",dailyRune:0,streak:0},
+  runeMastery:{},     // RD-#024: id -> times you've correctly read this rune (learn-to-read progress)
   realmsUnlocked:1, best:{}, loreSeen:{}
 };
 const CUR="Amber"; // player-facing currency name (Freya's tears)
@@ -294,6 +323,22 @@ const HEROES=[
   {id:3,name:"Odin's Eye",    lore:"Raven-grey and indigo; she sees with the Allfather.",cost:200,
     pal:{cloakTop:"#34314c",cloakBot:"#14121f",hood:"#23213a"}},
 ];
+// Rune omens (RD-#024) — the völva reads the runes for the ROAD AHEAD (not your fate).
+// Before a run she casts 3 runes; you must READ one (predict its meaning) to choose it, and
+// that rune's omen reshapes the level. You learn to read a rune by feeling what it does.
+// `read` = the true meaning (quiz answer + what's taught); `omen`/`desc` = the run effect.
+const RUNE_OMEN={
+  0:{glyph:"ᛋ",name:"Sowilo", read:"sun · victory",      omen:"Radiance",    desc:"The sun favors the road — amber shines +50% richer.", fx:{essMul:1.5}},
+  1:{glyph:"ᚱ",name:"Raidho", read:"the ride · motion",  omen:"Swift Road",  desc:"The road quickens beneath you — you run swifter.",     fx:{speedMul:1.12}},
+  2:{glyph:"ᚹ",name:"Wunjo",  read:"joy · lightness",    omen:"Lifted Heart",desc:"Joy lifts your step — a second leap is yours.",        fx:{twin:true}},
+  3:{glyph:"ᚺ",name:"Hagalaz",read:"hail · disruption",  omen:"Hailstorm",   desc:"A harsh road, but rich: double amber, no starting ward.",fx:{essMul:2.0,noShield:true}},
+  4:{glyph:"ᛁ",name:"Isa",    read:"ice · stillness",    omen:"Stillness",   desc:"Time slows — a calmer, steadier run.",                  fx:{speedMul:0.85}},
+  5:{glyph:"ᛉ",name:"Algiz",  read:"protection",         omen:"The Ward",    desc:"You set out shielded from the first blow.",            fx:{startShield:true}},
+  6:{glyph:"ᛏ",name:"Tiwaz",  read:"justice · the trial",omen:"The Trial",   desc:"Honor in battle — each shattered shade gives +6 amber.",fx:{killBonus:6}},
+  7:{glyph:"ᛚ",name:"Laguz",  read:"water · flow",       omen:"Flow",        desc:"You soar longer and fall softer.",                     fx:{glide:true}},
+  8:{glyph:"ᛞ",name:"Dagaz",  read:"dawn · breakthrough",omen:"Breakthrough",desc:"Reach the gate for a burst of +40 dawn-amber.",        fx:{gateBonus:40}},
+};
+const OMEN_IDS=Object.keys(RUNE_OMEN).map(Number);
 function heroOwned(id){ return id===0 || (save.heroes&&save.heroes.indexOf(id)>=0); }
 function unlockHero(id){ if(!save.heroes) save.heroes=[0]; if(save.heroes.indexOf(id)<0) save.heroes.push(id); save.hero=id; persist(); openShrine(); }
 function equipHero(id){ if(heroOwned(id)){ save.hero=id; persist(); openShrine(); } }
@@ -1058,6 +1103,8 @@ function buildLevel(realm){
 let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0,footstepDist=0;
 let curRealm=REALMS[0],shieldCharges=0,endReason="",runWhisper=null,runScene=null;
 let runBoons={shield:false,surge:false,twin:false}; // boons active this run
+let runOmen=null;       // RD-#024: the rune omen shaping THIS run (set from the reading)
+let pendingOmen=null;   // chosen on the reading screen, consumed by startRun
 let introPaused=false;
 // ghost system (session-only, not persisted)
 const ghostData={};       // realmId -> [{cam,y}] from best run
@@ -1077,10 +1124,10 @@ function cfg(){
     // RD-#022: 3.42 px/frame @60fps = ~205 px/s at speed 1 (was ~168). Research note: calm
     // auto-runners read well ~180–230 px/s; below ~170 feels sluggish. Per-realm `speed`
     // still scales it (Isa 0.90=~185, Dagaz 1.28=~262). Dropped RD-#013's 0.85 dampener.
-    runSpeed:3.42*(curRealm.speed||1),
+    runSpeed:3.42*(curRealm.speed||1)*((runOmen&&runOmen.fx.speedMul)||1), // RD-#024 omen
     grav:0.60, jumpV:-14.6-j*0.9, cutMul:0.45,
     coyoteMax:7, bufMax:7, maxFall:14,
-    glideMul:0.2, glideFall:2.3,
+    glideMul:(runOmen&&runOmen.fx.glide)?0.13:0.2, glideFall:(runOmen&&runOmen.fx.glide)?1.6:2.3, // Laguz → softer soar
     boltCD:Math.max(14,26-save.upgrades.bolt*4),
     boltV:9+save.upgrades.bolt*1.2,
   };
@@ -1149,6 +1196,13 @@ function startRun(realm){
   runBoons={shield:false,surge:false,twin:false};
   BOONS.forEach(b=>{ if(save.boons[b.key]>0){ runBoons[b.key]=true; save.boons[b.key]--; } });
   shieldCharges=(save.upgrades.shield>0?1:0)+(runBoons.shield?1:0);
+  // RD-#024: apply the chosen rune omen for this run
+  runOmen=pendingOmen; pendingOmen=null;
+  if(runOmen){ const fx=runOmen.fx;
+    if(fx.twin) runBoons.twin=true;          // joy → a second leap
+    if(fx.startShield) shieldCharges+=1;      // protection → start warded
+    if(fx.noShield) shieldCharges=0;          // disruption → no ward, but rich
+  }
   player.x=220; player.y=GROUND_Y-player.h; player.vy=0;
   player.onGround=true; player.coyote=0; player.jumpBuf=0;
   player.jumpsLeft=1; player.alive=true; player.flash=0; player.gliding=false;
@@ -1171,6 +1225,10 @@ function startRun(realm){
 
 function endRun(won){
   state=won?"won":"dead";
+  if(runOmen){ // RD-#024 omen payouts
+    if(won&&runOmen.fx.gateBonus) runEssence+=runOmen.fx.gateBonus; // Dagaz → dawn burst at the gate
+    if(runOmen.fx.essMul) runEssence=Math.round(runEssence*runOmen.fx.essMul); // Sowilo/Hagalaz richer amber
+  }
   if(runBoons.surge) runEssence=Math.round(runEssence*2); // Amber Surge doubles the haul
   save.essence+=runEssence;
   if(won){
@@ -1194,7 +1252,7 @@ function endRun(won){
       `<br><br>Amber gathered: <span class="ess">+${runEssence}</span>`+
       `<br>Total: <span class="ess">${save.essence}</span>`+
       (runWhisper?`<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} "${runWhisper.text}"</span>`:"");
-    document.getElementById("res-again").onclick=()=>startRun(curRealm);
+    document.getElementById("res-again").onclick=()=>openReading(curRealm); // re-read the road each run
     showScreen("result");
     // Rewarded-ad bonus — show when run earned enough to make the offer meaningful
     const adRow=document.getElementById('ad-essence-row');
@@ -1319,7 +1377,7 @@ function update(){
           f.dead=true;
           spawnDeathBurst(f.x-cam+17,f.y+17);
           spawnBurst(f.x-cam+17,f.y+17,"#cfeeff",14,3.2);
-          runEssence+=5; runKills++;
+          runEssence+=5+((runOmen&&runOmen.fx.killBonus)||0); runKills++; // Tiwaz → +kill amber
           Snd.bassHit(); Snd.activityBump(); Snd.activityBump();
         }
         break;
@@ -1943,12 +2001,11 @@ function drawIntroCard(){
   // divider
   ctx.strokeStyle=`hsla(${hue},60%,60%,0.20)`; ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(cx-136,cy+30); ctx.lineTo(cx+190,cy+30); ctx.stroke();
-  // life meaning header
+  // omen for THIS road — the rune you read and chose (replaces personal "your life" reading)
   ctx.fillStyle=`hsla(${hue},75%,72%,0.9)`; ctx.font="bold 11px Segoe UI";
-  ctx.fillText("IF THIS RUNE APPEARS IN YOUR LIFE:",cx-136,cy+44);
-  // life meaning text
+  ctx.fillText(runOmen?`THE OMEN YOU READ — ${runOmen.omen.toUpperCase()}`:"THE ROAD AHEAD",cx-136,cy+44);
   ctx.fillStyle=`hsl(${hue+15},65%,82%)`; ctx.font="italic 13px Segoe UI";
-  wrapText(lore.lifeMeaning,cx-136,cy+60,366,18);
+  wrapText(runOmen?runOmen.desc:"You walk an unread road.",cx-136,cy+60,366,18);
   // whisper learned tag
   ctx.fillStyle=`hsla(${hue},80%,80%,0.75)`; ctx.font="11px Segoe UI";
   ctx.fillText(`✦ whisper learned — ${whispersHeard()}/${TOTAL_WHISPERS}`,cx-136,cy+102);
@@ -2055,10 +2112,101 @@ function openRealm(){
     card.innerHTML=`<div class="glyph" style="color:hsl(${r.hue},90%,75%)">${r.glyph}</div>
       <div class="nm">${r.name}</div><div class="meta">${r.sub}</div>
       <div class="meta">${unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked"}</div>`;
-    if(unlocked) card.addEventListener("click",()=>startRun(r));
+    if(unlocked) card.addEventListener("click",()=>openReading(r));
     list.appendChild(card);
   });
   showScreen("realm");
+}
+
+/* ============================================================
+   PRE-LEVEL RUNE READING (RD-#024)
+   The völva casts 3 runes for the road ahead. You READ one (predict its
+   meaning) to choose it — generation effect — and its omen reshapes the run.
+   ============================================================ */
+let readingState=null;
+function pickReadingRunes(){
+  // 3 distinct runes, biased toward the ones you've read least (gentle spaced practice)
+  const pool=OMEN_IDS.slice().sort((a,b)=>((save.runeMastery[a]||0)-(save.runeMastery[b]||0))||(Math.random()-0.5));
+  const top=pool.slice(0,Math.min(6,pool.length)), pick=[];
+  for(let i=0;i<3&&top.length;i++) pick.push(top.splice((Math.random()*top.length)|0,1)[0]);
+  return pick;
+}
+function makeMeaningOptions(id){
+  const correct=RUNE_OMEN[id].read;
+  const pool=OMEN_IDS.filter(x=>x!==id).map(x=>RUNE_OMEN[x].read), ds=[];
+  while(ds.length<2&&pool.length) ds.push(pool.splice((Math.random()*pool.length)|0,1)[0]);
+  const opts=[{text:correct,correct:true},...ds.map(t=>({text:t,correct:false}))];
+  for(let i=opts.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const t=opts[i]; opts[i]=opts[j]; opts[j]=t; }
+  return opts;
+}
+function openReading(realm){
+  if(!save.runeMastery) save.runeMastery={};
+  readingState={realm,runes:pickReadingRunes(),chosen:null,answered:false,shown:false,quiz:null};
+  try{ Snd.boot&&Snd.boot(); }catch(e){}
+  renderReading();
+  showScreen("reading");
+}
+function renderReading(){
+  const sc=document.getElementById("s-reading");
+  const {realm,runes,chosen}=readingState;
+  const mastered=OMEN_IDS.filter(id=>(save.runeMastery[id]||0)>0).length;
+  sc.innerHTML=`<h2>The Völva Reads the Road</h2>
+    <p class="sub">She casts three runes for the path to <b>${realm.name}</b>.
+      Read one to walk its omen.</p>
+    <div class="read-cloth" id="read-cloth"></div>
+    <div class="read-panel" id="read-panel"></div>
+    <button class="btn" id="read-back">Back</button>`;
+  const cloth=sc.querySelector("#read-cloth"), firstShow=!readingState.shown;
+  readingState.shown=true;
+  runes.forEach((id,i)=>{
+    const o=RUNE_OMEN[id];
+    const st=document.createElement("div");
+    st.className="read-stone"+(chosen===id?" chosen":"")+(firstShow?"":" settled");
+    st.style.setProperty("--sh",REALMS[id].hue); st.style.animationDelay=(i*120)+"ms";
+    st.innerHTML=`<span class="g">${o.glyph}</span>`;
+    st.onclick=()=>{ readingState.chosen=id; readingState.answered=false; readingState.quiz=null;
+      try{ Snd.land&&Snd.land(); }catch(e){} renderReading(); };
+    cloth.appendChild(st);
+  });
+  sc.querySelector("#read-back").onclick=()=>openRealm();
+
+  const panel=sc.querySelector("#read-panel");
+  if(chosen==null){
+    panel.innerHTML=`<div class="read-q">Tap a rune to read it.</div>
+      <div class="read-master">Runes you can read: ${mastered}/${OMEN_IDS.length}</div>`;
+    return;
+  }
+  const o=RUNE_OMEN[chosen];
+  if(!readingState.answered){
+    if(!readingState.quiz) readingState.quiz=makeMeaningOptions(chosen);
+    const q=document.createElement("div"); q.className="read-q";
+    q.innerHTML=`What does <b>${o.glyph} ${o.name}</b> lay on the road?`;
+    panel.appendChild(q);
+    const og=document.createElement("div"); og.className="read-opts";
+    readingState.quiz.forEach(opt=>{
+      const b=document.createElement("button"); b.className="btn sm"; b.textContent=opt.text;
+      b.onclick=()=>{ readingState.answered=true; readingState.correct=opt.correct;
+        if(opt.correct){ save.runeMastery[chosen]=(save.runeMastery[chosen]||0)+1; persist(); try{Snd.coin&&Snd.coin();}catch(e){} }
+        else { try{Snd.runeBlock&&Snd.runeBlock();}catch(e){} }
+        renderReading();
+      };
+      og.appendChild(b);
+    });
+    panel.appendChild(og);
+  } else {
+    const rev=document.createElement("div");
+    rev.innerHTML=`<div class="${readingState.correct?'read-correct':'read-wrong'}">${readingState.correct?'You read it true.':'Not quite — now you know.'}</div>
+      <div class="read-q" style="margin-top:6px"><b>${o.glyph} ${o.name}</b> — ${o.read}</div>
+      <div class="read-omen" style="margin-top:8px">Omen — ${o.omen}</div>
+      <div class="read-desc">${o.desc}</div>`;
+    panel.appendChild(rev);
+    const row=document.createElement("div"); row.className="row"; row.style.marginTop="4px";
+    const walk=document.createElement("button"); walk.className="btn primary"; walk.style.minWidth="0"; walk.textContent="Walk this path ›";
+    walk.onclick=()=>{ pendingOmen=RUNE_OMEN[chosen]; startRun(readingState.realm); };
+    const other=document.createElement("button"); other.className="btn sm"; other.textContent="Read another";
+    other.onclick=()=>{ readingState.chosen=null; readingState.answered=false; readingState.quiz=null; renderReading(); };
+    row.appendChild(walk); row.appendChild(other); panel.appendChild(row);
+  }
 }
 
 function openShrine(){
