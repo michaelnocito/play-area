@@ -120,6 +120,8 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
 - **#018** mobile-freeze hardening (persist try/catch + on-screen error bar)
 - **#019** Norns' Spread cohesive-sentence reading
 - **#020** Hero unlocks — cosmetic völva reskins (Völva/Berserker/Thor/Odin), ad-OR-Amber
+- **#021** Menu screens scroll + `justify-content:safe center` — tall text screens (Shrine/
+  Realm/Forecaster) no longer clip Back/nav buttons off-screen on short windows
 
 ## Heroes (RD-#020) — cosmetic völva reskins
 - **Cosmetic only** (same hitbox/powers). `HEROES` table = `{id,name,lore,cost,pal}`;
