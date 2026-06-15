@@ -803,13 +803,14 @@ function buildLevel(realm){
     const idx=foeIdx++;
     // RD-#027: ~2/3 of shades are "divers" — their bob dips to the run lane so a grounded
     // runner must actually deal with them (jump / Rune Bolt / freeze), not just stroll under.
+    // opt.cen/opt.amp let a level hand-place a diver (e.g. RD-#035 Raidho freeze-staircase).
     const dive = opt.dive!=null ? opt.dive : (idx%3!==0);
     foes.push({
       x:wx, y:wy, baseY:wy, dead:false, frozen:false,
       type:(idx%2===0)?"excess":"lack",
       dive,
-      amp: dive?48:18,                 // bob amplitude
-      cen: dive?(GROUND_Y-92):wy,      // divers center low → low point reaches the lane (GROUND_Y-44)
+      amp: opt.amp!=null?opt.amp : (dive?48:18),                 // bob amplitude
+      cen: opt.cen!=null?opt.cen : (dive?(GROUND_Y-92):wy),      // bob center (divers dip to the lane)
     });
   }
 
@@ -854,16 +855,28 @@ function buildLevel(realm){
       ground(60); gap(100); ground(110);
       coins.push({x:x-100,y:GROUND_Y-140,got:false});
     }
-    ground(720);
-    for(let i=0;i<5;i++) addFoe(x-650+i*138,GROUND_Y-120-(i%3)*30);
-    coinArc(x-620,GROUND_Y-190,6,54);
+    // RD-#035 (Raidho only — timing test): spaced solo divers, then a freeze-staircase.
+    ground(820);
+    addFoe(x-620,GROUND_Y-92,{dive:true,amp:34});   // spaced practice diver (dips to the lane)
+    addFoe(x-320,GROUND_Y-92,{dive:true,amp:34});   // ~300px later → time to bolt + jump one
+    coinArc(x-560,GROUND_Y-180,4,54);
+    // FREEZE-STAIRCASE: bolt each rising shade to freeze a step, then climb the frozen
+    // staircase to the high amber. ~210px apart (~1s) = time to react. Ground below = safe retry.
+    ground(1240);
+    teach.push({x:x-1180,text:"Freeze the rising shades to climb them ↗"});
+    for(let i=0;i<5;i++){
+      const sxp=x-1140+i*210, hy=GROUND_Y-70-i*58;  // ascending step height
+      addFoe(sxp,hy,{dive:true,amp:16,cen:hy});      // gentle bob around the step's height
+      coins.push({x:sxp,y:hy-34,got:false});         // a coin riding each frozen step
+    }
+    coinArc(x-170,GROUND_Y-302,3,46);                // bonus amber at the top of the climb
     gap(160); segs.push({x,w:220,y:GROUND_Y-110}); coinArc(x+50,GROUND_Y-180,3); x+=220;
     gap(180); ground(280);
     for(let i=0;i<4;i++){ segs.push({x,w:140,y:GROUND_Y-55-i*55}); coins.push({x:x+60,y:GROUND_Y-120-i*55,got:false}); x+=140; gap(60); }
-    ground(340); for(let i=0;i<2;i++) addFoe(x-260+i*120,GROUND_Y-130);
+    ground(360); addFoe(x-220,GROUND_Y-92,{dive:true,amp:30});
     for(let i=0;i<4;i++){ ground(140); gap(120); }
     ground(560); coinArc(x-500,GROUND_Y-80,8,52);
-    for(let i=0;i<4;i++) addFoe(x-460+i*118,GROUND_Y-130-(i%2)*36);
+    addFoe(x-380,GROUND_Y-92,{dive:true,amp:30}); addFoe(x-170,GROUND_Y-92,{dive:true,amp:30});
 
   } else if(id===2){
     // Wunjo — joy · harmony — open, abundant, pairs of shades, vertical variety
