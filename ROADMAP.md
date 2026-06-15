@@ -71,20 +71,45 @@ Fail → fix the failing item, retest. Then post-launch: more realms, mobile/Ste
 
 ---
 
+## First-hour audit findings (2026-06-15, data-backed via live level instrumentation)
+Measured at ~205 px/s across all 9 realms. **Confirms Mike's playtest observations:**
+- **Dead air:** longest empty stretch (no foe/coin/obstacle) = **885–1380 px ≈ up to ~6.7s of nothing**
+  per realm. Sowilo has a 1330px void near x≈5260.
+- **Bobbing foes never reach the run lane:** **0 / all foes** in every realm dip low enough to threaten
+  a grounded runner (foe bottom-of-bob sits ~30px above the player's head). Floating = harmless unless
+  you jump. → confirms "bouncers should come to the bottom of the platform."
+- **Layout repetition:** realms **4–8 (Isa/Algiz/Tiwaz/Laguz/Dagaz) are byte-identical** (shared stub
+  builder); realms 0–3 reuse the same coinArc + obstacle-run + foe-row motifs. → confirms "too similar."
+- **Sparse density:** foes 1.0–2.8 / 1k px, coins 4.2–8.7 / 1k px.
+
 ## Backlog — triaged
 
 ### NOW (Stage 1 — first-hour polish, ratings protection)
 - **RD-#026 Re-cast the omen** — ad/Amber reroll of the pre-level reading (new monetization hook,
-  replaces retired Norns gate). *(Mike flagged; confirmed direction.)*
-- **First-hour audit pass** — play realms 0–2 cold; fix any dead-end/confusion/friction against the Gate.
-- **Onboarding clarity** — ensure the reading→omen→run loop is self-explanatory in <60s.
+  replaces retired Norns gate).
+- **RD-#027 Foe "divers"** — some foes bob DOWN into the run lane (to platform bottom) so they're real
+  timing threats + freeze targets; vary amplitude/phase per foe. *(Mike: bouncers come to the bottom.)*
+- **RD-#028 Kill the dead air** — fill the 885–1380px voids with rhythm (coins/foes/optional routes);
+  target no stretch >~2–2.5s empty. *(Mike: no-enemy/no-coin stretches.)*
+- **RD-#029 Layout variety** — differentiate the 5 identical stub realms + vary placement/enemy patterns
+  per realm (authored chunks + realm identity). *(Mike: placement/enemies feel too similar.)*
 
-### NEXT (Stage 2 — saleable slice)
+### NEXT (Stage 2 — depth/retention; research-backed: stats + achievements + unlockables drive replay)
+- **RD-#030 End-of-level metrics screen (saveable)** — time, coins, enemies frozen, enemies killed,
+  freeze-jump combos, best/PB. For the data geeks. *(Mike.)* *(Cumulative stats = long-term goal hook.)*
+- **RD-#031 Badges / achievements** — Flawless (kill all), Deep Freeze (freeze all), Coin Collector,
+  Speedrun (time), combo badges. Per-realm, persisted, shown on results + realm select. *(Mike; research.)*
+- **RD-#032 Skill-trick reward** — freeze → stomp → jump-again chain drops a **special pickup (better
+  than a coin — DECISION pending)** + visible combo counter. Optional, skill-gated, no forced friction;
+  a come-back-and-master hook. *(Mike.)*
+- **RD-#033 Revive-by-ad** — watch a rewarded ad to continue from where you died (sanctioned ad moment).
+  *(Mike.)*
 - **Checkpoint system** — totem mid-run, respawn from CP, lore card on touch (Act 2–3 realms).
-- **Flesh out stub realms** Hagalaz(3)/Isa(4)/Algiz(5)/Tiwaz(6)/Laguz(7)/Dagaz(8) — real layouts +
-  lore-as-design (each realm's rune meaning expressed in its level).
-- **Meta/economy tune** — make Amber + Provisions + Heroes + omens cohere into a come-back loop.
+- **Meta/economy tune** — make Amber + Provisions + Heroes + omens + skill-reward cohere into a come-back loop.
 - **Richer visual omens** (Phase 2) — weather/density/light so the omen is *felt*, not just a stat.
+
+> **Design constraint (Mike):** no feature may add friction beyond the enjoyment it returns — EXCEPT
+> sanctioned ad moments (revive-by-ad, omen reroll). Skill rewards stay optional, never blocking.
 
 ### LATER (Stage 3–4 + post-launch)
 - **Launch artifacts** — capsule, trailer/GIF, portal/store page.
