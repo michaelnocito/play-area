@@ -99,9 +99,9 @@ Measured at ~205 px/s across all 9 realms. **Confirms Mike's playtest observatio
   freeze-jump combos, best/PB. For the data geeks. *(Mike.)* *(Cumulative stats = long-term goal hook.)*
 - **RD-#031 Badges / achievements** — Flawless (kill all), Deep Freeze (freeze all), Coin Collector,
   Speedrun (time), combo badges. Per-realm, persisted, shown on results + realm select. *(Mike; research.)*
-- **RD-#032 Skill-trick reward** — freeze → stomp → jump-again chain drops a **special pickup (better
-  than a coin — DECISION pending)** + visible combo counter. Optional, skill-gated, no forced friction;
-  a come-back-and-master hook. *(Mike.)*
+- **RD-#032 Skill-trick reward** — freeze → stomp → jump-again chain drops a **Rune Shard** ✅ (decided
+  2026-06-15): a rare *skill-only* currency, spent on exclusive Heroes/cosmetics. Visible combo counter;
+  bigger chains = more shards. Optional, skill-gated, no forced friction; aspirational come-back sink. *(Mike.)*
 - **RD-#033 Revive-by-ad** — watch a rewarded ad to continue from where you died (sanctioned ad moment).
   *(Mike.)*
 - **Checkpoint system** — totem mid-run, respawn from CP, lore card on touch (Act 2–3 realms).

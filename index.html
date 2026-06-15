@@ -796,8 +796,19 @@ function buildLevel(realm){
   function ground(w,y=GROUND_Y){ segs.push({x,w,y}); x+=w; }
   function gap(w){ x+=w; }
   function coinArc(cx,cy,n=3,step=44){ for(let i=0;i<n;i++) coins.push({x:cx+i*step,y:cy,got:false}); }
-  function addFoe(wx,wy){
-    foes.push({x:wx,y:wy,baseY:wy,dead:false,frozen:false,type:(foeIdx++%2===0)?"excess":"lack"});
+  function addFoe(wx,wy,opt){
+    opt=opt||{};
+    const idx=foeIdx++;
+    // RD-#027: ~2/3 of shades are "divers" — their bob dips to the run lane so a grounded
+    // runner must actually deal with them (jump / Rune Bolt / freeze), not just stroll under.
+    const dive = opt.dive!=null ? opt.dive : (idx%3!==0);
+    foes.push({
+      x:wx, y:wy, baseY:wy, dead:false, frozen:false,
+      type:(idx%2===0)?"excess":"lack",
+      dive,
+      amp: dive?48:18,                 // bob amplitude
+      cen: dive?(GROUND_Y-92):wy,      // divers center low → low point reaches the lane (GROUND_Y-44)
+    });
   }
 
   // shared intro
@@ -1200,7 +1211,7 @@ function update(){
   // A frozen shade hangs still and is safe to leap off (stomp = bounce).
   for(const f of level.foes){
     if(f.dead) continue;
-    if(!f.frozen) f.y=f.baseY+Math.sin((cam+f.x)*0.01)*22; // frozen shades stop drifting
+    if(!f.frozen) f.y=f.cen+Math.sin((cam+f.x)*0.01)*f.amp; // frozen shades stop drifting; divers dip to the lane
     for(let i=bolts.length-1;i>=0;i--){
       if(rectHit(bolts[i].x,bolts[i].y,10,6,f.x,f.y,34,34)){
         bolts.splice(i,1);
