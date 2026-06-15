@@ -126,7 +126,8 @@
   <div class="screen" id="s-shrine">
     <h2>Shrine of Skills</h2>
     <p class="sub">Spend amber to deepen the run.
-      Amber: <span class="ess" id="sh-ess">0</span></p>
+      Amber: <span class="ess" id="sh-ess">0</span>
+      &nbsp;•&nbsp; Rune Shards: <span style="color:#9fe8ff;font-weight:700" id="sh-shards">0</span></p>
     <div id="shrine-list" style="display:flex;flex-direction:column;gap:12px;"></div>
     <button class="btn" data-go="realm">Back</button>
   </div>
@@ -214,6 +215,7 @@ const HEROES=[
     pal:{cloakTop:"#34314c",cloakBot:"#14121f",hood:"#23213a"}, bolt:{core:"#d3c4f2",rgb:"150,120,220",shape:"feather"}},
 ];
 function heroBolt(){ return (HEROES[save.hero]||HEROES[0]).bolt; }
+const HERO_SHARD_COST={1:8,2:16,3:26}; // RD-#032: heroes also buyable with skill-earned Rune Shards
 // Rune omens (RD-#024) — the völva reads the runes for the ROAD AHEAD (not your fate).
 // Before a run she casts 3 runes; you must READ one (predict its meaning) to choose it, and
 // that rune's omen reshapes the level. You learn to read a rune by feeling what it does.
@@ -970,6 +972,7 @@ function buildLevel(realm){
    ============================================================ */
 let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0,footstepDist=0;
 let runFroze=0,runShards=0,comboChain=0,runComboBest=0; // RD-#030/#032 run metrics + skill combo
+let usedRevive=false; // RD-#033: one ad-revive per run
 let curRealm=REALMS[0],shieldCharges=0,endReason="",runWhisper=null,runScene=null;
 let runBoons={shield:false,surge:false,twin:false}; // boons active this run
 let runOmen=null;       // RD-#024: the rune omen shaping THIS run (set from the reading)
@@ -1059,7 +1062,7 @@ function startRun(realm){
   level=buildLevel(realm);
   level.obs.forEach(o=>{o.health=2;o.destroyed=false;});
   cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
-  runFroze=0; runShards=0; comboChain=0; runComboBest=0;
+  runFroze=0; runShards=0; comboChain=0; runComboBest=0; usedRevive=false;
   bolts.length=0; particles.length=0; boltCD=0;
   // consume banked provisions for this run
   if(!save.boons) save.boons={shield:0,surge:0,twin:0};
@@ -1143,6 +1146,17 @@ function endRun(won){
       (runWhisper?`<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} "${runWhisper.text}"</span>`:"");
     document.getElementById("res-again").onclick=()=>openReading(curRealm); // re-read the road each run
     showScreen("result");
+    // RD-#033: revive-by-ad on death (once per run)
+    let revRow=document.getElementById("revive-row");
+    if(!revRow){ revRow=document.createElement("div"); revRow.id="revive-row"; revRow.style.marginTop="6px";
+      const sr=document.getElementById("s-result"); sr.insertBefore(revRow, document.getElementById("ad-essence-row")); }
+    revRow.innerHTML="";
+    if(!won && !usedRevive){
+      const rb=document.createElement("button"); rb.className="btn ad-btn"; rb.style.minWidth="280px";
+      rb.textContent="▶ Rise where you fell — watch an ad";
+      rb.onclick=()=>Ads.showRewarded(reviveRun);
+      revRow.appendChild(rb);
+    }
     // Rewarded-ad bonus — show when run earned enough to make the offer meaningful
     const adRow=document.getElementById('ad-essence-row');
     const adBtn=document.getElementById('ad-essence-btn');
@@ -1363,6 +1377,24 @@ function takeHit(){
   endReason="A shade caught you."; Snd.glideEnd(); Snd.death(); doDeath(); return false;
 }
 function doDeath(){ spawnBurst(player.x,player.y,"#ff9a9a",26,4); endRun(false); }
+
+// RD-#033: rise where you fell (rewarded ad, once per run). Earnings already banked stay;
+// run accumulators reset so they don't double-bank (badges thus reflect only post-revive play).
+function reviveRun(){
+  usedRevive=true;
+  runEssence=0; runShards=0; runKills=0; runFroze=0; runCoins=0; comboChain=0; runComboBest=0;
+  const px=player.x+cam;
+  // if we died over a pit, back up to the nearest solid ground behind us
+  let onSeg=level.segs.some(s=>s.y===GROUND_Y && px>=s.x && px<=s.x+s.w);
+  if(!onSeg){ let best=null; for(const s of level.segs){ if(s.y===GROUND_Y && s.x+s.w<px && (!best||s.x>best.x)) best=s; }
+    if(best) cam=best.x+best.w-80-player.x; }
+  for(const f of level.foes){ if(Math.abs(f.x-(player.x+cam))<420) f.dead=true; } // clear the threat that got us
+  player.y=GROUND_Y-player.h; player.vy=0; player.onGround=true; player.gliding=false; player.flash=80;
+  shieldCharges=Math.max(shieldCharges,1); // grace ward
+  bolts.length=0; keys.jump=false; keys.cast=false; keys.jumpEdge=false;
+  state="play"; showScreen(null); introPaused=false;
+  Snd.boot(); Snd.startMusic(curRealm.id);
+}
 
 /* ============================================================
    RENDER
@@ -2097,6 +2129,15 @@ function renderReading(){
   if(chosen==null){
     panel.innerHTML=`<div class="read-q">Tap a rune to read it.</div>
       <div class="read-master">Runes you can read: ${mastered}/${OMEN_IDS.length}</div>`;
+    // RD-#026: re-cast the runes — don't like this hand? reroll for an ad or a little Amber
+    const recast=()=>{ readingState.runes=pickReadingRunes(); readingState.shown=false; readingState.chosen=null; readingState.answered=false; readingState.quiz=null; try{Snd.boot&&Snd.boot();}catch(e){} renderReading(); };
+    const row=document.createElement("div"); row.className="row"; row.style.marginTop="4px";
+    const adB=document.createElement("button"); adB.className="btn sm ad-btn";
+    adB.textContent="▶ Re-cast (ad)"; adB.onclick=()=>Ads.showRewarded(recast);
+    const payB=document.createElement("button"); payB.className="btn sm";
+    payB.textContent="✦ 10 — Re-cast"; payB.disabled=save.essence<10;
+    payB.onclick=()=>{ save.essence-=10; persist(); recast(); };
+    row.appendChild(adB); row.appendChild(payB); panel.appendChild(row);
     return;
   }
   const o=RUNE_OMEN[chosen];
@@ -2134,6 +2175,7 @@ function renderReading(){
 
 function openShrine(){
   document.getElementById("sh-ess").textContent=save.essence;
+  document.getElementById("sh-shards").textContent=save.shards||0;
   const list=document.getElementById("shrine-list"); list.innerHTML="";
   UPGRADES.forEach(u=>{
     const lv=save.upgrades[u.key],cost=upgCost(u.key);
@@ -2187,7 +2229,16 @@ function openShrine(){
       const payB=document.createElement("button"); payB.className="btn"; payB.style.minWidth="0";
       payB.textContent=`${h.cost} ✦`; payB.disabled=save.essence<h.cost;
       payB.onclick=()=>{ save.essence-=h.cost; unlockHero(h.id); };
-      grp.appendChild(adB); grp.appendChild(payB); row.appendChild(grp);
+      grp.appendChild(adB); grp.appendChild(payB);
+      // RD-#032: also buyable with skill-earned Rune Shards
+      const sCost=HERO_SHARD_COST[h.id];
+      if(sCost){
+        const shB=document.createElement("button"); shB.className="btn"; shB.style.minWidth="0";
+        shB.textContent=`${sCost} ◆`; shB.disabled=(save.shards||0)<sCost;
+        shB.onclick=()=>{ save.shards-=sCost; unlockHero(h.id); };
+        grp.appendChild(shB);
+      }
+      row.appendChild(grp);
     }
     list.appendChild(row);
   });
