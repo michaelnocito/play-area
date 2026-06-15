@@ -122,6 +122,11 @@ Levels are on the right track; 5 ways to deepen them (sources: retrostylegames, 
 - **#020** Hero unlocks — cosmetic völva reskins (Völva/Berserker/Thor/Odin), ad-OR-Amber
 - **#021** Menu screens scroll + `justify-content:safe center` — tall text screens (Shrine/
   Realm/Forecaster) no longer clip Back/nav buttons off-screen on short windows
+- **#022** Run pace +22% (`runSpeed` 3.42 px/frame = ~205 px/s @ realm 1, was ~168; dropped
+  RD-#013's 0.85 dampener) + **rune-casting animation** (`castRunes`): drawn stone(s) tumble
+  from the hand and land on the seer's cloth (CSS `#s-cast` screen) before the reading shows.
+  Wired into the daily draw (1 stone) + Norns' spread (3 stones); tap-to-skip; `Snd.land` thud
+  per stone + `Snd.coin` on reveal.
 
 ## Heroes (RD-#020) — cosmetic völva reskins
 - **Cosmetic only** (same hitbox/powers). `HEROES` table = `{id,name,lore,cost,pal}`;
