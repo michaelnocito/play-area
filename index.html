@@ -203,6 +203,7 @@ const defaultSave = {
   essence:0, upgrades:{jump:0,bolt:0,shield:0}, // 'essence' kept as code id; player-facing name = Amber
   sounds:{ward:false,echo:false,shimmer:false},
   boons:{shield:0,surge:0,twin:0}, // consumable provisions, banked + auto-used next run
+  hero:0, heroes:[0], // RD-#020: equipped völva skin + unlocked skin ids (cosmetic only)
   forecast:{weekKey:"",weeklyRune:0,weeklyHistory:[],lastDailyKey:"",dailyRune:0,streak:0},
   realmsUnlocked:1, best:{}, loreSeen:{}
 };
@@ -232,6 +233,22 @@ const BOONS=[
   {key:"surge", name:"Amber Surge", desc:"Double all Amber gathered on your next run.",  cost:20},
   {key:"twin",  name:"Twin Leap",   desc:"Gain a second jump for your next run.",        cost:15},
 ];
+// Heroes — cosmetic-only völva reskins (RD-#020). Purely visual: same hitbox, same powers.
+// id 0 is the default seer, owned for free. Others unlock for Amber OR a single rewarded ad.
+// pal = cloak gradient + hood fill swapped into drawPlayer; the magical aura stays realm-hued.
+const HEROES=[
+  {id:0,name:"The Völva",     lore:"The seer who walks the bridge of realms.",         cost:0,
+    pal:{cloakTop:"#2a2058",cloakBot:"#120d2e",hood:"#1b1440"}},
+  {id:1,name:"The Berserker", lore:"Bear-pelt and battle-fury; she runs without fear.", cost:60,
+    pal:{cloakTop:"#5a2a22",cloakBot:"#2a1310",hood:"#3a1a12"}},
+  {id:2,name:"Thor's Chosen", lore:"Storm-blue and bronze, blessed by the thunderer.",  cost:120,
+    pal:{cloakTop:"#1d3a6a",cloakBot:"#0c1830",hood:"#15294e"}},
+  {id:3,name:"Odin's Eye",    lore:"Raven-grey and indigo; she sees with the Allfather.",cost:200,
+    pal:{cloakTop:"#34314c",cloakBot:"#14121f",hood:"#23213a"}},
+];
+function heroOwned(id){ return id===0 || (save.heroes&&save.heroes.indexOf(id)>=0); }
+function unlockHero(id){ if(!save.heroes) save.heroes=[0]; if(save.heroes.indexOf(id)<0) save.heroes.push(id); save.hero=id; persist(); openShrine(); }
+function equipHero(id){ if(heroOwned(id)){ save.hero=id; persist(); openShrine(); } }
 function upgCost(key){
   const u=UPGRADES.find(u=>u.key===key), lv=save.upgrades[key];
   return lv>=3?null:u.cost[lv];
@@ -1700,11 +1717,12 @@ function drawPlayer(){
     ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+b*8,feet-6-Math.abs(b)*3); ctx.lineTo(hipX+b*12,feet); ctx.stroke();
   }
   const billow=air?-10:0,sway=Math.sin(animT*4)*3;
+  const pal=(HEROES[save.hero]||HEROES[0]).pal; // RD-#020: equipped hero skin (cosmetic)
   const cg=ctx.createLinearGradient(cx-22,headY,cx+10,feet);
-  cg.addColorStop(0,"#2a2058"); cg.addColorStop(1,"#120d2e");
+  cg.addColorStop(0,pal.cloakTop); cg.addColorStop(1,pal.cloakBot);
   ctx.fillStyle=cg; ctx.beginPath(); ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2); ctx.lineTo(cx-6,feet-2); ctx.quadraticCurveTo(cx-22+sway,feet-6+billow,cx-26+sway,feet-18+billow); ctx.quadraticCurveTo(cx-14,headY+10,cx-6,headY+6); ctx.closePath(); ctx.fill();
   ctx.strokeStyle=`hsla(${hue},90%,78%,0.7)`; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2); ctx.stroke();
-  ctx.fillStyle="#1b1440"; ctx.beginPath(); ctx.moveTo(cx-8,headY+12); ctx.quadraticCurveTo(cx-2,headY-6,cx+8,headY+2); ctx.quadraticCurveTo(cx+10,headY+12,cx+4,headY+16); ctx.lineTo(cx-6,headY+16); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=pal.hood; ctx.beginPath(); ctx.moveTo(cx-8,headY+12); ctx.quadraticCurveTo(cx-2,headY-6,cx+8,headY+2); ctx.quadraticCurveTo(cx+10,headY+12,cx+4,headY+16); ctx.lineTo(cx-6,headY+16); ctx.closePath(); ctx.fill();
   ctx.save(); ctx.globalCompositeOperation="lighter"; glow(cx-1,headY+9,6,`hsla(${hue},95%,82%,0.85)`,`hsla(${hue},95%,75%,0)`); ctx.restore();
   ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.strokeStyle=`hsla(${hue},90%,82%,0.9)`; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx,feet-30); ctx.lineTo(cx,feet-20); ctx.moveTo(cx,feet-27); ctx.lineTo(cx+4,feet-24); ctx.stroke(); ctx.restore();
   const handX=cx+6,handY=feet-24,tipX=cx+18,tipY=headY-2;
@@ -1976,6 +1994,34 @@ function openShrine(){
     btn.textContent=`${b.cost} ✦`; btn.disabled=save.essence<b.cost;
     btn.onclick=()=>{ save.essence-=b.cost; save.boons[b.key]=(save.boons[b.key]||0)+1; persist(); openShrine(); };
     row.appendChild(btn); list.appendChild(row);
+  });
+  // Heroes divider — cosmetic völva reskins (RD-#020), unlock with Amber OR a rewarded ad
+  if(!save.heroes) save.heroes=[0]; if(save.hero==null) save.hero=0;
+  const hdiv=document.createElement("div");
+  hdiv.style.cssText="width:min(520px,92vw);border-top:1px solid #3a3270;margin:8px 0 2px;text-align:center;padding-top:10px;";
+  hdiv.innerHTML=`<span style="color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase;">⚔ Heroes — change your look</span>`;
+  list.appendChild(hdiv);
+  HEROES.forEach(h=>{
+    const owned=heroOwned(h.id), equipped=(save.hero===h.id);
+    const row=document.createElement("div"); row.className="shrine-row";
+    const swatch=`<span style="display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:middle;margin-right:6px;border:1px solid rgba(255,255,255,.25);background:linear-gradient(${h.pal.cloakTop},${h.pal.cloakBot})"></span>`;
+    row.innerHTML=`<div class="info"><b>${swatch}${h.name}</b>${equipped?' <span style="color:var(--rune);font-size:13px;">★ worn</span>':''}
+        <div class="lvl">${h.lore}</div></div>`;
+    if(owned){
+      const btn=document.createElement("button"); btn.className="btn"; btn.style.minWidth="120px";
+      if(equipped){ btn.textContent="Worn"; btn.disabled=true; }
+      else{ btn.textContent="Wear"; btn.onclick=()=>equipHero(h.id); }
+      row.appendChild(btn);
+    } else {
+      const grp=document.createElement("div"); grp.style.cssText="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;";
+      const adB=document.createElement("button"); adB.className="btn ad-btn"; adB.style.minWidth="0";
+      adB.textContent="▶ Ad"; adB.onclick=()=>Ads.showRewarded(()=>unlockHero(h.id));
+      const payB=document.createElement("button"); payB.className="btn"; payB.style.minWidth="0";
+      payB.textContent=`${h.cost} ✦`; payB.disabled=save.essence<h.cost;
+      payB.onclick=()=>{ save.essence-=h.cost; unlockHero(h.id); };
+      grp.appendChild(adB); grp.appendChild(payB); row.appendChild(grp);
+    }
+    list.appendChild(row);
   });
   // Sound Forge divider
   const div=document.createElement("div");
