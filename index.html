@@ -169,6 +169,9 @@ const defaultSave = {
   boons:{shield:0,surge:0,twin:0}, // consumable provisions, banked + auto-used next run
   hero:0, heroes:[0], // RD-#020: equipped völva skin + unlocked skin ids (cosmetic only)
   runeMastery:{},     // RD-#024: id -> times you've correctly read this rune (learn-to-read progress)
+  shards:0,           // RD-#032: Rune Shards — skill-only currency from freeze-stomp chains
+  stats:{runs:0,kills:0,frozen:0,coins:0,shards:0,bestCombo:0}, // RD-#030: lifetime metrics (data geeks)
+  badges:{},          // RD-#031: per-realm badges earned {id:{conqueror,deepfreeze,collector,swift}}
   realmsUnlocked:1, best:{}, loreSeen:{}
 };
 const CUR="Amber"; // player-facing currency name (Freya's tears)
@@ -969,6 +972,7 @@ function buildLevel(realm){
    GAME STATE
    ============================================================ */
 let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0,footstepDist=0;
+let runFroze=0,runShards=0,comboChain=0,runComboBest=0; // RD-#030/#032 run metrics + skill combo
 let curRealm=REALMS[0],shieldCharges=0,endReason="",runWhisper=null,runScene=null;
 let runBoons={shield:false,surge:false,twin:false}; // boons active this run
 let runOmen=null;       // RD-#024: the rune omen shaping THIS run (set from the reading)
@@ -1058,6 +1062,7 @@ function startRun(realm){
   level=buildLevel(realm);
   level.obs.forEach(o=>{o.health=2;o.destroyed=false;});
   cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
+  runFroze=0; runShards=0; comboChain=0; runComboBest=0;
   bolts.length=0; particles.length=0; boltCD=0;
   // consume banked provisions for this run
   if(!save.boons) save.boons={shield:0,surge:0,twin:0};
@@ -1099,6 +1104,13 @@ function endRun(won){
   }
   if(runBoons.surge) runEssence=Math.round(runEssence*2); // Amber Surge doubles the haul
   save.essence+=runEssence;
+  // RD-#032: bank skill-earned Rune Shards · RD-#030: lifetime stats
+  save.shards=(save.shards||0)+runShards;
+  if(!save.stats) save.stats={runs:0,kills:0,frozen:0,coins:0,shards:0,bestCombo:0};
+  save.stats.runs++; save.stats.kills+=runKills; save.stats.frozen+=runFroze;
+  save.stats.coins+=runCoins; save.stats.shards+=runShards;
+  if(runComboBest>(save.stats.bestCombo||0)) save.stats.bestCombo=runComboBest;
+  let newBadges=[];
   if(won){
     const t=runTime;
     if(save.realmsUnlocked<curRealm.id+2&&curRealm.id+1<REALMS.length) save.realmsUnlocked=curRealm.id+2;
@@ -1106,6 +1118,15 @@ function endRun(won){
       save.best[curRealm.id]=t;
       ghostData[curRealm.id]=ghostRecording.slice(); // new best run → save as ghost
     }
+    // RD-#031: per-realm badges (sticky once earned)
+    if(!save.badges) save.badges={};
+    const b=save.badges[curRealm.id]||(save.badges[curRealm.id]={});
+    const totF=level.foes.length, totC=level.coins.length, swiftSec=level.gateX/180;
+    [["conqueror","⚔ Conqueror", totF>0&&runKills>=totF],
+     ["deepfreeze","❄ Deep Freeze", totF>0&&runFroze>=totF],
+     ["collector","✦ Coin Collector", totC>0&&runCoins>=totC],
+     ["swift","⌛ Swift", runTime<=swiftSec]
+    ].forEach(([k,label,got])=>{ if(got&&!b[k]){ b[k]=true; newBadges.push(label); } });
   }
   persist(); Snd.stopMusic();
   setTimeout(()=>{
@@ -1114,11 +1135,14 @@ function endRun(won){
     document.getElementById("res-body").innerHTML=
       (won
         ?`You crossed <b>${curRealm.name}</b> in <b>${runTime.toFixed(1)}s</b>.`+(best!=null?` &nbsp;Best: <b>${best.toFixed(1)}s</b>`:"")
-        :`${endReason||"A misstep."} You kept the amber you gathered.`)+
-      `<br>Shades slain: <b>${runKills}</b> &nbsp;•&nbsp; Amber drops: <b>${runCoins}</b>`+
+        :`${endReason||"A misstep."} You kept what you gathered.`)+
+      `<br>⏱ ${runTime.toFixed(1)}s &nbsp;•&nbsp; ⚔ ${runKills} shattered &nbsp;•&nbsp; ❄ ${runFroze} frozen &nbsp;•&nbsp; ✦ ${runCoins} amber`+
+      (runComboBest>1?`<br><span style="color:#9fe8ff">Best freeze-stomp chain: ⚡×${runComboBest}</span>`:"")+
+      (runShards>0?`<br><span style="color:#9fe8ff">◆ +${runShards} Rune Shards</span> &nbsp;<span class="hint">(total ${save.shards})</span>`:"")+
+      (newBadges.length?`<br><span style="color:var(--gold)">★ Badge earned: ${newBadges.join(" · ")}</span>`:"")+
       (runBoons.surge?`<br><span style="color:var(--gold)">Amber Surge doubled your haul!</span>`:"")+
-      `<br><br>Amber gathered: <span class="ess">+${runEssence}</span>`+
-      `<br>Total: <span class="ess">${save.essence}</span>`+
+      `<br><br>Amber gathered: <span class="ess">+${runEssence}</span> &nbsp;•&nbsp; Total: <span class="ess">${save.essence}</span>`+
+      `<br><span class="hint">Lifetime: ${save.stats.runs} runs · ${save.stats.kills} shattered · ${save.stats.frozen} frozen · ${save.stats.shards} shards</span>`+
       (runWhisper?`<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} "${runWhisper.text}"</span>`:"");
     document.getElementById("res-again").onclick=()=>openReading(curRealm); // re-read the road each run
     showScreen("result");
@@ -1238,7 +1262,7 @@ function update(){
       if(rectHit(bolts[i].x,bolts[i].y,10,6,f.x,f.y,34,34)){
         bolts.splice(i,1);
         if(!f.frozen){                       // 1st hit → freeze
-          f.frozen=true;
+          f.frozen=true; runFroze++;
           spawnBurst(f.x-cam+17,f.y+17,"#bfe9ff",12,2.6);
           Snd.runeBlock(); Snd.activityBump();
         } else {                             // 2nd hit → shatter
@@ -1254,12 +1278,18 @@ function update(){
     if(f.dead) continue;
     if(rectHit(px,player.y,player.w,player.h,f.x,f.y,34,34)){
       if(f.frozen){
-        // Frozen = a safe stepping-stone. Coming down onto it bounces you up.
+        // Freeze-stomp (RD-#032): drop onto a frozen shade → it shatters, you bounce, and you
+        // bank a combo-scaled Rune Shard chain. Chain across shades before landing for more.
         const feet=player.y+player.h;
         if(player.vy>0 && feet-player.vy<=f.y+18){
+          f.dead=true; runKills++;
           player.y=f.y-player.h; player.vy=C.jumpV*0.78; player.onGround=false;
           player.coyote=0; player.jumpsLeft=canDouble?1:0;
-          spawnBurst(f.x-cam+17,f.y,"#bfe9ff",8,2.4); Snd.jump(); Snd.activityBump();
+          comboChain++; if(comboChain>runComboBest) runComboBest=comboChain;
+          runShards+=comboChain;                 // 1st stomp +1, chained +2, +3 …
+          spawnDeathBurst(f.x-cam+17,f.y+17);
+          for(let s=0;s<comboChain*2+2;s++){ const a=Math.random()*6.28; particles.push({x:f.x-cam+17,y:f.y+8,vx:Math.cos(a)*3.2,vy:Math.sin(a)*3.2-2,life:0,max:30,c:"#9fe8ff",r:2.6}); }
+          Snd.doubleJump(); Snd.activityBump();
         }
         // side / underside contact with a frozen shade is harmless — pass through
       } else if(takeHit()){
@@ -1303,7 +1333,7 @@ function update(){
   }
 
   // landing + footstep
-  if(!wasOnGround&&player.onGround) Snd.land();
+  if(!wasOnGround&&player.onGround){ Snd.land(); comboChain=0; } // touching down ends a freeze-stomp chain
   footstepDist+=C.runSpeed;
   if(player.onGround&&footstepDist>=42){ Snd.footstep(); footstepDist=0; }
 
@@ -1830,10 +1860,18 @@ function drawHUD(){
   if(shieldCharges>0){ ctx.fillStyle="#7fd4ff"; ctx.fillText(`◈×${shieldCharges}`,rx,29); rx-=48; }
   if(ghostPlayback){ ctx.fillStyle=showGhost?`hsla(${curRealm.hue},80%,75%,0.8)`:"rgba(120,110,180,0.5)"; ctx.fillText(showGhost?"◑ Ghost":"◑ off",rx,29); }
   ctx.textAlign="left"; ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI";
-  ctx.fillText(`Shades: ${runKills}  •  Drops: ${runCoins}`,16,58);
+  ctx.fillText(`❄ ${runFroze}   ⚔ ${runKills}   ✦ ${runCoins}` + (runShards>0?`   ◆ ${runShards}`:""),16,58);
   // active boon badges
   const badges=[]; if(runBoons.surge) badges.push("⟡ Surge"); if(runBoons.twin) badges.push("⟡ Twin Leap"); if(runBoons.shield) badges.push("⟡ Ward");
   if(badges.length){ ctx.textAlign="right"; ctx.fillStyle=`hsla(${curRealm.hue},70%,78%,0.85)`; ctx.fillText(badges.join("   "),W-16,58); ctx.textAlign="left"; }
+  // RD-#032: live freeze-stomp combo over the player
+  if(comboChain>1){
+    ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.textAlign="center";
+    const cs=1+Math.min(comboChain,6)*0.12;
+    ctx.font=`bold ${Math.round(24*cs)}px Segoe UI`; ctx.fillStyle="#9fe8ff";
+    ctx.fillText(`⚡ ×${comboChain}`, player.x+10, player.y-16);
+    ctx.restore(); ctx.textAlign="left";
+  }
   ctx.textAlign="center"; ctx.fillStyle="#9a98c8"; ctx.fillText(`${runTime.toFixed(1)}s`,W/2,58); ctx.textAlign="left";
   const prog=Math.min(1,(player.x+cam)/level.gateX);
   ctx.fillStyle="rgba(255,255,255,0.15)"; ctx.fillRect(16,34,W-32,5);
@@ -1976,9 +2014,12 @@ function openRealm(){
     const card=document.createElement("div");
     card.className="realmcard"+(unlocked?"":" locked");
     const best=save.best[r.id];
+    const bg=(save.badges&&save.badges[r.id])||{};
+    const bIcons=[bg.conqueror?"⚔":"",bg.deepfreeze?"❄":"",bg.collector?"✦":"",bg.swift?"⌛":""].filter(Boolean).join(" ");
     card.innerHTML=`<div class="glyph" style="color:hsl(${r.hue},90%,75%)">${r.glyph}</div>
       <div class="nm">${r.name}</div><div class="meta">${r.sub}</div>
-      <div class="meta">${unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked"}</div>`;
+      <div class="meta">${unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked"}</div>`+
+      (bIcons?`<div class="meta" style="color:var(--gold);letter-spacing:2px">${bIcons}</div>`:"");
     if(unlocked) card.addEventListener("click",()=>openReading(r));
     list.appendChild(card);
   });
