@@ -144,6 +144,25 @@ shaping the road ahead.
   (teach prompts, title hint, intro overlay, Shrine upgrade). New onboarding teach card.
 - **#024** **Rune Reading shapes the run** (read-to-choose pre-level omen) — see section above.
 - **#025** Removed the retired Forecaster (–382 lines: JS, markup, CSS, `RUNE_READING`/`RUNE_GROWTH`).
+- **#026** Re-cast the omen — reading-screen reroll (▶ ad / ✦10 Amber) re-picks the 3 runes.
+- **#027** Foe **divers** — ~2/3 of shades (`f.dive`, `cen`/`amp`) bob down into the run lane
+  (low point = head height) so they're real threats + freeze targets (was 0 reaching the lane).
+- **#028** Kill the dead air — `fillDeadAir()` seeds coin arcs above any surface in long voids
+  (over-surface dead time dropped from up to ~6.7s to mostly 2–3s).
+- **#029** De-cloned realms 4–8 — id-seeded knobs (obstacle-gauntlet vs sky-platform signature,
+  varied clusters/gaps/coins) make each distinct (were byte-identical). Max ground gap ≤220px.
+- **#030** End-of-run **metrics** (time/⚔shattered/❄frozen/✦amber/combo/shards) + saved lifetime
+  `save.stats`; live HUD combo + counters.
+- **#031** Per-realm **badges** (`save.badges`): ⚔ Conqueror (kill all) · ❄ Deep Freeze (freeze all)
+  · ✦ Coin Collector · ⌛ Swift (under gateX/180 s). Shown on results + realm-select cards.
+- **#032** **Rune Shards** (`save.shards`) — skill-only currency: freeze→stomp→jump chain shatters
+  shades, bounces, banks combo-scaled shards (`comboChain`/`runShards`, resets on landing).
+  Heroes also buyable with shards (`HERO_SHARD_COST`); shard balance in Shrine.
+- **#033** **Revive-by-ad** (`reviveRun`, once/run `usedRevive`) — rise where you fell; backs up off
+  pits, clears the nearby threat, grace ward; resets run accumulators so earnings don't double-bank.
+- **#034** Hero **full skins**: per-hero `bolt{core,rgb,shape}` reskins the projectile — Berserker
+  ice **axe**, Thor **hammer**, Odin raven **feather**, Völva **shard** (`drawBolts` + cast spark).
+  **Removed dead Sound Forge** spend; those accents are now always-on/free (`syncUnlocks`→all true).
 
 ## Heroes (RD-#020) — cosmetic völva reskins
 - **Cosmetic only** (same hitbox/powers). `HEROES` table = `{id,name,lore,cost,pal}`;

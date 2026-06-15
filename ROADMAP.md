@@ -84,29 +84,24 @@ Measured at ~205 px/s across all 9 realms. **Confirms Mike's playtest observatio
 
 ## Backlog — triaged
 
-### NOW (Stage 1 — first-hour polish, ratings protection)
-- **RD-#026 Re-cast the omen** — ad/Amber reroll of the pre-level reading (new monetization hook,
-  replaces retired Norns gate).
-- **RD-#027 Foe "divers"** — some foes bob DOWN into the run lane (to platform bottom) so they're real
-  timing threats + freeze targets; vary amplitude/phase per foe. *(Mike: bouncers come to the bottom.)*
-- **RD-#028 Kill the dead air** — fill the 885–1380px voids with rhythm (coins/foes/optional routes);
-  target no stretch >~2–2.5s empty. *(Mike: no-enemy/no-coin stretches.)*
-- **RD-#029 Layout variety** — differentiate the 5 identical stub realms + vary placement/enemy patterns
-  per realm (authored chunks + realm identity). *(Mike: placement/enemies feel too similar.)*
+### ✅ DONE (shipped 2026-06-15 autonomous session)
+- **RD-#026** Re-cast the omen (ad/✦10 reroll on the reading screen).
+- **RD-#027** Foe divers — shades now dip into the run lane (was 0 reaching it).
+- **RD-#028** Kill the dead air — auto-fill voids; over-surface dead time 6.7s→mostly 2–3s.
+- **RD-#029** De-cloned realms 4–8 (id-seeded distinct layouts; gaps verified ≤220px).
+- **RD-#030** End-of-run metrics + saved lifetime stats + live HUD counters.
+- **RD-#031** Per-realm badges (Conqueror/Deep Freeze/Coin Collector/Swift) on results + realm cards.
+- **RD-#032** Rune Shards skill currency (freeze→stomp→jump combo) + shard hero unlocks.
+- **RD-#033** Revive-by-ad (rise where you fell, once/run).
+- **RD-#034** Hero full skins (per-hero attack: ice axe / hammer / feather) + removed dead Sound Forge.
 
-### NEXT (Stage 2 — depth/retention; research-backed: stats + achievements + unlockables drive replay)
-- **RD-#030 End-of-level metrics screen (saveable)** — time, coins, enemies frozen, enemies killed,
-  freeze-jump combos, best/PB. For the data geeks. *(Mike.)* *(Cumulative stats = long-term goal hook.)*
-- **RD-#031 Badges / achievements** — Flawless (kill all), Deep Freeze (freeze all), Coin Collector,
-  Speedrun (time), combo badges. Per-realm, persisted, shown on results + realm select. *(Mike; research.)*
-- **RD-#032 Skill-trick reward** — freeze → stomp → jump-again chain drops a **Rune Shard** ✅ (decided
-  2026-06-15): a rare *skill-only* currency, spent on exclusive Heroes/cosmetics. Visible combo counter;
-  bigger chains = more shards. Optional, skill-gated, no forced friction; aspirational come-back sink. *(Mike.)*
-- **RD-#033 Revive-by-ad** — watch a rewarded ad to continue from where you died (sanctioned ad moment).
-  *(Mike.)*
+### NEXT (Stage 2 — remaining depth/retention)
 - **Checkpoint system** — totem mid-run, respawn from CP, lore card on touch (Act 2–3 realms).
-- **Meta/economy tune** — make Amber + Provisions + Heroes + omens + skill-reward cohere into a come-back loop.
-- **Richer visual omens** (Phase 2) — weather/density/light so the omen is *felt*, not just a stat.
+- **Player weapon model** — reskin the held staff per hero (axe/hammer) to match the projectile (polish).
+- **Hagalaz dead-air** — one ~6s over-surface void remains; tighten fillDeadAir or hand-author.
+- **Richer visual omens** — weather/density/light so the omen is *felt*, not just a stat.
+- **Lore-as-design pass** — weave each realm's rune meaning into its layout (Stage-2 saleable polish).
+- **Daily-return hook** — first-run-of-day amber/shard bonus (F2P retention).
 
 > **Design constraint (Mike):** no feature may add friction beyond the enjoyment it returns — EXCEPT
 > sanctioned ad moments (revive-by-ad, omen reroll). Skill rewards stay optional, never blocking.
