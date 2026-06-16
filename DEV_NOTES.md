@@ -163,6 +163,12 @@ shaping the road ahead.
 - **#034** Hero **full skins**: per-hero `bolt{core,rgb,shape}` reskins the projectile — Berserker
   ice **axe**, Thor **hammer**, Odin raven **feather**, Völva **shard** (`drawBolts` + cast spark).
   **Removed dead Sound Forge** spend; those accents are now always-on/free (`syncUnlocks`→all true).
+- **#035** ⏳ **Raidho-only freeze-staircase TEST** (awaiting Mike's playtest). `addFoe` now takes
+  `opt.cen/opt.amp`. Raidho divers thinned + spaced; centerpiece = 5 rising shades (heights
+  70→302px, +58 each, amp 16, **210px ≈ 1s apart**), coin on each + bonus amber on top. Bolt to
+  freeze each, then bounce up. **Pending Mike's call:** spacing tightness + whether frozen steps
+  should **stay solid** (stand on) vs current **bounce-and-shatter** (RD-#032). If liked → roll the
+  pattern to other realms.
 
 ## Heroes (RD-#020) — cosmetic völva reskins
 - **Cosmetic only** (same hitbox/powers). `HEROES` table = `{id,name,lore,cost,pal}`;
