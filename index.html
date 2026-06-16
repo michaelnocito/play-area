@@ -17,8 +17,9 @@
     font-family:"Segoe UI",system-ui,sans-serif;overflow:hidden;}
   body{display:flex;align-items:center;justify-content:center;
     background:radial-gradient(140% 120% at 50% -10%, #15103a 0%, #07061a 72%);}
-  /* Half-screen windowed by default (native 960×540 on a 1080p display). */
-  #wrap{position:relative;width:50vw;aspect-ratio:16/9;max-width:96vw;max-height:96vh;
+  /* Windowed by default, sized to a comfortable half-ish of the screen and
+     driven by whichever dimension keeps the 16:9 box from clipping content. */
+  #wrap{position:relative;width:min(72vw,160vh);aspect-ratio:16/9;max-width:96vw;max-height:92vh;
     display:flex;align-items:center;justify-content:center;overflow:hidden;
     border-radius:16px;border:1px solid #2a2360;
     box-shadow:0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(127,212,255,.06);}
