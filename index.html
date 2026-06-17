@@ -270,7 +270,7 @@ const REALMS=[
   {id:2,name:"Wunjo",  glyph:"ᚹ",sub:"Realm of Joy",           hue:85,  sky:["#121a06","#263c10","#5a8a1e"], act:1,speed:1.05},
   // ACT 2 — The Crossing (Heimdall's Aett) — 1 checkpoint each
   {id:3,name:"Hagalaz",glyph:"ᚺ",sub:"Realm of Storms",        hue:280, sky:["#140b2a","#2a1a52","#5a3f9a"], act:2,speed:1.22},
-  {id:4,name:"Isa",    glyph:"ᛁ",sub:"Realm of Ice",           hue:190, sky:["#0a1a2a","#143a52","#3f9ab5"], act:2,speed:0.90},
+  {id:4,name:"Isa",    glyph:"ᛁ",sub:"Realm of Ice",           hue:190, sky:["#0a1a2a","#143a52","#3f9ab5"], act:2,speed:0.84}, // RD-#038: slower for combo prototype
   {id:5,name:"Algiz",  glyph:"ᛉ",sub:"Realm of Protection",    hue:130, sky:["#0a1c0e","#143a1e","#2a7840"], act:2,speed:1.08},
   // ACT 3 — The Mastery (Tyr's Aett) — 2-3 checkpoints each
   {id:6,name:"Tiwaz",  glyph:"ᛏ",sub:"Realm of Justice",       hue:4,   sky:["#1e0a0a","#3a1010","#8a2828"], act:3,speed:1.18},
@@ -959,21 +959,37 @@ function buildLevel(realm){
     for(let i=0;i<5;i++) addFoe(x-500+i*110,GROUND_Y-130-(i%2)*40);
 
   } else if(id===4){
-    // Isa — ice · stillness — slow pace, wide soar gaps, patience rewarded
-    gap(160); ground(360); coinArc(x-320,GROUND_Y-90,3);
-    teach.push({x:x+50,text:"Hold SPACE after jumping — soar the ice gaps"});
-    gap(200); segs.push({x,w:180,y:GROUND_Y-80}); coinArc(x+40,GROUND_Y-150,3); x+=180;
-    gap(230); ground(280); addFoe(x-200,GROUND_Y-130);
-    teach.push({x:x+60,text:"Rune Bolt — these shades drift slowly"});
-    ground(700);
-    for(let i=0;i<5;i++) addFoe(x-650+i*142,GROUND_Y-118-(i%2)*42);
-    coinArc(x-660,GROUND_Y-200,7,56);
-    for(let i=0;i<4;i++){ ground(160); obs.push({x:x-100,y:GROUND_Y-74,w:30,h:74}); gap(160+(i%2)*60); ground(160); coins.push({x:x-200,y:GROUND_Y-160,got:false}); }
-    for(let i=0;i<5;i++){ segs.push({x,w:160,y:GROUND_Y-60-i*50}); coins.push({x:x+70,y:GROUND_Y-130-i*50,got:false}); x+=160; gap(90); }
-    ground(380); for(let i=0;i<3;i++) addFoe(x-320+i*120,GROUND_Y-130);
-    for(let i=0;i<4;i++){ ground(180); gap(130); }
-    ground(600); coinArc(x-540,GROUND_Y-80,9,52);
-    for(let i=0;i<5;i++) addFoe(x-520+i*118,GROUND_Y-125-(i%2)*38);
+    // Isa — ice · stillness — the FREEZE-STOMP COMBO PROTOTYPE (RD-#038).
+    // Slowest realm + permanent frozen platforms (bolts pass through on Isa) = a forgiving
+    // canvas: freeze each rising shade, then chain-stomp UP the staircase. Ground stays solid
+    // below the whole lane, so a missed link just drops you safely to retry. Spacing/height are
+    // the dials we tune from playtest feedback.
+    gap(140); ground(420); coinArc(x-380,GROUND_Y-90,3);
+    teach.push({x:x+40,text:"Rune Bolt freezes a shade — and on Isa it STAYS frozen to leap from"});
+
+    // STAIRCASE #1 — gentle rise, generous spacing
+    ground(1520);
+    teach.push({x:x-1480,text:"Freeze each rising shade, then leap up them ↗ — don't touch down!"});
+    for(let i=0;i<6;i++){
+      const sxp=x-1440+i*172, hy=GROUND_Y-60-i*50;     // ~172px apart, +50px per step
+      addFoe(sxp,hy,{dive:true,amp:18,cen:hy});         // gentle bob → a freeze window, then a still platform
+      coins.push({x:sxp+17,y:hy-34,got:false});         // amber riding each frozen step
+    }
+    coinArc(x-280,GROUND_Y-330,3,46);                   // payoff amber at the top of the climb
+
+    // a calm soar beat to breathe
+    gap(180); segs.push({x,w:200,y:GROUND_Y-90}); coinArc(x+50,GROUND_Y-160,3); x+=200;
+    gap(200); ground(320);
+
+    // STAIRCASE #2 — reprise to groove the rhythm
+    ground(1300);
+    teach.push({x:x-1260,text:"Again — freeze, leap, chain ⚡"});
+    for(let i=0;i<5;i++){
+      const sxp=x-1220+i*172, hy=GROUND_Y-60-i*50;
+      addFoe(sxp,hy,{dive:true,amp:18,cen:hy});
+      coins.push({x:sxp+17,y:hy-34,got:false});
+    }
+    ground(620); coinArc(x-560,GROUND_Y-80,9,52);
 
   } else {
     // Act 2-3 — per-realm layouts differentiated by id-seeded knobs (RD-#029; were identical for 4-8)
@@ -1330,14 +1346,18 @@ function update(){
   for(const f of level.foes){
     if(f.dead) continue;
     if(!f.frozen) f.y=f.cen+Math.sin((cam+f.x)*0.01)*f.amp; // frozen shades stop drifting; divers dip to the lane
-    for(let i=bolts.length-1;i>=0;i--){
+    // RD-#038: on Isa (combo prototype) bolts PASS THROUGH already-frozen shades — they stay
+    // solid stomp-platforms (freeze-only; you clear them by leaping, never by a 2nd bolt).
+    // Everywhere else a 2nd bolt still shatters the shade at range.
+    const boltSolid=!(f.frozen && curRealm.id===4);
+    if(boltSolid) for(let i=bolts.length-1;i>=0;i--){
       if(rectHit(bolts[i].x,bolts[i].y,10,6,f.x,f.y,34,34)){
         bolts.splice(i,1);
         if(!f.frozen){                       // 1st hit → freeze
           f.frozen=true; runFroze++;
           spawnBurst(f.x-cam+17,f.y+17,"#bfe9ff",12,2.6);
           Snd.runeBlock(); Snd.activityBump();
-        } else {                             // 2nd hit → shatter
+        } else {                             // 2nd hit → shatter (non-Isa)
           f.dead=true;
           spawnDeathBurst(f.x-cam+17,f.y+17);
           spawnBurst(f.x-cam+17,f.y+17,"#cfeeff",14,3.2);
