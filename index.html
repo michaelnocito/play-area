@@ -755,6 +755,25 @@ const Snd=(()=>{
     if(uSounds.echo) _sweep(880,660,'triangle',0.16,0.18);
   }
 
+  // RD-#037: freeze-stomp combo ping — pitch climbs ~a whole-step per chain link,
+  // so a long chain literally rises in pitch (Mario-stomp feel). + a soft body thump.
+  function comboStomp(n){
+    if(!on||!AC) return;
+    const t=AC.currentTime, step=Math.min(n,8);
+    const base=440*Math.pow(1.0595,step*2); // ~2 semitones per link
+    [base, base*1.5].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.018); g.gain.linearRampToValueAtTime(0.22,t+i*0.018+0.012);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.018+0.20);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.018); o.stop(t+i*0.018+0.22);
+    });
+    const ob=AC.createOscillator(),gb=AC.createGain();
+    ob.type='sine'; ob.frequency.setValueAtTime(150,t); ob.frequency.exponentialRampToValueAtTime(92,t+0.13);
+    gb.gain.setValueAtTime(0.30,t); gb.gain.exponentialRampToValueAtTime(0.001,t+0.18);
+    ob.connect(gb); gb.connect(musBus); ob.start(t); ob.stop(t+0.20);
+  }
+
   // Runestone destroy reward: ascending arpeggio
   function runeDestroy(){
     if(!on||!AC) return;
@@ -798,7 +817,7 @@ const Snd=(()=>{
 
   return {
     boot, toggle, startMusic, stopMusic, syncUnlocks, activityBump,
-    jump, doubleJump, coin, bolt, bassHit, runeBlock, runeDestroy, gateClear, death,
+    jump, doubleJump, comboStomp, coin, bolt, bassHit, runeBlock, runeDestroy, gateClear, death,
     footstep, land, shieldAbsorb,
     glideStart, glideEnd,
     get on(){ return on; }
@@ -1019,6 +1038,13 @@ let ghostPlayback=null;   // ghost to replay this run
 let ghostFrame=0;
 let showGhost=true;
 let screenFlash=0;        // 0..1, decays after big kill burst
+// RD-#037 (Isa prototype) freeze-stomp impact system — juice / hit-stop / apex slow-mo
+let hitStop=0;            // frames to freeze the sim on a stomp (impact weight)
+let slowmoT=0;            // frames of bullet-time after a chained stomp (apex dip)
+let shake=0;             // screen-shake magnitude (decays)
+let comboFlash=0;        // 0..1 cyan bloom on a stomp
+const comboRing=[];       // expanding shockwave rings {x,y,r,max,life}
+const SLOW_FACTOR=0.42;   // sim time-scale while bullet-time is active
 
 const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLeft:1,alive:true,flash:0,gliding:false};
 const bolts=[],particles=[];
@@ -1098,6 +1124,7 @@ function startRun(realm){
   cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
   runFroze=0; runShards=0; comboChain=0; runComboBest=0; usedRevive=false;
   bolts.length=0; particles.length=0; boltCD=0;
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; // RD-#037 impact reset
   // consume banked provisions for this run
   if(!save.boons) save.boons={shield:0,surge:0,twin:0};
   runBoons={shield:false,surge:false,twin:false};
@@ -1334,7 +1361,20 @@ function update(){
           runShards+=comboChain;                 // 1st stomp +1, chained +2, +3 …
           spawnDeathBurst(f.x-cam+17,f.y+17);
           for(let s=0;s<comboChain*2+2;s++){ const a=Math.random()*6.28; particles.push({x:f.x-cam+17,y:f.y+8,vx:Math.cos(a)*3.2,vy:Math.sin(a)*3.2-2,life:0,max:30,c:"#9fe8ff",r:2.6}); }
-          Snd.doubleJump(); Snd.activityBump();
+          Snd.activityBump();
+          // RD-#037 (Isa prototype): escalating impact — pitch-rising sfx + hit-stop + shake
+          // + cyan bloom + shockwave ring, and an apex bullet-time dip once you're chaining.
+          if(curRealm.id===4){
+            const lk=Math.min(comboChain,6);
+            Snd.comboStomp(comboChain);
+            hitStop=Math.max(hitStop, 2+lk);            // freeze-frame grows with the chain
+            shake=Math.min(2.2+lk*1.3, 10);
+            comboFlash=Math.min(0.45+lk*0.12, 1);
+            comboRing.push({x:f.x+17,y:f.y+17,r:10,max:46+lk*10,life:0}); // world x → drawn at x-cam
+            if(comboChain>=2) slowmoT=Math.max(slowmoT, 10+lk*4); // bullet-time only while chaining
+          } else {
+            Snd.doubleJump();                          // other realms unchanged until rollout
+          }
         }
         // side / underside contact with a frozen shade is harmless — pass through
       } else if(takeHit()){
@@ -1403,6 +1443,10 @@ function update(){
     const p=particles[i]; p.life++; p.x+=p.vx; p.y+=p.vy; p.vy+=0.12; p.vx*=0.96;
     if(p.life>=p.max) particles.splice(i,1);
   }
+  // RD-#037 impact decay (advances in sim time, so rings expand in slow-mo too)
+  if(shake>0.05) shake*=0.86; else shake=0;
+  if(comboFlash>0) comboFlash=Math.max(0,comboFlash-0.045);
+  for(let i=comboRing.length-1;i>=0;i--){ const r=comboRing[i]; r.r+=(r.max-r.r)*0.22; r.life++; if(r.life>22) comboRing.splice(i,1); }
   if(player.flash>0) player.flash--;
 }
 
@@ -1417,6 +1461,7 @@ function doDeath(){ spawnBurst(player.x,player.y,"#ff9a9a",26,4); endRun(false);
 function reviveRun(){
   usedRevive=true;
   runEssence=0; runShards=0; runKills=0; runFroze=0; runCoins=0; comboChain=0; runComboBest=0;
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; // RD-#037 impact reset
   const px=player.x+cam;
   // if we died over a pit, back up to the nearest solid ground behind us
   let onSeg=level.segs.some(s=>s.y===GROUND_Y && px>=s.x && px<=s.x+s.w);
@@ -1945,11 +1990,14 @@ function drawHUD(){
   // active boon badges
   const badges=[]; if(runBoons.surge) badges.push("⟡ Surge"); if(runBoons.twin) badges.push("⟡ Twin Leap"); if(runBoons.shield) badges.push("⟡ Ward");
   if(badges.length){ ctx.textAlign="right"; ctx.fillStyle=`hsla(${curRealm.hue},70%,78%,0.85)`; ctx.fillText(badges.join("   "),W-16,58); ctx.textAlign="left"; }
-  // RD-#032: live freeze-stomp combo over the player
+  // RD-#032/#037: live freeze-stomp combo over the player — grows + heats up as it climbs
   if(comboChain>1){
     ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.textAlign="center";
-    const cs=1+Math.min(comboChain,6)*0.12;
-    ctx.font=`bold ${Math.round(24*cs)}px Segoe UI`; ctx.fillStyle="#9fe8ff";
+    const lk=Math.min(comboChain,6), cs=1+lk*0.16;
+    // hue ramps cyan(195) → gold(48) → hot(8) the longer the chain holds
+    const hue=Math.round(195-(lk-1)/5*187), col=`hsl(${hue},95%,72%)`;
+    ctx.shadowColor=col; ctx.shadowBlur=10+lk*3;
+    ctx.font=`bold ${Math.round(24*cs)}px Segoe UI`; ctx.fillStyle=col;
     ctx.fillText(`⚡ ×${comboChain}`, player.x+10, player.y-16);
     ctx.restore(); ctx.textAlign="left";
   }
@@ -2012,14 +2060,29 @@ function wrapText(text,x,y,maxW,lh){
   if(line) ctx.fillText(line,x,yy);
 }
 
+function drawComboRings(){
+  if(!comboRing.length) return;
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.lineWidth=2.5;
+  for(const r of comboRing){
+    const a=Math.max(0,1-r.life/22);
+    ctx.strokeStyle=`rgba(159,232,255,${a*0.8})`;
+    ctx.beginPath(); ctx.arc(r.x-cam,r.y,r.r,0,7); ctx.stroke();
+  }
+  ctx.restore();
+}
 function render(){
   ctx.clearRect(0,0,W,H);
   drawSky(curRealm);
   if(state==="play"||state==="won"||state==="dead"){
+    // RD-#037: shake the world layer only (HUD/vignette stay steady)
+    const sm=shake>0.05, sx=sm?(Math.random()*2-1)*shake:0, sy=sm?(Math.random()*2-1)*shake:0;
+    ctx.save(); ctx.translate(sx,sy);
     drawGround(); drawGate(); drawObstacles(); drawCoins(); drawFoes();
-    drawBolts(); drawGhost(); drawPlayer(); drawParticles();
+    drawBolts(); drawGhost(); drawPlayer(); drawParticles(); drawComboRings();
+    ctx.restore();
     drawVignette(); drawTeach(); drawHUD(); drawIntroCard();
     if(screenFlash>0){ ctx.fillStyle=`rgba(200,140,255,${screenFlash*0.16})`; ctx.fillRect(0,0,W,H); }
+    if(comboFlash>0){ ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.fillStyle=`rgba(110,210,255,${comboFlash*0.14})`; ctx.fillRect(0,0,W,H); ctx.restore(); }
   } else {
     drawVignette();
   }
@@ -2030,10 +2093,19 @@ let acc=0,last=performance.now(),running=true,loopErr=null;
 function loop(now){
   try {
     animT=now*0.001;
-    acc+=Math.min(now-last,50); last=now;
-    let steps=0;
-    while(acc>=1000/60&&steps<5){ update(); acc-=1000/60; steps++; }
-    render();
+    // RD-#037: hit-stop freezes the sim a few frames (render continues) for impact weight.
+    if(hitStop>0 && state==="play"){
+      hitStop--; acc=0; last=now;
+      render();
+    } else {
+      // bullet-time scales real elapsed time before it feeds the fixed-step accumulator.
+      let ts=1;
+      if(slowmoT>0 && state==="play"){ ts=SLOW_FACTOR; slowmoT--; }
+      acc+=Math.min(now-last,50)*ts; last=now;
+      let steps=0;
+      while(acc>=1000/60&&steps<5){ update(); acc-=1000/60; steps++; }
+      render();
+    }
   } catch(err){
     if(!loopErr){ loopErr=err; console.error("Rune Dash frame error:",err); }
     try {
