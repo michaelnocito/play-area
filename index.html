@@ -57,6 +57,15 @@
   .realmcard .glyph{font-size:42px;line-height:1;}
   .realmcard .nm{font-weight:700;letter-spacing:.04em;}
   .realmcard .meta{font-size:12px;color:var(--dim);}
+  /* RD-#036: Isa is the combo prototype — oversize its card as a build reminder. */
+  .realmcard.proto{width:300px;padding:24px 22px;border-color:#7fd4ff;
+    background:linear-gradient(180deg,#16263f,#0e1730);
+    box-shadow:0 0 0 1px #7fd4ff,0 0 34px rgba(127,212,255,.35);}
+  .realmcard.proto .glyph{font-size:68px;}
+  .realmcard.proto .nm{font-size:23px;}
+  .realmcard.proto:hover{border-color:#aee6ff;}
+  .realmcard .tag{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#9fe8ff;
+    border:1px solid #3a5a7a;border-radius:6px;padding:2px 9px;}
   .ess{color:var(--gold);font-weight:700;}
   .shrine-row{display:flex;align-items:center;justify-content:space-between;gap:16px;
     width:min(520px,92vw);background:var(--panel);border:1px solid #3a3270;border-radius:14px;
@@ -2083,14 +2092,16 @@ function openRealm(){
       list.appendChild(lbl);
     }
     const unlocked=r.id<save.realmsUnlocked;
+    const isProto=r.id===4; // Isa — the combo prototype canvas (RD-#036)
     const card=document.createElement("div");
-    card.className="realmcard"+(unlocked?"":" locked");
+    card.className="realmcard"+(unlocked?"":" locked")+(isProto?" proto":"");
     const best=save.best[r.id];
     const bg=(save.badges&&save.badges[r.id])||{};
     const bIcons=[bg.conqueror?"⚔":"",bg.deepfreeze?"❄":"",bg.collector?"✦":"",bg.swift?"⌛":""].filter(Boolean).join(" ");
     card.innerHTML=`<div class="glyph" style="color:hsl(${r.hue},90%,75%)">${r.glyph}</div>
-      <div class="nm">${r.name}</div><div class="meta">${r.sub}</div>
-      <div class="meta">${unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked"}</div>`+
+      <div class="nm">${r.name}</div><div class="meta">${r.sub}</div>`+
+      (isProto?`<div class="tag">✦ Prototype — patience</div>`:"")+
+      `<div class="meta">${unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked"}</div>`+
       (bIcons?`<div class="meta" style="color:var(--gold);letter-spacing:2px">${bIcons}</div>`:"");
     if(unlocked) card.addEventListener("click",()=>openReading(r));
     list.appendChild(card);
