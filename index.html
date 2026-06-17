@@ -999,28 +999,28 @@ function buildLevel(realm){
     teach.push({x:x-520,text:"Rune Bolt a shade to freeze it ❄"});
     teach.push({x:x-270,text:"…then leap onto the frozen shade ↗"});
 
-    // — CHAIN 1: a short 3-step climb to learn the rhythm —
-    ground(760);
-    teach.push({x:x-720,text:"Glide between leaps and chain up the ice — don't touch down!"});
-    for(let i=0;i<3;i++){ const s2=x-660+i*115, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
+    // — CHAIN 1: a 4-step climb to learn the rhythm — (RD-#042 spacing 115→144, +25%)
+    ground(820);
+    teach.push({x:x-780,text:"Glide between leaps and chain up the ice — don't touch down!"});
+    for(let i=0;i<4;i++){ const s2=x-720+i*144, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
 
     // — GLIDE GAP: no shades — float across on the glide, threading an amber arc —
     teach.push({x:x+20,text:"Hold to GLIDE — float across and gather the amber"});
     gap(120); coinArc(x+10,GROUND_Y-150,5,52); gap(150); ground(320);
 
-    // — CHAIN 2: a 5-step climb, higher —
-    ground(1000);
-    for(let i=0;i<5;i++){ const s2=x-940+i*115, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
-    coinArc(x-320,GROUND_Y-320,3,46);                   // amber at the top of the climb
+    // — CHAIN 2: a 7-step climb, higher —
+    ground(1180);
+    for(let i=0;i<7;i++){ const s2=x-1120+i*144, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
+    coinArc(x-220,GROUND_Y-360,3,46);                   // amber at the top of the climb
 
     // — GLIDE GAP 2: a longer float, a higher arc —
     teach.push({x:x+20,text:"Glide the gap"});
     gap(150); coinArc(x+10,GROUND_Y-180,4,56); gap(170); ground(300);
 
-    // — CRESCENDO FINALE: the long climb — let the chain build, then resolve —
-    ground(1460);
-    teach.push({x:x-1420,text:"The long climb — let the chain build ⚡"});
-    for(let i=0;i<8;i++){ const s2=x-1380+i*120, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:16,cen:hy}); coins.push({x:s2+17,y:hy-32,got:false}); }
+    // — CRESCENDO FINALE: the long climb — let the chain build, then resolve — (spacing 120→150)
+    ground(1560);
+    teach.push({x:x-1520,text:"The long climb — let the chain build ⚡"});
+    for(let i=0;i<8;i++){ const s2=x-1480+i*150, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:16,cen:hy}); coins.push({x:s2+17,y:hy-32,got:false}); }
     coinArc(x-340,GROUND_Y-430,5,44);                   // a shower of amber at the summit
     teach.push({x:x-360,text:"Glide down — feel it resolve ❄"});
 
@@ -1106,17 +1106,18 @@ let boltCD=0;
 // RD-#039: global pace dial — experiment with a slower, still-constantly-moving game.
 // Scales every realm's run speed; level spacing that's tuned to the bounce arc should scale
 // with it too (see Isa staircase) so the input rhythm stays invariant, only the felt pace slows.
-const GAME_SPEED=0.70;
+const GAME_SPEED=0.77;
 function cfg(){
   const j=save.upgrades.jump;
+  const baseJump=-14.6-j*0.9;
   return {
     // RD-#022: 3.42 px/frame @60fps = ~205 px/s at speed 1 (was ~168). Research note: calm
     // auto-runners read well ~180–230 px/s; below ~170 feels sluggish. Per-realm `speed`
     // still scales it (Isa 0.90=~185, Dagaz 1.28=~262). Dropped RD-#013's 0.85 dampener.
     runSpeed:3.42*GAME_SPEED*(curRealm.speed||1)*((runOmen&&runOmen.fx.speedMul)||1), // RD-#024 omen, RD-#039 pace dial
-    grav:0.60, jumpV:-14.6-j*0.9, cutMul:0.45,
+    grav:0.60, jumpV:baseJump*1.05, bounceV:baseJump*0.78*1.5, cutMul:0.45, // RD-#042: jump +10% height, freeze-stomp bounce +50%
     coyoteMax:7, bufMax:7, maxFall:14,
-    glideMul:(runOmen&&runOmen.fx.glide)?0.13:0.2, glideFall:(runOmen&&runOmen.fx.glide)?1.6:2.3, // Laguz → softer soar
+    glideMul:((runOmen&&runOmen.fx.glide)?0.13:0.2)*0.9, glideFall:((runOmen&&runOmen.fx.glide)?1.6:2.3)*0.9, // Laguz softer; RD-#042 +~10% glide distance
     boltCD:Math.max(14,26-save.upgrades.bolt*4),
     boltV:9+save.upgrades.bolt*1.2,
   };
@@ -1418,7 +1419,7 @@ function update(){
         const feet=player.y+player.h;
         if(player.vy>0 && feet-player.vy<=f.y+18){
           f.dead=true; runKills++;
-          player.y=f.y-player.h; player.vy=C.jumpV*0.78; player.onGround=false;
+          player.y=f.y-player.h; player.vy=C.bounceV; player.onGround=false; // RD-#042: stronger freeze-stomp pop
           player.coyote=0; player.jumpsLeft=canDouble?1:0;
           comboChain++; if(comboChain>runComboBest) runComboBest=comboChain;
           runShards+=comboChain;                 // 1st stomp +1, chained +2, +3 …
