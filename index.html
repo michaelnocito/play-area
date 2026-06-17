@@ -774,6 +774,29 @@ const Snd=(()=>{
     ob.connect(gb); gb.connect(musBus); ob.start(t); ob.stop(t+0.20);
   }
 
+  // RD-#041: the CRESCENDO resolution — when a freeze-jump chain ends, the rising build finally
+  // lands on a warm major chord that swells then rings out. Fuller/brighter the longer the chain.
+  function comboResolve(n){
+    if(!on||!AC) return;
+    const t=AC.currentTime, step=Math.min(n,8), amp=0.10+step*0.02;
+    const root=330;                                  // tonic
+    const chord=[root, root*1.25, root*1.5];         // root · major third · fifth
+    if(step>=4) chord.push(root*2);                  // + octave on big chains
+    if(step>=6) chord.push(root*2.5);                // + major tenth for the biggest
+    chord.forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(amp,t+0.05+i*0.025); // swell up
+      g.gain.exponentialRampToValueAtTime(0.001,t+0.75+i*0.05);                         // ring out
+      o.connect(g); g.connect(sfxBus); o.start(t); o.stop(t+0.85);
+    });
+    // a low resolving root underneath
+    const ob=AC.createOscillator(),gb=AC.createGain();
+    ob.type='sine'; ob.frequency.value=root*0.5;
+    gb.gain.setValueAtTime(0.001,t); gb.gain.linearRampToValueAtTime(0.42,t+0.05); gb.gain.exponentialRampToValueAtTime(0.001,t+0.7);
+    ob.connect(gb); gb.connect(musBus); ob.start(t); ob.stop(t+0.8);
+  }
+
   // Runestone destroy reward: ascending arpeggio
   function runeDestroy(){
     if(!on||!AC) return;
@@ -817,7 +840,7 @@ const Snd=(()=>{
 
   return {
     boot, toggle, startMusic, stopMusic, syncUnlocks, activityBump,
-    jump, doubleJump, comboStomp, coin, bolt, bassHit, runeBlock, runeDestroy, gateClear, death,
+    jump, doubleJump, comboStomp, comboResolve, coin, bolt, bassHit, runeBlock, runeDestroy, gateClear, death,
     footstep, land, shieldAbsorb,
     glideStart, glideEnd,
     get on(){ return on; }
@@ -959,37 +982,50 @@ function buildLevel(realm){
     for(let i=0;i<5;i++) addFoe(x-500+i*110,GROUND_Y-130-(i%2)*40);
 
   } else if(id===4){
-    // Isa — ice · stillness — the FREEZE-STOMP COMBO PROTOTYPE (RD-#038).
-    // Slowest realm + permanent frozen platforms (bolts pass through on Isa) = a forgiving
-    // canvas: freeze each rising shade, then chain-stomp UP the staircase. Ground stays solid
-    // below the whole lane, so a missed link just drops you safely to retry. Spacing/height are
-    // the dials we tune from playtest feedback.
-    gap(140); ground(420); coinArc(x-380,GROUND_Y-90,3);
-    teach.push({x:x+40,text:"Rune Bolt freezes a shade — and on Isa it STAYS frozen to leap from"});
+    // ISA — ice · stillness — THE FREEZE-JUMP REALM (RD-#041).
+    // The whole level is one mechanic: Rune Bolt freezes a shade into a permanent platform, you
+    // leap on to stomp-bounce, and you CHAIN those bounces up the ice without touching down. No
+    // double-jump here (see canDouble) — height = how long you hold the jump, distance = your
+    // GLIDE — so you must glide to bridge each step, and threading the amber is a test of touch.
+    // Each chain builds (pitch climbs) to a crescendo that RESOLVES when you finally glide back
+    // to the ice (Snd.comboResolve + the CHAIN ×N payoff). Solid ground under every chain = calm
+    // retries. First step of each chain sits low so you can freeze it from the ground; the rest
+    // you freeze from the bounce apex as you climb. Spacing/height are the dials we tune.
 
-    // STAIRCASE #1 — gentle rise, generous spacing
-    ground(1520);
-    teach.push({x:x-1480,text:"Freeze each rising shade, then leap up them ↗ — don't touch down!"});
-    for(let i=0;i<6;i++){
-      const sxp=x-1440+i*120, hy=GROUND_Y-60-i*50;     // 120px apart (172×0.7 for the slower pace), +50px per step
-      addFoe(sxp,hy,{dive:true,amp:18,cen:hy});         // gentle bob → a freeze window, then a still platform
-      coins.push({x:sxp+17,y:hy-34,got:false});         // amber riding each frozen step
-    }
-    coinArc(x-280,GROUND_Y-330,3,46);                   // payoff amber at the top of the climb
+    // — TEACH: one lone shade. freeze it, leap on it, feel the bounce. —
+    gap(120); ground(580);
+    addFoe(x-320,GROUND_Y-92,{dive:true,amp:34});       // dips into the lane → freezable from the ground
+    coinArc(x-480,GROUND_Y-92,3);
+    teach.push({x:x-520,text:"Rune Bolt a shade to freeze it ❄"});
+    teach.push({x:x-270,text:"…then leap onto the frozen shade ↗"});
 
-    // a calm soar beat to breathe
-    gap(180); segs.push({x,w:200,y:GROUND_Y-90}); coinArc(x+50,GROUND_Y-160,3); x+=200;
-    gap(200); ground(320);
+    // — CHAIN 1: a short 3-step climb to learn the rhythm —
+    ground(760);
+    teach.push({x:x-720,text:"Glide between leaps and chain up the ice — don't touch down!"});
+    for(let i=0;i<3;i++){ const s2=x-660+i*115, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
 
-    // STAIRCASE #2 — reprise to groove the rhythm
-    ground(1300);
-    teach.push({x:x-1260,text:"Again — freeze, leap, chain ⚡"});
-    for(let i=0;i<5;i++){
-      const sxp=x-1220+i*120, hy=GROUND_Y-60-i*50;
-      addFoe(sxp,hy,{dive:true,amp:18,cen:hy});
-      coins.push({x:sxp+17,y:hy-34,got:false});
-    }
-    ground(620); coinArc(x-560,GROUND_Y-80,9,52);
+    // — GLIDE GAP: no shades — float across on the glide, threading an amber arc —
+    teach.push({x:x+20,text:"Hold to GLIDE — float across and gather the amber"});
+    gap(120); coinArc(x+10,GROUND_Y-150,5,52); gap(150); ground(320);
+
+    // — CHAIN 2: a 5-step climb, higher —
+    ground(1000);
+    for(let i=0;i<5;i++){ const s2=x-940+i*115, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
+    coinArc(x-320,GROUND_Y-320,3,46);                   // amber at the top of the climb
+
+    // — GLIDE GAP 2: a longer float, a higher arc —
+    teach.push({x:x+20,text:"Glide the gap"});
+    gap(150); coinArc(x+10,GROUND_Y-180,4,56); gap(170); ground(300);
+
+    // — CRESCENDO FINALE: the long climb — let the chain build, then resolve —
+    ground(1460);
+    teach.push({x:x-1420,text:"The long climb — let the chain build ⚡"});
+    for(let i=0;i<8;i++){ const s2=x-1380+i*120, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:16,cen:hy}); coins.push({x:s2+17,y:hy-32,got:false}); }
+    coinArc(x-340,GROUND_Y-430,5,44);                   // a shower of amber at the summit
+    teach.push({x:x-360,text:"Glide down — feel it resolve ❄"});
+
+    // glide down to the finish
+    gap(120); ground(780); coinArc(x-700,GROUND_Y-90,8,54);
 
   } else {
     // Act 2-3 — per-realm layouts differentiated by id-seeded knobs (RD-#029; were identical for 4-8)
@@ -1061,6 +1097,7 @@ let shake=0;             // screen-shake magnitude (decays)
 let comboFlash=0;        // 0..1 cyan bloom on a stomp
 const comboRing=[];       // expanding shockwave rings {x,y,r,max,life}
 const SLOW_FACTOR=0.42;   // sim time-scale while bullet-time is active
+let comboBank=null;       // RD-#041: the crescendo payoff pop shown when a chain resolves {n,shards,life,max}
 
 const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLeft:1,alive:true,flash:0,gliding:false};
 const bolts=[],particles=[];
@@ -1144,7 +1181,7 @@ function startRun(realm){
   cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
   runFroze=0; runShards=0; comboChain=0; runComboBest=0; usedRevive=false;
   bolts.length=0; particles.length=0; boltCD=0;
-  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; // RD-#037 impact reset
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; // RD-#037/#041 impact reset
   // consume banked provisions for this run
   if(!save.boons) save.boons={shield:0,surge:0,twin:0};
   runBoons={shield:false,surge:false,twin:false};
@@ -1298,7 +1335,9 @@ function update(){
   if(player.onGround){ player.coyote=C.coyoteMax; player.jumpsLeft=1; }
   else if(player.coyote>0) player.coyote--;
 
-  const canDouble=save.upgrades.jump>=2||runBoons.twin;
+  // RD-#041: no double-jump on Isa (freeze-jump realm) — it overrode the glide and wrecked the
+  // fine touch needed to thread amber. Here air control = jump-height (hold) + glide only.
+  const canDouble=(save.upgrades.jump>=2||runBoons.twin)&&curRealm.id!==4;
   if(player.jumpBuf>0){
     if(player.coyote>0||player.onGround){
       player.vy=C.jumpV; player.onGround=false; player.coyote=0; player.jumpBuf=0;
@@ -1442,7 +1481,16 @@ function update(){
   }
 
   // landing + footstep
-  if(!wasOnGround&&player.onGround){ Snd.land(); comboChain=0; } // touching down ends a freeze-stomp chain
+  if(!wasOnGround&&player.onGround){
+    // RD-#041: a freeze-jump chain RESOLVES on touchdown — crescendo chord + a payoff "bank" pop,
+    // so the rising build has an ending. Plain land thud otherwise.
+    if(curRealm.id===4 && comboChain>=2){
+      Snd.comboResolve(comboChain);
+      comboBank={n:comboChain, shards:comboChain*(comboChain+1)/2, life:0, max:50};
+      comboFlash=Math.min(0.6, 0.28+comboChain*0.06);
+    } else { Snd.land(); }
+    comboChain=0; // touching down ends a freeze-stomp chain
+  }
   footstepDist+=C.runSpeed;
   if(player.onGround&&footstepDist>=42){ Snd.footstep(); footstepDist=0; }
 
@@ -1471,6 +1519,7 @@ function update(){
   if(shake>0.05) shake*=0.86; else shake=0;
   if(comboFlash>0) comboFlash=Math.max(0,comboFlash-0.045);
   for(let i=comboRing.length-1;i>=0;i--){ const r=comboRing[i]; r.r+=(r.max-r.r)*0.22; r.life++; if(r.life>22) comboRing.splice(i,1); }
+  if(comboBank){ comboBank.life++; if(comboBank.life>=comboBank.max) comboBank=null; }
   if(player.flash>0) player.flash--;
 }
 
@@ -1485,7 +1534,7 @@ function doDeath(){ spawnBurst(player.x,player.y,"#ff9a9a",26,4); endRun(false);
 function reviveRun(){
   usedRevive=true;
   runEssence=0; runShards=0; runKills=0; runFroze=0; runCoins=0; comboChain=0; runComboBest=0;
-  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; // RD-#037 impact reset
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; // RD-#037/#041 impact reset
   const px=player.x+cam;
   // if we died over a pit, back up to the nearest solid ground behind us
   let onSeg=level.segs.some(s=>s.y===GROUND_Y && px>=s.x && px<=s.x+s.w);
@@ -2094,6 +2143,20 @@ function drawComboRings(){
   }
   ctx.restore();
 }
+function drawComboBank(){
+  if(!comboBank) return;
+  const p=comboBank.life/comboBank.max, rise=p*34;
+  const a=Math.max(0,Math.min(1, p<0.16?(p/0.16):(1-(p-0.16)/0.84)));  // snap in, slow fade
+  const n=comboBank.n, lk=Math.min(n,6), hue=Math.round(190-(lk-1)/5*182); // cyan→hot by size
+  ctx.save(); ctx.textAlign="center"; ctx.globalAlpha=a;
+  const cx=W/2, cy=H*0.32-rise;
+  ctx.shadowColor=`hsl(${hue},95%,70%)`; ctx.shadowBlur=18;
+  ctx.fillStyle=`hsl(${hue},95%,72%)`; ctx.font="bold 42px Segoe UI";
+  ctx.fillText(`❄ CHAIN ×${n}`, cx, cy);
+  ctx.shadowBlur=8; ctx.font="bold 22px Segoe UI"; ctx.fillStyle="#9fe8ff";
+  ctx.fillText(`+${comboBank.shards} ◆`, cx, cy+34);
+  ctx.restore(); ctx.globalAlpha=1; ctx.textAlign="left";
+}
 function render(){
   ctx.clearRect(0,0,W,H);
   drawSky(curRealm);
@@ -2107,6 +2170,7 @@ function render(){
     drawVignette(); drawTeach(); drawHUD(); drawIntroCard();
     if(screenFlash>0){ ctx.fillStyle=`rgba(200,140,255,${screenFlash*0.16})`; ctx.fillRect(0,0,W,H); }
     if(comboFlash>0){ ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.fillStyle=`rgba(110,210,255,${comboFlash*0.14})`; ctx.fillRect(0,0,W,H); ctx.restore(); }
+    drawComboBank();
   } else {
     drawVignette();
   }
