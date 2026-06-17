@@ -838,8 +838,14 @@ const Snd=(()=>{
     return on;
   }
 
+  // RD-#043: pause/resume the whole audio stream when the page is hidden or unloaded, so the
+  // Norse score never keeps playing in the background after you tab away / minimize / close.
+  function suspendAudio(){ try{ if(AC&&AC.state==='running') AC.suspend(); }catch(e){} }
+  function resumeAudio(){ try{ if(AC&&on&&AC.state==='suspended') AC.resume(); }catch(e){} }
+
   return {
     boot, toggle, startMusic, stopMusic, syncUnlocks, activityBump,
+    suspendAudio, resumeAudio,
     jump, doubleJump, comboStomp, comboResolve, coin, bolt, bassHit, runeBlock, runeDestroy, gateClear, death,
     footstep, land, shieldAbsorb,
     glideStart, glideEnd,
@@ -2209,7 +2215,13 @@ function loop(now){
   if(running) requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden) last=performance.now(); });
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){ Snd.suspendAudio(); }            // RD-#043: silence the score when tabbed away
+  else { last=performance.now(); Snd.resumeAudio(); }
+});
+// belt-and-suspenders: also kill audio on actual unload / mobile bfcache freeze
+window.addEventListener("pagehide",()=>{ Snd.suspendAudio(); });
+window.addEventListener("pageshow",()=>{ last=performance.now(); Snd.resumeAudio(); });
 
 window.__dev={
   start:i=>startRun(REALMS[i]),
