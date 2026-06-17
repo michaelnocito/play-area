@@ -1391,7 +1391,7 @@ function update(){
           if(curRealm.id===4){
             const lk=Math.min(comboChain,6);
             Snd.comboStomp(comboChain);
-            hitStop=Math.max(hitStop, Math.round((2+lk)*0.9)); // RD-#039: pause -10%
+            hitStop=Math.max(hitStop, Math.round((2+lk)*0.45)); // RD-#039 pause -10%, RD-#040 a further -50%
             shake=Math.min((2.2+lk*1.3)*0.9, 9);               // RD-#039: shake -10%
             comboFlash=Math.min(0.45+lk*0.12, 1);
             comboRing.push({x:f.x+17,y:f.y+17,r:10,max:46+lk*10,life:0}); // world x → drawn at x-cam
