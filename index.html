@@ -971,7 +971,7 @@ function buildLevel(realm){
     ground(1520);
     teach.push({x:x-1480,text:"Freeze each rising shade, then leap up them ↗ — don't touch down!"});
     for(let i=0;i<6;i++){
-      const sxp=x-1440+i*172, hy=GROUND_Y-60-i*50;     // ~172px apart, +50px per step
+      const sxp=x-1440+i*120, hy=GROUND_Y-60-i*50;     // 120px apart (172×0.7 for the slower pace), +50px per step
       addFoe(sxp,hy,{dive:true,amp:18,cen:hy});         // gentle bob → a freeze window, then a still platform
       coins.push({x:sxp+17,y:hy-34,got:false});         // amber riding each frozen step
     }
@@ -985,7 +985,7 @@ function buildLevel(realm){
     ground(1300);
     teach.push({x:x-1260,text:"Again — freeze, leap, chain ⚡"});
     for(let i=0;i<5;i++){
-      const sxp=x-1220+i*172, hy=GROUND_Y-60-i*50;
+      const sxp=x-1220+i*120, hy=GROUND_Y-60-i*50;
       addFoe(sxp,hy,{dive:true,amp:18,cen:hy});
       coins.push({x:sxp+17,y:hy-34,got:false});
     }
@@ -1066,13 +1066,17 @@ const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLe
 const bolts=[],particles=[];
 let boltCD=0;
 
+// RD-#039: global pace dial — experiment with a slower, still-constantly-moving game.
+// Scales every realm's run speed; level spacing that's tuned to the bounce arc should scale
+// with it too (see Isa staircase) so the input rhythm stays invariant, only the felt pace slows.
+const GAME_SPEED=0.70;
 function cfg(){
   const j=save.upgrades.jump;
   return {
     // RD-#022: 3.42 px/frame @60fps = ~205 px/s at speed 1 (was ~168). Research note: calm
     // auto-runners read well ~180–230 px/s; below ~170 feels sluggish. Per-realm `speed`
     // still scales it (Isa 0.90=~185, Dagaz 1.28=~262). Dropped RD-#013's 0.85 dampener.
-    runSpeed:3.42*(curRealm.speed||1)*((runOmen&&runOmen.fx.speedMul)||1), // RD-#024 omen
+    runSpeed:3.42*GAME_SPEED*(curRealm.speed||1)*((runOmen&&runOmen.fx.speedMul)||1), // RD-#024 omen, RD-#039 pace dial
     grav:0.60, jumpV:-14.6-j*0.9, cutMul:0.45,
     coyoteMax:7, bufMax:7, maxFall:14,
     glideMul:(runOmen&&runOmen.fx.glide)?0.13:0.2, glideFall:(runOmen&&runOmen.fx.glide)?1.6:2.3, // Laguz → softer soar
@@ -1387,8 +1391,8 @@ function update(){
           if(curRealm.id===4){
             const lk=Math.min(comboChain,6);
             Snd.comboStomp(comboChain);
-            hitStop=Math.max(hitStop, 2+lk);            // freeze-frame grows with the chain
-            shake=Math.min(2.2+lk*1.3, 10);
+            hitStop=Math.max(hitStop, Math.round((2+lk)*0.9)); // RD-#039: pause -10%
+            shake=Math.min((2.2+lk*1.3)*0.9, 9);               // RD-#039: shake -10%
             comboFlash=Math.min(0.45+lk*0.12, 1);
             comboRing.push({x:f.x+17,y:f.y+17,r:10,max:46+lk*10,life:0}); // world x → drawn at x-cam
             if(comboChain>=2) slowmoT=Math.max(slowmoT, 10+lk*4); // bullet-time only while chaining
