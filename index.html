@@ -1104,6 +1104,7 @@ let comboFlash=0;        // 0..1 cyan bloom on a stomp
 const comboRing=[];       // expanding shockwave rings {x,y,r,max,life}
 const SLOW_FACTOR=0.42;   // sim time-scale while bullet-time is active
 let comboBank=null;       // RD-#041: the crescendo payoff pop shown when a chain resolves {n,shards,life,max}
+let lunge=0;              // RD-#043: brief forward surge on a freeze-stomp — momentum toward the next frozen target (decays)
 
 const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLeft:1,alive:true,flash:0,gliding:false};
 const bolts=[],particles=[];
@@ -1188,7 +1189,7 @@ function startRun(realm){
   cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
   runFroze=0; runShards=0; comboChain=0; runComboBest=0; usedRevive=false;
   bolts.length=0; particles.length=0; boltCD=0;
-  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; // RD-#037/#041 impact reset
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; lunge=0; // RD-#037/#041/#043 impact reset
   // consume banked provisions for this run
   if(!save.boons) save.boons={shield:0,surge:0,twin:0};
   runBoons={shield:false,surge:false,twin:false};
@@ -1331,7 +1332,10 @@ function update(){
   if(state!=="play"||introPaused) return;
   const C=cfg();
   runTime+=1/60;
-  cam+=C.runSpeed;
+  // RD-#043: forward momentum — a freeze-stomp adds a brief surge so you shoot toward the next
+  // frozen target (the world rushes past), then it eases back to the calm constant pace.
+  cam+=C.runSpeed+lunge;
+  if(lunge>0.05) lunge*=0.84; else lunge=0;
   ghostRecording.push({cam,y:player.y});
   if(ghostPlayback&&ghostFrame<ghostPlayback.length-1) ghostFrame++;
   if(screenFlash>0) screenFlash=Math.max(0,screenFlash-0.045);
@@ -1425,9 +1429,14 @@ function update(){
         const feet=player.y+player.h;
         if(player.vy>0 && feet-player.vy<=f.y+18){
           f.dead=true; runKills++;
-          player.y=f.y-player.h; player.vy=C.bounceV; player.onGround=false; // RD-#042: stronger freeze-stomp pop
-          player.coyote=0; player.jumpsLeft=canDouble?1:0;
           comboChain++; if(comboChain>runComboBest) runComboBest=comboChain;
+          // RD-#043: the bounce GROWS with the chain — each frozen target you pop off launches
+          // you higher than the last, so you build momentum to reach the next one (Mario stomp-
+          // chain). Capped so a long chain stays controllable. + a forward surge toward the next.
+          const climb=Math.min(1+(comboChain-1)*0.13, 1.7);
+          player.y=f.y-player.h; player.vy=C.bounceV*climb; player.onGround=false;
+          player.coyote=0; player.jumpsLeft=canDouble?1:0;
+          lunge=Math.max(lunge, 1.6+Math.min(comboChain,6)*0.55);
           runShards+=comboChain;                 // 1st stomp +1, chained +2, +3 …
           spawnDeathBurst(f.x-cam+17,f.y+17);
           for(let s=0;s<comboChain*2+2;s++){ const a=Math.random()*6.28; particles.push({x:f.x-cam+17,y:f.y+8,vx:Math.cos(a)*3.2,vy:Math.sin(a)*3.2-2,life:0,max:30,c:"#9fe8ff",r:2.6}); }
@@ -1478,6 +1487,21 @@ function update(){
   for(const o of level.obs){
     if(o.destroyed) continue;
     if(rectHit(px,player.y,player.w,player.h,o.x,o.y,o.w,o.h)){
+      // RD-#043: BOUNCE-SMASH — drop onto a runestone while a chain is hot (≥2) and your
+      // momentum crashes through it: it shatters, you bounce, the chain rolls on. Same
+      // freeze-stomp verb, now an offensive tool against obstacles (not just bolts).
+      if(player.vy>0&&comboChain>=2&&(player.y+player.h)-o.y<18){
+        o.destroyed=true;
+        spawnDeathBurst(o.x-cam+o.w*0.5,o.y+o.h*0.5);
+        runEssence+=8; runShards++;
+        const climb=Math.min(1+(comboChain-1)*0.13,1.7);
+        player.y=o.y-player.h; player.vy=C.bounceV*climb; player.onGround=false;
+        lunge=Math.max(lunge,1.6+Math.min(comboChain,6)*0.55);
+        comboChain++; if(comboChain>runComboBest) runComboBest=comboChain;
+        Snd.runeDestroy(); Snd.activityBump(); Snd.activityBump();
+        if(curRealm.id===4){ shake=Math.min(shake+3,9); comboFlash=Math.min(comboFlash+0.4,1); }
+        continue;
+      }
       if(player.vy>=0&&(player.y+player.h)-o.y<16){
         player.y=o.y-player.h; player.vy=0; player.onGround=true;
       } else {
@@ -1541,7 +1565,7 @@ function doDeath(){ spawnBurst(player.x,player.y,"#ff9a9a",26,4); endRun(false);
 function reviveRun(){
   usedRevive=true;
   runEssence=0; runShards=0; runKills=0; runFroze=0; runCoins=0; comboChain=0; runComboBest=0;
-  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; // RD-#037/#041 impact reset
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; lunge=0; // RD-#037/#041/#043 impact reset
   const px=player.x+cam;
   // if we died over a pit, back up to the nearest solid ground behind us
   let onSeg=level.segs.some(s=>s.y===GROUND_Y && px>=s.x && px<=s.x+s.w);
