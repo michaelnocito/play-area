@@ -113,23 +113,34 @@ const WMIN   = 26, WMAX=46;   // obstacle width range
 const OBGLOW=[]; for(let i=0;i<8;i++) OBGLOW.push("rgba(255,84,104,"+(0.10+0.16*(i/7)).toFixed(3)+")"); // tension-glow LUT
 const OBSEAM="rgba(255,154,162,0.55)";   // animated energy-seam color, reused forever
 
-/* ===== Precomputed background art (built once at boot, then only blitted) ===== */
-let VIGN=null, RIDGE=null, ridgeOff=0;
+/* ===== Precomputed art + lighting (built once at boot, then only blitted) =====
+   Long Way Home is told wordlessly with light: a player-centred spotlight that breathes,
+   a warm home-beacon on the horizon, and zones re-themed as lands. */
+let RIDGE=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null;
 function mkCanvas(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
+function radialSprite(size,r,g,b){   // soft radial glow, baked ONCE; reused for spotlight + beacon
+  const c=mkCanvas(size,size), x=c.getContext("2d");
+  const gr=x.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  gr.addColorStop(0,   "rgba("+r+","+g+","+b+",1)");
+  gr.addColorStop(0.45,"rgba("+r+","+g+","+b+",0.92)");
+  gr.addColorStop(0.75,"rgba("+r+","+g+","+b+",0.32)");
+  gr.addColorStop(1,   "rgba("+r+","+g+","+b+",0)");
+  x.fillStyle=gr; x.fillRect(0,0,size,size); return c;
+}
 function buildArt(){
-  // vignette + faint horizon — gradients are INIT-ONLY here, then just blitted each frame
-  VIGN=mkCanvas(VW,VH); { const g=VIGN.getContext("2d");
-    const r=g.createRadialGradient(VW/2,VH/2,80,VW/2,VH/2,300);
-    r.addColorStop(0,"rgba(0,0,0,0)"); r.addColorStop(1,"rgba(0,0,0,0.42)");
-    g.fillStyle=r; g.fillRect(0,0,VW,VH);
-    const hz=g.createLinearGradient(0,VH/2-18,0,VH/2+18);
-    hz.addColorStop(0,"rgba(150,150,210,0)"); hz.addColorStop(.5,"rgba(150,150,210,0.10)"); hz.addColorStop(1,"rgba(150,150,210,0)");
-    g.fillStyle=hz; g.fillRect(0,VH/2-18,VW,36); }
   // mid-parallax ridge — faint COOL desaturated silhouettes (never red), recedes behind the danger layer
   RIDGE=mkCanvas(VW,VH); { const g=RIDGE.getContext("2d"); g.fillStyle="rgba(46,58,92,0.16)";
     let x=0; while(x<VW){ const w=20+((x*131)%18), hh=14+((x*97)%26);
       g.fillRect(x,BOTY-hh,w,hh); g.fillRect(x,TOPY,w-4,10+((x*53)%16)); x+=w+8; } }
+  // emotional-light sprites (white spotlight + warm home glow) + reusable darkness buffer
+  LIGHTSPR =radialSprite(128,255,255,255);
+  LIGHTGOLD=radialSprite(128,255,205,120);
+  DARK=mkCanvas(VW,VH); DARKCTX=DARK.getContext("2d");
 }
+/* lighting tunables (logical-px radius) + cached darkness strings (no per-frame alloc).
+   Darkness is kept moderate so incoming RED obstacles stay readable through the gloom. */
+const LR_MIN=104, LR_BASE=160, LR_MAX=240, LR_LOWMIN=212;
+const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps worst-case dimmed red readable in warm zones
 
 /* ===== Object pools (no per-frame allocation) ===== */
 const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0});
@@ -149,8 +160,9 @@ function trailPush(x,y){ const p=trail[trHead]; p.x=x; p.y=y; p.on=true; trHead=
 
 /* ===== Dynamic zone palette (evolving "worlds", cheap) — danger stays red for fairness ===== */
 const ZONELEN=55;   // metres per palette zone — short so new players see the world evolve fast
-const ZONES  =[[14,18,32],[30,14,42],[10,30,38],[40,20,16],[14,34,24]]; // bg base rgb per zone (distinct hues)
-const ACCENTS=[[255,207,92],[124,242,200],[120,165,255],[255,150,120],[150,240,160]]; // player/trail/glow
+// Zones as lands (Feature 3): the journey trends cool/lonely -> warm/golden (homeward) each cycle.
+const ZONES  =[[10,14,28],[20,16,40],[12,26,36],[34,22,16],[34,28,14]]; // night -> dusk -> cold dawn -> amber -> gold-home
+const ACCENTS=[[120,160,255],[170,150,255],[120,225,210],[255,180,110],[255,212,120]]; // cool blue -> violet -> teal -> amber -> gold
 function lerpi(a,b,k){ return (a+(b-a)*k)|0; }
 function zoneRGB(arr,d){ const f=d/ZONELEN, i=((f|0)%arr.length+arr.length)%arr.length, j=(i+1)%arr.length, k=f-(f|0);
   const A=arr[i],B=arr[j]; return [lerpi(A[0],B[0],k),lerpi(A[1],B[1],k),lerpi(A[2],B[2],k)]; }
@@ -201,6 +213,7 @@ let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0, mileT=0, mi
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;   // formation sequencer (replaces the old pairNext flag)
 let combo=0, comboVal=0, comboT=0;   // Clean Pass skill streak
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
+let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
 
 function reset(){
   py=BOTY-PS; vy=0; gdir=1; sq=1;
@@ -210,14 +223,16 @@ function reset(){
   for(const g of gates) g.on=false; nextGate=GATES_FROM; modType=-1; modT=0;
   shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
+  lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0;
 }
-function start(){ Snd.ensure(); reset(); mode="play"; Ads.gameplayStart(); }
+function start(){ Snd.ensure(); reset(); lightR=74; mode="play"; Ads.gameplayStart(); }  // re-bloom from small
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(); }
 function dieNow(){
   mode="dead"; Ads.gameplayStop(); Snd.die();
   if(dist>best) best=dist;
   lastEarned=(dist/10|0)+runCoinBonus; coins+=lastEarned; persist();
   shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; combo=0; burst(PX+PS/2,py+PS/2);
+  lightR=26; lightTarget=26;   // snuff the light to a spark on death
 }
 
 /* ===== Input ===== */
@@ -295,6 +310,7 @@ function update(dt){
   if(rotatePaused){ rotatePaused=false; if(mode==="play") Ads.gameplayStart(); }
   if(comboT>0){ comboT-=dt*1.6; if(comboT<0)comboT=0; }
   if(bgPulse>0){ bgPulse-=dt*2.4; if(bgPulse<0)bgPulse=0; }
+  if(beaconPulse>0){ beaconPulse-=dt*1.1; if(beaconPulse<0)beaconPulse=0; }
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
   if(mode!=="play") return;
   if(freeze>0){ freeze-=dt; return; }
@@ -310,7 +326,8 @@ function update(dt){
   const spacing=Math.max(GAPMIN, GAP0-dist*0.35);
   const dx=speed*dt;
   worldX += dx * (modType===2 && modT>0 ? 2 : 1); dist=worldX/40|0;
-  if(dist>=lastMile+50){ lastMile+=50; mileVal=lastMile; mileT=0.9; flash=Math.max(flash,0.16); flashCol="#5ef2c2"; Snd.point(); }
+  if(dist>=lastMile+50){ lastMile+=50; mileVal=lastMile; mileT=0.9; flash=Math.max(flash,0.16); flashCol="#5ef2c2"; Snd.point();
+    bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer
 
   // player physics
   vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
@@ -326,9 +343,11 @@ function update(dt){
   // obstacles: move, recycle, collide, score
   spawnCd-=dx; if(spawnCd<=0){ spawnObstacle(spacing); }
   const hx=PX+2, hy=py+2, hw=PS-4, hh=PS-4;      // inset hitbox = fair
+  let nd=1e9;                                    // nearest upcoming obstacle edge → drives the light's "fear"
   for(const o of obs){ if(!o.on) continue;
     o.x-=dx;
     if(o.x+o.w<-4){ o.on=false; continue; }
+    const ahead=o.x+o.w-PX; if(ahead>0&&ahead<nd)nd=ahead;
     const ry=o.side===0 ? BOTY-o.h : TOPY;
     if(hx<o.x+o.w && hx+hw>o.x && hy<ry+o.h && hy+hh>ry){
       if(modType===1 && modT>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
@@ -349,6 +368,17 @@ function update(dt){
     if(!g.fired && g.x<=PX){ g.fired=true; modType=g.type; modT=GATE_DUR;
       flash=Math.max(flash,0.18); flashCol="rgb("+GATECOL[g.type].join(",")+")"; Snd.clean(3); }
   }
+
+  // emotional light (Feature 1): target radius blooms on hope (bgPulse), constricts on fear
+  let lt=LR_BASE+bgPulse*120;
+  const proxFear=nd<1e9?Math.max(0,1-nd/200):0, fallFear=Math.max(0,(Math.abs(vy)-240)/950);
+  lt-=Math.min(1,proxFear*0.85+fallFear*0.55)*(LR_BASE-LR_MIN);
+  if(modT>0){ if(modType===1) lt=Math.max(lt,LR_MAX);            // SHIELD — bold (gold flare in render)
+    else if(modType===0) lt=Math.max(lt,LR_BASE+46);            // SLOW-MO — calm + wide
+    else if(modType===2) lt=Math.max(lt,LR_BASE+30); }          // 2× — bright
+  if(lowFx && lt<LR_LOWMIN) lt=LR_LOWMIN;                        // reduce-flashing: keep it open + un-oppressive
+  lightTarget = lt<LR_MIN?LR_MIN:(lt>LR_MAX+40?LR_MAX+40:lt);
+  lightR += (lightTarget-lightR)*Math.min(1,dt*8);              // eased, dt-based
 
   // periodic interstitial roughly every ~250m
   if(dist>=nextAd*250){ nextAd++; Ads.interstitial(); }
@@ -465,8 +495,22 @@ function draw(){
     ctx.fillStyle=p.c; ctx.fillRect(p.x,p.y,p.r,p.r); } }
   ctx.globalAlpha=1;
 
-  // vignette + horizon frame (precomputed; over the world, under the HUD so the score stays crisp)
-  ctx.imageSmoothingEnabled=true; ctx.drawImage(VIGN,0,0); ctx.imageSmoothingEnabled=false;
+  // === Emotional light pass (Feature 1) + home-beacon (Feature 2) — over the world, under the HUD ===
+  // Build darkness-with-a-hole on the cached offscreen, then blit it over the scene (alloc-free:
+  // 1 clear + 1 fill + 1 sprite punch + 1 blit). destination-out on the SEPARATE buffer reveals the
+  // lit world (doing it on the main canvas would punch through to the page bg instead).
+  { const dg=DARKCTX, lr=lightR, lx=PX+PS/2, ly=py+PS/2;
+    dg.globalCompositeOperation="source-over"; dg.clearRect(0,0,VW,VH);
+    dg.fillStyle=lowFx?DK_LOW:DK_NORMAL; dg.fillRect(0,0,VW,VH);
+    dg.globalCompositeOperation="destination-out"; dg.drawImage(LIGHTSPR,lx-lr,ly-lr,lr*2,lr*2);
+    dg.globalCompositeOperation="source-over";
+    ctx.imageSmoothingEnabled=true; ctx.drawImage(DARK,0,0,VW,VH);
+    // home-beacon: a warm light on the horizon, grows with best distance + each milestone (additive)
+    const bl=Math.min(1,best/600), bsz=10+bl*14+beaconPulse*5;
+    ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=Math.min(0.55,0.12+bl*0.24+beaconPulse*0.28);
+    ctx.drawImage(LIGHTGOLD, VW*0.72-bsz, 12-bsz, bsz*2, bsz*2);
+    if(modType===1 && modT>0){ ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-lr,ly-lr,lr*2,lr*2); } // SHIELD gold flare
+    ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over"; ctx.imageSmoothingEnabled=false; }
 
   // score (in-run only)
   if(mode==="play"){ txt(dist+"m",VW/2,WALL-6,13,"#aeb8cc",700);
