@@ -41,7 +41,13 @@ const Ads = {
   loadingStop(){ try{ window.CrazyGames?.SDK?.game?.sdkGameLoadingStop?.(); }catch(e){} },
   gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
   gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
-  interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame"); }catch(e){} }
+  interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame"); }catch(e){} },
+  rewarded(onReward,onSkip){            // opt-in rewarded ad (start-with-all-power-ups); graceful offline
+    try{ if(window.CrazyGames?.SDK?.ad?.requestAd){
+      window.CrazyGames.SDK.ad.requestAd("rewarded",{ adStarted(){}, adFinished(){ onReward&&onReward(); }, adError(){ onSkip&&onSkip(); } });
+      return; } }catch(e){}
+    onReward&&onReward();               // no SDK (local/itch) → grant so the button never dead-ends
+  }
 };
 
 /* ===== Procedural audio — persistent voices, zero allocation per sound ===== */
@@ -157,7 +163,7 @@ const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps 
 const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0});
 
 /* ===== Collectible pool (coins + earned power-orbs) — no per-frame allocation =====
-   kind: 0 coin · 1 SLOW-MO · 2 SHIELD · 3 2×  (orb kind k → buff modType k-1) */
+   kind: 0 coin · 1 SLOW-MO · 2 SHIELD · 3 2×  (orb kind k → buff timer BT[k-1]) */
 const COLN=28, col=[]; for(let i=0;i<COLN;i++) col.push({on:false,x:0,y:0,kind:0,val:1,bob:0});
 let colHead=0;
 function colAlloc(){ const c=col[colHead]; colHead=(colHead+1)%COLN; return c; }
@@ -191,7 +197,10 @@ let accCss="#ffcf5c", accGlow="rgba(255,207,92,0.30)";
 const GATECOL=[[90,220,255],[255,212,90],[255,120,220]];  // 0 SLOW, 1 SHIELD, 2 DOUBLE — the buff colour language
 const GATELABEL=["SLOW-MO","SHIELD","2× SCORE"];
 const ORBCSS=["rgb(90,220,255)","rgb(255,212,90)","rgb(255,120,220)"];  // precomputed orb-core strings (no per-frame alloc)
-let modType=-1, modT=0;
+const BUFFSEL=["rgba(90,220,255,0.30)","rgba(255,212,90,0.30)","rgba(255,120,220,0.30)"];  // selected pre-run chip fill
+const BSHORT=["SLOW","SHIELD","2×"];   // compact buff labels for the pre-run chips
+const START_BUFF=5;                    // seconds of pre-run head-start buff
+const BT=[0,0,0];                      // buff timers: 0 SLOW-MO, 1 SHIELD, 2 2× — INDEPENDENT so they can stack
 
 /* ===== Cosmetic skins + coin economy (cosmetic only — never touches physics) ===== */
 const SKINS=[
@@ -204,16 +213,20 @@ const SKINS=[
   {name:"Arrow",  cost:200, col:"#e8ecf1", shape:6}   // arrow (faces flip)
 ];
 const SAVE="flipline.v1";
-let coins=0, owned=[0], equipped=0, runCoinBonus=0, shopSel=0, lastEarned=0, lowFx=false;
+let coins=0, owned=[0], equipped=0, runCoinBonus=0, shopSel=0, lastEarned=0, lowFx=false, pickBuff=-1, startAll=false;
 function loadSave(){ try{ const d=JSON.parse(localStorage.getItem(SAVE)); if(d){
-    coins=d.coins|0; owned=Array.isArray(d.owned)?d.owned:[0]; equipped=d.equipped|0; best=d.best|0; lowFx=!!d.lowFx; } }catch(e){}
+    coins=d.coins|0; owned=Array.isArray(d.owned)?d.owned:[0]; equipped=d.equipped|0; best=d.best|0; lowFx=!!d.lowFx;
+    if(typeof d.pickBuff==="number") pickBuff=d.pickBuff; } }catch(e){}
   if(!owned.includes(0)) owned.push(0); if(!owned.includes(equipped)) equipped=0; }
-function persist(){ try{ localStorage.setItem(SAVE, JSON.stringify({coins,owned,equipped,best,lowFx})); }catch(e){} }
+function persist(){ try{ localStorage.setItem(SAVE, JSON.stringify({coins,owned,equipped,best,lowFx,pickBuff})); }catch(e){} }
 function skinCol(){ return SKINS[equipped].col; }   // null → zone-reactive
 function hexA(h,a){ const n=parseInt(h.slice(1),16); return "rgba("+(n>>16&255)+","+(n>>8&255)+","+(n&255)+","+a+")"; }
 
 // UI hit-regions (virtual 480x270 space)
 const R_SHOPBTN={x:VW/2-54,y:VH/2+72,w:108,h:26};
+const BCW=66, BCH=24, BCY=42, BCGAP=8, BCX0=VW/2-(BCW*3+BCGAP*2)/2;   // pre-run "start boost" chips
+const R_BUFF=[{x:BCX0,y:BCY,w:BCW,h:BCH},{x:BCX0+BCW+BCGAP,y:BCY,w:BCW,h:BCH},{x:BCX0+2*(BCW+BCGAP),y:BCY,w:BCW,h:BCH}];
+const R_BUFFALL={x:VW/2-82,y:BCY+28,w:164,h:22};
 const R_PREV={x:52,y:112,w:36,h:44}, R_NEXT={x:392,y:112,w:36,h:44};
 const R_ACT={x:VW/2-72,y:194,w:144,h:30}, R_BACK={x:16,y:236,w:80,h:24};
 function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
@@ -238,13 +251,19 @@ function reset(){
   speed=SPEED0; worldX=0; dist=0; spawnCd=GAP0; nextAd=1; runCoinBonus=0;
   for(const o of obs) o.on=false;
   for(const p of trail) p.on=false; trHead=0;
-  for(const c of col) c.on=false; colHead=0; modType=-1; modT=0;
+  for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
   shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0;
   nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0;
 }
-function start(){ Snd.ensure(); reset(); lightR=74; mode="play"; Ads.gameplayStart(); }  // re-bloom from small
+function start(){ Snd.ensure();
+  let gift=false; try{ const d=new Date().toDateString(); if(localStorage.getItem("flipline.day")!==d){ localStorage.setItem("flipline.day",d); gift=true; } }catch(e){}  // daily: first run of the day = all 3 free
+  reset(); lightR=74;                                  // re-bloom from small
+  if(startAll||gift){ BT[0]=BT[1]=BT[2]=START_BUFF; }  // rewarded ad OR daily gift → start with ALL 3
+  else if(pickBuff>=0){ BT[pickBuff]=START_BUFF; }     // everyday free pick-1
+  startAll=false; mode="play"; Ads.gameplayStart();
+}
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(); }
 function dieNow(){
   mode="dead"; Ads.gameplayStop();
@@ -260,7 +279,11 @@ function dieNow(){
 function tap(){ if(mode==="play") flip(); else start(); }
 addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
   if(mode==="shop"){ shopTap(p); return; }
-  if((mode==="ready"||mode==="dead") && inR(p,R_SHOPBTN)){ mode="shop"; shopSel=equipped; return; }
+  if(mode==="ready"||mode==="dead"){
+    if(inR(p,R_SHOPBTN)){ mode="shop"; shopSel=equipped; return; }
+    for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
+    if(inR(p,R_BUFFALL)){ Ads.rewarded(()=>{ startAll=true; start(); }, ()=>{ start(); }); return; } // watch ad → all 3
+  }
   tap(); },{passive:false});
 addEventListener("keydown",e=>{
   if(mode==="shop"){ const n=SKINS.length;
@@ -377,17 +400,16 @@ function update(dt){
   if(mode!=="play") return;
   if(freeze>0){ freeze-=dt; return; }
 
-  // active run-modifier
+  // active run-modifiers — independent timers, so they can STACK (pre-run pick / ad / orbs)
   let speedMult=1;
-  if(modT>0){ modT-=dt;
-    if(modType===0) speedMult=0.45;        // SLOW-MO — dramatic, unmistakable
-    if(modT<=0) modType=-1; }              // SHIELD(1)=invincible, DOUBLE(2)=2× score (below)
+  for(let i=0;i<3;i++) if(BT[i]>0){ BT[i]-=dt; if(BT[i]<0)BT[i]=0; }
+  if(BT[0]>0) speedMult=0.45;              // SLOW-MO — dramatic, unmistakable
 
   // difficulty ramp
   speed=Math.min(SPEEDMX, SPEED0+dist*RAMP)*speedMult;
   const spacing=Math.max(GAPMIN, GAP0-dist*0.35);
   const dx=speed*dt;
-  worldX += dx * (modType===2 && modT>0 ? 2 : 1); dist=worldX/40|0;
+  worldX += dx * (BT[2]>0 ? 2 : 1); dist=worldX/40|0;
   if(dist>=lastMile+50){ lastMile+=50; mileVal=lastMile; mileT=0.9; flash=Math.max(flash,0.16); flashCol="#5ef2c2"; Snd.point();
     bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer
 
@@ -413,7 +435,7 @@ function update(dt){
     const ahead=o.x+o.w-PX; if(ahead>0&&ahead<nd)nd=ahead;
     const ry=o.side===0 ? BOTY-o.h : TOPY;
     if(hx<o.x+o.w && hx+hw>o.x && hy<ry+o.h && hy+hh>ry){
-      if(modType===1 && modT>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
+      if(BT[1]>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
       dieNow(); return; }
     if(!o.scored && o.x+o.w<PX){ o.scored=true;
       const clr = o.side===0 ? (BOTY-o.h)-(py+PS) : py-(TOPY+o.h);   // gap to the hazard edge
@@ -433,21 +455,21 @@ function update(dt){
     if(ddx>R||ddx<-R) continue;
     const cyc=c.y<cyLo?cyLo:(c.y>cyHi?cyHi:c.y), ddy=c.y-cyc;
     if(ddx*ddx+ddy*ddy<=R*R){ c.on=false;
-      if(isOrb){ modType=c.kind-1; modT=ORB_DUR; flash=Math.max(flash,0.18); flashCol=ORBCSS[c.kind-1];
+      if(isOrb){ BT[c.kind-1]=Math.max(BT[c.kind-1],ORB_DUR); flash=Math.max(flash,0.18); flashCol=ORBCSS[c.kind-1];
         beaconPulse=Math.max(beaconPulse,0.5); spark(c.x,c.y); Snd.clean(4); }
       else { runCoinBonus+=c.val; spark(c.x,c.y); Snd.point(); } }
   }
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
   if(dist>=COL_FROM && dist>=nextLure){ spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
-  if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && modT<=0 && !orbArmed) orbArmed=true;
+  if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && BT[0]<=0&&BT[1]<=0&&BT[2]<=0 && !orbArmed) orbArmed=true;
 
   // emotional light (Feature 1): target radius blooms on hope (bgPulse), constricts on fear
   let lt=LR_BASE+bgPulse*120;
   const proxFear=nd<1e9?Math.max(0,1-nd/200):0, fallFear=Math.max(0,(Math.abs(vy)-240)/950);
   lt-=Math.min(1,proxFear*0.85+fallFear*0.55)*(LR_BASE-LR_MIN);
-  if(modT>0){ if(modType===1) lt=Math.max(lt,LR_MAX);            // SHIELD — bold (gold flare in render)
-    else if(modType===0) lt=Math.max(lt,LR_BASE+46);            // SLOW-MO — calm + wide
-    else if(modType===2) lt=Math.max(lt,LR_BASE+30); }          // 2× — bright
+  if(BT[1]>0) lt=Math.max(lt,LR_MAX);            // SHIELD — bold (gold flare in render)
+  if(BT[0]>0) lt=Math.max(lt,LR_BASE+46);        // SLOW-MO — calm + wide
+  if(BT[2]>0) lt=Math.max(lt,LR_BASE+30);        // 2× — bright
   if(lowFx && lt<LR_LOWMIN) lt=LR_LOWMIN;                        // reduce-flashing: keep it open + un-oppressive
   lightTarget = lt<LR_MIN?LR_MIN:(lt>LR_MAX+40?LR_MAX+40:lt);
   lightR += (lightTarget-lightR)*Math.min(1,dt*8);              // eased, dt-based
@@ -537,7 +559,7 @@ function draw(){
   const cx=PX+PS/2, cy=py+PS/2;
   ctx.save(); ctx.translate(cx,cy); ctx.scale(2-sq,sq);
   const shp=SKINS[equipped].shape;
-  if(modType===1 && modT>0){ const pul=5+4*Math.sin(t*11); ctx.fillStyle="rgba(255,212,90,0.38)"; shapePath(shp,PS/2+pul); ctx.fill(); }
+  if(BT[1]>0){ const pul=5+4*Math.sin(t*11); ctx.fillStyle="rgba(255,212,90,0.38)"; shapePath(shp,PS/2+pul); ctx.fill(); }
   ctx.fillStyle=pglow; shapePath(shp,PS/2+3); ctx.fill();
   ctx.fillStyle=pcol;  shapePath(shp,PS/2);   ctx.fill();
   // expressive face: eyes glance with motion, mouth reacts (whoa / worried / grin / neutral)
@@ -573,7 +595,7 @@ function draw(){
     const bl=Math.min(1,best/600), bsz=10+bl*14+beaconPulse*5;
     ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=Math.min(0.55,0.12+bl*0.24+beaconPulse*0.28);
     ctx.drawImage(LIGHTGOLD, VW*0.72-bsz, 12-bsz, bsz*2, bsz*2);
-    if(modType===1 && modT>0){ ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-lr,ly-lr,lr*2,lr*2); } // SHIELD gold flare
+    if(BT[1]>0){ ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-lr,ly-lr,lr*2,lr*2); } // SHIELD gold flare
     ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over"; ctx.imageSmoothingEnabled=false; }
 
   // collectibles — coins shine in the gloom, power-orbs glow their buff colour (never red); drawn OVER the
@@ -604,9 +626,10 @@ function draw(){
 
   if(flash>0 && !lowFx){ ctx.fillStyle=flashCol; ctx.globalAlpha=flash; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
 
-  if(modT>0 && modType>=0){ const c=GATECOL[modType], a=Math.min(0.5,modT/ORB_DUR);
-    ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; ctx.lineWidth=4; ctx.strokeRect(2,2,VW-4,VH-4);
-    ctx.globalAlpha=Math.min(1,modT*1.2); txt(GATELABEL[modType],VW/2,VH-10,12,"rgb("+c[0]+","+c[1]+","+c[2]+")",800); ctx.globalAlpha=1; }
+  { let n=0; for(let i=0;i<3;i++) if(BT[i]>0) n++;   // active-buff chrome — nested borders + a centred row of timed labels (stack-aware)
+    let k=0; for(let i=0;i<3;i++){ if(BT[i]<=0) continue; const c=GATECOL[i], a=Math.min(0.5,BT[i]/ORB_DUR);
+      ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; ctx.lineWidth=3; const ins=2+k*4; ctx.strokeRect(ins,ins,VW-ins*2,VH-ins*2);
+      ctx.globalAlpha=Math.min(1,BT[i]*1.2); txt(GATELABEL[i],VW/2+(k-(n-1)/2)*92,VH-10,11,ORBCSS[i],800); ctx.globalAlpha=1; k++; } }
 
   if(mileT>0){ ctx.globalAlpha=Math.min(1,mileT*1.4);
     txt(mileVal+"m",VW/2,VH*0.40-(1-mileT)*10,20,"#5ef2c2",800); ctx.globalAlpha=1; }
@@ -616,20 +639,29 @@ function draw(){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap / space to flip gravity",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
     txt("dodge the red — go far",VW/2,VH/2+34,12,"#6f7a92",500);
-    shopBtn();
+    shopBtn(); drawBoostRow();
   } else if(mode==="dead"){
     txt("CRASHED",VW/2,VH/2-26,30,"#ff5468",800);
     txt(dist+"m",VW/2,VH/2+0,18,"#e8ecf1",700);
     txt(dist>=best?"★ NEW BEST ★":"best  "+best+"m",VW/2,VH/2+20,12,dist>=best?"#ffcf5c":"#aeb8cc",700);
     txt("+◆ "+lastEarned+"   (◆ "+coins+")",VW/2,VH/2+40,12,"#ffcf5c",700);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to retry",VW/2,VH/2+58,12,"#5ef2c2",600); ctx.globalAlpha=1;
-    shopBtn();
+    shopBtn(); drawBoostRow();
   }
 }
 
 function shopBtn(){
   ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_SHOPBTN.x,R_SHOPBTN.y,R_SHOPBTN.w,R_SHOPBTN.h);
   txt("SKINS   ◆ "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);
+}
+function drawBoostRow(){   // pre-run free pick-1 buff + opt-in rewarded "all 3" (the 'not ad-spam' flex)
+  txt(pickBuff>=0?"START BOOST — free":"START BOOST — tap one (free)",VW/2,33,10,"#9bf0d0",700);
+  for(let i=0;i<3;i++){ const r=R_BUFF[i], sel=pickBuff===i;
+    ctx.fillStyle=sel?BUFFSEL[i]:"rgba(255,255,255,0.06)"; ctx.fillRect(r.x,r.y,r.w,r.h);
+    if(sel){ ctx.strokeStyle=ORBCSS[i]; ctx.lineWidth=2; ctx.strokeRect(r.x+1,r.y+1,r.w-2,r.h-2); }
+    txt(BSHORT[i],r.x+r.w/2,r.y+16,11,ORBCSS[i],700); }
+  ctx.fillStyle="rgba(255,255,255,0.05)"; ctx.fillRect(R_BUFFALL.x,R_BUFFALL.y,R_BUFFALL.w,R_BUFFALL.h);
+  ctx.globalAlpha=0.85+0.15*Math.sin(t*4); txt("▶ watch ad → start with ALL 3",VW/2,R_BUFFALL.y+15,11,"#ffcf5c",700); ctx.globalAlpha=1;
 }
 function drawShop(){
   ctx.fillStyle="rgba(8,10,16,0.88)"; ctx.fillRect(0,0,VW,VH);
