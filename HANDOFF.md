@@ -48,7 +48,8 @@ Do not touch movement, collision, difficulty, or reward logic:
 - **Fairness (identity — do not weaken):** the hitbox is an **inset square** (`PS-4`), smaller than
   the visual. Danger is **always red**. A new shape/skin must never change the hitbox.
 - **Clean Pass:** skim an obstacle within 14px as it passes → spark + combo + bonus coins/score.
-- **Buff gates** (start 150m): Slow-mo / Shield / 2×. Zone color shifts every 55m, milestone pop
+- **Power-orbs** (start 150m): Slow-mo / Shield / 2× — EARNED skill-pickups (replaced the old free
+  full-corridor "gates"). Plus distance/skim coins are now also collectible field loot. Zone color shifts every 55m, milestone pop
   every 50m, coins auto-earned (distance + Clean Pass).
 
 You may **restyle** any of the above (how the obstacle/gate/player *looks*), never **retune** it.

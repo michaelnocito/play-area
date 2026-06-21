@@ -109,6 +109,16 @@ const GAPMIN = 120;           // tightest spacing
 const HMIN   = 66, HMAX=118;  // obstacle jut height range
 const WMIN   = 26, WMAX=46;   // obstacle width range
 
+/* ===== Collectible tunables (coins + earned power-orbs) ===== */
+const COL_FROM=60;            // metres before any loot appears (gentle early game)
+const LURE_GAP_MIN=30, LURE_GAP_RND=24;        // metres between lures (cadence breathes 30–54m)
+const STEPX=24, DIP_STEPX=60, SCAT_STEPX=90;   // horizontal spacing within a lure
+const COIN_VAL=1, COIN_VAL_RISK=3;             // base vs danger-lane risk-premium payout
+const COIN_R=14, ORB_R=22;                     // GENEROUS grab radii (>> the ~8/11px visuals)
+const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
+const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
+const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
+
 /* ===== Premium obstacle look (precomputed strings — zero per-frame allocation) ===== */
 const OBGLOW=[]; for(let i=0;i<8;i++) OBGLOW.push("rgba(255,84,104,"+(0.10+0.16*(i/7)).toFixed(3)+")"); // tension-glow LUT
 const OBSEAM="rgba(255,154,162,0.55)";   // animated energy-seam color, reused forever
@@ -116,7 +126,7 @@ const OBSEAM="rgba(255,154,162,0.55)";   // animated energy-seam color, reused f
 /* ===== Precomputed art + lighting (built once at boot, then only blitted) =====
    Long Way Home is told wordlessly with light: a player-centred spotlight that breathes,
    a warm home-beacon on the horizon, and zones re-themed as lands. */
-let RIDGE=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null;
+let RIDGE=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
 function mkCanvas(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
 function radialSprite(size,r,g,b){   // soft radial glow, baked ONCE; reused for spotlight + beacon
   const c=mkCanvas(size,size), x=c.getContext("2d");
@@ -135,6 +145,7 @@ function buildArt(){
   // emotional-light sprites (white spotlight + warm home glow) + reusable darkness buffer
   LIGHTSPR =radialSprite(128,255,255,255);
   LIGHTGOLD=radialSprite(128,255,205,120);
+  for(let k=0;k<3;k++) ORBSPR[k]=radialSprite(64,GATECOL[k][0],GATECOL[k][1],GATECOL[k][2]); // power-orb glow per buff
   DARK=mkCanvas(VW,VH); DARKCTX=DARK.getContext("2d");
 }
 /* lighting tunables (logical-px radius) + cached darkness strings (no per-frame alloc).
@@ -144,6 +155,14 @@ const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps 
 
 /* ===== Object pools (no per-frame allocation) ===== */
 const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0});
+
+/* ===== Collectible pool (coins + earned power-orbs) — no per-frame allocation =====
+   kind: 0 coin · 1 SLOW-MO · 2 SHIELD · 3 2×  (orb kind k → buff modType k-1) */
+const COLN=28, col=[]; for(let i=0;i<COLN;i++) col.push({on:false,x:0,y:0,kind:0,val:1,bob:0});
+let colHead=0;
+function colAlloc(){ const c=col[colHead]; colHead=(colHead+1)%COLN; return c; }
+function placeCoin(x,y,val){ const c=colAlloc(); c.on=true; c.x=x; c.y=y; c.kind=0; c.val=val; c.bob=Math.random()*6.283; }
+function placeOrb(x,y,kind){ const c=colAlloc(); c.on=true; c.x=x; c.y=y; c.kind=kind; c.val=0; c.bob=Math.random()*6.283; }
 const PN=120, par=[]; for(let i=0;i<PN;i++) par.push({life:0,x:0,y:0,vx:0,vy:0,r:2,c:"#ffcf5c"});
 let parHead=0;
 function emit(x,y,vx,vy,life,r,c){ const p=par[parHead]; parHead=(parHead+1)%PN;
@@ -168,13 +187,11 @@ function zoneRGB(arr,d){ const f=d/ZONELEN, i=((f|0)%arr.length+arr.length)%arr.
   const A=arr[i],B=arr[j]; return [lerpi(A[0],B[0],k),lerpi(A[1],B[1],k),lerpi(A[2],B[2],k)]; }
 let accCss="#ffcf5c", accGlow="rgba(255,207,92,0.30)";
 
-/* ===== Run-modifier gates (pooled; start at 150m so early game is untouched) ===== */
-const GATE_DUR=4, GATES_FROM=150, GATEW=14;
-const GATECOL=[[90,220,255],[255,212,90],[255,120,220]];  // 0 SLOW, 1 SHIELD, 2 DOUBLE
+/* ===== Run-modifier buffs (SLOW-MO / SHIELD / 2×) — now EARNED from power-orbs, not free gates ===== */
+const GATECOL=[[90,220,255],[255,212,90],[255,120,220]];  // 0 SLOW, 1 SHIELD, 2 DOUBLE — the buff colour language
 const GATELABEL=["SLOW-MO","SHIELD","2× SCORE"];
-const GATEN=4, gates=[]; for(let i=0;i<GATEN;i++) gates.push({on:false,x:0,type:0,fired:false});
-let nextGate=GATES_FROM, modType=-1, modT=0;
-function spawnGate(){ for(const g of gates){ if(!g.on){ g.on=true; g.x=VW+24; g.type=Math.random()*3|0; g.fired=false; return; } } }
+const ORBCSS=["rgb(90,220,255)","rgb(255,212,90)","rgb(255,120,220)"];  // precomputed orb-core strings (no per-frame alloc)
+let modType=-1, modT=0;
 
 /* ===== Cosmetic skins + coin economy (cosmetic only — never touches physics) ===== */
 const SKINS=[
@@ -214,16 +231,18 @@ let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;   // formation sequencer (
 let combo=0, comboVal=0, comboT=0;   // Clean Pass skill streak
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
+let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
 
 function reset(){
   py=BOTY-PS; vy=0; gdir=1; sq=1;
   speed=SPEED0; worldX=0; dist=0; spawnCd=GAP0; nextAd=1; runCoinBonus=0;
   for(const o of obs) o.on=false;
   for(const p of trail) p.on=false; trHead=0;
-  for(const g of gates) g.on=false; nextGate=GATES_FROM; modType=-1; modT=0;
+  for(const c of col) c.on=false; colHead=0; modType=-1; modT=0;
   shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0;
+  nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0;
 }
 function start(){ Snd.ensure(); reset(); lightR=74; mode="play"; Ads.gameplayStart(); }  // re-bloom from small
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(); }
@@ -279,7 +298,8 @@ function pickFormation(){            // only called when no formation is active
   }
 }
 function placeRect(o,side,h){ o.on=true; o.x=VW+24; o.scored=false;
-  o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side; }
+  o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side;
+  lastObsSide=side; clearLootNear(o); }   // record the danger lane + evict any loot this jut would trap
 function spawnObstacle(spacing){
   if(fmLen===0) pickFormation();
   if(fmId===7){ spawnCd+=spacing*1.6; fmLen=0; return; }    // breather: open a clear lane, emit nothing
@@ -297,6 +317,46 @@ function spawnObstacle(spacing){
     if(fmStep>=fmLen){ if(fmId>=4&&fmId<=6) hardCount++; else if(fmId<=3) hardCount=0; fmLen=0; }
     return; } }
   spawnCd+=spacing;   // pool full (shouldn't happen) — avoid tight loop
+}
+
+/* ===== Collectible lures — entice skilful flips; pooled, fair, never co-located with danger ===== */
+function lootClear(x,y){            // true if (x,y) keeps clear of every active red
+  for(const o of obs){ if(!o.on) continue;
+    if(x>o.x-KEEPX && x<o.x+o.w+KEEPX){ const ry=o.side===0?BOTY-o.h:TOPY;
+      if(y>ry-KEEPY && y<ry+o.h+KEEPY) return false; } }
+  return true;
+}
+function clearLootNear(o){          // evict loot a freshly-placed jut would otherwise trap
+  const ry=o.side===0?BOTY-o.h:TOPY;
+  for(const c of col){ if(c.on && c.x>o.x-KEEPX && c.x<o.x+o.w+KEEPX && c.y>ry-KEEPY && c.y<ry+o.h+KEEPY) c.on=false; }
+}
+function spawnLure(){
+  if(orbArmed){ if(spawnOrb()){ orbArmed=false; lastOrbDist=dist; } return; }   // rare earned jackpot
+  const pick=Math.random();
+  if(pick<0.45) spawnSwoop();       // arc that spans a flip (everyday lure)
+  else if(pick<0.72){ if(dist>=110) spawnDip(); else spawnSwoop(); }   // dips (risk) only after 110m — gentle early game
+  else spawnScatter();              // singles on opposite surfaces (collecting both needs a flip)
+}
+function spawnSwoop(){              // 5 coins bowing from one surface to the other → rewards a flip
+  const fromFloor=(lastObsSide===0), y0=fromFloor?210:42, y1=fromFloor?42:210, N=5;
+  for(let i=0;i<N;i++){ const u=i/(N-1), x=VW+i*STEPX;
+    const base=y0+(y1-y0)*(0.5-0.5*Math.cos(u*Math.PI)), y=base+Math.sin(u*Math.PI)*(135-base)*0.55;
+    if(lootClear(x,y)) placeCoin(x,y,COIN_VAL); }
+}
+function spawnDip(){                // 3 coins toward the recent danger surface — only ones in a real gap survive
+  const y=(lastObsSide===0)?186:86;   // moderate dip (not a deep hug) → always escapable from a max-height jut
+  for(let i=0;i<3;i++){ const x=VW+i*DIP_STEPX; if(lootClear(x,y)) placeCoin(x,y,COIN_VAL_RISK); }
+}
+function spawnScatter(){            // two singles on opposite surfaces — collecting both needs a flip
+  const a=lastObsSide===0?42:210, b=lastObsSide===0?210:42;
+  if(lootClear(VW,a)) placeCoin(VW,a,COIN_VAL);
+  if(lootClear(VW+SCAT_STEPX,b)) placeCoin(VW+SCAT_STEPX,b,COIN_VAL);
+}
+function spawnOrb(){                // one buff orb in a committed-flip spot, opposite the recent danger (fair)
+  let y=(lastObsSide===0)?92:178; if(!lootClear(VW,y)) y=135;   // fall back to dead-centre (clear of side juts)
+  if(!lootClear(VW,y)) return false;                            // even centre blocked → re-arm, try next lure
+  const kind=(lastOrbDist<0)?2:(1+(lureSeq++%3));               // first orb SHIELD (onboarding), then cycle
+  placeOrb(VW,y,kind); beaconPulse=Math.max(beaconPulse,0.6); return true;   // telegraph: home draws the eye
 }
 
 /* ===== Update (dt seconds, capped upstream) ===== */
@@ -330,6 +390,7 @@ function update(dt){
     bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer
 
   // player physics
+  const pyPrev=py;   // pre-move y → the swept collectible grab below stays tunnel-proof on fast flips
   vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
   py+=vy*dt;
   if(py<TOPY){ if(vy<-40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=TOPY; vy=0; }
@@ -360,14 +421,23 @@ function update(dt){
     }
   }
 
-  // run-modifier gates (move, recycle, activate on pass)
-  if(dist>=nextGate){ spawnGate(); nextGate += 120 + (Math.random()*100|0); }
-  for(const g of gates){ if(!g.on) continue;
-    g.x-=dx;
-    if(g.x+GATEW<-4){ g.on=false; continue; }
-    if(!g.fired && g.x<=PX){ g.fired=true; modType=g.type; modT=GATE_DUR;
-      flash=Math.max(flash,0.18); flashCol="rgb("+GATECOL[g.type].join(",")+")"; Snd.clean(3); }
+  // collectibles: move with world, generous SWEPT grab (tunnel-proof on fast flips), recycle
+  const pcx=PX+PS/2, pcyN=py+PS/2, pcyP=pyPrev+PS/2;
+  const cyLo=pcyP<pcyN?pcyP:pcyN, cyHi=pcyP<pcyN?pcyN:pcyP;
+  for(const c of col){ if(!c.on) continue;
+    c.x-=dx;
+    if(c.x<-12){ c.on=false; continue; }
+    const isOrb=c.kind>0, R=isOrb?ORB_R:COIN_R, ddx=c.x-pcx;
+    if(ddx>R||ddx<-R) continue;
+    const cyc=c.y<cyLo?cyLo:(c.y>cyHi?cyHi:c.y), ddy=c.y-cyc;
+    if(ddx*ddx+ddy*ddy<=R*R){ c.on=false;
+      if(isOrb){ modType=c.kind-1; modT=ORB_DUR; flash=Math.max(flash,0.18); flashCol=ORBCSS[c.kind-1];
+        beaconPulse=Math.max(beaconPulse,0.5); spark(c.x,c.y); Snd.clean(4); }
+      else { runCoinBonus+=c.val; spark(c.x,c.y); Snd.point(); } }
   }
+  // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
+  if(dist>=COL_FROM && dist>=nextLure){ spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
+  if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && modT<=0 && !orbArmed) orbArmed=true;
 
   // emotional light (Feature 1): target radius blooms on hope (bgPulse), constricts on fear
   let lt=LR_BASE+bgPulse*120;
@@ -434,14 +504,6 @@ function draw(){
   // walls
   ctx.fillStyle=wallCss; ctx.fillRect(0,0,VW,WALL); ctx.fillRect(0,VH-WALL,VW,WALL);
   ctx.fillStyle="#262f45"; ctx.fillRect(0,WALL-2,VW,2); ctx.fillRect(0,VH-WALL,VW,2);
-
-  // run-modifier gates (translucent full-corridor bars with a label)
-  for(const g of gates){ if(!g.on) continue; const c=GATECOL[g.type];
-    ctx.fillStyle="rgba("+c[0]+","+c[1]+","+c[2]+",0.16)"; ctx.fillRect(g.x,WALL,GATEW,VH-WALL*2);
-    ctx.fillStyle="rgba("+c[0]+","+c[1]+","+c[2]+",0.85)"; ctx.fillRect(g.x,WALL,2,VH-WALL*2); ctx.fillRect(g.x+GATEW-2,WALL,2,VH-WALL*2);
-    ctx.save(); ctx.translate(g.x+GATEW/2,VH/2); ctx.rotate(-Math.PI/2);
-    ctx.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")"; ctx.textAlign="center"; ctx.font="700 9px system-ui";
-    ctx.fillText(GATELABEL[g.type],0,3); ctx.restore(); }
 
   // obstacles (always red, fair silhouette; banded volume + bevel + hot danger lip + animated energy seam)
   const seamY=(t*70)|0;   // shared marching offset (one int → seam is composed across all obstacles, not chaotic)
@@ -512,6 +574,26 @@ function draw(){
     if(modType===1 && modT>0){ ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-lr,ly-lr,lr*2,lr*2); } // SHIELD gold flare
     ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over"; ctx.imageSmoothingEnabled=false; }
 
+  // collectibles — coins shine in the gloom, power-orbs glow their buff colour (never red); drawn OVER the
+  // darkness so loot is always readable (you can plan a flip toward it) — little lights in the dark.
+  ctx.imageSmoothingEnabled=true;
+  for(const c of col){ if(!c.on) continue; const bx=c.x, by=c.y+Math.sin(t*4+c.bob)*2;
+    ctx.globalAlpha=Math.max(0.5,1-Math.abs(bx-PX)/300);   // fade far loot so a distant dimmed-red jut stays the salient signal
+    if(c.kind===0){ const r=4+Math.sin(t*5+c.bob)*0.6;
+      ctx.fillStyle="rgba(255,207,92,0.28)";                                   // soft gold halo
+      ctx.beginPath(); ctx.moveTo(bx,by-r-1.6); ctx.lineTo(bx+r+1.6,by); ctx.lineTo(bx,by+r+1.6); ctx.lineTo(bx-r-1.6,by); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="#ffcf5c";                                                 // gold diamond
+      ctx.beginPath(); ctx.moveTo(bx,by-r); ctx.lineTo(bx+r,by); ctx.lineTo(bx,by+r); ctx.lineTo(bx-r,by); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,0.78)"; ctx.fillRect(bx-0.9,by-0.9,1.8,1.8);  // white sparkle → coins pop on warm zones
+    } else { const k=c.kind-1, sz=12+Math.sin(t*6+c.bob)*1.5;
+      ctx.globalCompositeOperation="lighter";
+      ctx.drawImage(ORBSPR[k], bx-sz, by-sz, sz*2, sz*2);                       // buff-colour halo (which buff)
+      ctx.drawImage(LIGHTSPR, bx-sz*0.6, by-sz*0.6, sz*1.2, sz*1.2);            // white-hot core → orbs POP on ANY zone
+      ctx.globalCompositeOperation="source-over";
+      ctx.fillStyle=ORBCSS[k]; ctx.beginPath(); ctx.arc(bx,by,3,0,6.2832); ctx.fill(); }  // buff-colour pip
+  }
+  ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false;
+
   // score (in-run only)
   if(mode==="play"){ txt(dist+"m",VW/2,WALL-6,13,"#aeb8cc",700);
     txt("◆ "+((dist/10|0)+runCoinBonus),42,WALL-6,12,"#ffcf5c",700); }
@@ -520,7 +602,7 @@ function draw(){
 
   if(flash>0 && !lowFx){ ctx.fillStyle=flashCol; ctx.globalAlpha=flash; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
 
-  if(modT>0 && modType>=0){ const c=GATECOL[modType], a=Math.min(0.5,modT/GATE_DUR);
+  if(modT>0 && modType>=0){ const c=GATECOL[modType], a=Math.min(0.5,modT/ORB_DUR);
     ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; ctx.lineWidth=4; ctx.strokeRect(2,2,VW-4,VH-4);
     ctx.globalAlpha=Math.min(1,modT*1.2); txt(GATELABEL[modType],VW/2,VH-10,12,"rgb("+c[0]+","+c[1]+","+c[2]+")",800); ctx.globalAlpha=1; }
 
