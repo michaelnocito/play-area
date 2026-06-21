@@ -109,7 +109,7 @@ const FLIPKICK = 240;         // instant velocity on flip (crisp snap off the su
 const MAXVY  = 1300;          // terminal vertical speed
 const SPEED0 = 170;           // starting scroll speed px/s
 const SPEEDMX= 360;           // max scroll speed px/s
-const RAMP   = 0.9;           // speed gained per meter (lower = slower ramp)
+const RAMP   = 0.5;           // speed gained per meter — gentle ramp for FLOW (hits cap ~380m, not ~210m)
 const GAP0   = 200;           // starting world spacing between obstacles
 const GAPMIN = 120;           // tightest spacing
 const HMIN   = 66, HMAX=118;  // obstacle jut height range
@@ -177,6 +177,8 @@ function burst(x,y){ for(let i=0;i<22;i++){ const a=Math.random()*6.283, s=40+Ma
   emit(x,y,Math.cos(a)*s,Math.sin(a)*s,0.5+Math.random()*0.4,1+(Math.random()*2|0),"#ff6478"); } }
 function spark(x,y){ for(let i=0;i<8;i++){ const a=Math.random()*6.283, s=30+Math.random()*120;
   emit(x,y,Math.cos(a)*s,Math.sin(a)*s,0.30+Math.random()*0.25,1+(Math.random()*2|0),"#bff5e2"); } }
+function coinFx(x,y){ for(let i=0;i<9;i++){ const a=Math.random()*6.283, s=30+Math.random()*110;   // gold burst on coin grab
+  emit(x,y,Math.cos(a)*s,Math.sin(a)*s-50,0.4+Math.random()*0.3,1+(Math.random()*2|0),"#ffcf5c"); } }
 
 /* ===== Glowing "surfing" trail (fixed ring buffer, zero alloc) ===== */
 const TRN=20, trail=[]; for(let i=0;i<TRN;i++) trail.push({x:0,y:0,on:false});
@@ -243,6 +245,7 @@ let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0, mileT=0, mi
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;   // formation sequencer (replaces the old pairNext flag)
 let combo=0, comboVal=0, comboT=0;   // Clean Pass skill streak
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
+let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
 let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
 
@@ -255,7 +258,7 @@ function reset(){
   shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0;
-  nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0;
+  nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0;
 }
 function start(){ Snd.ensure();
   let gift=false; try{ const d=new Date().toDateString(); if(localStorage.getItem("flipline.day")!==d){ localStorage.setItem("flipline.day",d); gift=true; } }catch(e){}  // daily: first run of the day = all 3 free
@@ -397,6 +400,7 @@ function update(dt){
   if(bgPulse>0){ bgPulse-=dt*2.4; if(bgPulse<0)bgPulse=0; }
   if(beaconPulse>0){ beaconPulse-=dt*1.1; if(beaconPulse<0)beaconPulse=0; }
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
+  if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
   if(mode!=="play") return;
   if(freeze>0){ freeze-=dt; return; }
 
@@ -457,7 +461,7 @@ function update(dt){
     if(ddx*ddx+ddy*ddy<=R*R){ c.on=false;
       if(isOrb){ BT[c.kind-1]=Math.max(BT[c.kind-1],ORB_DUR); flash=Math.max(flash,0.18); flashCol=ORBCSS[c.kind-1];
         beaconPulse=Math.max(beaconPulse,0.5); spark(c.x,c.y); Snd.clean(4); }
-      else { runCoinBonus+=c.val; spark(c.x,c.y); Snd.point(); } }
+      else { runCoinBonus+=c.val; coinPopV+=c.val; coinPopT=0.7; coinFx(c.x,c.y); Snd.point(); } }
   }
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
   if(dist>=COL_FROM && dist>=nextLure){ spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
@@ -575,6 +579,8 @@ function draw(){
   // Clean Pass flair
   if(comboT>0 && comboVal>1){ ctx.globalAlpha=Math.min(1,comboT*1.6);
     txt("CLEAN ×"+comboVal, PX+30, gdir>0?py-10:py+PS+18, 11, "#9bf0d0", 800); ctx.globalAlpha=1; }
+  if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
+    txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
 
   // particles
   for(const p of par){ if(p.life>0){ ctx.globalAlpha=Math.min(1,p.life*2.2);
@@ -620,7 +626,7 @@ function draw(){
 
   // score (in-run only)
   if(mode==="play"){ txt(dist+"m",VW/2,WALL-6,13,"#aeb8cc",700);
-    txt("◆ "+((dist/14|0)+runCoinBonus),42,WALL-6,12,"#ffcf5c",700); }
+    txt("◆ "+((dist/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700); }  // pulses gold on grab
 
   ctx.restore();
 
