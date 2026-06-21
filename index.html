@@ -37,8 +37,8 @@
 /* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
 const Ads = {
   init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>cb&&cb()).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
-  loadingStart(){ try{ window.CrazyGames?.SDK?.game?.loadingStart?.(); }catch(e){} },
-  loadingStop(){ try{ window.CrazyGames?.SDK?.game?.loadingStop?.(); }catch(e){} },
+  loadingStart(){ try{ window.CrazyGames?.SDK?.game?.sdkGameLoadingStart?.(); }catch(e){} },  // v3 name (was loadingStart → silently never fired)
+  loadingStop(){ try{ window.CrazyGames?.SDK?.game?.sdkGameLoadingStop?.(); }catch(e){} },
   gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
   gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
   interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame"); }catch(e){} }
@@ -225,7 +225,7 @@ function shopAction(){ const s=SKINS[shopSel];
 /* ===== State ===== */
 let mode="ready";            // ready | play | dead
 let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
-let speed, worldX, dist, best=0, spawnCd, nextAd;
+let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
 let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0, mileT=0, mileVal=0;
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;   // formation sequencer (replaces the old pairNext flag)
 let combo=0, comboVal=0, comboT=0;   // Clean Pass skill streak
@@ -247,7 +247,9 @@ function reset(){
 function start(){ Snd.ensure(); reset(); lightR=74; mode="play"; Ads.gameplayStart(); }  // re-bloom from small
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(); }
 function dieNow(){
-  mode="dead"; Ads.gameplayStop(); Snd.die();
+  mode="dead"; Ads.gameplayStop();
+  if(adPending){ adPending=false; Ads.interstitial(); }   // interstitial only at the death break (gameplay already stopped)
+  Snd.die();
   if(dist>best) best=dist;
   lastEarned=(dist/14|0)+runCoinBonus; coins+=lastEarned; persist();
   shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; combo=0; burst(PX+PS/2,py+PS/2);
@@ -450,8 +452,8 @@ function update(dt){
   lightTarget = lt<LR_MIN?LR_MIN:(lt>LR_MAX+40?LR_MAX+40:lt);
   lightR += (lightTarget-lightR)*Math.min(1,dt*8);              // eased, dt-based
 
-  // periodic interstitial roughly every ~250m
-  if(dist>=nextAd*250){ nextAd++; Ads.interstitial(); }
+  // queue a restart-break interstitial roughly every ~250m (shown at the next death, NEVER mid-play — policy)
+  if(dist>=nextAd*250){ nextAd++; adPending=true; }
 }
 
 /* ===== Draw ===== */
