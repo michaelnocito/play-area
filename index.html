@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FLIPLINE</title>
+<!-- Verify against current CrazyGames SDK docs before submitting -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent;
+      -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  html,body { position:fixed; inset:0; height:100%; width:100%; background:#0c0e14; overflow:hidden; touch-action:none;
+              font-family:system-ui,sans-serif; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { background:#0c0e14; image-rendering:pixelated; touch-action:none; }
+  #mute { position:fixed; top:8px; right:10px; width:36px; height:36px; border-radius:8px;
+          background:rgba(232,236,241,.10); border:1px solid rgba(232,236,241,.30);
+          color:#e8ecf1; font-size:17px; cursor:pointer; z-index:5; }
+  #fx { position:fixed; top:8px; right:52px; width:36px; height:36px; border-radius:8px;
+        background:rgba(232,236,241,.10); border:1px solid rgba(232,236,241,.30);
+        color:#e8ecf1; font-size:15px; cursor:pointer; z-index:5; }
+  #rotate { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+            background:#0c0e14; color:#e8ecf1; z-index:20; text-align:center;
+            font-weight:700; font-size:17px; letter-spacing:.5px; }
+  #rotate .ic { display:block; font-size:48px; margin-bottom:12px; animation:spin 2.4s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<button id="fx" aria-label="Reduce flashing">✦</button>
+<button id="mute" aria-label="Mute">🔊</button>
+<div id="rotate"><div><span class="ic">⟳</span>rotate to landscape</div></div>
+<script>
+"use strict";
+
+/* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
+const Ads = {
+  init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>cb&&cb()).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
+  loadingStart(){ try{ window.CrazyGames?.SDK?.game?.loadingStart?.(); }catch(e){} },
+  loadingStop(){ try{ window.CrazyGames?.SDK?.game?.loadingStop?.(); }catch(e){} },
+  gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
+  gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
+  interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame"); }catch(e){} }
+};
+
+/* ===== Procedural audio — persistent voices, zero allocation per sound ===== */
+const Snd = {
+  ctx:null, master:null, voices:[], vi:0, muted:false,
+  ensure(){
+    if(!this.ctx){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+      if(this.ctx){
+        this.master=this.ctx.createGain(); this.master.gain.value=0.9; this.master.connect(this.ctx.destination);
+        for(let i=0;i<3;i++){ const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+          g.gain.value=0.0001; o.connect(g); g.connect(this.master); o.start(); this.voices.push({o,g}); } } }
+    if(this.ctx?.state==="suspended") this.ctx.resume();
+  },
+  play(f1,f2,dur,type,vol){ if(this.muted)return; this.ensure(); if(!this.voices.length)return;
+    const v=this.voices[this.vi]; this.vi=(this.vi+1)%this.voices.length; const t=this.ctx.currentTime;
+    v.o.type=type||"square";
+    v.o.frequency.cancelScheduledValues(t); v.o.frequency.setValueAtTime(f1,t);
+    v.o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),t+dur);
+    v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(0.0001,t);
+    v.g.gain.exponentialRampToValueAtTime(vol||0.16,t+0.006);
+    v.g.gain.exponentialRampToValueAtTime(0.0001,t+dur); },
+  flip(){ this.play(420,640,0.08,"square",0.13); },
+  point(){ this.play(880,1180,0.07,"triangle",0.10); },
+  die(){ this.play(360,60,0.30,"sawtooth",0.20); },
+  clean(n){ const p=Math.min(8,n); this.play(640+p*45,1180+p*60,0.07,"triangle",0.11); }
+};
+document.getElementById("mute").addEventListener("click",e=>{
+  Snd.muted=!Snd.muted; e.currentTarget.textContent=Snd.muted?"🔇":"🔊"; });
+document.getElementById("fx").addEventListener("click",e=>{
+  lowFx=!lowFx; e.currentTarget.textContent=lowFx?"✧":"✦"; persist(); });
+
+/* ===== Canvas (DPR-aware, authored in 480x270 logical space) ===== */
+const VW=480, VH=270;
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+let scale=1, needRotate=false, rotatePaused=false, baseW=0, baseH=0;
+const rotateEl=document.getElementById("rotate");
+function resize(){
+  const w=innerWidth||1, h=innerHeight||1;
+  needRotate = !!(window.matchMedia?.("(pointer:coarse)")?.matches) && h>w;
+  rotateEl.style.display = needRotate ? "flex" : "none";
+  const landscape = w>=h;
+  if(baseW===0 || landscape!==(baseW>=baseH)){ baseW=w; baseH=h; }   // lock once per orientation; re-lock only on rotate
+  scale=Math.min(baseW/VW, baseH/VH);
+  const dpr=devicePixelRatio||1;
+  cv.width=VW*dpr*scale|0; cv.height=VH*dpr*scale|0;
+  cv.style.width=VW*scale+"px"; cv.style.height=VH*scale+"px";
+  ctx.setTransform(dpr*scale,0,0,dpr*scale,0,0); ctx.imageSmoothingEnabled=false;
+}
+addEventListener("resize",resize); addEventListener("orientationchange",resize); resize();
+
+/* ===== Tunables — all framerate-independent. Change ONE number to tune feel. ===== */
+const WALL   = 22;            // top/bottom wall thickness
+const TOPY   = WALL;          // ceiling inner surface
+const BOTY   = VH-WALL;       // floor inner surface
+const PX     = 96;            // player fixed x
+const PS     = 16;            // player size
+const GRAV   = 4200;          // gravity px/s^2
+const FLIPKICK = 240;         // instant velocity on flip (crisp snap off the surface)
+const MAXVY  = 1300;          // terminal vertical speed
+const SPEED0 = 170;           // starting scroll speed px/s
+const SPEEDMX= 360;           // max scroll speed px/s
+const RAMP   = 0.9;           // speed gained per meter (lower = slower ramp)
+const GAP0   = 200;           // starting world spacing between obstacles
+const GAPMIN = 120;           // tightest spacing
+const HMIN   = 66, HMAX=118;  // obstacle jut height range
+const WMIN   = 26, WMAX=46;   // obstacle width range
+
+/* ===== Object pools (no per-frame allocation) ===== */
+const OBN=16, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0});
+const PN=120, par=[]; for(let i=0;i<PN;i++) par.push({life:0,x:0,y:0,vx:0,vy:0,r:2,c:"#ffcf5c"});
+let parHead=0;
+function emit(x,y,vx,vy,life,r,c){ const p=par[parHead]; parHead=(parHead+1)%PN;
+  p.life=life; p.x=x; p.y=y; p.vx=vx; p.vy=vy; p.r=r; p.c=c; }
+function burst(x,y){ for(let i=0;i<22;i++){ const a=Math.random()*6.283, s=40+Math.random()*220;
+  emit(x,y,Math.cos(a)*s,Math.sin(a)*s,0.5+Math.random()*0.4,1+(Math.random()*2|0),"#ff6478"); } }
+function spark(x,y){ for(let i=0;i<8;i++){ const a=Math.random()*6.283, s=30+Math.random()*120;
+  emit(x,y,Math.cos(a)*s,Math.sin(a)*s,0.30+Math.random()*0.25,1+(Math.random()*2|0),"#bff5e2"); } }
+
+/* ===== Glowing "surfing" trail (fixed ring buffer, zero alloc) ===== */
+const TRN=20, trail=[]; for(let i=0;i<TRN;i++) trail.push({x:0,y:0,on:false});
+let trHead=0;
+function trailPush(x,y){ const p=trail[trHead]; p.x=x; p.y=y; p.on=true; trHead=(trHead+1)%TRN; }
+
+/* ===== Dynamic zone palette (evolving "worlds", cheap) — danger stays red for fairness ===== */
+const ZONELEN=55;   // metres per palette zone — short so new players see the world evolve fast
+const ZONES  =[[14,18,32],[30,14,42],[10,30,38],[40,20,16],[14,34,24]]; // bg base rgb per zone (distinct hues)
+const ACCENTS=[[255,207,92],[124,242,200],[120,165,255],[255,150,120],[150,240,160]]; // player/trail/glow
+function lerpi(a,b,k){ return (a+(b-a)*k)|0; }
+function zoneRGB(arr,d){ const f=d/ZONELEN, i=((f|0)%arr.length+arr.length)%arr.length, j=(i+1)%arr.length, k=f-(f|0);
+  const A=arr[i],B=arr[j]; return [lerpi(A[0],B[0],k),lerpi(A[1],B[1],k),lerpi(A[2],B[2],k)]; }
+let accCss="#ffcf5c", accGlow="rgba(255,207,92,0.30)";
+
+/* ===== Run-modifier gates (pooled; start at 150m so early game is untouched) ===== */
+const GATE_DUR=4, GATES_FROM=150, GATEW=14;
+const GATECOL=[[90,220,255],[255,212,90],[255,120,220]];  // 0 SLOW, 1 SHIELD, 2 DOUBLE
+const GATELABEL=["SLOW-MO","SHIELD","2× SCORE"];
+const GATEN=4, gates=[]; for(let i=0;i<GATEN;i++) gates.push({on:false,x:0,type:0,fired:false});
+let nextGate=GATES_FROM, modType=-1, modT=0;
+function spawnGate(){ for(const g of gates){ if(!g.on){ g.on=true; g.x=VW+24; g.type=Math.random()*3|0; g.fired=false; return; } } }
+
+/* ===== Cosmetic skins + coin economy (cosmetic only — never touches physics) ===== */
+const SKINS=[
+  {name:"Chroma", cost:0,   col:null,      shape:0},  // square, zone-reactive (default)
+  {name:"Orbit",  cost:30,  col:"#5ef2c2", shape:1},  // circle
+  {name:"Dart",   cost:50,  col:"#ffcf5c", shape:2},  // triangle (faces flip)
+  {name:"Gem",    cost:70,  col:"#c97bff", shape:3},  // diamond
+  {name:"Hex",    cost:100, col:"#5aa0ff", shape:4},  // hexagon
+  {name:"Nova",   cost:140, col:"#ff7a52", shape:5},  // star
+  {name:"Arrow",  cost:200, col:"#e8ecf1", shape:6}   // arrow (faces flip)
+];
+const SAVE="flipline.v1";
+let coins=0, owned=[0], equipped=0, runCoinBonus=0, shopSel=0, lastEarned=0, lowFx=false;
+function loadSave(){ try{ const d=JSON.parse(localStorage.getItem(SAVE)); if(d){
+    coins=d.coins|0; owned=Array.isArray(d.owned)?d.owned:[0]; equipped=d.equipped|0; best=d.best|0; lowFx=!!d.lowFx; } }catch(e){}
+  if(!owned.includes(0)) owned.push(0); if(!owned.includes(equipped)) equipped=0; }
+function persist(){ try{ localStorage.setItem(SAVE, JSON.stringify({coins,owned,equipped,best,lowFx})); }catch(e){} }
+function skinCol(){ return SKINS[equipped].col; }   // null → zone-reactive
+function hexA(h,a){ const n=parseInt(h.slice(1),16); return "rgba("+(n>>16&255)+","+(n>>8&255)+","+(n&255)+","+a+")"; }
+
+// UI hit-regions (virtual 480x270 space)
+const R_SHOPBTN={x:VW/2-54,y:VH/2+72,w:108,h:26};
+const R_PREV={x:52,y:112,w:36,h:44}, R_NEXT={x:392,y:112,w:36,h:44};
+const R_ACT={x:VW/2-72,y:194,w:144,h:30}, R_BACK={x:16,y:236,w:80,h:24};
+function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
+function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
+function shopAction(){ const s=SKINS[shopSel];
+  if(owned.includes(shopSel)){ equipped=shopSel; persist(); }
+  else if(coins>=s.cost){ coins-=s.cost; owned.push(shopSel); equipped=shopSel; persist(); Snd.clean(6); } }
+
+/* ===== State ===== */
+let mode="ready";            // ready | play | dead
+let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
+let speed, worldX, dist, best=0, spawnCd, nextAd;
+let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, pairNext=0, lastMile=0, mileT=0, mileVal=0;
+let combo=0, comboVal=0, comboT=0;   // Clean Pass skill streak
+let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
+
+function reset(){
+  py=BOTY-PS; vy=0; gdir=1; sq=1;
+  speed=SPEED0; worldX=0; dist=0; spawnCd=GAP0; nextAd=1; runCoinBonus=0;
+  for(const o of obs) o.on=false;
+  for(const p of trail) p.on=false; trHead=0;
+  for(const g of gates) g.on=false; nextGate=GATES_FROM; modType=-1; modT=0;
+  shake=0; flash=0; freeze=0; pairNext=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
+}
+function start(){ Snd.ensure(); reset(); mode="play"; Ads.gameplayStart(); }
+function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(); }
+function dieNow(){
+  mode="dead"; Ads.gameplayStop(); Snd.die();
+  if(dist>best) best=dist;
+  lastEarned=(dist/10|0)+runCoinBonus; coins+=lastEarned; persist();
+  shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; combo=0; burst(PX+PS/2,py+PS/2);
+}
+
+/* ===== Input ===== */
+function tap(){ if(mode==="play") flip(); else start(); }
+addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
+  if(mode==="shop"){ shopTap(p); return; }
+  if((mode==="ready"||mode==="dead") && inR(p,R_SHOPBTN)){ mode="shop"; shopSel=equipped; return; }
+  tap(); },{passive:false});
+addEventListener("keydown",e=>{
+  if(mode==="shop"){ const n=SKINS.length;
+    if(e.key==="ArrowLeft") shopSel=(shopSel-1+n)%n;
+    else if(e.key==="ArrowRight") shopSel=(shopSel+1)%n;
+    else if(e.key==="Enter"||e.key===" ") shopAction();
+    else if(e.key==="Escape") mode="ready";
+    e.preventDefault(); return; }
+  if([" ","ArrowUp","w","W"].includes(e.key)){ e.preventDefault(); tap(); } });
+function shopTap(p){
+  const n=SKINS.length;
+  if(inR(p,R_PREV)){ shopSel=(shopSel-1+n)%n; }
+  else if(inR(p,R_NEXT)){ shopSel=(shopSel+1)%n; }
+  else if(inR(p,R_ACT)){ shopAction(); }
+  else if(inR(p,R_BACK)){ mode="ready"; }
+}
+
+/* ===== Spawning ===== */
+function spawnObstacle(spacing){
+  for(const o of obs){ if(!o.on){
+    const side = pairNext ? (pairNext-1) : (Math.random()<0.5?0:1);
+    o.on=true; o.x=VW+24; o.w=WMIN+(Math.random()*(WMAX-WMIN)|0);
+    o.h=HMIN+(Math.random()*(HMAX-HMIN)|0); o.side=side; o.scored=false;
+    if(pairNext){ pairNext=0; spawnCd+=spacing; }                       // pair finished → normal gap
+    else if(Math.random()<Math.min(0.3,Math.max(0,(dist-100)/3200))){   // pairs only after ~100m, then rare
+      pairNext=(side===0?1:0)+1; spawnCd+=Math.max(104,spacing*0.55); } // roomier double-flip
+    else spawnCd+=spacing;
+    return; } }
+  spawnCd+=spacing;   // pool full (shouldn't happen) — avoid tight loop
+}
+
+/* ===== Update (dt seconds, capped upstream) ===== */
+function update(dt){
+  // particles always animate (even on death) for juice
+  for(const p of par){ if(p.life>0){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=520*dt; } }
+  if(shake>0){ shake-=dt*60; if(shake<0)shake=0; }
+  if(flash>0){ flash-=dt*2.4; if(flash<0)flash=0; }
+  if(mileT>0){ mileT-=dt*1.5; if(mileT<0)mileT=0; }
+  if(needRotate){ if(mode==="play" && !rotatePaused){ rotatePaused=true; Ads.gameplayStop(); } return; }
+  if(rotatePaused){ rotatePaused=false; if(mode==="play") Ads.gameplayStart(); }
+  if(comboT>0){ comboT-=dt*1.6; if(comboT<0)comboT=0; }
+  if(bgPulse>0){ bgPulse-=dt*2.4; if(bgPulse<0)bgPulse=0; }
+  if(landT>0){ landT-=dt; if(landT<0)landT=0; }
+  if(mode!=="play") return;
+  if(freeze>0){ freeze-=dt; return; }
+
+  // active run-modifier
+  let speedMult=1;
+  if(modT>0){ modT-=dt;
+    if(modType===0) speedMult=0.45;        // SLOW-MO — dramatic, unmistakable
+    if(modT<=0) modType=-1; }              // SHIELD(1)=invincible, DOUBLE(2)=2× score (below)
+
+  // difficulty ramp
+  speed=Math.min(SPEEDMX, SPEED0+dist*RAMP)*speedMult;
+  const spacing=Math.max(GAPMIN, GAP0-dist*0.35);
+  const dx=speed*dt;
+  worldX += dx * (modType===2 && modT>0 ? 2 : 1); dist=worldX/40|0;
+  if(dist>=lastMile+50){ lastMile+=50; mileVal=lastMile; mileT=0.9; flash=Math.max(flash,0.16); flashCol="#5ef2c2"; Snd.point(); }
+
+  // player physics
+  vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
+  py+=vy*dt;
+  if(py<TOPY){ if(vy<-40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=TOPY; vy=0; }
+  else if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; }
+  sq+=(1-sq)*Math.min(1,dt*14);   // ease squash back to 1
+
+  // surfing trail (drift existing points with the world, add one at the player)
+  for(const p of trail){ if(p.on){ p.x-=dx; if(p.x<-8)p.on=false; } }
+  trailPush(PX+PS/2, py+PS/2);
+
+  // obstacles: move, recycle, collide, score
+  spawnCd-=dx; if(spawnCd<=0){ spawnObstacle(spacing); }
+  const hx=PX+2, hy=py+2, hw=PS-4, hh=PS-4;      // inset hitbox = fair
+  for(const o of obs){ if(!o.on) continue;
+    o.x-=dx;
+    if(o.x+o.w<-4){ o.on=false; continue; }
+    const ry=o.side===0 ? BOTY-o.h : TOPY;
+    if(hx<o.x+o.w && hx+hw>o.x && hy<ry+o.h && hy+hh>ry){
+      if(modType===1 && modT>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
+      dieNow(); return; }
+    if(!o.scored && o.x+o.w<PX){ o.scored=true;
+      const clr = o.side===0 ? (BOTY-o.h)-(py+PS) : py-(TOPY+o.h);   // gap to the hazard edge
+      if(clr>=0 && clr<14){ combo++; comboVal=combo; comboT=0.7; worldX+=combo*22; runCoinBonus+=combo; bgPulse=Math.max(bgPulse,0.30);
+        spark(PX+PS/2,py+PS/2); Snd.clean(combo); }
+      else { combo=0; Snd.point(); }
+    }
+  }
+
+  // run-modifier gates (move, recycle, activate on pass)
+  if(dist>=nextGate){ spawnGate(); nextGate += 120 + (Math.random()*100|0); }
+  for(const g of gates){ if(!g.on) continue;
+    g.x-=dx;
+    if(g.x+GATEW<-4){ g.on=false; continue; }
+    if(!g.fired && g.x<=PX){ g.fired=true; modType=g.type; modT=GATE_DUR;
+      flash=Math.max(flash,0.18); flashCol="rgb("+GATECOL[g.type].join(",")+")"; Snd.clean(3); }
+  }
+
+  // periodic interstitial roughly every ~250m
+  if(dist>=nextAd*250){ nextAd++; Ads.interstitial(); }
+}
+
+/* ===== Draw ===== */
+function txt(s,x,y,size,col,w){ ctx.fillStyle=col; ctx.textAlign="center";
+  ctx.font=(w||700)+" "+size+"px system-ui"; ctx.fillText(s,x,y); }
+// Build a player shape path at origin, radius r. `dir` (gravity facing) optional → defaults to gdir.
+function shapePath(shape,r,dir){ const d=dir===undefined?gdir:dir; ctx.beginPath();
+  switch(shape){
+    case 1: ctx.arc(0,0,r,0,6.2832); break;                                                   // circle
+    case 2: ctx.moveTo(0,r*d); ctx.lineTo(r,-r*0.8*d); ctx.lineTo(-r,-r*0.8*d); ctx.closePath(); break; // triangle
+    case 3: ctx.moveTo(0,-r); ctx.lineTo(r,0); ctx.lineTo(0,r); ctx.lineTo(-r,0); ctx.closePath(); break; // diamond
+    case 4: for(let i=0;i<6;i++){ const a=i*Math.PI/3+Math.PI/6,x=Math.cos(a)*r,y=Math.sin(a)*r; i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.closePath(); break; // hexagon
+    case 5: for(let i=0;i<10;i++){ const rr=i%2?r*0.45:r,a=-Math.PI/2+i*Math.PI/5,x=Math.cos(a)*rr,y=Math.sin(a)*rr; i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.closePath(); break; // star
+    case 6: ctx.moveTo(0,r*d); ctx.lineTo(r,-0.2*r*d); ctx.lineTo(0.4*r,-0.2*r*d); ctx.lineTo(0.4*r,-r*d);
+            ctx.lineTo(-0.4*r,-r*d); ctx.lineTo(-0.4*r,-0.2*r*d); ctx.lineTo(-r,-0.2*r*d); ctx.closePath(); break; // arrow
+    default: ctx.rect(-r,-r,2*r,2*r);                                                          // square
+  }
+}
+
+function draw(){
+  // dynamic zone palette (one calc per frame)
+  const bg=zoneRGB(ZONES,dist), ac=zoneRGB(ACCENTS,dist);
+  accCss="rgb("+ac[0]+","+ac[1]+","+ac[2]+")";
+  accGlow="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.30)";
+  const pb=lowFx?0:(bgPulse*55)|0;   // reactive brightness on good actions (off in reduce-flashing)
+  const wallCss="rgb("+(bg[0]+18+pb)+","+(bg[1]+22+pb)+","+(bg[2]+30+pb)+")";
+  const sc=skinCol(), pcol=sc||accCss, pglow=sc?hexA(sc,0.30):accGlow;
+
+  let ox=0,oy=0; if(shake>0){ const sk=lowFx?shake*0.35:shake; ox=(Math.random()-.5)*sk; oy=(Math.random()-.5)*sk; }
+  ctx.save(); ctx.translate(ox,oy);
+
+  ctx.fillStyle="rgb("+(bg[0]+pb)+","+(bg[1]+pb)+","+(bg[2]+pb)+")"; ctx.fillRect(-12,-12,VW+24,VH+24);
+
+  // far parallax motes (depth) — slow drift, faint zone-tinted diamonds
+  { const m=108, scr=worldX*0.22, n0=Math.floor(scr/m);
+    ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.06)";
+    for(let n=n0-1;n<n0+6;n++){ const h=(n*2654435761)>>>0, x=n*m-scr+m/2,
+      y=WALL+24+(h%(VH-WALL*2-48)), sz=7+(h>>9&6);
+      ctx.beginPath(); ctx.moveTo(x,y-sz); ctx.lineTo(x+sz,y); ctx.lineTo(x,y+sz); ctx.lineTo(x-sz,y); ctx.closePath(); ctx.fill(); } }
+
+  // moving speed stripes (cheap parallax, <=10 ticks) tinted to the zone accent
+  ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.05)";
+  const sp=48, off=worldX%sp;
+  for(let x=-off;x<VW;x+=sp){ ctx.fillRect(x,WALL,2,VH-WALL*2); }
+
+  // walls
+  ctx.fillStyle=wallCss; ctx.fillRect(0,0,VW,WALL); ctx.fillRect(0,VH-WALL,VW,WALL);
+  ctx.fillStyle="#262f45"; ctx.fillRect(0,WALL-2,VW,2); ctx.fillRect(0,VH-WALL,VW,2);
+
+  // run-modifier gates (translucent full-corridor bars with a label)
+  for(const g of gates){ if(!g.on) continue; const c=GATECOL[g.type];
+    ctx.fillStyle="rgba("+c[0]+","+c[1]+","+c[2]+",0.16)"; ctx.fillRect(g.x,WALL,GATEW,VH-WALL*2);
+    ctx.fillStyle="rgba("+c[0]+","+c[1]+","+c[2]+",0.85)"; ctx.fillRect(g.x,WALL,2,VH-WALL*2); ctx.fillRect(g.x+GATEW-2,WALL,2,VH-WALL*2);
+    ctx.save(); ctx.translate(g.x+GATEW/2,VH/2); ctx.rotate(-Math.PI/2);
+    ctx.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")"; ctx.textAlign="center"; ctx.font="700 9px system-ui";
+    ctx.fillText(GATELABEL[g.type],0,3); ctx.restore(); }
+
+  // obstacles (always red, fair silhouette; beveled with a bright play-facing danger edge)
+  for(const o of obs){ if(!o.on) continue;
+    const ry=o.side===0 ? BOTY-o.h : TOPY;
+    const near=Math.max(0,1-Math.abs((o.x+o.w/2)-PX)/220);        // tension glow as it approaches
+    ctx.fillStyle="rgba(255,84,104,"+(0.10+0.16*near)+")"; ctx.fillRect(o.x-3,ry-3,o.w+6,o.h+6);
+    ctx.fillStyle="#d8324a"; ctx.fillRect(o.x,ry,o.w,o.h);                              // base
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(o.x,ry,2,o.h);                 // left bevel
+    ctx.fillStyle="rgba(0,0,0,0.22)";       ctx.fillRect(o.x+o.w-2,ry,2,o.h);           // right shade
+    ctx.fillStyle="#ff7184";                                                            // bright dangerous edge
+    if(o.side===0) ctx.fillRect(o.x,ry,o.w,5); else ctx.fillRect(o.x,ry+o.h-5,o.w,5);
+    ctx.fillStyle="rgba(0,0,0,0.20)";                                                   // shaded anchored edge
+    if(o.side===0) ctx.fillRect(o.x,ry+o.h-3,o.w,3); else ctx.fillRect(o.x,ry,o.w,3);
+  }
+
+  // surfing trail (tapered glowing squares, newest=brightest)
+  for(const p of trail){ if(!p.on) continue; const f=p.x/PX; if(f<0) continue;
+    const s=1+(f*5|0); ctx.globalAlpha=0.08+f*0.42; ctx.fillStyle=pcol;
+    ctx.fillRect(p.x-s/2,p.y-s/2,s,s); }
+  ctx.globalAlpha=1;
+
+  // player (glow + squash along gravity axis, color harmonized to zone)
+  const cx=PX+PS/2, cy=py+PS/2;
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(2-sq,sq);
+  const shp=SKINS[equipped].shape;
+  if(modType===1 && modT>0){ const pul=5+4*Math.sin(t*11); ctx.fillStyle="rgba(255,212,90,0.38)"; shapePath(shp,PS/2+pul); ctx.fill(); }
+  ctx.fillStyle=pglow; shapePath(shp,PS/2+3); ctx.fill();
+  ctx.fillStyle=pcol;  shapePath(shp,PS/2);   ctx.fill();
+  // expressive face: eyes glance with motion, mouth reacts (whoa / worried / grin / neutral)
+  ctx.fillStyle="rgba(12,14,20,0.9)";
+  const lk=Math.max(-1.4,Math.min(1.4,vy*0.004));
+  ctx.fillRect(-4,-2+lk,2.6,2.6); ctx.fillRect(1.4,-2+lk,2.6,2.6);
+  if(landT>0){ ctx.fillRect(-3,3,6,1.6); ctx.fillRect(-4,2,1.8,1.8); ctx.fillRect(2.2,2,1.8,1.8); } // grin
+  else if(vy<-260){ ctx.fillRect(-1.8,2.2,3.6,3.6); }                  // whoa (launching)
+  else if(vy>260){ ctx.fillRect(-3,2.4,6,3.4); }                       // worried (falling fast)
+  else { ctx.fillRect(-2.4,3,4.8,1.6); }                               // neutral
+  ctx.restore();
+
+  // Clean Pass flair
+  if(comboT>0 && comboVal>1){ ctx.globalAlpha=Math.min(1,comboT*1.6);
+    txt("CLEAN ×"+comboVal, PX+30, gdir>0?py-10:py+PS+18, 11, "#9bf0d0", 800); ctx.globalAlpha=1; }
+
+  // particles
+  for(const p of par){ if(p.life>0){ ctx.globalAlpha=Math.min(1,p.life*2.2);
+    ctx.fillStyle=p.c; ctx.fillRect(p.x,p.y,p.r,p.r); } }
+  ctx.globalAlpha=1;
+
+  // score (in-run only)
+  if(mode==="play"){ txt(dist+"m",VW/2,WALL-6,13,"#aeb8cc",700);
+    txt("◆ "+((dist/10|0)+runCoinBonus),42,WALL-6,12,"#ffcf5c",700); }
+
+  ctx.restore();
+
+  if(flash>0 && !lowFx){ ctx.fillStyle=flashCol; ctx.globalAlpha=flash; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
+
+  if(modT>0 && modType>=0){ const c=GATECOL[modType], a=Math.min(0.5,modT/GATE_DUR);
+    ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; ctx.lineWidth=4; ctx.strokeRect(2,2,VW-4,VH-4);
+    ctx.globalAlpha=Math.min(1,modT*1.2); txt(GATELABEL[modType],VW/2,VH-10,12,"rgb("+c[0]+","+c[1]+","+c[2]+")",800); ctx.globalAlpha=1; }
+
+  if(mileT>0){ ctx.globalAlpha=Math.min(1,mileT*1.4);
+    txt(mileVal+"m",VW/2,VH*0.40-(1-mileT)*10,20,"#5ef2c2",800); ctx.globalAlpha=1; }
+
+  if(mode==="shop"){ drawShop(); }
+  else if(mode==="ready"){
+    txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap / space to flip gravity",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
+    txt("dodge the red — go far",VW/2,VH/2+34,12,"#6f7a92",500);
+    shopBtn();
+  } else if(mode==="dead"){
+    txt("CRASHED",VW/2,VH/2-26,30,"#ff5468",800);
+    txt(dist+"m",VW/2,VH/2+0,18,"#e8ecf1",700);
+    txt(dist>=best?"★ NEW BEST ★":"best  "+best+"m",VW/2,VH/2+20,12,dist>=best?"#ffcf5c":"#aeb8cc",700);
+    txt("+◆ "+lastEarned+"   (◆ "+coins+")",VW/2,VH/2+40,12,"#ffcf5c",700);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to retry",VW/2,VH/2+58,12,"#5ef2c2",600); ctx.globalAlpha=1;
+    shopBtn();
+  }
+}
+
+function shopBtn(){
+  ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_SHOPBTN.x,R_SHOPBTN.y,R_SHOPBTN.w,R_SHOPBTN.h);
+  txt("SKINS   ◆ "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);
+}
+function drawShop(){
+  ctx.fillStyle="rgba(8,10,16,0.88)"; ctx.fillRect(0,0,VW,VH);
+  txt("SKINS",VW/2,34,22,"#e8ecf1",800);
+  txt("◆ "+coins,VW/2,54,13,"#ffcf5c",700);
+
+  const s=SKINS[shopSel], col=s.col||"#ffcf5c", cx=VW/2, cy=130, sz=30;
+  ctx.save(); ctx.translate(cx,cy);
+  ctx.fillStyle=s.col?hexA(s.col,0.30):"rgba(255,207,92,0.30)"; shapePath(s.shape,sz/2+5,1); ctx.fill();
+  ctx.fillStyle=col; shapePath(s.shape,sz/2,1); ctx.fill();
+  ctx.fillStyle="rgba(12,14,20,0.9)"; ctx.fillRect(-4,-2,2.6,2.6); ctx.fillRect(1.4,-2,2.6,2.6); ctx.fillRect(-2.4,3,4.8,1.6);
+  ctx.restore();
+
+  ctx.globalAlpha=0.7+0.3*Math.sin(t*5);
+  txt("‹",R_PREV.x+18,cy+9,32,"#aeb8cc",700); txt("›",R_NEXT.x+18,cy+9,32,"#aeb8cc",700); ctx.globalAlpha=1;
+
+  txt(s.name+(s.col?"":"  (reactive)"),VW/2,178,15,"#e8ecf1",700);
+
+  const own=owned.includes(shopSel);
+  let label, lcol;
+  if(own){ label = equipped===shopSel?"EQUIPPED":"EQUIP"; lcol = equipped===shopSel?"#6f7a92":"#37e29a"; }
+  else { label="BUY   ◆ "+s.cost; lcol = coins>=s.cost?"#ffcf5c":"#6f7a92"; }
+  ctx.fillStyle="rgba(255,255,255,0.08)"; ctx.fillRect(R_ACT.x,R_ACT.y,R_ACT.w,R_ACT.h);
+  txt(label,VW/2,R_ACT.y+20,14,lcol,800);
+
+  // owned dots
+  for(let i=0;i<SKINS.length;i++){ ctx.fillStyle=owned.includes(i)?(i===equipped?"#ffcf5c":"#56607a"):"#2a3245";
+    ctx.fillRect(VW/2-(SKINS.length*8)/2+i*8, 230, 5,5); }
+
+  txt("‹ back",R_BACK.x+36,R_BACK.y+16,12,"#aeb8cc",600);
+}
+
+/* ===== Loop (capped delta-time → framerate independent, no tunneling) ===== */
+let lastT=0;
+function frame(now){
+  if(!lastT) lastT=now;
+  let dt=(now-lastT)/1000; lastT=now;
+  if(dt>0.033) dt=0.033;     // cap protects physics on hitches/background tabs
+  t+=dt;
+  update(dt); draw();
+  requestAnimationFrame(frame);
+}
+
+function boot(){
+  loadSave();
+  document.getElementById("fx").textContent = lowFx?"✧":"✦";
+  Ads.loadingStart();
+  reset();
+  let done=false; const go=()=>{ if(done)return; done=true; Ads.loadingStop(); mode="ready"; };
+  Ads.init(go); setTimeout(go,700);
+  requestAnimationFrame(frame);
+}
+boot();
+</script>
+</body>
+</html>
