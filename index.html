@@ -249,7 +249,7 @@ function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(); }
 function dieNow(){
   mode="dead"; Ads.gameplayStop(); Snd.die();
   if(dist>best) best=dist;
-  lastEarned=(dist/10|0)+runCoinBonus; coins+=lastEarned; persist();
+  lastEarned=(dist/14|0)+runCoinBonus; coins+=lastEarned; persist();
   shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; combo=0; burst(PX+PS/2,py+PS/2);
   lightR=26; lightTarget=26;   // snuff the light to a spark on death
 }
@@ -596,7 +596,7 @@ function draw(){
 
   // score (in-run only)
   if(mode==="play"){ txt(dist+"m",VW/2,WALL-6,13,"#aeb8cc",700);
-    txt("◆ "+((dist/10|0)+runCoinBonus),42,WALL-6,12,"#ffcf5c",700); }
+    txt("◆ "+((dist/14|0)+runCoinBonus),42,WALL-6,12,"#ffcf5c",700); }
 
   ctx.restore();
 
