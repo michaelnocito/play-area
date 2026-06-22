@@ -115,6 +115,10 @@ function renderAll(){ landscape(); portrait(); square();
     a.href=document.getElementById(cid).toDataURL("image/png"); a.download=name+".png"; }
 }
 function pngData(cid){ return document.getElementById(cid).toDataURL("image/png"); }
-renderAll();
+function go(){ try{ renderAll(); }catch(e){
+  const d=document.createElement("pre"); d.style.color="#ff6478"; d.style.whiteSpace="pre-wrap";
+  d.textContent="Render error: "+(e&&e.stack||e); document.body.appendChild(d); } }
+// render now AND on load (belt-and-suspenders so it never sits blank)
+go(); window.addEventListener("load", go);
 </script>
 </body></html>
