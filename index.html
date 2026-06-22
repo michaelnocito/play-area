@@ -132,7 +132,7 @@ const OBSEAM="rgba(255,154,162,0.55)";   // animated energy-seam color, reused f
 /* ===== Precomputed art + lighting (built once at boot, then only blitted) =====
    Long Way Home is told wordlessly with light: a player-centred spotlight that breathes,
    a warm home-beacon on the horizon, and zones re-themed as lands. */
-let RIDGE=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
+let RIDGE=null, RIDGEBUF=null, RIDGECTX=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
 function mkCanvas(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
 function radialSprite(size,r,g,b){   // soft radial glow, baked ONCE; reused for spotlight + beacon
   const c=mkCanvas(size,size), x=c.getContext("2d");
@@ -144,10 +144,12 @@ function radialSprite(size,r,g,b){   // soft radial glow, baked ONCE; reused for
   x.fillStyle=gr; x.fillRect(0,0,size,size); return c;
 }
 function buildArt(){
-  // mid-parallax ridge — faint COOL desaturated silhouettes (never red), recedes behind the danger layer
-  RIDGE=mkCanvas(VW,VH); { const g=RIDGE.getContext("2d"); g.fillStyle="rgba(46,58,92,0.16)";
+  // mid-parallax ridge — silhouettes baked as a WHITE MASK; tinted per-land each frame on RIDGEBUF
+  // (cool->warm with the zone) then wrap-blitted. Recedes behind the danger layer; never red.
+  RIDGE=mkCanvas(VW,VH); { const g=RIDGE.getContext("2d"); g.fillStyle="#fff";
     let x=0; while(x<VW){ const w=20+((x*131)%18), hh=14+((x*97)%26);
       g.fillRect(x,BOTY-hh,w,hh); g.fillRect(x,TOPY,w-4,10+((x*53)%16)); x+=w+8; } }
+  RIDGEBUF=mkCanvas(VW,VH); RIDGECTX=RIDGEBUF.getContext("2d");
   // emotional-light sprites (white spotlight + warm home glow) + reusable darkness buffer
   LIGHTSPR =radialSprite(128,255,255,255);
   LIGHTGOLD=radialSprite(128,255,205,120);
@@ -282,6 +284,7 @@ let combo=0, comboVal=0, comboT=0;   // Clean Pass skill streak
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
+let lastZone=0, zoneSweep=0, zonesRun=0;   // X3 lore: land tracking — crossing fires a "new land" sweep + steps the beacon closer
 let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
 let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so new players FEEL a buff
 
@@ -293,7 +296,7 @@ function reset(){
   for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
   shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
-  lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0;
+  lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
   nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
 }
 function start(){ Snd.ensure();
@@ -451,6 +454,7 @@ function update(dt){
   if(comboT>0){ comboT-=dt*1.6; if(comboT<0)comboT=0; }
   if(bgPulse>0){ bgPulse-=dt*2.4; if(bgPulse<0)bgPulse=0; }
   if(beaconPulse>0){ beaconPulse-=dt*1.1; if(beaconPulse<0)beaconPulse=0; }
+  if(zoneSweep>0){ zoneSweep-=dt*1.15; if(zoneSweep<0)zoneSweep=0; }   // ~0.9s "new land" wash
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
   if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
   if(mode!=="play") return;
@@ -468,6 +472,9 @@ function update(dt){
   worldX += dx * (BT[2]>0 ? 2 : 1); dist=worldX/40|0;
   if(dist>=lastMile+50){ lastMile+=50; mileVal=lastMile; mileT=0.9; flash=Math.max(flash,0.16); flashCol="#5ef2c2"; Snd.point();
     bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer
+  // X3 lore: crossing into a new land (every ZONELEN) — fire a wordless "new land" sweep, bloom the light, step the beacon closer
+  { const zNow=(dist/ZONELEN)|0;
+    if(zNow>lastZone){ lastZone=zNow; zonesRun++; zoneSweep=1; bgPulse=Math.max(bgPulse,0.55); beaconPulse=Math.max(beaconPulse,0.9); } }
 
   // player physics
   const pyPrev=py;   // pre-move y → the swept collectible grab below stays tunnel-proof on fast flips
@@ -581,9 +588,15 @@ function draw(){
 
   ctx.fillStyle="rgb("+(bg[0]+pb)+","+(bg[1]+pb)+","+(bg[2]+pb)+")"; ctx.fillRect(-12,-12,VW+24,VH+24);
 
-  // mid-parallax ridge band (precomputed art, two wrap-blits; smoothed so the upscale stays clean)
-  ridgeOff=(worldX*0.30)%VW; { const rx=-(ridgeOff|0); ctx.imageSmoothingEnabled=true;
-    ctx.drawImage(RIDGE,rx,0); ctx.drawImage(RIDGE,rx+VW,0); ctx.imageSmoothingEnabled=false; }
+  // mid-parallax ridge band — tint the silhouette MASK to THIS land (cool->warm) on a cached buffer, then wrap-blit.
+  // Alloc-free: 1 clear + 1 fill + 1 mask punch on RIDGEBUF, then two smoothed blits. Stays faint so danger pops.
+  { const rg=RIDGECTX;
+    rg.globalCompositeOperation="source-over"; rg.clearRect(0,0,VW,VH);
+    rg.fillStyle="rgb("+((28+ac[0]*0.15)|0)+","+((34+ac[1]*0.15)|0)+","+((44+ac[2]*0.15)|0)+")"; rg.fillRect(0,0,VW,VH);
+    rg.globalCompositeOperation="destination-in"; rg.drawImage(RIDGE,0,0);
+    rg.globalCompositeOperation="source-over"; }
+  ridgeOff=(worldX*0.30)%VW; { const rx=-(ridgeOff|0); ctx.imageSmoothingEnabled=true; ctx.globalAlpha=0.20;
+    ctx.drawImage(RIDGEBUF,rx,0); ctx.drawImage(RIDGEBUF,rx+VW,0); ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false; }
 
   // far parallax motes (depth) — slow drift, faint zone-tinted diamonds
   { const m=108, scr=worldX*0.22, n0=Math.floor(scr/m);
@@ -663,10 +676,16 @@ function draw(){
     dg.globalCompositeOperation="destination-out"; dg.drawImage(LIGHTSPR,lx-lr,ly-lr,lr*2,lr*2);
     dg.globalCompositeOperation="source-over";
     ctx.imageSmoothingEnabled=true; ctx.drawImage(DARK,0,0,VW,VH);
-    // home-beacon: a warm light on the horizon, grows with best distance + each milestone (additive)
-    const bl=Math.min(1,best/600), bsz=10+bl*14+beaconPulse*5;
-    ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=Math.min(0.55,0.12+bl*0.24+beaconPulse*0.28);
-    ctx.drawImage(LIGHTGOLD, VW*0.72-bsz, 12-bsz, bsz*2, bsz*2);
+    // home-beacon: a warm light on the horizon — grows long-term with best distance, and STEPS CLOSER each land
+    // crossed this run (creeps toward centre + grows + brightens), so a good run visibly nears home (additive).
+    const bl=Math.min(1,best/600), zr=Math.min(1,zonesRun*0.12), bsz=10+bl*14+zr*8+beaconPulse*5;
+    const bgx=VW*(0.72-zr*0.05), bgy=12+zr*4;
+    ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=Math.min(0.6,0.12+bl*0.24+zr*0.10+beaconPulse*0.28);
+    ctx.drawImage(LIGHTGOLD, bgx-bsz, bgy-bsz, bsz*2, bsz*2);
+    // "new land" sweep: the new realm's light washes across once on each zone crossing (calmer with reduce-flashing)
+    if(zoneSweep>0){ const sw=zoneSweep, bx=VW*(1.15-(1-sw)*1.3), amp=lowFx?0.10:0.22;
+      ctx.globalAlpha=amp*sw; ctx.fillStyle="rgb("+ac[0]+","+ac[1]+","+ac[2]+")"; ctx.fillRect(bx-34,0,68,VH);
+      ctx.globalAlpha=amp*sw*0.7; ctx.fillStyle="#ffffff"; ctx.fillRect(bx-7,0,14,VH); }
     if(BT[1]>0){ const sr=PS*3; ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-sr,ly-sr,sr*2,sr*2); } // SHIELD gold flare — radius pinned to ~3× the player (was the full spotlight radius)
     ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over"; ctx.imageSmoothingEnabled=false; }
 
