@@ -109,7 +109,7 @@ const FLIPKICK = 240;         // instant velocity on flip (crisp snap off the su
 const MAXVY  = 1300;          // terminal vertical speed
 const SPEED0 = 170;           // starting scroll speed px/s
 const SPEEDMX= 360;           // max scroll speed px/s
-const RAMP   = 0.5;           // speed gained per meter — gentle ramp for FLOW (hits cap ~380m, not ~210m)
+const RAMP   = 0.35;          // speed gained per meter — gentler ramp for FLOW (eases the ~200m spike; hits cap ~540m)
 const GAP0   = 200;           // starting world spacing between obstacles
 const GAPMIN = 120;           // tightest spacing
 const HMIN   = 66, HMAX=118;  // obstacle jut height range
@@ -283,6 +283,7 @@ let bgPulse=0, landT=0;              // background reacts; landT drives the land
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
 let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
+let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so new players FEEL a buff
 
 function reset(){
   py=BOTY-PS; vy=0; gdir=1; sq=1;
@@ -293,7 +294,7 @@ function reset(){
   shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0;
-  nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0;
+  nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
 }
 function start(){ Snd.ensure();
   let gift=false; try{ const d=new Date().toDateString(); if(localStorage.getItem("flipline.day")!==d){ localStorage.setItem("flipline.day",d); gift=true; } }catch(e){}  // daily: first run of the day = all 3 free
@@ -501,6 +502,11 @@ function update(dt){
         beaconPulse=Math.max(beaconPulse,0.5); spark(c.x,c.y); Snd.clean(4); }
       else { runCoinBonus+=c.val; coinPopV+=c.val; coinPopT=0.7; coinFx(c.x,c.y); Snd.point(); } }
   }
+  // onboarding SHIELD: a free orb on the START surface in the opening metres — grabbed just by running, so a
+  // first-timer feels a buff smash a jut before they ever reach the earned 150m orbs. Placed clear of any red.
+  if(earlyOrb && dist>=2){ let y=BOTY-PS/2; if(!lootClear(VW,y)) y=135;
+    if(lootClear(VW,y)){ placeOrb(VW,y,2); earlyOrb=false; beaconPulse=Math.max(beaconPulse,0.7); } }
+
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
   if(dist>=COL_FROM && dist>=nextLure){ spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
   if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && BT[0]<=0&&BT[1]<=0&&BT[2]<=0 && !orbArmed) orbArmed=true;
@@ -648,7 +654,7 @@ function draw(){
     const bl=Math.min(1,best/600), bsz=10+bl*14+beaconPulse*5;
     ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=Math.min(0.55,0.12+bl*0.24+beaconPulse*0.28);
     ctx.drawImage(LIGHTGOLD, VW*0.72-bsz, 12-bsz, bsz*2, bsz*2);
-    if(BT[1]>0){ ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-lr,ly-lr,lr*2,lr*2); } // SHIELD gold flare
+    if(BT[1]>0){ const sr=PS*3; ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-sr,ly-sr,sr*2,sr*2); } // SHIELD gold flare — radius pinned to ~3× the player (was the full spotlight radius)
     ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over"; ctx.imageSmoothingEnabled=false; }
 
   // collectibles — coins shine in the gloom, power-orbs glow their buff colour (never red); drawn OVER the
