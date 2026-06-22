@@ -348,21 +348,34 @@ function shopTap(p){
    (fmId/fmStep/fmLen) emits the next rect of the active formation each call, then
    clears it. Difficulty unlocks gradually with distance; <100m stays solo-only so
    the deliberately gentle early game is preserved. */
+function cl01(x){ return x<0?0:x>1?1:x; }     // clamp to 0..1 (smooth onset ramps — no difficulty cliffs)
+function rndSide(){ return Math.random()<0.5?0:1; }
 function pickFormation(){            // only called when no formation is active
   fmStep=0;
   if(dist<100){ fmId=1; fmLen=1; return; }                  // gentle early game: solos only
   if(hardCount>=3){ fmId=7; fmLen=1; hardCount=0; return; } // forced breather after a hard streak
-  const r=Math.random();
-  if(r<0.62){ fmId=1; fmLen=1; }                            // plain solo — still the most common beat
-  else if(r<0.82){ fmId=2; fmLen=2; }                       // double-flip (was the old "pair")
-  else {                                                    // ~18% "feature" slot, contents ramp with distance
-    const u=Math.random();
-    if(dist>=320 && u<0.20){ fmId=6; fmLen=6; fmSide=Math.random()<0.5?0:1; }      // gauntlet
-    else if(dist>=240 && u<0.45){ fmId=5; fmLen=2; }                               // offset pinch
-    else if(dist>=180 && u<0.70){ fmId=4; fmLen=3; fmSide=Math.random()<0.5?0:1; } // staircase
-    else if(dist>=140){ fmId=3; fmLen=3; fmSide=Math.random()<0.5?0:1; }           // zig-zag
-    else { fmId=2; fmLen=2; }                                                      // <140m feature → double-flip
+  // master difficulty 0→1 over 100→420m. Everything below scales smoothly off it / off ramped onsets,
+  // so formations FADE IN gradually instead of switching on at a hard distance (kills the "jumpy steps").
+  const D=cl01((dist-100)/320), r=Math.random();
+  const fFeat=0.06+0.18*D;                                  // "feature" share ramps 6%→24% (was a flat 18% cliff)
+  if(r>fFeat){                                              // non-feature beat: solo vs double-flip (double grows with D)
+    if(Math.random()<0.24+0.18*D){ fmId=2; fmLen=2; }      // double-flip 24%→42%
+    else { fmId=1; fmLen=1; }                               // plain solo — still the most common beat
+    return;
   }
+  // feature slot: weighted pick where each pattern's weight ramps in from its onset over a window
+  // (e.g. staircase is near-0 at 185m, common by ~275m) → a smooth ramp, never a step.
+  const wDbl=0.6,                                           // gentle always-on feature so early features stay easy
+    wZig  =cl01((dist-120)/70),                             // zig-zag    phases in 120→190
+    wStair=cl01((dist-185)/90),                             // staircase  185→275
+    wPinch=cl01((dist-245)/100),                            // pinch      245→345
+    wGaunt=cl01((dist-330)/130);                            // gauntlet   330→460
+  let s=Math.random()*(wDbl+wZig+wStair+wPinch+wGaunt);
+  if((s-=wGaunt)<0){ fmId=6; fmLen=6; fmSide=rndSide(); }            // gauntlet
+  else if((s-=wPinch)<0){ fmId=5; fmLen=2; }                         // offset pinch
+  else if((s-=wStair)<0){ fmId=4; fmLen=3; fmSide=rndSide(); }       // staircase
+  else if((s-=wZig)<0){ fmId=3; fmLen=3; fmSide=rndSide(); }         // zig-zag
+  else { fmId=2; fmLen=2; }                                          // wDbl → double-flip
 }
 function placeRect(o,side,h){ o.on=true; o.x=VW+24; o.scored=false;
   o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side;
