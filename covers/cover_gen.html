@@ -1,0 +1,120 @@
+<!doctype html><html><head><meta charset="utf-8"><title>FLIPLINE — cover generator</title>
+<style>
+  body{ margin:0; background:#0b0e18; color:#cfd6e4; font:14px system-ui,sans-serif; padding:20px; }
+  h1{ font-size:16px; color:#ffcf5c; letter-spacing:.5px; }
+  .row{ display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-top:16px; }
+  .card{ background:#121626; border:1px solid #222a40; border-radius:8px; padding:12px; }
+  .card h2{ font-size:12px; margin:0 0 8px; color:#9bf0d0; font-weight:700; }
+  canvas{ display:block; border:1px solid #2a3350; background:#000; }
+  a.dl{ display:inline-block; margin-top:8px; color:#0b0e18; background:#ffcf5c; text-decoration:none;
+        padding:6px 10px; border-radius:6px; font-weight:700; font-size:12px; }
+  /* preview canvases shown scaled down; export uses full resolution */
+  #c1{ width:480px; height:270px; } #c2{ width:240px; height:360px; } #c3{ width:300px; height:300px; }
+</style></head>
+<body>
+<h1>FLIPLINE — submission cover art</h1>
+<div class="row">
+  <div class="card"><h2>Landscape — 1920×1080</h2><canvas id="c1" width="1920" height="1080"></canvas><br><a class="dl" id="d1">download PNG</a></div>
+  <div class="card"><h2>Portrait — 800×1200</h2><canvas id="c2" width="800" height="1200"></canvas><br><a class="dl" id="d2">download PNG</a></div>
+  <div class="card"><h2>Square / icon — 800×800</h2><canvas id="c3" width="800" height="800"></canvas><br><a class="dl" id="d3">download PNG</a></div>
+</div>
+<script>
+/* ===== FLIPLINE palette + elements, lifted from index.html (covers are static art, so gradients/glow are OK here) ===== */
+const GOLD="#ffcf5c", GOLDSOFT="rgba(255,207,92,";
+const OB_BASE="#5e0a12", OB_BODY="#c2283d", OB_HOT="#e8344f", OB_LIP="#ff7184", OB_SEAM="rgba(255,154,162,0.6)";
+
+// soft radial glow (one-off; fine to use gradients in the generator)
+function glow(ctx,x,y,r,col,a){ const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,col.replace("A",a)); g.addColorStop(0.5,col.replace("A",a*0.5)); g.addColorStop(1,col.replace("A",0));
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+
+// warm "long way home" sky: deep night up top -> warm gold at the horizon
+function sky(ctx,W,H){ const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#0a0d1c"); g.addColorStop(0.45,"#161430"); g.addColorStop(0.78,"#2a2238"); g.addColorStop(1,"#3a2c18");
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // faint zone-tinted diamond motes for depth
+  ctx.fillStyle="rgba(170,150,255,0.05)";
+  for(let i=0;i<70;i++){ const x=(i*97.13%1)*0+((i*9301+49297)%233280)/233280*W, y=((i*4021+7919)%233280)/233280*H*0.75,
+    s=2+((i*7)%6); ctx.beginPath(); ctx.moveTo(x,y-s); ctx.lineTo(x+s,y); ctx.lineTo(x,y+s); ctx.lineTo(x-s,y); ctx.closePath(); ctx.fill(); }
+}
+// mid-parallax ridge silhouettes, warm-tinted (the land)
+function ridge(ctx,W,H,baseY,scale){ ctx.fillStyle="rgba(60,52,40,0.5)";
+  let x=-10; while(x<W){ const w=(20+((x*131)%18))*scale, hh=(16+((x*97)%30))*scale; ctx.fillRect(x,baseY-hh,w,hh); x+=w+8*scale; } }
+// home-beacon on the horizon
+function beacon(ctx,x,y,r){ ctx.globalCompositeOperation="lighter";
+  glow(ctx,x,y,r,"rgba(255,205,120,A)",0.9); glow(ctx,x,y,r*0.4,"rgba(255,255,255,A)",0.9);
+  ctx.globalCompositeOperation="source-over"; }
+// one red danger pillar (game's banded volume + hot lip), from a surface
+function obstacle(ctx,x,topY,w,h,fromTop){ glow(ctx,x+w/2,topY+h/2,Math.max(w,h)*0.9,"rgba(255,80,100,A)",0.30);
+  ctx.fillStyle=OB_BASE; ctx.fillRect(x,topY,w,h);
+  ctx.fillStyle=OB_BODY; ctx.fillRect(x+w*0.08,topY,w*0.84,h);
+  ctx.fillStyle=OB_HOT; const bh=h*0.5; ctx.fillRect(x+w*0.08, fromTop?topY:topY+h-bh, w*0.84, bh);
+  ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(x+w*0.08,topY,w*0.08,h);
+  ctx.fillStyle=OB_SEAM; ctx.fillRect(x+w*0.12,topY+h*0.42,w*0.76,Math.max(2,h*0.03));
+  ctx.fillStyle=OB_LIP; ctx.fillRect(x, fromTop?topY:topY+h-Math.max(4,h*0.05), w, Math.max(4,h*0.05)); }
+// the glowing traveler (default square skin) + expressive face, gold
+function player(ctx,cx,cy,s){ glow(ctx,cx,cy,s*2.6,"rgba(255,207,92,A)",0.55);
+  ctx.fillStyle=GOLDSOFT+"0.30)"; ctx.fillRect(cx-s*0.62,cy-s*0.62,s*1.24,s*1.24);
+  ctx.fillStyle=GOLD; ctx.fillRect(cx-s/2,cy-s/2,s,s);
+  ctx.fillStyle="rgba(12,14,20,0.92)"; const e=s*0.13; // eyes + grin
+  ctx.fillRect(cx-s*0.22,cy-s*0.12,e*1.6,e*1.6); ctx.fillRect(cx+s*0.06,cy-s*0.12,e*1.6,e*1.6);
+  ctx.fillRect(cx-s*0.18,cy+s*0.16,s*0.36,s*0.08); }
+// flip-path trail: signature sawtooth between two lanes, brightest at the head
+function trailPath(ctx,pts,col){ for(let i=0;i<pts.length;i++){ const f=i/(pts.length-1), s=4+f*16;
+  ctx.globalAlpha=0.10+f*0.5; ctx.fillStyle=col; ctx.fillRect(pts[i][0]-s/2,pts[i][1]-s/2,s,s);
+  if(f>0.6){ ctx.globalAlpha=(f-0.6)*1.0; ctx.fillStyle="rgba(255,255,255,0.7)"; ctx.fillRect(pts[i][0]-s*0.18,pts[i][1]-s*0.18,s*0.36,s*0.36); } }
+  ctx.globalAlpha=1; }
+function title(ctx,cx,cy,size,sub,subsize){
+  ctx.textAlign="center"; ctx.shadowColor="rgba(255,207,92,0.55)"; ctx.shadowBlur=size*0.4;
+  ctx.fillStyle=GOLD; ctx.font="800 "+size+"px system-ui"; ctx.fillText("FLIPLINE",cx,cy);
+  ctx.shadowBlur=0;
+  if(sub){ ctx.fillStyle="#cdd6e6"; ctx.font="600 "+subsize+"px system-ui"; ctx.fillText(sub,cx,cy+subsize*1.7); }
+}
+
+/* ===== Layouts ===== */
+function landscape(){ const c=document.getElementById("c1"), x=c.getContext("2d"), W=1920,H=1080;
+  sky(x,W,H); ridge(x,W,H, H*0.86, 6); beacon(x,W*0.80,H*0.22,260);
+  // gameplay band: player threading red pillars toward home, signature flip trail behind
+  const topLane=H*0.34, botLane=H*0.70;
+  // red pillars from both surfaces
+  obstacle(x, W*0.30, H*0.74, 90, H*0.18, false);   // floor pillar
+  obstacle(x, W*0.46, 0,      90, H*0.20, true);     // ceiling pillar
+  obstacle(x, W*0.60, H*0.70, 90, H*0.22, false);    // floor pillar
+  // trail flipping between lanes, ending at the player
+  const pts=[]; const xs=[W*0.10,W*0.22,W*0.34,W*0.42,W*0.50,W*0.58,W*0.66], ys=[botLane,topLane,botLane,H*0.5,topLane,H*0.52,topLane];
+  for(let i=0;i<xs.length;i++){ const x0=i?xs[i-1]:xs[0],y0=i?ys[i-1]:ys[0]; for(let k=0;k<6;k++){ pts.push([x0+(xs[i]-x0)*k/6, y0+(ys[i]-y0)*k/6]); } }
+  trailPath(x,pts,GOLD); player(x, W*0.66, topLane, 76);
+  title(x, W*0.30, H*0.30, 150, null, 0);
+  x.fillStyle="#cdd6e6"; x.font="600 40px system-ui"; x.textAlign="center"; x.fillText("dodge the red — go far", W*0.30, H*0.30+58);
+}
+function portrait(){ const c=document.getElementById("c2"), x=c.getContext("2d"), W=800,H=1200;
+  sky(x,W,H); beacon(x,W*0.5,H*0.16,180); ridge(x,W,H, H*0.92, 3.2);
+  title(x, W*0.5, H*0.18, 96, "dodge the red — go far", 30);
+  // vertical gameplay column: player flipping past red pillars
+  const cxp=W*0.5;
+  obstacle(x, cxp+70, H*0.44, 60, 150, true);
+  obstacle(x, cxp-130, H*0.60, 60, 150, false);
+  obstacle(x, cxp+50, H*0.76, 60, 150, true);
+  const pts=[]; const ys=[H*0.40,H*0.52,H*0.64,H*0.74,H*0.84], xs=[W*0.30,W*0.66,W*0.34,W*0.62,W*0.40];
+  for(let i=0;i<ys.length;i++){ const x0=i?xs[i-1]:xs[0],y0=i?ys[i-1]:ys[0]; for(let k=0;k<6;k++){ pts.push([x0+(xs[i]-x0)*k/6, y0+(ys[i]-y0)*k/6]); } }
+  trailPath(x,pts,GOLD); player(x, W*0.40, H*0.84, 64);
+}
+function square(){ const c=document.getElementById("c3"), x=c.getContext("2d"), W=800,H=800;
+  sky(x,W,H); beacon(x,W*0.72,H*0.22,150); ridge(x,W,H, H*0.95, 3);
+  // bold icon-legible composition: the flip motif + one red slice + the traveler
+  obstacle(x, W*0.20, H*0.66, 70, 170, false);
+  obstacle(x, W*0.58, 0,      70, 150, true);
+  const pts=[]; const xs=[W*0.18,W*0.40,W*0.62], ys=[H*0.70,H*0.40,H*0.62];
+  for(let i=0;i<xs.length;i++){ const x0=i?xs[i-1]:xs[0],y0=i?ys[i-1]:ys[0]; for(let k=0;k<7;k++){ pts.push([x0+(xs[i]-x0)*k/7, y0+(ys[i]-y0)*k/7]); } }
+  trailPath(x,pts,GOLD); player(x, W*0.62, H*0.62, 92);
+  title(x, W*0.5, H*0.90, 86, null, 0);
+}
+function renderAll(){ landscape(); portrait(); square();
+  const map=[["c1","d1","flipline_cover_1920x1080"],["c2","d2","flipline_cover_800x1200"],["c3","d3","flipline_icon_800x800"]];
+  for(const [cid,did,name] of map){ const a=document.getElementById(did);
+    a.href=document.getElementById(cid).toDataURL("image/png"); a.download=name+".png"; }
+}
+function pngData(cid){ return document.getElementById(cid).toDataURL("image/png"); }
+renderAll();
+</script>
+</body></html>
