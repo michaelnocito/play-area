@@ -90,7 +90,8 @@ const Snd = {
   point(){ this.play(740,980,0.06,"triangle",0.07); },                  // soft milestone tick
   coin(){ this.play(1040,1560,0.06,"triangle",0.10); },                 // bright satisfying ping
   clean(n){ const p=Math.min(8,n); this.play(620+p*60,1300+p*70,0.10,"triangle",0.10); },   // shimmer that rises with the streak
-  die(){ this.play(200,42,0.34,"sawtooth",0.17); this.burstN(1900,120,0.30,0.10,"lowpass"); }   // downward glitch + noise impact
+  die(){ this.play(200,42,0.34,"sawtooth",0.17); this.burstN(1900,120,0.30,0.10,"lowpass"); },  // downward glitch + noise impact
+  warp(){ this.play(300,1020,0.26,"sawtooth",0.11); this.burstN(600,3600,0.24,0.10,"bandpass"); }   // rising warp zip
 };
 
 /* ===== Music — a dark minor "Matrix techno" bed, synthesized live (no audio files → zero load latency).
@@ -180,6 +181,9 @@ const STEPX=24, DIP_STEPX=60, SCAT_STEPX=90;   // horizontal spacing within a lu
 const COIN_VAL=1, COIN_VAL_RISK=3;             // base vs danger-lane risk-premium payout
 const COIN_R=14, ORB_R=22;                     // GENEROUS grab radii (>> the ~8/11px visuals)
 const MAG_R=150;                               // MAGNET buff pull radius — coins within this glide to the player
+/* Warp tubes — optional HIGH-SKILL forward skip (teal/friendly, never red, never kills; miss = no penalty) */
+const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; +28m skip (leaderboard-safe)
+const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
@@ -223,6 +227,9 @@ const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps 
 
 /* ===== Object pools (no per-frame allocation) ===== */
 const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0});
+// warp-tube pool (sparse) — mid-lane rings you flip THROUGH for a forward skip; alloc-free
+const WARPN=3, warps=[]; for(let i=0;i<WARPN;i++) warps.push({on:false,x:0,y:0,used:false});
+function spawnWarp(){ for(const w of warps){ if(!w.on){ w.on=true; w.used=false; w.x=VW+20; w.y=(Math.random()<0.5?108:162); return; } } }  // mid-lane → must time a flip
 
 /* ===== Collectible pool (coins + earned power-orbs) — no per-frame allocation =====
    kind: 0 coin · 1 MAGNET · 2 SHIELD · 3 2×  (orb kind k → buff timer BT[k-1]) */
@@ -348,6 +355,7 @@ let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + coun
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
 let lastZone=0, zoneSweep=0, zonesRun=0;   // X3 lore: land tracking — crossing fires a "new land" sweep + steps the beacon closer
 let reviveT=0, reviveUsedFree=false, reviveUsedAd=false;   // revive: 1 free + 1 ad per run (precision, never every death)
+let nextWarp=WARP_FROM, warpFx=0;                          // warp tubes: next spawn distance + nail-it flourish timer
 let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
 let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so new players FEEL a buff
 
@@ -361,6 +369,7 @@ function reset(){
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
   reviveT=0; reviveUsedFree=false; reviveUsedAd=false;
+  for(const w of warps) w.on=false; nextWarp=WARP_FROM; warpFx=0;
   nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
 }
 function start(){ Snd.ensure();
@@ -542,6 +551,7 @@ function update(dt){
   if(zoneSweep>0){ zoneSweep-=dt*1.15; if(zoneSweep<0)zoneSweep=0; }   // ~0.9s "new land" wash
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
   if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
+  if(warpFx>0){ warpFx-=dt; if(warpFx<0)warpFx=0; }
   if(mode==="reviving"){ reviveT-=dt; lightR+=(LR_BASE-lightR)*Math.min(1,dt*6);   // bloom back over the "get ready" countdown
     if(reviveT<=0){ reviveT=0; mode="play"; } return; }
   if(mode!=="play") return;
@@ -614,6 +624,17 @@ function update(dt){
   // first-timer feels a buff smash a jut before they ever reach the earned 150m orbs. Placed clear of any red.
   if(earlyOrb && dist>=2){ let y=BOTY-PS/2; if(!lootClear(VW,y)) y=135;
     if(lootClear(VW,y)){ placeOrb(VW,y,2); earlyOrb=false; beaconPulse=Math.max(beaconPulse,0.7); } }
+
+  // warp tubes — spawn ~every 100m; nail the TIGHT window (flip through the ring) → forward skip + flourish. Never kills.
+  if(dist>=WARP_FROM && dist>=nextWarp){ spawnWarp(); nextWarp=dist+WARP_GAP; }
+  for(const w of warps){ if(!w.on) continue;
+    w.x-=dx;
+    if(w.x<-24){ w.on=false; continue; }
+    if(!w.used && Math.abs(w.x-(PX+PS/2))<WARP_HITX && Math.abs((py+PS/2)-w.y)<WARP_HITY){   // flew through the ring
+      w.used=true; worldX+=WARP_M*40; runCoinBonus+=5; coinPopV+=5; coinPopT=0.7; warpFx=0.55;
+      flash=Math.max(flash,0.22); flashCol="#5ef2c2"; bgPulse=Math.max(bgPulse,0.5); beaconPulse=Math.max(beaconPulse,1);
+      spark(PX+PS/2,py+PS/2); Snd.warp(); }
+  }
 
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
   if(dist>=COL_FROM && dist>=nextLure){ spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
@@ -751,6 +772,8 @@ function draw(){
     txt("CLEAN ×"+comboVal, PX+30, gdir>0?py-10:py+PS+18, 11, "#9bf0d0", 800); ctx.globalAlpha=1; }
   if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
     txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
+  if(warpFx>0){ ctx.globalAlpha=Math.min(1,warpFx*2);   // nail-it "WARP +Nm" flourish
+    txt("WARP +"+WARP_M+"m", PX+34, py-22-(0.55-warpFx)*26, 13, "#7af0ff", 800); ctx.globalAlpha=1; }
 
   // particles
   for(const p of par){ if(p.life>0){ ctx.globalAlpha=Math.min(1,p.life*2.2);
@@ -799,6 +822,15 @@ function draw(){
       ctx.fillStyle=ORBCSS[k]; ctx.beginPath(); ctx.arc(bx,by,3,0,6.2832); ctx.fill(); }  // buff-colour pip
   }
   ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false;
+
+  // warp tubes — teal "friendly tech" rings (never red); drawn over the dark so you can line up the flip. Used ones fade out.
+  for(const w of warps){ if(!w.on) continue; const wx=w.x, wy=w.y, br=13+Math.sin(t*6+wx*0.05)*2;
+    ctx.globalAlpha=w.used?Math.max(0,warpFx*1.4):1; ctx.globalCompositeOperation="lighter";
+    ctx.strokeStyle="rgba(90,240,255,0.55)"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(wx,wy,br,0,6.2832); ctx.stroke();
+    ctx.strokeStyle="rgba(200,255,255,0.45)"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(wx,wy,br*0.6,0,6.2832); ctx.stroke();
+    ctx.fillStyle="rgba(120,245,255,0.10)"; ctx.beginPath(); ctx.arc(wx,wy,br*0.6,0,6.2832); ctx.fill();
+    ctx.globalCompositeOperation="source-over"; }
+  ctx.globalAlpha=1;
 
   // score (in-run only)
   if(mode==="play"){ txt(dist+"m",VW/2,WALL-6,13,"#aeb8cc",700);
