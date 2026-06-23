@@ -41,10 +41,14 @@ const Ads = {
   loadingStop(){ try{ window.CrazyGames?.SDK?.game?.sdkGameLoadingStop?.(); }catch(e){} },
   gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
   gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
-  interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame"); }catch(e){} },
-  rewarded(onReward,onSkip){            // opt-in rewarded ad (start-with-all-power-ups); graceful offline
+  interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame",
+      { adStarted(){ Snd.duck(true); }, adFinished(){ Snd.duck(false); }, adError(){ Snd.duck(false); } }); }catch(e){} },  // mute during ad (policy)
+  rewarded(onReward,onSkip){            // opt-in rewarded ad; mutes audio during play (policy); graceful offline
     try{ if(window.CrazyGames?.SDK?.ad?.requestAd){
-      window.CrazyGames.SDK.ad.requestAd("rewarded",{ adStarted(){}, adFinished(){ onReward&&onReward(); }, adError(){ onSkip&&onSkip(); } });
+      window.CrazyGames.SDK.ad.requestAd("rewarded",{
+        adStarted(){ Snd.duck(true); },
+        adFinished(){ Snd.duck(false); onReward&&onReward(); },
+        adError(){ Snd.duck(false); onSkip&&onSkip(); } });   // adError → do NOT reward (policy)
       return; } }catch(e){}
     onReward&&onReward();               // no SDK (local/itch) → grant so the button never dead-ends
   }
@@ -52,7 +56,8 @@ const Ads = {
 
 /* ===== Procedural audio — persistent voices, zero allocation per sound ===== */
 const Snd = {
-  ctx:null, master:null, voices:[], vi:0, muted:false,
+  ctx:null, master:null, voices:[], vi:0, muted:false, adMuted:false,
+  duck(b){ this.adMuted=b; if(this.master&&this.ctx){ try{ this.master.gain.setTargetAtTime(b?0.0001:0.9,this.ctx.currentTime,0.02); }catch(e){} } },  // mute audio during ads
   ensure(){
     if(!this.ctx){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
       if(this.ctx){
@@ -61,7 +66,7 @@ const Snd = {
           g.gain.value=0.0001; o.connect(g); g.connect(this.master); o.start(); this.voices.push({o,g}); } } }
     if(this.ctx?.state==="suspended") this.ctx.resume();
   },
-  play(f1,f2,dur,type,vol){ if(this.muted)return; this.ensure(); if(!this.voices.length)return;
+  play(f1,f2,dur,type,vol){ if(this.muted||this.adMuted)return; this.ensure(); if(!this.voices.length)return;
     const v=this.voices[this.vi]; this.vi=(this.vi+1)%this.voices.length; const t=this.ctx.currentTime;
     v.o.type=type||"square";
     v.o.frequency.cancelScheduledValues(t); v.o.frequency.setValueAtTime(f1,t);
@@ -205,6 +210,7 @@ const ORBCSS=["rgb(90,220,255)","rgb(255,212,90)","rgb(255,120,220)"];  // preco
 const BUFFSEL=["rgba(90,220,255,0.30)","rgba(255,212,90,0.30)","rgba(255,120,220,0.30)"];  // selected pre-run chip fill
 const BSHORT=["SLOW","SHIELD","2×"];   // compact buff labels for the pre-run chips
 const START_BUFF=5;                    // seconds of pre-run head-start buff
+const REVIVE_CD=3, GRACE=1.6;          // revive: 3s "get ready" countdown + shield grace on resume (fair, no instant re-death)
 const BT=[0,0,0];                      // buff timers: 0 SLOW-MO, 1 SHIELD, 2 2× — INDEPENDENT so they can stack
 
 /* ===== Cosmetics + coin economy (cosmetic only — never touches physics) =====
@@ -268,6 +274,8 @@ const TABW=104, TABGAP=8, TABX0=VW/2-(TABW*3+TABGAP*2)/2;   // shop category tab
 const R_TAB=[{x:TABX0,y:58,w:TABW,h:22},{x:TABX0+TABW+TABGAP,y:58,w:TABW,h:22},{x:TABX0+2*(TABW+TABGAP),y:58,w:TABW,h:22}];
 const R_PREV={x:52,y:112,w:36,h:44}, R_NEXT={x:392,y:112,w:36,h:44};
 const R_ACT={x:VW/2-72,y:196,w:144,h:30}, R_BACK={x:16,y:236,w:80,h:24};
+// revive "CONTINUE?" offer — two EQUAL-weight buttons (policy: skip/continue must match in size/font/colour)
+const R_CONT={x:VW/2-94,y:VH/2+4,w:188,h:30}, R_END={x:VW/2-94,y:VH/2+40,w:188,h:28};
 function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
 function shopAction(){ const c=shopCat, i=sel[c], list=catList(c), own=catOwned(c), it=list[i];
@@ -285,6 +293,7 @@ let bgPulse=0, landT=0;              // background reacts; landT drives the land
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
 let lastZone=0, zoneSweep=0, zonesRun=0;   // X3 lore: land tracking — crossing fires a "new land" sweep + steps the beacon closer
+let reviveT=0, reviveUsedFree=false, reviveUsedAd=false;   // revive: 1 free + 1 ad per run (precision, never every death)
 let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
 let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so new players FEEL a buff
 
@@ -297,6 +306,7 @@ function reset(){
   shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
+  reviveT=0; reviveUsedFree=false; reviveUsedAd=false;
   nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
 }
 function start(){ Snd.ensure();
@@ -307,20 +317,41 @@ function start(){ Snd.ensure();
   startAll=false; mode="play"; Ads.gameplayStart();
 }
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(); }
-function dieNow(){
+// A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
+function onCrash(){
+  combo=0; shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
+  lightR=26; lightTarget=26;   // snuff the light to a spark
+  if(!reviveUsedFree){ reviveUsedFree=true; beginRevive(false); }      // death #1 → FREE revive, no ad
+  else if(!reviveUsedAd){ mode="offer"; Ads.gameplayStop(); }          // death #2 → optional 1-ad continue (offered once)
+  else finalDeath();                                                    // death #3+ → run ends
+}
+// Resume the SAME run: clear the field so you don't instantly re-die, reset to a safe surface, shield grace, 3s countdown.
+function beginRevive(withBuffs){
+  for(const o of obs){ if(o.on){ burst(o.x+o.w/2,(o.side===0?BOTY-o.h:TOPY)+o.h/2); o.on=false; } }   // clear + juice the field
+  for(const c of col){ if(c.kind===0) c.on=false; }   // clear loose coins (orbs are harmless, leave them)
+  py=BOTY-PS; vy=0; gdir=1; sq=1; spawnCd=GAP0;        // stable on the start surface; first new jut isn't instant
+  BT[1]=Math.max(BT[1],GRACE);                          // shield grace so the first new obstacle is survivable
+  if(withBuffs){ BT[0]=BT[1]=BT[2]=START_BUFF; }        // ad reward → revive WITH all 3 buffs
+  reviveT=REVIVE_CD; mode="reviving"; lightR=70;        // bloom the light back up during the countdown
+  beaconPulse=Math.max(beaconPulse,0.8); Snd.clean(5); Ads.gameplayStart();
+}
+function finalDeath(){
   mode="dead"; Ads.gameplayStop();
-  if(adPending){ adPending=false; Ads.interstitial(); }   // interstitial only at the death break (gameplay already stopped)
-  Snd.die();
+  if(adPending){ adPending=false; Ads.interstitial(); }   // midgame ONLY when the run truly ends (never with a revive — policy)
   if(dist>best) best=dist;
   lastEarned=(dist/14|0)+runCoinBonus; coins+=lastEarned; persist();
-  shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; combo=0; burst(PX+PS/2,py+PS/2);
-  lightR=26; lightTarget=26;   // snuff the light to a spark on death
+  lightR=26; lightTarget=26;
 }
 
 /* ===== Input ===== */
-function tap(){ if(mode==="play") flip(); else start(); }
+function tap(){ if(mode==="play") flip(); else if(mode==="ready"||mode==="dead") start(); }   // offer/reviving handled separately
 addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
   if(mode==="shop"){ shopTap(p); return; }
+  if(mode==="reviving") return;                      // countdown is automatic — taps ignored
+  if(mode==="offer"){                                // the once-per-run "CONTINUE? watch ad" choice
+    if(inR(p,R_CONT)){ Ads.rewarded(()=>{ reviveUsedAd=true; beginRevive(true); }, ()=>{ reviveUsedAd=true; finalDeath(); }); return; }
+    if(inR(p,R_END)){ reviveUsedAd=true; finalDeath(); return; }
+    return; }
   if(mode==="ready"||mode==="dead"){
     if(inR(p,R_SHOPBTN)){ mode="shop"; shopCat=0; sel[0]=equipped; sel[1]=equippedTrail; sel[2]=equippedAura; return; }
     for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
@@ -457,6 +488,8 @@ function update(dt){
   if(zoneSweep>0){ zoneSweep-=dt*1.15; if(zoneSweep<0)zoneSweep=0; }   // ~0.9s "new land" wash
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
   if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
+  if(mode==="reviving"){ reviveT-=dt; lightR+=(LR_BASE-lightR)*Math.min(1,dt*6);   // bloom back over the "get ready" countdown
+    if(reviveT<=0){ reviveT=0; mode="play"; } return; }
   if(mode!=="play") return;
   if(freeze>0){ freeze-=dt; return; }
 
@@ -499,7 +532,7 @@ function update(dt){
     const ry=o.side===0 ? BOTY-o.h : TOPY;
     if(hx<o.x+o.w && hx+hw>o.x && hy<ry+o.h && hy+hh>ry){
       if(BT[1]>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
-      dieNow(); return; }
+      onCrash(); return; }
     if(!o.scored && o.x+o.w<PX){ o.scored=true;
       const clr = o.side===0 ? (BOTY-o.h)-(py+PS) : py-(TOPY+o.h);   // gap to the hazard edge
       if(clr>=0 && clr<14){ combo++; comboVal=combo; comboT=0.7; worldX+=combo*22; runCoinBonus+=combo; bgPulse=Math.max(bgPulse,0.30);
@@ -725,7 +758,19 @@ function draw(){
   if(mileT>0){ ctx.globalAlpha=Math.min(1,mileT*1.4);
     txt(mileVal+"m",VW/2,VH*0.40-(1-mileT)*10,20,"#5ef2c2",800); ctx.globalAlpha=1; }
 
-  if(mode==="shop"){ drawShop(); }
+  if(mode==="reviving"){            // "GET READY" 3..2..1 over the cleared field
+    const n=Math.ceil(reviveT);
+    txt("GET READY",VW/2,VH/2-30,16,"#9bf0d0",700);
+    ctx.globalAlpha=0.5+0.5*(reviveT-(n-1)); txt(""+n,VW/2,VH/2+30,56,"#ffcf5c",800); ctx.globalAlpha=1;
+  } else if(mode==="offer"){         // once-per-run optional ad-revive — two EQUAL buttons (clearly optional)
+    txt("CONTINUE?",VW/2,VH/2-34,28,"#ffcf5c",800);
+    txt(dist+"m — keep your run going",VW/2,VH/2-12,12,"#aeb8cc",600);
+    ctx.fillStyle="rgba(94,242,194,0.16)"; ctx.fillRect(R_CONT.x,R_CONT.y,R_CONT.w,R_CONT.h);
+    txt("▶  CONTINUE — revive + all buffs",VW/2,R_CONT.y+20,12,"#9bf0d0",700);
+    ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_END.x,R_END.y,R_END.w,R_END.h);
+    txt("no thanks — end run",VW/2,R_END.y+19,12,"#aeb8cc",700);
+  }
+  else if(mode==="shop"){ drawShop(); }
   else if(mode==="ready"){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap / space to flip gravity",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
