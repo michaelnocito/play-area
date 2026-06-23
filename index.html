@@ -202,6 +202,8 @@ const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR
 /* ===== Premium obstacle look (precomputed strings — zero per-frame allocation) ===== */
 const OBGLOW=[]; for(let i=0;i<8;i++) OBGLOW.push("rgba(255,84,104,"+(0.10+0.16*(i/7)).toFixed(3)+")"); // tension-glow LUT
 const OBSEAM="rgba(255,154,162,0.55)";   // animated energy-seam color, reused forever
+const OBSEAM2="rgba(255,110,130,0.28)"; // reverse-direction counterpoint seam
+const OBPANEL="rgba(0,0,0,0.20)";       // internal tech-panel separator line
 
 /* ===== Precomputed art + lighting (built once at boot, then only blitted) =====
    Long Way Home is told wordlessly with light: a player-centred spotlight that breathes,
@@ -237,7 +239,7 @@ const LR_MIN=104, LR_BASE=160, LR_MAX=240, LR_LOWMIN=212;
 const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps worst-case dimmed red readable in warm zones
 
 /* ===== Object pools (no per-frame allocation) ===== */
-const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0});
+const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0,style:0});
 // warp-tube pool (sparse) — mid-lane rings you flip THROUGH for a forward skip; alloc-free
 const WARPN=3, warps=[]; for(let i=0;i<WARPN;i++) warps.push({on:false,x:0,y:0,used:false});
 function spawnWarp(){ for(const w of warps){ if(!w.on){ w.on=true; w.used=false; w.x=VW+20; w.y=(Math.random()<0.5?108:162); return; } } }  // mid-lane → must time a flip
@@ -486,7 +488,7 @@ function pickFormation(){            // only called when no formation is active
   else { fmId=2; fmLen=2; }                                          // wDbl → double-flip
 }
 function placeRect(o,side,h){ o.on=true; o.x=VW+24; o.scored=false;
-  o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side;
+  o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side; o.style=(Math.random()<0.5)|0;
   lastObsSide=side; clearLootNear(o); }   // record the danger lane + evict any loot this jut would trap
 function spawnObstacle(spacing){
   if(fmLen===0) pickFormation();
@@ -706,7 +708,8 @@ function draw(){
   let ox=0,oy=0; if(shake>0){ const sk=lowFx?shake*0.35:shake; ox=(Math.random()-.5)*sk; oy=(Math.random()-.5)*sk; }
   ctx.save(); ctx.translate(ox,oy);
 
-  ctx.fillStyle="rgb("+(bg[0]+pb)+","+(bg[1]+pb)+","+(bg[2]+pb)+")"; ctx.fillRect(-12,-12,VW+24,VH+24);
+  const bgFill="rgb("+(bg[0]+pb)+","+(bg[1]+pb)+","+(bg[2]+pb)+")";  // built once; reused for corner bevels (no per-obstacle alloc)
+  ctx.fillStyle=bgFill; ctx.fillRect(-12,-12,VW+24,VH+24);
 
   // mid-parallax ridge band — tint the silhouette MASK to THIS land (cool->warm) on a cached buffer, then wrap-blit.
   // Alloc-free: 1 clear + 1 fill + 1 mask punch on RIDGEBUF, then two smoothed blits. Stays faint so danger pops.
@@ -725,33 +728,52 @@ function draw(){
       y=WALL+24+(h%(VH-WALL*2-48)), sz=7+(h>>9&6);
       ctx.beginPath(); ctx.moveTo(x,y-sz); ctx.lineTo(x+sz,y); ctx.lineTo(x,y+sz); ctx.lineTo(x-sz,y); ctx.closePath(); ctx.fill(); } }
 
+  // far-2 parallax — very slow micro-squares (depth layer behind the ridge, distinct from diamond motes)
+  { const m2=172, scr2=worldX*0.11, n0b=Math.floor(scr2/m2);
+    ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.038)";
+    for(let n=n0b-1;n<n0b+4;n++){ const hh=(n*1831565813)>>>0, x2=n*m2-scr2+m2*0.4,
+      y2=WALL+16+(hh%(VH-WALL*2-32)), sz2=2+(hh>>12&3);
+      ctx.fillRect(x2-sz2/2|0,y2-sz2/2|0,sz2,sz2); } }
+
   // moving speed stripes (cheap parallax, <=10 ticks) tinted to the zone accent
   ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.05)";
   const sp=48, off=worldX%sp;
   for(let x=-off;x<VW;x+=sp){ ctx.fillRect(x,WALL,2,VH-WALL*2); }
 
+  // horizontal grid lines — static, very faint; combined with moving verticals = grid-tunnel speed feel
+  ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.018)";
+  for(let y=WALL+8;y<VH-WALL;y+=14) ctx.fillRect(0,y,VW,1);
+
   // walls
   ctx.fillStyle=wallCss; ctx.fillRect(0,0,VW,WALL); ctx.fillRect(0,VH-WALL,VW,WALL);
   ctx.fillStyle="#262f45"; ctx.fillRect(0,WALL-2,VW,2); ctx.fillRect(0,VH-WALL,VW,2);
 
-  // obstacles (always red, fair silhouette; banded volume + bevel + hot danger lip + animated energy seam)
-  const seamY=(t*70)|0;   // shared marching offset (one int → seam is composed across all obstacles, not chaotic)
+  // obstacles (always red; tech-panel look: dual seam, panel lines, dual bevel, corner accents)
+  const seamY=(t*70)|0, seamY2=(t*47)|0;   // two seams marching in opposite directions
   for(const o of obs){ if(!o.on) continue;
     const ry=o.side===0 ? BOTY-o.h : TOPY, ix=o.x|0;
     const near=Math.max(0,1-Math.abs((o.x+o.w/2)-PX)/220);
-    ctx.fillStyle=OBGLOW[(near*7)|0]; ctx.fillRect(ix-3,ry-3,o.w+6,o.h+6);              // 1 tension glow (LUT — no string alloc)
+    ctx.fillStyle=OBGLOW[(near*7)|0]; ctx.fillRect(ix-4,ry-4,o.w+8,o.h+8);              // 1 tension glow (wider halo)
     ctx.fillStyle="#5e0a12"; ctx.fillRect(ix,ry,o.w,o.h);                               // 2 dark base / frame
-    ctx.fillStyle="#c2283d"; ctx.fillRect(ix+2,ry,o.w-4,o.h);                           // 3 body (leaves 2px side bevels)
-    const bh=(o.h*0.55)|0;                                                              // 4 volume band — hot half at the PLAY edge
+    ctx.fillStyle="#b82034"; ctx.fillRect(ix+2,ry,o.w-4,o.h);                           // 3 body (richer dark-red)
+    const bh=(o.h*0.52)|0;                                                              // 4 volume band — hot half at play edge
     ctx.fillStyle="#e8344f";
     if(o.side===0) ctx.fillRect(ix+2,ry,o.w-4,bh); else ctx.fillRect(ix+2,ry+o.h-bh,o.w-4,bh);
+    const p1=(o.h*0.30)|0, p2=(o.h*0.62)|0;                                            // 4b tech panel separator lines
+    ctx.fillStyle=OBPANEL; ctx.fillRect(ix+2,ry+p1,o.w-4,1); ctx.fillRect(ix+2,ry+p2,o.w-4,1);
     ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(ix+2,ry,2,o.h);                // 5 left highlight bevel
-    const sy=ry+((seamY+ix)%o.h);                                                       // 6 energy seam (bounded by %o.h → no clip)
+    ctx.fillStyle="rgba(0,0,0,0.16)"; ctx.fillRect(ix+o.w-4,ry,2,o.h);                 // 5b right shadow bevel (depth)
+    const sy=ry+((seamY+ix)%o.h);                                                       // 6 forward energy seam
     ctx.fillStyle=OBSEAM; ctx.fillRect(ix+3,sy|0,o.w-6,2);
-    ctx.fillStyle="#ff7184";                                                            // 7 hot danger lip on the PLAY-facing edge
+    const sy2=ry+(o.h-1-((seamY2+ix)%o.h));                                            // 6b reverse energy seam (counterpoint)
+    ctx.fillStyle=OBSEAM2; ctx.fillRect(ix+4,sy2|0,o.w-8,1);
+    ctx.fillStyle="#ff7184";                                                            // 7 hot danger lip
     if(o.side===0) ctx.fillRect(ix,ry,o.w,5); else ctx.fillRect(ix,ry+o.h-5,o.w,5);
-    ctx.fillStyle="rgba(0,0,0,0.28)";                                                   // 8 dark anchored edge (figure-ground)
+    ctx.fillStyle="rgba(0,0,0,0.28)";                                                   // 8 dark anchored edge
     if(o.side===0) ctx.fillRect(ix,ry+o.h-3,o.w,3); else ctx.fillRect(ix,ry,o.w,3);
+    if(o.style===1){ ctx.fillStyle=bgFill;                                              // 8b pixel corner bevel: punches 4×4 off danger-lip corners → angular/crystalline silhouette
+      if(o.side===0){ ctx.fillRect(ix,ry,4,4); ctx.fillRect(ix+o.w-4,ry,4,4); }
+      else { ctx.fillRect(ix,ry+o.h-4,4,4); ctx.fillRect(ix+o.w-4,ry+o.h-4,4,4); } }
   }
 
   // surfing trail — style by equipped TRAIL cosmetic, coloured by equipped AURA (newest=brightest)
