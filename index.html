@@ -819,8 +819,8 @@ function draw(){
   ctx.restore();
 
   // Clean Pass flair
-  if(comboT>0 && comboVal>1){ ctx.globalAlpha=Math.min(1,comboT*1.6);
-    txt("CLEAN ×"+comboVal, PX+30, gdir>0?py-10:py+PS+18, 11, "#9bf0d0", 800); ctx.globalAlpha=1; }
+  if(comboT>0 && comboVal>=1){ ctx.globalAlpha=Math.min(1,comboT*1.6);   // show on EVERY clean pass (was >1 → a lone skim gave no feedback)
+    txt(comboVal>1?"CLEAN ×"+comboVal:"CLEAN", PX+30, gdir>0?py-10:py+PS+18, 11, "#9bf0d0", 800); ctx.globalAlpha=1; }
   if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
     txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
   if(warpFx>0){ ctx.globalAlpha=Math.min(1,warpFx*2);   // nail-it "WARP +Nm" flourish
