@@ -37,8 +37,8 @@
 /* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
 const Ads = {
   init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>cb&&cb()).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
-  loadingStart(){ try{ window.CrazyGames?.SDK?.game?.sdkGameLoadingStart?.(); }catch(e){} },  // v3 name (was loadingStart → silently never fired)
-  loadingStop(){ try{ window.CrazyGames?.SDK?.game?.sdkGameLoadingStop?.(); }catch(e){} },
+  loadingStart(){ try{ window.CrazyGames?.SDK?.game?.loadingStart?.(); }catch(e){} },  // v3 name (verified vs docs 2026-06; sdkGameLoadingStart was v2 → never fired on v3)
+  loadingStop(){ try{ window.CrazyGames?.SDK?.game?.loadingStop?.(); }catch(e){} },
   gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
   gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
   interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame",
@@ -1015,10 +1015,11 @@ function boot(){
   loadSave();
   buildArt();
   document.getElementById("fx").textContent = lowFx?"✧":"✦";
-  Ads.loadingStart();
   reset();
-  let done=false; const go=()=>{ if(done)return; done=true; Ads.loadingStop(); mode="ready"; };
-  Ads.init(go); setTimeout(go,700);
+  // v3 lifecycle: init FIRST (SDK is unusable until it resolves), THEN bracket the (instant) load so
+  // CrazyGames' loader hides correctly. Offline/no-SDK → init cb fires synchronously; 700ms = SDK-blocked fallback.
+  let done=false; const ready=()=>{ if(done)return; done=true; Ads.loadingStop(); mode="ready"; };
+  Ads.init(()=>{ if(!done){ Ads.loadingStart(); ready(); } }); setTimeout(ready,700);
   requestAnimationFrame(frame);
 }
 boot();
