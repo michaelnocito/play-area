@@ -156,10 +156,12 @@ let scale=1, needRotate=false, rotatePaused=false, baseW=0, baseH=0;
 const rotateEl=document.getElementById("rotate");
 function resize(){
   const w=innerWidth||1, h=innerHeight||1;
-  needRotate = !!(window.matchMedia?.("(pointer:coarse)")?.matches) && h>w;
+  const coarse = !!(window.matchMedia?.("(pointer:coarse)")?.matches);
+  needRotate = coarse && h>w;
   rotateEl.style.display = needRotate ? "flex" : "none";
   const landscape = w>=h;
-  if(baseW===0 || landscape!==(baseW>=baseH)){ baseW=w; baseH=h; }   // lock once per orientation; re-lock only on rotate
+  // desktop: ALWAYS fill the current window (so maximising/resizing scales up). mobile: lock per orientation (ignore URL-bar jitter).
+  if(!coarse || baseW===0 || landscape!==(baseW>=baseH)){ baseW=w; baseH=h; }
   scale=Math.min(baseW/VW, baseH/VH);
   const dpr=devicePixelRatio||1;
   cv.width=VW*dpr*scale|0; cv.height=VH*dpr*scale|0;
@@ -638,8 +640,8 @@ function update(dt){
   if(earlyOrb && dist>=2){ let y=BOTY-PS/2; if(!lootClear(VW,y)) y=135;
     if(lootClear(VW,y)){ placeOrb(VW,y,2); earlyOrb=false; beaconPulse=Math.max(beaconPulse,0.7); } }
 
-  // warp tubes — spawn ~every 100m; nail the TIGHT window (flip through the ring) → forward skip + flourish. Never kills.
-  if(dist>=WARP_FROM && dist>=nextWarp){ spawnWarp(); nextWarp=dist+WARP_GAP; }
+  // warp tubes — PARKED (didn't convey benefit; replacement mechanic pending). Spawn disabled; entity/draw kept for reuse.
+  // if(dist>=WARP_FROM && dist>=nextWarp){ spawnWarp(); nextWarp=dist+WARP_GAP; }
   for(const w of warps){ if(!w.on) continue;
     w.x-=dx;
     if(w.x<-24){ w.on=false; continue; }
