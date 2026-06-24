@@ -208,10 +208,10 @@ const GRAZE_NICE=28, GRAZE_CLEAN=14, GRAZE_PERFECT=6;        // tier thresholds 
 const GRAZE_LABEL=["","NICE","CLEAN","PERFECT"];             // tier 0/1/2/3 (module-level → no per-frame alloc)
 const GRAZE_COL=["","#9bf0d0","#7fe0ff","#ffe08a"];         // nice teal · clean cyan · perfect gold
 const GRAZE_FLOWK=[0,0.6,1.0,1.4];                          // Flow-gain multiplier per tier (precision charges faster)
-/* ===== The Line — a fading guide ribbon that traces the close-skim route through the gaps. Follow it and you
-   graze every obstacle (proven: ~5px median clearance → 100% skims). Teaches skimming wordlessly; fades as you
-   chain skims, returns when your streak breaks. Perf: one path from reused buffers, no per-frame allocation. */
-const LINE_OFF=14;            // route passes this far off each tip (≈ CLEAN) on the safe side
+/* ===== Skim bands — a soft cyan "graze zone" glows along each obstacle's SAFE edge so you SEE where the skim
+   reward is, without a rail telling you where to fly. Brightens as an obstacle nears; fades out as you build a
+   skim streak (lineVis), returns when it breaks. Perf: a few stacked translucent rects per obstacle, fixed colour. */
+const SKIMBAND="#7fe0ff";     // graze-zone colour (reward cyan, distinct from red danger)
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
@@ -257,8 +257,6 @@ const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps 
 
 /* ===== Object pools (no per-frame allocation) ===== */
 const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0,style:0});
-// The Line — reused waypoint/ordering buffers (alloc-free): player + up to OBN hug points + a trailing point
-const LINEIDX=new Int32Array(OBN), LINEPX=new Float32Array(OBN+2), LINEPY=new Float32Array(OBN+2);
 // warp-tube pool (sparse) — mid-lane rings you flip THROUGH for a forward skip; alloc-free
 const WARPN=3, warps=[]; for(let i=0;i<WARPN;i++) warps.push({on:false,x:0,y:0,used:false});
 function spawnWarp(){ for(const w of warps){ if(!w.on){ w.on=true; w.used=false; w.x=VW+20; w.y=(Math.random()<0.5?108:162); return; } } }  // mid-lane → must time a flip
@@ -881,25 +879,16 @@ function draw(){
     if(BT[1]>0){ const sr=PS*3; ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-sr,ly-sr,sr*2,sr*2); } // SHIELD gold flare — radius pinned to ~3× the player (was the full spotlight radius)
     ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over"; ctx.imageSmoothingEnabled=false; }
 
-  // === The Line — fading guide ribbon tracing the close-skim route; drawn over the gloom so it reads as "fly here" ===
-  if(mode==="play" && lineVis>0.02){
-    let k=0; for(let i=0;i<OBN;i++){ const o=obs[i]; if(o.on && o.x+o.w>PX) LINEIDX[k++]=i; }
-    for(let a=1;a<k;a++){ const v=LINEIDX[a]; let b=a-1; while(b>=0 && obs[LINEIDX[b]].x>obs[v].x){ LINEIDX[b+1]=LINEIDX[b]; b--; } LINEIDX[b+1]=v; }  // order by x (insertion sort, alloc-free)
-    let np=0; LINEPX[np]=PX+PS/2; LINEPY[np]=py+PS/2; np++;                                  // start at the player
-    for(let a=0;a<k;a++){ const o=obs[LINEIDX[a]]; LINEPX[np]=o.x+o.w/2;
-      LINEPY[np]= o.side===0 ? (BOTY-o.h)-LINE_OFF-PS/2 : (TOPY+o.h)+LINE_OFF+PS/2; np++; }   // hug just off each tip, safe side
-    LINEPX[np]=VW+24; LINEPY[np]=(TOPY+BOTY-PS)/2; np++;                                      // trail off toward mid-field
-    ctx.lineCap="round"; ctx.lineJoin="round";
-    ctx.beginPath(); ctx.moveTo(LINEPX[0],LINEPY[0]);                                         // smooth midpoint curve through the waypoints (the "wavy line")
-    for(let i=1;i<np-1;i++){ const mx=(LINEPX[i]+LINEPX[i+1])/2, my=(LINEPY[i]+LINEPY[i+1])/2; ctx.quadraticCurveTo(LINEPX[i],LINEPY[i],mx,my); }
-    ctx.lineTo(LINEPX[np-1],LINEPY[np-1]);
-    const pulse=0.6+0.25*Math.sin(t*4);
-    ctx.strokeStyle="#7fe0ff"; ctx.globalAlpha=lineVis*0.16*pulse; ctx.lineWidth=7; ctx.stroke();   // soft glow underlay (oversized translucent, no shadowBlur)
-    ctx.globalAlpha=lineVis*0.85*pulse; ctx.lineWidth=2; ctx.stroke();                                // bright core
-    for(let a=0;a<k;a++){ const o=obs[LINEIDX[a]]; const hx2=o.x+o.w/2, hy=o.side===0?(BOTY-o.h)-LINE_OFF-PS/2:(TOPY+o.h)+LINE_OFF+PS/2;
-      ctx.globalAlpha=lineVis*0.9; ctx.fillStyle="#bff0ff"; ctx.fillRect(hx2-1.5,hy-1.5,3,3); }     // "skim here" pip at each hug point
-    ctx.globalAlpha=1; ctx.lineWidth=1; ctx.lineCap="butt"; ctx.lineJoin="miter";
-  }
+  // === Skim bands — soft cyan graze zone along each obstacle's SAFE edge (shows where to skim; no rail) ===
+  if(mode==="play" && lineVis>0.02){ ctx.fillStyle=SKIMBAND;
+    for(const o of obs){ if(!o.on) continue;
+      const near=Math.max(0,1-Math.abs((o.x+o.w/2)-PX)/240), a=lineVis*(0.10+0.30*near);
+      if(a<0.02) continue; const ix=o.x|0, bw=o.w;
+      if(o.side===0){ const edge=BOTY-o.h;            // floor jut → graze zone is ABOVE the tip
+        for(let s=0;s<4;s++){ ctx.globalAlpha=a*(1-s*0.25); ctx.fillRect(ix, edge-(s+1)*7, bw, 7); } }
+      else { const edge=TOPY+o.h;                     // ceiling tube → graze zone is BELOW the tip
+        for(let s=0;s<4;s++){ ctx.globalAlpha=a*(1-s*0.25); ctx.fillRect(ix, edge+s*7, bw, 7); } } }
+    ctx.globalAlpha=1; }
   // collectibles — coins shine in the gloom, power-orbs glow their buff colour (never red); drawn OVER the
   // darkness so loot is always readable (you can plan a flip toward it) — little lights in the dark.
   ctx.imageSmoothingEnabled=true;
