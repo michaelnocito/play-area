@@ -201,7 +201,7 @@ const MAG_R=150;                               // MAGNET buff pull radius — co
 const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; +28m skip (leaderboard-safe)
 const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
 /* Flow State ("Homeward") — EARNED by skill (clean passes), NOT a pickup. Sustain skims → bonus score + a gold bloom. */
-const FLOW_GAIN=0.16, FLOW_COIN=0.05, FLOW_DRAIN=0.22, FLOW_IDLE=0.10, FLOW_MULT=0.5;   // fill/skim, fill/coin, active drain, idle decay, +score fraction (0.5 → 1.5×)
+const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.04, FLOW_MULT=0.5;   // SHOWY: ~2-3 skims ignite, slow idle decay so progress sticks, coins feed it (was 0.16/0.05/0.22/0.10); +score fraction 0.5 → 1.5×
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
