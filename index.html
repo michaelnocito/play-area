@@ -498,7 +498,7 @@ function pickFormation(){            // only called when no formation is active
   else if((s-=wZig)<0){ fmId=3; fmLen=3; fmSide=rndSide(); }         // zig-zag
   else { fmId=2; fmLen=2; }                                          // wDbl → double-flip
 }
-function placeRect(o,side,h){ o.on=true; o.x=VW+24; o.scored=false;
+function placeRect(o,side,h){ o.on=true; o.x=VW+24; o.scored=false; o.minClr=1e9;
   o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side; o.style=(Math.random()<0.5)|0;
   lastObsSide=side; clearLootNear(o); }   // record the danger lane + evict any loot this jut would trap
 function spawnObstacle(spacing){
@@ -624,8 +624,13 @@ function update(dt){
     if(hx<o.x+o.w && hx+hw>o.x && hy<ry+o.h && hy+hh>ry){
       if(BT[1]>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
       onCrash(); return; }
+    // track CLOSEST vertical clearance while the obstacle is over the player (skim = min gap during the pass,
+    // NOT the gap at pass-completion — sampling only at completion missed the actual closest approach by ~13
+    // frames, so genuine skims read as wide misses and Clean Pass / Flow almost never fired)
+    if(o.x<PX+PS && o.x+o.w>PX){ const cNow=o.side===0 ? (BOTY-o.h)-(py+PS) : py-(TOPY+o.h);
+      if(cNow>=0 && cNow<o.minClr) o.minClr=cNow; }
     if(!o.scored && o.x+o.w<PX){ o.scored=true;
-      const clr = o.side===0 ? (BOTY-o.h)-(py+PS) : py-(TOPY+o.h);   // gap to the hazard edge
+      const clr=o.minClr;   // closest approach during the pass (>=0, or 1e9 if never alongside)
       if(clr>=0 && clr<14){ combo++; comboVal=combo; comboT=0.7; worldX+=combo*22; runCoinBonus+=combo; bgPulse=Math.max(bgPulse,0.30); flow=Math.min(1,flow+FLOW_GAIN);
         spark(PX+PS/2,py+PS/2); Snd.clean(combo); }
       else { combo=0; Snd.point(); }
