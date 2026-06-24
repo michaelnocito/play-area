@@ -202,6 +202,12 @@ const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; 
 const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
 /* Flow State ("Homeward") — EARNED by skill (clean passes), NOT a pickup. Sustain skims → bonus score + a gold bloom. */
 const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.04, FLOW_MULT=0.5;   // SHOWY: ~2-3 skims ignite, slow idle decay so progress sticks, coins feed it (was 0.16/0.05/0.22/0.10); +score fraction 0.5 → 1.5×
+/* ===== Graze ladder — skimming is THE mechanic: forgiving entry, precision ceiling. The canonical CLEAN stays 14px;
+   we ADD a generous NICE tier (so anyone tastes it) + a PERFECT tier (mastery). Judged on closest approach (minClr). */
+const GRAZE_NICE=28, GRAZE_CLEAN=14, GRAZE_PERFECT=6;        // tier thresholds (px to the red edge at closest approach)
+const GRAZE_LABEL=["","NICE","CLEAN","PERFECT"];             // tier 0/1/2/3 (module-level → no per-frame alloc)
+const GRAZE_COL=["","#9bf0d0","#7fe0ff","#ffe08a"];         // nice teal · clean cyan · perfect gold
+const GRAZE_FLOWK=[0,0.6,1.0,1.4];                          // Flow-gain multiplier per tier (precision charges faster)
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
@@ -370,7 +376,7 @@ let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
 let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
 let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0, mileT=0, mileVal=0;
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;   // formation sequencer (replaces the old pairNext flag)
-let combo=0, comboVal=0, comboT=0;   // Clean Pass skill streak
+let combo=0, comboVal=0, comboT=0, comboTier=0;   // skim streak (combo = multiplier), comboTier = last graze tier 1/2/3
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
@@ -387,7 +393,7 @@ function reset(){
   for(const o of obs) o.on=false;
   for(const p of trail) p.on=false; trHead=0;
   for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
-  shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; bgPulse=0; landT=0;
+  shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; comboTier=0; bgPulse=0; landT=0;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
   reviveT=0; reviveUsedFree=false; reviveUsedAd=false;
@@ -631,9 +637,15 @@ function update(dt){
       if(cNow>=0 && cNow<o.minClr) o.minClr=cNow; }
     if(!o.scored && o.x+o.w<PX){ o.scored=true;
       const clr=o.minClr;   // closest approach during the pass (>=0, or 1e9 if never alongside)
-      if(clr>=0 && clr<14){ combo++; comboVal=combo; comboT=0.7; worldX+=combo*22; runCoinBonus+=combo; bgPulse=Math.max(bgPulse,0.30); flow=Math.min(1,flow+FLOW_GAIN);
-        spark(PX+PS/2,py+PS/2); Snd.clean(combo); }
-      else { combo=0; Snd.point(); }
+      let tier=0; if(clr<GRAZE_PERFECT)tier=3; else if(clr<GRAZE_CLEAN)tier=2; else if(clr<GRAZE_NICE)tier=1;
+      if(tier>0){ combo++; comboVal=combo; comboTier=tier; comboT=0.8;
+        bonusM += tier*combo;                                  // SKIM is the score driver: tier × streak, kept OFF dist so the difficulty curve stays locked
+        runCoinBonus += tier;                                  // coins scale with precision
+        flow=Math.min(1,flow+FLOW_GAIN*GRAZE_FLOWK[tier]);     // precision charges Flow faster
+        bgPulse=Math.max(bgPulse,0.16+0.10*tier);
+        spark(PX+PS/2,py+PS/2); if(tier===3) coinFx(PX+PS/2,py+PS/2);   // PERFECT = extra gold pop
+        Snd.clean(combo+tier); }                               // pitch climbs with streak + tier
+      else { combo=0; comboTier=0; Snd.point(); }              // a wide, safe pass cools the streak
     }
   }
 
@@ -824,8 +836,8 @@ function draw(){
   ctx.restore();
 
   // Clean Pass flair
-  if(comboT>0 && comboVal>=1){ ctx.globalAlpha=Math.min(1,comboT*1.6);   // show on EVERY clean pass (was >1 → a lone skim gave no feedback)
-    txt(comboVal>1?"CLEAN ×"+comboVal:"CLEAN", PX+30, gdir>0?py-10:py+PS+18, 11, "#9bf0d0", 800); ctx.globalAlpha=1; }
+  if(comboT>0 && comboTier>0){ ctx.globalAlpha=Math.min(1,comboT*1.6);   // tier-aware skim popup (NICE/CLEAN/PERFECT ×streak)
+    txt(GRAZE_LABEL[comboTier]+(comboVal>1?" ×"+comboVal:""), PX+30, gdir>0?py-10:py+PS+18, comboTier===3?13:11, GRAZE_COL[comboTier], 800); ctx.globalAlpha=1; }
   if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
     txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
   if(warpFx>0){ ctx.globalAlpha=Math.min(1,warpFx*2);   // nail-it "WARP +Nm" flourish
@@ -896,6 +908,7 @@ function draw(){
   if(mode==="play"){ const sc=score();
     txt(sc+"m",VW/2,WALL-6,13,flowActive?"#ffe08a":"#aeb8cc",700);
     txt("◆ "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);   // pulses gold on grab
+    if(combo>1){ const pul=comboT>0.5?1.3:1; txt("SKIM ×"+combo,58,WALL+11,12*pul,GRAZE_COL[comboTier]||"#7fe0ff",800); }   // persistent skim multiplier (the score driver)
     // Flow meter — thin bar under the score; fills with skim skill, blazes + "HOMEWARD" when lit
     if(flow>0||flowActive){ const fw=120, fx=VW/2-fw/2, fy=WALL+3;
       ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(fx,fy,fw,3);
