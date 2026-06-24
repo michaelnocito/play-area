@@ -41,6 +41,7 @@ const Ads = {
   loadingStop(){ try{ window.CrazyGames?.SDK?.game?.loadingStop?.(); }catch(e){} },
   gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
   gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
+  happytime(){ try{ window.CrazyGames?.SDK?.game?.happytime?.(); }catch(e){} },   // v3: positive-moment signal (new best / Flow ignite) — platform may add flourishes; no gameplay impact
   interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame",
       { adStarted(){ Snd.duck(true); }, adFinished(){ Snd.duck(false); }, adError(){ Snd.duck(false); } }); }catch(e){} },  // mute during ad (policy)
   rewarded(onReward,onSkip){            // opt-in rewarded ad; mutes audio during play (policy); graceful offline
@@ -424,7 +425,7 @@ function beginRevive(withBuffs){
 function finalDeath(){
   mode="dead"; Ads.gameplayStop();
   if(adPending){ adPending=false; Ads.interstitial(); }   // midgame ONLY when the run truly ends (never with a revive — policy)
-  const sc=score(); if(sc>best) best=sc;
+  const sc=score(); if(sc>best){ best=sc; Ads.happytime(); }   // new personal best = a genuine happy moment
   lastEarned=(sc/14|0)+runCoinBonus; coins+=lastEarned; persist();
   lightR=26; lightTarget=26;
 }
@@ -591,7 +592,7 @@ function update(dt){
   // Flow State ("Homeward") — earned by skim skill (charged in the Clean-Pass block); drains while active, bonus metres while lit
   if(flowActive){ flow-=FLOW_DRAIN*dt; bonusM+=(dx/40)*FLOW_MULT;       // +score WITHOUT touching dist → spacing/difficulty stay locked
     if(flow<=0){ flow=0; flowActive=false; Music.flow=false; Music.applyMute(); } }
-  else if(flow>=1){ flowActive=true; flow=1; Music.flow=true; Music.applyMute(); Snd.flow(); bgPulse=Math.max(bgPulse,0.7); beaconPulse=Math.max(beaconPulse,1.2); }
+  else if(flow>=1){ flowActive=true; flow=1; Music.flow=true; Music.applyMute(); Snd.flow(); bgPulse=Math.max(bgPulse,0.7); beaconPulse=Math.max(beaconPulse,1.2); Ads.happytime(); }   // entering Flow ("HOMEWARD") — earned, triumphant
   else if(flow>0){ flow-=FLOW_IDLE*dt; if(flow<0)flow=0; }
   if(dist>=lastMile+50){ lastMile+=50; mileVal=lastMile; mileT=0.9; flash=Math.max(flash,0.16); flashCol="#5ef2c2"; Snd.point();
     bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer
