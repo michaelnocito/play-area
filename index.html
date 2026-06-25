@@ -222,6 +222,10 @@ const LURE_GAP_MIN=30, LURE_GAP_RND=24;        // metres between lures (cadence 
 const STEPX=24, DIP_STEPX=60, SCAT_STEPX=90;   // horizontal spacing within a lure
 const COIN_VAL=1, COIN_VAL_RISK=3;             // base vs danger-lane risk-premium payout
 const COIN_R=14, ORB_R=22;                     // GENEROUS grab radii (>> the ~8/11px visuals)
+const WEAVE_MAX=175;                           // TUNNEL only: below this distance coins appear ONLY hugging a pipe's wall in the
+                                               // open gap just past it (tempts a quick weave up/down into the empty space + back);
+                                               // at/above 175m speed is too high to weave safely → revert to the normal lures
+const WEAVE_COIN_DX=44;                         // how far into the trailing opening the weave coin sits (clearLootNear prunes unsafe ones)
 const MAG_R=150;                               // MAGNET buff pull radius — coins within this glide to the player
 /* Warp tubes — optional HIGH-SKILL forward skip (teal/friendly, never red, never kills; miss = no penalty) */
 const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; +28m skip (leaderboard-safe)
@@ -576,6 +580,7 @@ function spawnObstacle(spacing){
       default: side=Math.random()<0.5?0:1;                                                               // F1 solo
     }
     placeRect(o,side,h);
+    if(dist>=COL_FROM && dist<WEAVE_MAX) placeWeaveCoin(o);   // tempt a weave into the empty space beside the pipe (early game only)
     spawnCd+=gap; fmStep++;
     if(fmStep>=fmLen){ if(fmId>=4&&fmId<=6) hardCount++; else if(fmId<=3) hardCount=0; fmLen=0; }
     return; } }
@@ -601,6 +606,12 @@ function spawnSkyArc(){                // a low arc of coins peaking near jump a
     if(lootClear(x,y)) placeCoin(x,y,COIN_VAL); }
 }
 
+// a coin in the open gap just PAST a pipe, hugging that pipe's wall → tempts a quick weave to the danger wall and back.
+// Placed deliberately near the pipe (no lootClear gate); clearLootNear() on later juts prunes any that become unsafe.
+function placeWeaveCoin(o){
+  const y = o.side===1 ? TOPY+PS/2 : BOTY-PS/2;          // at the player's rest-centre on the pipe's wall (ceiling or floor)
+  placeCoin(o.x + o.w + WEAVE_COIN_DX, y, COIN_VAL_RISK);
+}
 /* ===== Collectible lures — entice skilful flips; pooled, fair, never co-located with danger ===== */
 function lootClear(x,y){            // true if (x,y) keeps clear of every active red
   for(const o of obs){ if(!o.on) continue;
@@ -759,7 +770,10 @@ function update(dt){
   }
 
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
-  if(dist>=COL_FROM && dist>=nextLure && xfade<=0){ segType>=1?spawnSkyArc():spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
+  if(dist>=COL_FROM && dist>=nextLure && xfade<=0){
+    if(segType>=1) spawnSkyArc();
+    else if(dist>=WEAVE_MAX) spawnLure();   // tunnel: below 175m coins come ONLY from weave-coins (placed at pipe spawn)
+    nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
   if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && BT[0]<=0&&BT[1]<=0&&BT[2]<=0 && !orbArmed) orbArmed=true;
 
   // emotional light (Feature 1): target radius blooms on hope (bgPulse), constricts on fear
