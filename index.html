@@ -13,12 +13,12 @@
               font-family:system-ui,sans-serif; }
   #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
   canvas { background:#0c0e14; image-rendering:pixelated; touch-action:none; }
-  #mute { position:fixed; top:8px; right:10px; width:36px; height:36px; border-radius:8px;
+  #mute { position:fixed; top:8px; right:10px; width:44px; height:44px; border-radius:10px;
           background:rgba(232,236,241,.10); border:1px solid rgba(232,236,241,.30);
-          color:#e8ecf1; font-size:17px; cursor:pointer; z-index:5; }
-  #fx { position:fixed; top:8px; right:52px; width:36px; height:36px; border-radius:8px;
+          color:#e8ecf1; font-size:19px; cursor:pointer; z-index:5; }
+  #fx { position:fixed; top:8px; right:60px; width:44px; height:44px; border-radius:10px;
         background:rgba(232,236,241,.10); border:1px solid rgba(232,236,241,.30);
-        color:#e8ecf1; font-size:15px; cursor:pointer; z-index:5; }
+        color:#e8ecf1; font-size:17px; cursor:pointer; z-index:5; }
   #rotate { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
             background:#0c0e14; color:#e8ecf1; z-index:20; text-align:center;
             font-weight:700; font-size:17px; letter-spacing:.5px; }
@@ -333,7 +333,7 @@ const AURAS=[
 ];
 const SAVE="flipline.v1";
 let coins=0, owned=[0], equipped=0, ownedTrail=[0], equippedTrail=0, ownedAura=[0], equippedAura=0;
-let runCoinBonus=0, shopCat=0, sel=[0,0,0], lastEarned=0, lowFx=false, pickBuff=-1, startAll=false;
+let runCoinBonus=0, shopCat=0, sel=[0,0,0], lastEarned=0, lowFx=false, pickBuff=1, startAll=false;   // default pickBuff=SHIELD so a first-timer FEELS a buff in run 1 without choosing
 function loadSave(){ try{ const d=JSON.parse(localStorage.getItem(SAVE)); if(d){
     coins=d.coins|0; owned=Array.isArray(d.owned)?d.owned:[0]; equipped=d.equipped|0; best=d.best|0; lowFx=!!d.lowFx;
     if(typeof d.pickBuff==="number") pickBuff=d.pickBuff;
@@ -367,6 +367,11 @@ const R_PREV={x:52,y:112,w:36,h:44}, R_NEXT={x:392,y:112,w:36,h:44};
 const R_ACT={x:VW/2-72,y:196,w:144,h:30}, R_BACK={x:16,y:236,w:80,h:24};
 // revive "CONTINUE?" offer — two EQUAL-weight buttons (policy: skip/continue must match in size/font/colour)
 const R_CONT={x:VW/2-94,y:VH/2+4,w:188,h:30}, R_END={x:VW/2-94,y:VH/2+40,w:188,h:28};
+// dead screen: explicit retry pill (so the rest of the screen is inert) + optional rewarded-ad coin doubler
+const R_RETRY={x:VW/2-72,y:VH/2+52,w:144,h:24};
+const R_DOUBLE={x:VW/2-94,y:VH/2+78,w:188,h:22};
+// in-run pause: corner toggle that maps to the same icon area people already use, just bigger so a deliberate tap is unambiguous
+const R_PAUSE={x:VW-44,y:VH-44,w:36,h:36};
 function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
 function score(){ return dist + (bonusM|0); }   // shown/banked score = real distance + Flow bonus metres
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
@@ -378,7 +383,9 @@ function shopAction(){ const c=shopCat, i=sel[c], list=catList(c), own=catOwned(
 let mode="ready";            // ready | play | dead
 let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
 let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
-let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0, mileT=0, mileVal=0;
+let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
+let flowAnnounce=0, flowBarPulse=0;   // HOMEWARD ignite: one-shot headline banner + meter-bar height pulse (the "this just turned on" beat)
+let paused=false, pausedAtMode="ready", doubledFlag=false;   // manual pause (phone-call recovery) + rewarded-ad "double coins" once-per-run flag
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;   // formation sequencer (replaces the old pairNext flag)
 let combo=0, comboVal=0, comboT=0, comboTier=0;   // skim streak (combo = multiplier), comboTier = last graze tier 1/2/3
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
@@ -397,7 +404,8 @@ function reset(){
   for(const o of obs) o.on=false;
   for(const p of trail) p.on=false; trHead=0;
   for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
-  shake=0; flash=0; freeze=0; lastMile=0; mileT=0; combo=0; comboT=0; comboTier=0; bgPulse=0; landT=0;
+  shake=0; flash=0; freeze=0; lastMile=0; combo=0; comboT=0; comboTier=0; bgPulse=0; landT=0;
+  flowAnnounce=0; flowBarPulse=0; doubledFlag=false;   // fresh run = fresh Flow banner + fresh ad-double offer
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
   reviveT=0; reviveUsedFree=false; reviveUsedAd=false;
@@ -441,20 +449,33 @@ function finalDeath(){
 }
 
 /* ===== Input ===== */
-function tap(){ if(mode==="play") flip(); else if(mode==="ready"||mode==="dead") start(); }   // offer/reviving handled separately
+function togglePause(){ if(paused){ paused=false; if(pausedAtMode==="play") Ads.gameplayStart(); }   // resume first — mode is still "play" while paused
+  else if(mode==="play"){ paused=true; pausedAtMode="play"; Ads.gameplayStop(); } }
+function tap(){ if(mode==="play") flip(); else if(mode==="ready") start(); }   // dead-mode is now button-gated; ready still taps-to-start
 addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
+  if(paused){ if(inR(p,R_PAUSE)) togglePause(); else if(pausedAtMode==="play") togglePause(); return; }   // any tap resumes from play-pause
   if(mode==="shop"){ shopTap(p); return; }
   if(mode==="reviving") return;                      // countdown is automatic — taps ignored
   if(mode==="offer"){                                // the once-per-run "CONTINUE? watch ad" choice
     if(inR(p,R_CONT)){ Ads.rewarded(()=>{ reviveUsedAd=true; beginRevive(true); }, ()=>{ reviveUsedAd=true; finalDeath(); }); return; }
     if(inR(p,R_END)){ reviveUsedAd=true; finalDeath(); return; }
     return; }
+  if(mode==="play" && inR(p,R_PAUSE)){ togglePause(); return; }   // pause from in-run via corner tap
   if(mode==="ready"||mode==="dead"){
     if(inR(p,R_SHOPBTN)){ mode="shop"; shopCat=0; sel[0]=equipped; sel[1]=equippedTrail; sel[2]=equippedAura; return; }
     for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
     if(inR(p,R_BUFFALL)){ Ads.rewarded(()=>{ startAll=true; start(); }, ()=>{ start(); }); return; } // watch ad → all 3
   }
+  if(mode==="dead"){
+    if(inR(p,R_RETRY)){ start(); return; }
+    if(!doubledFlag && lastEarned>=5 && inR(p,R_DOUBLE)){
+      Ads.rewarded(()=>{ coins+=lastEarned; doubledFlag=true; persist(); Snd.coin(); }, ()=>{ doubledFlag=true; });   // doubledFlag also set on error so the offer can't be ad-spammed
+      return; }
+    return;   // rest of dead-screen is inert — no accidental restarts on text/score taps
+  }
   tap(); },{passive:false});
+addEventListener("visibilitychange",()=>{ if(document.hidden && mode==="play" && !paused) togglePause(); });   // phone-call / tab-switch recovery
+addEventListener("keydown",e=>{ if(e.key==="Escape" || e.key==="p" || e.key==="P"){ if(mode==="play"||paused){ togglePause(); e.preventDefault(); } } });
 addEventListener("keydown",e=>{
   if(mode==="shop"){ const c=shopCat, n=catList(c).length;
     if(e.key==="ArrowLeft") sel[c]=(sel[c]-1+n)%n;
@@ -576,7 +597,8 @@ function update(dt){
   for(const p of par){ if(p.life>0){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=520*dt; } }
   if(shake>0){ shake-=dt*60; if(shake<0)shake=0; }
   if(flash>0){ flash-=dt*2.4; if(flash<0)flash=0; }
-  if(mileT>0){ mileT-=dt*1.5; if(mileT<0)mileT=0; }
+  if(flowAnnounce>0){ flowAnnounce-=dt; if(flowAnnounce<0)flowAnnounce=0; }   // HOMEWARD ignite banner timer
+  if(flowBarPulse>0){ flowBarPulse-=dt; if(flowBarPulse<0)flowBarPulse=0; }    // bar-height pulse on ignite
   if(needRotate){ if(mode==="play" && !rotatePaused){ rotatePaused=true; Ads.gameplayStop(); } return; }
   if(rotatePaused){ rotatePaused=false; if(mode==="play") Ads.gameplayStart(); }
   if(comboT>0){ comboT-=dt*1.6; if(comboT<0)comboT=0; }
@@ -586,6 +608,7 @@ function update(dt){
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
   if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
   if(warpFx>0){ warpFx-=dt; if(warpFx<0)warpFx=0; }
+  if(paused) return;   // manual pause / phone-call recovery — particles still animate above for life, gameplay frozen
   if(mode==="reviving"){ reviveT-=dt; lightR+=(LR_BASE-lightR)*Math.min(1,dt*6);   // bloom back over the "get ready" countdown
     if(reviveT<=0){ reviveT=0; mode="play"; } return; }
   if(mode!=="play") return;
@@ -602,7 +625,8 @@ function update(dt){
   // Flow State ("Homeward") — earned by skim skill (charged in the Clean-Pass block); drains while active, bonus metres while lit
   if(flowActive){ flow-=FLOW_DRAIN*dt; bonusM+=(dx/40)*FLOW_MULT;       // +score WITHOUT touching dist → spacing/difficulty stay locked
     if(flow<=0){ flow=0; flowActive=false; Music.flow=false; Music.applyMute(); } }
-  else if(flow>=1){ flowActive=true; flow=1; Music.flow=true; Music.applyMute(); Snd.flow(); bgPulse=Math.max(bgPulse,0.7); beaconPulse=Math.max(beaconPulse,1.2); Ads.happytime(); }   // entering Flow ("HOMEWARD") — earned, triumphant
+  else if(flow>=1){ flowActive=true; flow=1; Music.flow=true; Music.applyMute(); Snd.flow(); bgPulse=Math.max(bgPulse,0.7); beaconPulse=Math.max(beaconPulse,1.2); Ads.happytime();
+    flowAnnounce=1.4; flowBarPulse=0.18; }   // entering Flow ("HOMEWARD") — earned, triumphant; fire the headline banner + meter pulse
   else if(flow>0){ flow-=FLOW_IDLE*dt; if(flow<0)flow=0; }
   if(dist>=lastMile+50){ lastMile+=50; Snd.point();
     bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer — no cyan strobe; the spotlight bloom + beacon step does the talking
@@ -842,8 +866,8 @@ function draw(){
   ctx.restore();
 
   // Clean Pass flair
-  if(comboT>0 && comboTier>0){ ctx.globalAlpha=Math.min(1,comboT*1.6);   // tier-aware skim popup (NICE/CLEAN/PERFECT ×streak)
-    txt(GRAZE_LABEL[comboTier]+(comboVal>1?" ×"+comboVal:""), PX+30, gdir>0?py-10:py+PS+18, comboTier===3?13:11, GRAZE_COL[comboTier], 800); ctx.globalAlpha=1; }
+  if(comboT>0 && comboTier>0){ ctx.globalAlpha=Math.min(1,comboT*1.6);   // tier-aware skim popup: name the tier + the metres banked (so the score economy is visible)
+    txt(GRAZE_LABEL[comboTier]+(comboVal>1?" ×"+comboVal:"")+"  +"+(comboTier*comboVal)+"m", PX+30, gdir>0?py-10:py+PS+18, comboTier===3?13:11, GRAZE_COL[comboTier], 800); ctx.globalAlpha=1; }
   if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
     txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
   if(warpFx>0){ ctx.globalAlpha=Math.min(1,warpFx*2);   // nail-it "WARP +Nm" flourish
@@ -912,14 +936,28 @@ function draw(){
 
   // score (in-run only)
   if(mode==="play"){ const sc=score();
+    // HUD scrim — a single translucent band keeps score + coin readable across every zone (gold-on-gold luminance collision in warm zones)
+    ctx.fillStyle="rgba(0,0,0,0.25)"; ctx.fillRect(0,0,VW,WALL);
     txt(sc+"m",VW/2,WALL-6,13,flowActive?"#ffe08a":"#aeb8cc",700);
     txt("◆ "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);   // pulses gold on grab
-    if(combo>1){ const pul=comboT>0.5?1.3:1; txt("SKIM ×"+combo,58,WALL+11,12*pul,GRAZE_COL[comboTier]||"#7fe0ff",800); }   // persistent skim multiplier (the score driver)
-    // Flow meter — thin bar under the score; fills with skim skill, blazes + "HOMEWARD" when lit
-    if(flow>0||flowActive){ const fw=120, fx=VW/2-fw/2, fy=WALL+3;
-      ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(fx,fy,fw,3);
-      ctx.fillStyle=flowActive?"#ffd66b":"#ffb86b"; ctx.fillRect(fx,fy,fw*Math.min(1,flow),3);   // warm amber while charging (was cyan/teal), gold when lit
-      if(flowActive){ ctx.globalAlpha=0.7+0.3*Math.sin(t*8); txt("HOMEWARD",VW/2,fy+15,10,"#ffe08a",800); ctx.globalAlpha=1; } } }
+    if(combo>1 && comboT>0){ const pul=comboT>0.5?1.3:1; txt("SKIM ×"+combo,58,WALL+11,12*pul,GRAZE_COL[comboTier]||"#ffb86b",800); }   // persistent skim multiplier (gated on comboT so it doesn't go stale during breathers)
+    // Flow meter — thin bar under the score; charge color is cool peach (distinct), lit is gold; bar bumps in height on ignite
+    if(flow>0||flowActive){ const fw=120, fx=VW/2-fw/2, fy=WALL+3, bh=3+(flowBarPulse>0?2:0);
+      ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(fx,fy,fw,bh);
+      ctx.fillStyle=flowActive?"#ffd66b":"#ffd6a8"; ctx.fillRect(fx,fy,fw*Math.min(1,flow),bh);   // cool peach charging → reserved gold for lit, so the threshold reads
+      if(flowActive){ ctx.globalAlpha=0.75+0.25*Math.sin(t*8); txt("HOMEWARD ×1.5",VW/2,fy+15,10,"#ffe08a",800); ctx.globalAlpha=1; }   // name the multiplier inline — "music sped up" isn't the only signal anymore
+    }
+    // Flow-only edge vignette — gives HOMEWARD a unique visual identity (zone pulses don't do this)
+    if(flowActive){ const va=0.10; ctx.fillStyle="rgba(255,224,138,"+va+")";
+      ctx.fillRect(0,0,VW,8); ctx.fillRect(0,VH-8,VW,8); ctx.fillRect(0,0,8,VH); ctx.fillRect(VW-8,0,8,VH); }
+    // HOMEWARD ignite headline — the biggest text in the game, fading over 1.4s, so the peak reward gets the peak announcement
+    if(flowAnnounce>0){ ctx.globalAlpha=Math.min(1,flowAnnounce/1.4);
+      txt("HOMEWARD",VW/2,VH/2-22,28,"#ffe08a",800);
+      txt("+50% SCORE",VW/2,VH/2-2,12,"#ffd66b",700);
+      ctx.globalAlpha=1; }
+    // pause chip — small corner affordance so phone-call recovery + intentional pause is always available
+    ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_PAUSE.x,R_PAUSE.y,R_PAUSE.w,R_PAUSE.h);
+    ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16); }
 
   ctx.restore();
 
@@ -930,7 +968,11 @@ function draw(){
       ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; ctx.lineWidth=3; const ins=2+k*4; ctx.strokeRect(ins,ins,VW-ins*2,VH-ins*2);
       ctx.globalAlpha=Math.min(1,BT[i]*1.2); txt(GATELABEL[i],VW/2+(k-(n-1)/2)*92,VH-10,11,ORBCSS[i],800); ctx.globalAlpha=1; k++; } }
 
-  if(mode==="reviving"){            // "GET READY" 3..2..1 over the cleared field
+  if(paused){                       // manual pause overlay — calm wash + clear "tap to resume" affordance
+    ctx.fillStyle="rgba(8,10,16,0.55)"; ctx.fillRect(0,0,VW,VH);
+    txt("PAUSED",VW/2,VH/2-12,28,"#ffe08a",800);
+    ctx.globalAlpha=0.7+0.3*Math.sin(t*5); txt("tap to resume",VW/2,VH/2+18,12,"#9bf0d0",600); ctx.globalAlpha=1; }
+  else if(mode==="reviving"){            // "GET READY" 3..2..1 over the cleared field
     const n=Math.ceil(reviveT);
     txt("GET READY",VW/2,VH/2-30,16,"#9bf0d0",700);
     ctx.globalAlpha=0.5+0.5*(reviveT-(n-1)); txt(""+n,VW/2,VH/2+30,56,"#ffcf5c",800); ctx.globalAlpha=1;
@@ -945,15 +987,21 @@ function draw(){
   else if(mode==="shop"){ drawShop(); }
   else if(mode==="ready"){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap / space to flip gravity",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
-    txt("dodge the red — go far",VW/2,VH/2+34,12,"#6f7a92",500);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — skim the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
+    txt("the closer you fly, the brighter you burn",VW/2,VH/2+34,11,"#ffd6a8",600);   // names the signature mechanic (HOMEWARD) wordlessly
+    if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
     shopBtn(); drawBoostRow();
   } else if(mode==="dead"){
     txt("CRASHED",VW/2,VH/2-26,30,"#ff5468",800);
     txt(score()+"m",VW/2,VH/2+0,18,"#e8ecf1",700);
     txt(score()>=best?"★ NEW BEST ★":"best  "+best+"m",VW/2,VH/2+20,12,score()>=best?"#ffcf5c":"#aeb8cc",700);
     txt("+◆ "+lastEarned+"   (◆ "+coins+")",VW/2,VH/2+40,12,"#ffcf5c",700);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to retry",VW/2,VH/2+58,12,"#5ef2c2",600); ctx.globalAlpha=1;
+    // explicit RETRY pill — rest of the dead screen is now inert so a casual tap on the score won't restart the run
+    ctx.fillStyle="rgba(94,242,194,0.16)"; ctx.fillRect(R_RETRY.x,R_RETRY.y,R_RETRY.w,R_RETRY.h);
+    ctx.globalAlpha=0.7+0.3*Math.sin(t*5); txt("▶  TAP TO RETRY",VW/2,R_RETRY.y+16,12,"#9bf0d0",800); ctx.globalAlpha=1;
+    // optional rewarded-ad coin doubler — strategic ad: shown only when the run was meaningful (≥5◆) and never twice on the same run
+    if(!doubledFlag && lastEarned>=5){ ctx.fillStyle="rgba(255,207,92,0.12)"; ctx.fillRect(R_DOUBLE.x,R_DOUBLE.y,R_DOUBLE.w,R_DOUBLE.h);
+      txt("▶ watch ad → DOUBLE coins (+◆ "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); }
     shopBtn(); drawBoostRow();
     const nu=nextUnlock();   // dead-screen carrot: progress toward the cheapest unowned cosmetic
     if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,244,10,"#9bf0d0",700);
@@ -967,12 +1015,14 @@ function shopBtn(){
   ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_SHOPBTN.x,R_SHOPBTN.y,R_SHOPBTN.w,R_SHOPBTN.h);
   txt("SHOP   ◆ "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);
 }
+const BDESC=["pulls coins to you","survives 1 hit","doubles your score"];   // plain-language tooltip per buff (FTUE: name what it actually does)
 function drawBoostRow(){   // pre-run free pick-1 buff + opt-in rewarded "all 3" (the 'not ad-spam' flex)
   txt(pickBuff>=0?"START BOOST — free":"START BOOST — tap one (free)",VW/2,33,10,"#9bf0d0",700);
   for(let i=0;i<3;i++){ const r=R_BUFF[i], sel=pickBuff===i;
     ctx.fillStyle=sel?BUFFSEL[i]:"rgba(255,255,255,0.06)"; ctx.fillRect(r.x,r.y,r.w,r.h);
     if(sel){ ctx.strokeStyle=ORBCSS[i]; ctx.lineWidth=2; ctx.strokeRect(r.x+1,r.y+1,r.w-2,r.h-2); }
     txt(BSHORT[i],r.x+r.w/2,r.y+16,11,ORBCSS[i],700); }
+  if(pickBuff>=0) txt(BDESC[pickBuff],VW/2,R_BUFF[0].y+R_BUFF[0].h+11,10,"#aeb8cc",600);   // selected-buff plain-language description
   ctx.fillStyle="rgba(255,255,255,0.05)"; ctx.fillRect(R_BUFFALL.x,R_BUFFALL.y,R_BUFFALL.w,R_BUFFALL.h);
   ctx.globalAlpha=0.85+0.15*Math.sin(t*4); txt("▶ watch ad → start with ALL 3",VW/2,R_BUFFALL.y+15,11,"#ffcf5c",700); ctx.globalAlpha=1;
 }
