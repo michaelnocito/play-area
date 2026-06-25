@@ -1,7 +1,7 @@
 # FLIPLINE — Dev Handoff / Resume Point
 
 **Repo:** `github.com/michaelnocito/flipline` (PRIVATE, branch `main`) · **Local:** `C:\Users\Mike\Projects\GAMES\flipline`
-**HEAD at handoff:** `33f3992` · **Deliverable:** one file `index.html` (~960 lines, vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
+**HEAD at handoff:** `edb0c33` · **Deliverable:** one file `index.html` (~1010 lines, vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
 **Read first:** `HANDOFF.md` (visual/level-design spec), `FLIPLINE_lore_bible.md` (wordless "Long Way Home" lore). Memory `project_flipline_state.md` auto-loads with full per-feature detail.
 
 ## What it is
@@ -19,13 +19,16 @@ One-button gravity-flip runner for **CrazyGames** (mobile, ad revenue). Tap/clic
 - **Syntax check:** extract the `<script>…</script>` block and `node --check` it (catches edit typos fast).
 - **Visual/audio FEEL is Mike's call** — verify logic, hand him labelled test steps, let him eyeball/ear the live build.
 
-## 🆕 Mode B — SKY platformer (`33f3992`, NEW this session)
-- **What:** every `SEG_LEN=250`m the world switches **flip ↔ sky**. Sky = down-only gravity (`SKY_GRAV`), one-button **FIXED-ARC jump** (`skyJump()`, grounded-only, no double-jump), short **red floor-juts** you hop (`spawnSky`), jump-arc coin lines (`spawnSkyArc`). State: `segType` (0 flip/1 sky), `prevSegType`, `nextSeg`, `xfade`.
-- **Fairness (proven by math):** jump apex ~96px >> tallest jut 56; reach @cap 182px < tightest spacing `SKY_GAPMIN=190` → always clears one jut AND lands in a gap.
-- **Transition:** crossing a boundary clears the field (non-lethal), runs an `XFADE=1.1`s **colour-invert sweep** to a bright/airy world (palette arrays inverted in `draw()`; **danger reds hardcoded → stay red**), reduced vignette in sky, `▲ SKYWARD` / `▼ FLIPLINE` banner. Reuses Snd.warp().
-- **Reuse:** obstacle/coin pools, collision, trail, light, buffs, revive all shared — zero new per-frame alloc; **locked flip constants untouched** (sky has its own const block).
-- **Sky const block** (top of script): `SEG_LEN SKY_GRAV SKY_JUMP SKY_GAP0/GAPMIN SKY_HMIN/MAX SKY_WMIN/MAX XFADE` — all tunable (Mike's feel call).
-- **Deferred (v1.1 ideas):** skill-gated "flip UP into the portal" entry (currently auto at distance, non-lethal); floating sky hazards / pits; sky-specific music brighten; rename banners. Mike playtests feel next.
+## 🆕 THREE LEVELS — multi-level segments (`edb0c33`, NEW this session)
+- **What:** `segType` 0 **tunnel/mid** (flip, the OG game) · 1 **upper/sky** (jump) · 2 **lower/mine** (jump+stomp). Every `SEG_LEN=250`m the world switches along **`SEG_SEQ=[1,0,2,0]`** → mid→upper→mid→lower→repeat (mid = home base). State: `segType prevSegType nextSeg xfade segStep`.
+- **Control:** one button always. Tunnel → flip; sky+mine → **FIXED-ARC jump** (`skyJump()`, grounded-only, no double-jump).
+- **SKY:** red floor-juts you hop (`spawnSky`); soft OUTDOOR palette `UPPER_ZONES/ACC` (replaced the harsh invert — Mike found it too bright).
+- **MINE:** `spawnMine` = 50/50 **stompable enemy** (`o.k===1`, crawl `ENEMY_VX`, defeat by top-stomp → coins + `STOMP_BOUNCE`; side/below contact KILLS) or **red spike** (`o.k===0`, jump-only). Enemies are RED (pillar). Earthy `LOWER_ZONES/ACC`. `drawCritter`/`drawSpike`.
+- **Fair by math:** jump apex 90 > spike 44; sky reach 182 < `SKY_GAPMIN=190`; mine reach+closing 190 < `MINE_GAPMIN=205` → always clear + land in gap.
+- **Transition:** boundary clears field (non-lethal) + `XFADE=1.1`s palette blend (per-level `palZ/palA`, prev→new) + banner. Reuses Snd.warp().
+- **Reuse:** obstacle/coin pools (added `o.k`), collision, trail, light, buffs, revive shared — zero new per-frame alloc; **locked flip constants untouched** (each mode has its own const block).
+- **DEV menu:** main-menu row `▬ TUNNEL / ▲ ABOVE / ▼ MINE` (`R_DEV[]`, `devSeg`) launches straight into a level for testing.
+- **Deferred (v1.1):** skill-gated "flip/jump into the portal" entry (currently auto at distance, non-lethal); per-level music; richer enemy variety/chase; rename banners. Mike playtests feel next.
 
 ## Systems map (current code — `ca7c0ba`)
 - **Score:** `score() = dist` (pure distance in metres). No bonus multiplier, no flow state.
