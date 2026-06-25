@@ -1,7 +1,7 @@
 # FLIPLINE — Dev Handoff / Resume Point
 
 **Repo:** `github.com/michaelnocito/flipline` (PRIVATE, branch `main`) · **Local:** `C:\Users\Mike\Projects\GAMES\flipline`
-**HEAD at handoff:** `edb0c33` · **Deliverable:** one file `index.html` (~1010 lines, vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
+**HEAD at handoff:** `a84facf` · **Deliverable:** one file `index.html` (~1030 lines, vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
 **Read first:** `HANDOFF.md` (visual/level-design spec), `FLIPLINE_lore_bible.md` (wordless "Long Way Home" lore). Memory `project_flipline_state.md` auto-loads with full per-feature detail.
 
 ## What it is
@@ -19,7 +19,13 @@ One-button gravity-flip runner for **CrazyGames** (mobile, ad revenue). Tap/clic
 - **Syntax check:** extract the `<script>…</script>` block and `node --check` it (catches edit typos fast).
 - **Visual/audio FEEL is Mike's call** — verify logic, hand him labelled test steps, let him eyeball/ear the live build.
 
-## 🆕 THREE LEVELS — multi-level segments (`edb0c33`, NEW this session)
+## 🔄 REDESIGN IN PROGRESS — "Light-bringer" two-line journey (`a84facf`)
+Pivoting from endless arcade → a lore-driven, level-based CAMPAIGN. **Lore:** a light-bringer travels the line. **DOWNLINE** (mid, segType 0) is INFECTED — dodge/cure it. **UPLINE** (upper, segType 1) is where you SPREAD LIGHT — vault over objects that then REGROW. **Flipping the line is the core skill**; curing happens when you flip up. Cool→warm home-beacon already implies the ending (reach home / world healed).
+- **DONE this session:** lower MINE removed from rotation (`SEG_SEQ=[1,0]`, mine code parked/unreachable). UPLINE is now a **platformer** — floating light ledges (`spawnPlatform`, one-way landing via `onGround`, no double-jump), light-coins on ledge tops, forgiving floor, NO enemies yet (feel-first). Speed ramp dropped `RAMP 0.35→0.15` (⚠️ overrides locked-feel value, per Mike). Dev top-row = 2 pills DOWNLINE/UPLINE (works on ready+dead).
+- **NEXT (design being locked w/ Mike):** campaign structure (discrete levels vs flow-to-finish); DOWNLINE one-button cure/"shoot" mechanic (recast of "enemies that need to be shot" — "top-down stick" phrase unclear, clarifying); UPLINE pillar-of-light VAULT + Angry-Birds GLIDE over regrowing objects; CrazyGames `data` module save + per-level `gameplayStart/Stop` + level-complete interstitial.
+- **CrazyGames research (verified, citation-backed):** `SDK.data.setItem/getItem/removeItem/clear` (sync, ≤1MB, debounced ~1–30s, synced for logged-in/localStorage for guests; auto guest→account migration). Level-based games fully accepted (genre can't change post-submit). Midgame ad = level-complete slot, **max 1 / 3 min, no chaining**, SDK manages frequency. Must bracket every level/transition with `gameplayStop`→`gameplayStart`. ≤50MB, ≤20s to gameplay, landscape.
+
+## (superseded) THREE LEVELS — multi-level segments (`edb0c33`)
 - **What:** `segType` 0 **tunnel/mid** (flip, the OG game) · 1 **upper/sky** (jump) · 2 **lower/mine** (jump+stomp). Every `SEG_LEN=250`m the world switches along **`SEG_SEQ=[1,0,2,0]`** → mid→upper→mid→lower→repeat (mid = home base). State: `segType prevSegType nextSeg xfade segStep`.
 - **Control:** one button always. Tunnel → flip; sky+mine → **FIXED-ARC jump** (`skyJump()`, grounded-only, no double-jump).
 - **SKY:** red floor-juts you hop (`spawnSky`); soft OUTDOOR palette `UPPER_ZONES/ACC` (replaced the harsh invert — Mike found it too bright).
