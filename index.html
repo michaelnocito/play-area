@@ -201,7 +201,7 @@ const MAG_R=150;                               // MAGNET buff pull radius — co
 const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; +28m skip (leaderboard-safe)
 const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
 /* Flow State ("Homeward") — EARNED by skill (clean passes), NOT a pickup. Sustain skims → bonus score + a gold bloom. */
-const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.04, FLOW_MULT=0.5;   // SHOWY: ~2-3 skims ignite, slow idle decay so progress sticks, coins feed it (was 0.16/0.05/0.22/0.10); +score fraction 0.5 → 1.5×
+const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.018, FLOW_MULT=0.5;   // SHOWY: ~2-3 skims ignite, slow idle decay so progress sticks, coins feed it (was 0.16/0.05/0.22/0.10); +score fraction 0.5 → 1.5×
 /* ===== Graze ladder — skim = fly within 75% of the safe lane from the obstacle tip.
    Natural play (go to safe wall) = ~10-25% clearance from safe side = ~75-90% from obstacle = NO SKIM.
    Deliberate close play = small clearance = NICE/CLEAN/PERFECT. Outer 25% = wide safe dodge, combo resets.
@@ -215,7 +215,7 @@ const SKIM_FRAC=0.75;                                        // outer gate — f
 const GRAZE_T_PERFECT=0.12, GRAZE_T_CLEAN=0.40;             // precision upgrade thresholds (inner fractions)
 const GRAZE_LABEL=["","NICE","CLEAN","PERFECT"];             // tier 0/1/2/3 (module-level → no per-frame alloc)
 const GRAZE_COL=["","#ffd6a8","#ffb86b","#ffe08a"];         // warm ladder: peach → amber → gold
-const GRAZE_FLOWK=[0,0.30,0.80,1.40];                       // NICE slow (~20 passes), CLEAN fast (~4), PERFECT instant
+const GRAZE_FLOWK=[0,0.42,0.80,1.40];                       // NICE ~8 passes to ignite, CLEAN ~3, PERFECT ~2
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
