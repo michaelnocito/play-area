@@ -190,6 +190,18 @@ const GAPMIN = 120;           // tightest spacing
 const HMIN   = 66, HMAX=118;  // obstacle jut height range
 const WMIN   = 26, WMAX=46;   // obstacle width range
 
+/* ===== Mode B — SKY platformer (its OWN constant set; the LOCKED flip block above is never touched) =====
+   Every SEG_LEN metres the world switches flip<->sky. Sky = down-only gravity, one-button FIXED-ARC jump,
+   short red floor-juts you hop. Tuned so a single fixed jump ALWAYS clears one jut (apex 96px >> tallest jut)
+   AND always lands in a gap (jump reach < tightest spacing) — fair by construction. */
+const SEG_LEN  = 250;         // metres per segment before the world flips mode
+const SKY_GRAV = 3000;        // down-only gravity (floatier than flip's GRAV → an airy hop)
+const SKY_JUMP = 760;         // fixed launch velocity on a tap (one consistent arc; apex ~96px, airtime ~0.5s)
+const SKY_GAP0 = 240, SKY_GAPMIN=190;   // jut spacing — GAPMIN > max jump reach (180px@cap) so you never land ON a jut
+const SKY_HMIN = 28, SKY_HMAX=56;       // floor-jut height range (all clearable by the fixed arc)
+const SKY_WMIN = 20, SKY_WMAX=40;
+const XFADE    = 1.1;         // portal-transition duration (s): colour-invert sweep + settle, field cleared (non-lethal)
+
 /* ===== Collectible tunables (coins + earned power-orbs) ===== */
 const COL_FROM=60;            // metres before any loot appears (gentle early game)
 const LURE_GAP_MIN=30, LURE_GAP_RND=24;        // metres between lures (cadence breathes 30–54m)
@@ -374,6 +386,7 @@ let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
 let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
 let paused=false, pausedAtMode="ready", doubledFlag=false;
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
+let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0;   // Mode B: 0 flip / 1 sky; nextSeg=next switch dist; xfade=transition timer
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
@@ -391,6 +404,7 @@ function reset(){
   for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
   shake=0; flash=0; freeze=0; lastMile=0; bgPulse=0; landT=0; doubledFlag=false;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
+  segType=0; prevSegType=0; nextSeg=SEG_LEN; xfade=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
   reviveT=0; reviveUsedFree=false; reviveUsedAd=false;
   for(const w of warps) w.on=false; nextWarp=WARP_FROM; warpFx=0;
@@ -405,6 +419,7 @@ function start(){ Snd.ensure();
   startAll=false; mode="play"; Ads.gameplayStart();
 }
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(gdir<0); }   // gdir<0 → rising to the ceiling = "up" whoosh
+function skyJump(){ if(py>=BOTY-PS-0.5){ vy=-SKY_JUMP; sq=0.6; Snd.flip(true); } }   // sky mode: grounded-only fixed-arc hop (no double-jump = fair)
 // A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
 function onCrash(){
   shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
@@ -435,7 +450,7 @@ function finalDeath(){
 /* ===== Input ===== */
 function togglePause(){ if(paused){ paused=false; if(pausedAtMode==="play") Ads.gameplayStart(); }   // resume first — mode is still "play" while paused
   else if(mode==="play"){ paused=true; pausedAtMode="play"; Ads.gameplayStop(); } }
-function tap(){ if(mode==="play") flip(); else if(mode==="ready") start(); }   // dead-mode is now button-gated; ready still taps-to-start
+function tap(){ if(mode==="play"){ segType===1?skyJump():flip(); } else if(mode==="ready") start(); }   // one button: flip OR jump per segment; ready taps-to-start
 addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
   if(paused){ if(inR(p,R_PAUSE)) togglePause(); else if(pausedAtMode==="play") togglePause(); return; }   // any tap resumes from play-pause
   if(mode==="shop"){ shopTap(p); return; }
@@ -534,6 +549,18 @@ function spawnObstacle(spacing){
     return; } }
   spawnCd+=spacing;   // pool full (shouldn't happen) — avoid tight loop
 }
+/* ===== Mode B spawners — reuse the obstacle/coin pools; floor-only juts + a jump-arc coin line ===== */
+function spawnSky(spacing){            // single short red floor-jut you hop (always red — pillar); solos only = fair fixed-arc
+  for(const o of obs){ if(!o.on){ o.on=true; o.x=VW+24; o.side=0;
+    o.w=SKY_WMIN+(Math.random()*(SKY_WMAX-SKY_WMIN)|0); o.h=SKY_HMIN+(Math.random()*(SKY_HMAX-SKY_HMIN)|0);
+    o.style=(Math.random()<0.5)|0; lastObsSide=0; clearLootNear(o); spawnCd+=spacing; return; } }
+  spawnCd+=spacing;
+}
+function spawnSkyArc(){                // a low arc of coins peaking near jump apex — a well-timed hop sweeps them up
+  const N=5, peak=72;
+  for(let i=0;i<N;i++){ const u=i/(N-1), x=VW+i*STEPX, y=(BOTY-PS/2)-Math.sin(u*Math.PI)*peak;
+    if(lootClear(x,y)) placeCoin(x,y,COIN_VAL); }
+}
 
 /* ===== Collectible lures — entice skilful flips; pooled, fair, never co-located with danger ===== */
 function lootClear(x,y){            // true if (x,y) keeps clear of every active red
@@ -589,6 +616,7 @@ function update(dt){
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
   if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
   if(warpFx>0){ warpFx-=dt; if(warpFx<0)warpFx=0; }
+  if(xfade>0){ xfade-=dt; if(xfade<0)xfade=0; }   // mode-switch portal sweep
   if(paused) return;   // manual pause / phone-call recovery — particles still animate above for life, gameplay frozen
   if(mode==="reviving"){ reviveT-=dt; lightR+=(LR_BASE-lightR)*Math.min(1,dt*6);   // bloom back over the "get ready" countdown
     if(reviveT<=0){ reviveT=0; mode="play"; } return; }
@@ -600,7 +628,7 @@ function update(dt){
 
   // difficulty ramp (baseline curve LOCKED — buffs never touch it)
   speed=Math.min(SPEEDMX, SPEED0+dist*RAMP);
-  const spacing=Math.max(GAPMIN, GAP0-dist*0.35);
+  const spacing=segType===1 ? Math.max(SKY_GAPMIN, SKY_GAP0-dist*0.15) : Math.max(GAPMIN, GAP0-dist*0.35);
   const dx=speed*dt;
   worldX += dx * (BT[2]>0 ? 2 : 1); dist=worldX/40|0;
   if(dist>=lastMile+50){ lastMile+=50; Snd.point();
@@ -609,12 +637,30 @@ function update(dt){
   { const zNow=(dist/ZONELEN)|0;
     if(zNow>lastZone){ lastZone=zNow; zonesRun++; zoneSweep=1; bgPulse=Math.max(bgPulse,0.55); beaconPulse=Math.max(beaconPulse,0.9); } }
 
+  // Mode B: cross a SEG_LEN boundary → switch flip<->sky. Non-lethal: clear the field, settle to the floor,
+  // run the colour-invert portal sweep. gdir reset to 1 so flip resumes clean; sky's down-gravity just lands you.
+  if(dist>=nextSeg && xfade<=0){
+    nextSeg+=SEG_LEN; prevSegType=segType; segType^=1; xfade=XFADE;
+    for(const o of obs) o.on=false;                       // clear danger so the switch is always survivable
+    for(const c of col){ if(c.kind===0) c.on=false; }     // drop loose coins (orbs harmless)
+    vy=0; gdir=1; spawnCd=GAP0;                            // settle + a safe runway before the first new hazard
+    zoneSweep=1; bgPulse=Math.max(bgPulse,0.6); beaconPulse=Math.max(beaconPulse,0.95); lightR=Math.max(lightR,LR_BASE);
+    Snd.warp();                                            // reuse the portal breakout sting
+  }
+
   // player physics
   const pyPrev=py;   // pre-move y → the swept collectible grab below stays tunnel-proof on fast flips
-  vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
-  py+=vy*dt;
-  if(py<TOPY){ if(vy<-40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=TOPY; vy=0; }
-  else if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; }
+  if(segType===1){   // SKY: down-only gravity, land on the floor (fixed-arc hop via skyJump)
+    vy+=SKY_GRAV*dt; if(vy>MAXVY)vy=MAXVY;
+    py+=vy*dt;
+    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; }
+    else if(py<TOPY){ py=TOPY; if(vy<0)vy=0; }
+  } else {           // FLIP: gravity along gdir, snap floor<->ceiling (LOCKED feel)
+    vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
+    py+=vy*dt;
+    if(py<TOPY){ if(vy<-40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=TOPY; vy=0; }
+    else if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; }
+  }
   sq+=(1-sq)*Math.min(1,dt*14);   // ease squash back to 1
 
   // surfing trail (drift existing points with the world, add one at the player)
@@ -622,7 +668,7 @@ function update(dt){
   trailPush(PX+PS/2, py+PS/2);
 
   // obstacles: move, recycle, collide, score
-  spawnCd-=dx; if(spawnCd<=0){ spawnObstacle(spacing); }
+  spawnCd-=dx; if(spawnCd<=0 && xfade<=0){ segType===1?spawnSky(spacing):spawnObstacle(spacing); }
   const hx=PX+2, hy=py+2, hw=PS-4, hh=PS-4;      // inset hitbox = fair
   let nd=1e9;                                    // nearest upcoming obstacle edge → drives the light's "fear"
   for(const o of obs){ if(!o.on) continue;
@@ -669,7 +715,7 @@ function update(dt){
   }
 
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
-  if(dist>=COL_FROM && dist>=nextLure){ spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
+  if(dist>=COL_FROM && dist>=nextLure && xfade<=0){ segType===1?spawnSkyArc():spawnLure(); nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
   if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && BT[0]<=0&&BT[1]<=0&&BT[2]<=0 && !orbArmed) orbArmed=true;
 
   // emotional light (Feature 1): target radius blooms on hope (bgPulse), constricts on fear
@@ -715,6 +761,10 @@ function trailDot(x,y,f,color,style){ ctx.fillStyle=color;
 function draw(){
   // dynamic zone palette (one calc per frame)
   const bg=zoneRGB(ZONES,dist), ac=zoneRGB(ACCENTS,dist);
+  // Mode B look: SKY inverts the palette to a bright/airy world. During the portal sweep, lerp old->new.
+  // Only the zone arrays are inverted — obstacle reds are hardcoded, so DANGER STAYS RED (pillar).
+  { const tgt=segType, prev=prevSegType, k=xfade>0?xfade/XFADE:0, inv=tgt*(1-k)+prev*k;
+    if(inv>0.001) for(let q=0;q<3;q++){ bg[q]=(bg[q]+(255-2*bg[q])*inv)|0; ac[q]=(ac[q]+(255-2*ac[q])*inv)|0; } }
   accCss="rgb("+ac[0]+","+ac[1]+","+ac[2]+")";
   accGlow="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.30)";
   const pb=lowFx?0:(bgPulse*55)|0;   // reactive brightness on good actions (off in reduce-flashing)
@@ -835,7 +885,7 @@ function draw(){
   // lit world (doing it on the main canvas would punch through to the page bg instead).
   { const dg=DARKCTX, lr=lightR, lx=PX+PS/2, ly=py+PS/2;
     dg.globalCompositeOperation="source-over"; dg.clearRect(0,0,VW,VH);
-    dg.fillStyle=lowFx?DK_LOW:DK_NORMAL; dg.fillRect(0,0,VW,VH);
+    dg.fillStyle=(lowFx||segType===1)?DK_LOW:DK_NORMAL; dg.fillRect(0,0,VW,VH);   // SKY: lighter vignette so the bright world stays airy
     dg.globalCompositeOperation="destination-out"; dg.drawImage(LIGHTSPR,lx-lr,ly-lr,lr*2,lr*2);
     dg.globalCompositeOperation="source-over";
     ctx.imageSmoothingEnabled=true; ctx.drawImage(DARK,0,0,VW,VH);
@@ -893,7 +943,10 @@ function draw(){
     txt("◆ "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);
     // pause chip — small corner affordance so phone-call recovery + intentional pause is always available
     ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_PAUSE.x,R_PAUSE.y,R_PAUSE.w,R_PAUSE.h);
-    ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16); }
+    ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16);
+    if(xfade>0){ ctx.globalAlpha=Math.min(1,xfade*1.6);   // portal banner — which world you're entering
+      txt(segType===1?"▲  SKYWARD":"▼  FLIPLINE", VW/2, VH/2-30, 22, accCss, 800);
+      txt(segType===1?"tap to jump":"tap to flip", VW/2, VH/2-8, 12, "#e8ecf1", 600); ctx.globalAlpha=1; } }
 
   ctx.restore();
 
