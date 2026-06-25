@@ -289,6 +289,10 @@ const ZONELEN=55;   // metres per palette zone — short so new players see the 
 // Zones as lands (Feature 3): the journey trends cool/lonely -> warm/golden (homeward) each cycle.
 const ZONES  =[[10,14,28],[20,16,40],[12,26,36],[34,22,16],[34,28,14]]; // night -> dusk -> cold dawn -> amber -> gold-home
 const ACCENTS=[[120,160,255],[170,150,255],[120,225,210],[255,180,110],[255,212,120]]; // cool blue -> violet -> teal -> amber -> gold
+// UPPER (above-ground) palette — a calm OUTDOOR sky, deliberately muted/mid-brightness so it's easy on the eyes
+// (replaces the harsh colour-invert). Danger reds are hardcoded → still pop against it.
+const UPPER_ZONES=[[58,92,128],[84,118,150],[110,134,158],[92,116,150]];   // dawn-blue -> daytime -> haze -> dusk sky (soft)
+const UPPER_ACC  =[[150,196,150],[206,194,150],[168,204,222],[196,208,168]]; // foliage green / warm sun / pale sky / meadow
 function lerpi(a,b,k){ return (a+(b-a)*k)|0; }
 function zoneRGB(arr,d){ const f=d/ZONELEN, i=((f|0)%arr.length+arr.length)%arr.length, j=(i+1)%arr.length, k=f-(f|0);
   const A=arr[i],B=arr[j]; return [lerpi(A[0],B[0],k),lerpi(A[1],B[1],k),lerpi(A[2],B[2],k)]; }
@@ -372,6 +376,8 @@ const R_RETRY={x:VW/2-72,y:VH/2+52,w:144,h:24};
 const R_DOUBLE={x:VW/2-94,y:VH/2+78,w:188,h:22};
 // in-run pause: corner toggle that maps to the same icon area people already use, just bigger so a deliberate tap is unambiguous
 const R_PAUSE={x:VW-44,y:VH-44,w:36,h:36};
+// dev menu — pick the starting level from the main menu (tunnel/mid vs above/upper)
+const R_DEV0={x:VW/2-104,y:250,w:100,h:15}, R_DEV1={x:VW/2+4,y:250,w:100,h:15};
 function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
 function score(){ return dist; }
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
@@ -387,6 +393,7 @@ let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
 let paused=false, pausedAtMode="ready", doubledFlag=false;
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
 let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0;   // Mode B: 0 flip / 1 sky; nextSeg=next switch dist; xfade=transition timer
+let devSeg=0;   // dev menu: which level a run starts in (0 tunnel/mid, 1 above/upper)
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
@@ -414,6 +421,8 @@ function reset(){
 function start(){ Snd.ensure();
   let gift=false; try{ const d=new Date().toDateString(); if(localStorage.getItem("flipline.day")!==d){ localStorage.setItem("flipline.day",d); gift=true; } }catch(e){}  // daily: first run of the day = all 3 free
   reset(); lightR=74;                                  // re-bloom from small
+  segType=devSeg; prevSegType=devSeg;                  // dev: start in the chosen level (no transition sweep)
+  if(segType===1){ py=BOTY-PS; vy=0; gdir=1; }         // above-ground starts grounded
   if(startAll||gift){ BT[0]=BT[1]=BT[2]=START_BUFF; }  // rewarded ad OR daily gift → start with ALL 3
   else if(pickBuff>=0){ BT[pickBuff]=START_BUFF; }     // everyday free pick-1
   startAll=false; mode="play"; Ads.gameplayStart();
@@ -464,6 +473,10 @@ addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"|
     if(inR(p,R_SHOPBTN)){ mode="shop"; shopCat=0; sel[0]=equipped; sel[1]=equippedTrail; sel[2]=equippedAura; return; }
     for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
     if(inR(p,R_BUFFALL)){ Ads.rewarded(()=>{ startAll=true; start(); }, ()=>{ start(); }); return; } // watch ad → all 3
+  }
+  if(mode==="ready"){   // dev start-level pills — choose level then launch immediately
+    if(inR(p,R_DEV0)){ devSeg=0; start(); return; }
+    if(inR(p,R_DEV1)){ devSeg=1; start(); return; }
   }
   if(mode==="dead"){
     if(inR(p,R_RETRY)){ start(); return; }
@@ -764,7 +777,8 @@ function draw(){
   // Mode B look: SKY inverts the palette to a bright/airy world. During the portal sweep, lerp old->new.
   // Only the zone arrays are inverted — obstacle reds are hardcoded, so DANGER STAYS RED (pillar).
   { const tgt=segType, prev=prevSegType, k=xfade>0?xfade/XFADE:0, inv=tgt*(1-k)+prev*k;
-    if(inv>0.001) for(let q=0;q<3;q++){ bg[q]=(bg[q]+(255-2*bg[q])*inv)|0; ac[q]=(ac[q]+(255-2*ac[q])*inv)|0; } }
+    if(inv>0.001){ const ub=zoneRGB(UPPER_ZONES,dist), ua=zoneRGB(UPPER_ACC,dist);   // blend mid(tunnel)->upper(sky) by transition factor
+      for(let q=0;q<3;q++){ bg[q]=(bg[q]+(ub[q]-bg[q])*inv)|0; ac[q]=(ac[q]+(ua[q]-ac[q])*inv)|0; } } }
   accCss="rgb("+ac[0]+","+ac[1]+","+ac[2]+")";
   accGlow="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.30)";
   const pb=lowFx?0:(bgPulse*55)|0;   // reactive brightness on good actions (off in reduce-flashing)
@@ -978,7 +992,7 @@ function draw(){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — thread the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
     if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
-    shopBtn(); drawBoostRow();
+    shopBtn(); drawBoostRow(); devRow();
   } else if(mode==="dead"){
     txt("CRASHED",VW/2,VH/2-26,30,"#ff5468",800);
     txt(score()+"m",VW/2,VH/2+0,18,"#e8ecf1",700);
@@ -999,6 +1013,13 @@ function draw(){
   }
 }
 
+function devRow(){   // dev affordance: launch straight into a chosen level (faint, sits at the very bottom)
+  ctx.globalAlpha=0.85; txt("DEV — start level",VW/2,245,9,"#5f6b85",700); ctx.globalAlpha=1;
+  const lab=["▣ TUNNEL","▲ ABOVE"], reg=[R_DEV0,R_DEV1];
+  for(let i=0;i<2;i++){ const r=reg[i], on=devSeg===i;
+    ctx.fillStyle=on?"rgba(94,242,194,0.16)":"rgba(255,255,255,0.05)"; ctx.fillRect(r.x,r.y,r.w,r.h);
+    txt(lab[i],r.x+r.w/2,r.y+11,10,on?"#9bf0d0":"#8b95a8",700); }
+}
 function shopBtn(){
   ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_SHOPBTN.x,R_SHOPBTN.y,R_SHOPBTN.w,R_SHOPBTN.h);
   txt("SHOP   ◆ "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);
