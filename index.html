@@ -195,9 +195,9 @@ const WMIN   = 26, WMAX=46;   // obstacle width range
    short red floor-juts you hop. Tuned so a single fixed jump ALWAYS clears one jut (apex 96px >> tallest jut)
    AND always lands in a gap (jump reach < tightest spacing) — fair by construction. */
 const SEG_LEN  = 250;         // metres per segment before the world flips mode
-const SKY_GRAV = 3000;        // down-only gravity (floatier than flip's GRAV → an airy hop)
-const SKY_JUMP = 760;         // fixed launch velocity on a tap (one consistent arc; apex ~96px, airtime ~0.5s)
-const SKY_GAP0 = 240, SKY_GAPMIN=190;   // jut spacing — GAPMIN > max jump reach (180px@cap) so you never land ON a jut
+const SKY_GRAV = 2900;        // down-only gravity (floatier than flip's GRAV → an airy, bouncy hop)
+const SKY_JUMP = 880;         // fixed launch velocity on a tap (one consistent arc; apex ~133px, airtime ~0.61s — bouncy, clears barriers easily)
+const SKY_GAP0 = 270, SKY_GAPMIN=230;   // jut spacing — GAPMIN > max jump reach (~219px@cap) so you never land ON a jut
 const SKY_HMIN = 28, SKY_HMAX=56;       // floor-jut height range (all clearable by the fixed arc)
 const SKY_WMIN = 20, SKY_WMAX=40;
 const XFADE    = 1.5;         // portal-transition duration (s): colour sweep + settle, field cleared (non-lethal) — calmer, gives prep time
@@ -208,7 +208,7 @@ const ACCLIM_DUR = 3.0;       // ...then eases linearly back to full over this m
 // Same ground physics + fixed-arc jump as sky, but hazards include CRAWLING ENEMIES you can defeat by stomping
 // their head (Goomba logic). Enemies are RED (pillar: danger is always red) — side/below contact kills; a top-stomp
 // pops them for coins + a bounce. Red spikes are jump-only. Tuned so spacing absorbs the crawl + stays jump-fair.
-const MINE_GAP0=250, MINE_GAPMIN=205;   // > sky's, to absorb enemy closing speed and stay land-in-gap fair
+const MINE_GAP0=270, MINE_GAPMIN=240;   // > sky's, to absorb enemy closing speed and stay land-in-gap fair (with the bigger jump)
 const ENEMY_VX=16;                      // critters crawl toward you (subtle — keeps the jump-over escapable)
 const ENEMY_HMIN=22, ENEMY_HMAX=32;     // critter height (short → the fixed arc can land on the head)
 const SPIKE_H=44;                       // lethal red floor-spike (jump-only; apex 90 clears it)
@@ -708,7 +708,7 @@ function update(dt){
   if(segType>=1){   // SKY/MINE: down-only gravity, land on the floor (fixed-arc hop via skyJump)
     vy+=SKY_GRAV*dt; if(vy>MAXVY)vy=MAXVY;
     py+=vy*dt;
-    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; }
+    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;sq=0.7;} py=BOTY-PS; vy=0; }  // squash on impact = bounce
     else if(py<TOPY){ py=TOPY; if(vy<0)vy=0; }
   } else {           // FLIP: gravity along gdir, snap floor<->ceiling (LOCKED feel)
     vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
