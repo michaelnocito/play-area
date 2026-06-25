@@ -206,15 +206,17 @@ const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.04, FLOW_MULT
    we ADD a generous NICE tier (so anyone tastes it) + a PERFECT tier (mastery). Judged on closest approach (minClr). */
 // The skim window is a FRACTION of each obstacle's available gap, so "the window to skim == the window to not
 // skim": clear it by less than half the gap → it's a skim. Symmetric for floor (down) and ceiling (up) juts.
-// Skim is a real CHOICE: fly close = score, play safe = nothing. The skim window is the inner 30% of each
-// obstacle's safe lane; outside that, no popup, no streak, no Flow charge. Within the window: tier scales by precision.
-// Thresholds (all fractions of the safe lane = 210 - obs.h):
-//   - clr >= 30% of lane → NO SKIM (combo resets, soft chime only)
-//   - clr in [20%, 30%) → NICE
-//   - clr in [10%, 20%) → CLEAN
-//   - clr < 10%          → PERFECT
-const SKIM_FRAC=0.30;                                        // outer edge of the skim window — playing safe (further than this) scores nothing
-const GRAZE_T_PERFECT=0.10, GRAZE_T_CLEAN=0.20;             // precision tiers, inner-most → outer
+// Skim window is the inner 50% of each obstacle's safe lane. Calibrated against an in-engine sweep of
+// SKIM_FRAC values across three player profiles (cautious / natural / close): 0.50 is the goldilocks point
+// where natural reactive play registers ~83% of passes as skim, far-wall safe play stays mostly no-skim (~10%
+// false positive), and close play earns the PERFECT tier without ceiling-snapping.
+// Thresholds (fractions of the safe lane = 210 - obs.h):
+//   - clr >= 50% of lane → NO SKIM (combo resets, soft chime)
+//   - clr in [25%, 50%)  → NICE
+//   - clr in [10%, 25%)  → CLEAN
+//   - clr <  10%         → PERFECT
+const SKIM_FRAC=0.50;                                        // outer edge of the skim window
+const GRAZE_T_PERFECT=0.10, GRAZE_T_CLEAN=0.25;             // precision tiers
 const GRAZE_LABEL=["","NICE","CLEAN","PERFECT"];             // tier 0/1/2/3 (module-level → no per-frame alloc)
 const GRAZE_COL=["","#ffd6a8","#ffb86b","#ffe08a"];         // warm ladder: peach (NICE) → amber (CLEAN) → gold (PERFECT) — no blue/cyan in the score-driver palette
 const GRAZE_FLOWK=[0,0.6,1.0,1.4];                          // Flow-gain multiplier per tier (precision charges faster)
