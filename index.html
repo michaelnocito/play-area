@@ -202,19 +202,20 @@ const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; 
 const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
 /* Flow State ("Homeward") — EARNED by skill (clean passes), NOT a pickup. Sustain skims → bonus score + a gold bloom. */
 const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.04, FLOW_MULT=0.5;   // SHOWY: ~2-3 skims ignite, slow idle decay so progress sticks, coins feed it (was 0.16/0.05/0.22/0.10); +score fraction 0.5 → 1.5×
-/* ===== Graze ladder — every clean dodge = NICE (combo builds, flow charges). Precision upgrades tier.
-   NICE: any pass (flow charges slowly). CLEAN: inner 25% of safe lane. PERFECT: inner 10%.
-   Combo resets ONLY on crash, never on "too wide". This matches how gravity-flip play actually works:
-   natural play sends you to the SAFE wall (max clearance), not toward danger — so NICE = always,
-   CLEAN/PERFECT = deliberate precision. Judged on closest approach (minClr) tracked during overlap. */
+/* ===== Graze ladder — skim = fly within 75% of the safe lane from the obstacle tip.
+   Natural play (go to safe wall) = ~10-25% clearance from safe side = ~75-90% from obstacle = NO SKIM.
+   Deliberate close play = small clearance = NICE/CLEAN/PERFECT. Outer 25% = wide safe dodge, combo resets.
+   Judged on minClr (closest approach tracked during horizontal overlap). */
 // Tiers (fractions of safeLane = 210 - obs.h):
-//   any pass        → NICE  (tier 1): soft tick, flow +0.40×GAIN
-//   clr < 25% lane  → CLEAN (tier 2): popup, flow +0.90×GAIN, bonusM
-//   clr < 10% lane  → PERFECT (tier 3): gold pop, flow +1.40×GAIN, bonusM+coins
-const GRAZE_T_PERFECT=0.10, GRAZE_T_CLEAN=0.25;             // precision tier thresholds
+//   clr >= 75% lane → NO SKIM: combo resets, soft chime
+//   clr  < 75% lane → NICE    (tier 1): popup, flow +0.30×GAIN (~20 passes to ignite)
+//   clr  < 40% lane → CLEAN   (tier 2): popup, flow +0.80×GAIN (~4 passes), bonusM
+//   clr  < 12% lane → PERFECT (tier 3): gold pop, flow +1.40×GAIN (~2 passes), bonusM+coins
+const SKIM_FRAC=0.75;                                        // outer gate — far-wall safe play doesn't skim
+const GRAZE_T_PERFECT=0.12, GRAZE_T_CLEAN=0.40;             // precision upgrade thresholds (inner fractions)
 const GRAZE_LABEL=["","NICE","CLEAN","PERFECT"];             // tier 0/1/2/3 (module-level → no per-frame alloc)
-const GRAZE_COL=["","#ffd6a8","#ffb86b","#ffe08a"];         // warm ladder: peach (NICE) → amber (CLEAN) → gold (PERFECT)
-const GRAZE_FLOWK=[0,0.40,0.90,1.40];                       // NICE charges slowly (~7 passes), CLEAN fast (~2.5), PERFECT instant
+const GRAZE_COL=["","#ffd6a8","#ffb86b","#ffe08a"];         // warm ladder: peach → amber → gold
+const GRAZE_FLOWK=[0,0.30,0.80,1.40];                       // NICE slow (~20 passes), CLEAN fast (~4), PERFECT instant
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
@@ -669,18 +670,16 @@ function update(dt){
     if(!o.scored && o.x+o.w*0.5<PX+PS*0.5){ o.scored=true;   // fire the MOMENT the player passes the column's top (its centre crosses you), not at full clear → immediate, in-sync feedback
       const clr=o.minClr;   // closest approach during the pass (>=0, or 1e9 if never alongside)
       const safeLane=210-o.h;
-      // Every dodge = NICE. Precision (close clearance) upgrades to CLEAN or PERFECT.
-      // Combo resets only on crash — not on "too wide" — because natural play always goes to the safe wall.
-      const tier = clr<safeLane*GRAZE_T_PERFECT ? 3 : clr<safeLane*GRAZE_T_CLEAN ? 2 : 1;
-      combo++;
-      flow=Math.min(1,flow+FLOW_GAIN*GRAZE_FLOWK[tier]);
-      bgPulse=Math.max(bgPulse,tier===1?0.06:0.14+0.10*tier);
-      if(tier>1){ comboVal=combo; comboTier=tier; comboT=0.8;
-        bonusM += tier*combo;
-        runCoinBonus += tier;
-        spark(PX+PS/2,py+PS/2); if(tier===3) coinFx(PX+PS/2,py+PS/2);
+      let tier=0;
+      if(clr<safeLane*SKIM_FRAC){ tier = clr<safeLane*GRAZE_T_PERFECT?3 : clr<safeLane*GRAZE_T_CLEAN?2 : 1; }
+      if(tier>0){ combo++; comboVal=combo; comboTier=tier;
+        comboT = tier===1 ? 0.50 : 0.85;                      // NICE fades faster; CLEAN/PERFECT linger
+        flow=Math.min(1,flow+FLOW_GAIN*GRAZE_FLOWK[tier]);
+        bgPulse=Math.max(bgPulse,tier===1?0.08:0.16+0.10*tier);
+        if(tier>1){ bonusM += tier*combo; runCoinBonus += tier;
+          spark(PX+PS/2,py+PS/2); if(tier===3) coinFx(PX+PS/2,py+PS/2); }
         Snd.clean(combo+tier); }
-      else { Snd.point(); }
+      else { combo=0; comboTier=0; Snd.point(); }
     }
   }
 
