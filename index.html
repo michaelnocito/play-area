@@ -638,7 +638,7 @@ function update(dt){
     // frames, so genuine skims read as wide misses and Clean Pass / Flow almost never fired)
     if(o.x<PX+PS && o.x+o.w>PX){ const cNow=o.side===0 ? (BOTY-o.h)-(py+PS) : py-(TOPY+o.h);
       if(cNow>=0 && cNow<o.minClr) o.minClr=cNow; }
-    if(!o.scored && o.x+o.w<PX){ o.scored=true;
+    if(!o.scored && o.x+o.w*0.5<PX+PS*0.5){ o.scored=true;   // fire the MOMENT the player passes the column's top (its centre crosses you), not at full clear → immediate, in-sync feedback
       const clr=o.minClr;   // closest approach during the pass (>=0, or 1e9 if never alongside)
       const skimMax=(210-o.h)*GRAZE_FRAC;   // 210 = full safe gap (VH-2*WALL-PS); skim if you cleared by less than half of it
       let tier=0; if(clr<skimMax){ tier = clr<skimMax*GRAZE_T_PERFECT?3 : clr<skimMax*GRAZE_T_CLEAN?2 : 1; }
