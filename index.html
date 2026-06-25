@@ -184,7 +184,7 @@ const FLIPKICK = 240;         // instant velocity on flip (crisp snap off the su
 const MAXVY  = 1300;          // terminal vertical speed
 const SPEED0 = 170;           // starting scroll speed px/s
 const SPEEDMX= 360;           // max scroll speed px/s
-const RAMP   = 0.35;          // speed gained per meter — gentler ramp for FLOW (eases the ~200m spike; hits cap ~540m)
+const RAMP   = 0.15;          // ⚠️ speed gained per meter — DROPPED from 0.35 (Mike: "really drop the speed increase" for the calmer two-line journey; overrides the old locked-feel value)
 const GAP0   = 200;           // starting world spacing between obstacles
 const GAPMIN = 120;           // tightest spacing
 const HMIN   = 66, HMAX=118;  // obstacle jut height range
@@ -215,8 +215,8 @@ const SPIKE_H=44;                       // lethal red floor-spike (jump-only; ap
 const STOMP_BOUNCE=560;                 // hop imparted by a successful stomp (smaller than a full jump)
 const STOMP_TOL=9;                      // grace px for the "landed on the head" window
 const ENEMY_COIN=2;                     // coins for a clean stomp
-// Level oscillation: start mid(0) → upper(1) → mid(0) → lower(2) → repeat. Mid is home base.
-const SEG_SEQ=[1,0,2,0];
+// Two-line flow: start DOWNLINE/mid(0) ⇄ UPLINE/upper(1). (Lower mine = PARKED; removed from rotation.)
+const SEG_SEQ=[1,0];
 
 /* ===== Collectible tunables (coins + earned power-orbs) ===== */
 const COL_FROM=60;            // metres before any loot appears (gentle early game)
@@ -277,6 +277,10 @@ const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps 
 
 /* ===== Object pools (no per-frame allocation) ===== */
 const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0,style:0,k:0});  // k: 0 obstacle/spike · 1 stompable enemy (mine)
+// UPLINE platforms — floating ledges you jump onto/across (one-way landing); pooled, alloc-free
+const PLN=8, plat=[]; for(let i=0;i<PLN;i++) plat.push({on:false,x:0,y:0,w:0});
+const PLAT_H=[46,80,112];               // ledge heights above the floor (all within the ~133px jump apex)
+const PLAT_GAP0=210, PLAT_GAPMIN=170;   // spacing between ledges
 // warp-tube pool (sparse) — mid-lane rings you flip THROUGH for a forward skip; alloc-free
 const WARPN=3, warps=[]; for(let i=0;i<WARPN;i++) warps.push({on:false,x:0,y:0,used:false});
 function spawnWarp(){ for(const w of warps){ if(!w.on){ w.on=true; w.used=false; w.x=VW+20; w.y=(Math.random()<0.5?108:162); return; } } }  // mid-lane → must time a flip
@@ -401,9 +405,9 @@ const R_RETRY={x:VW/2-72,y:VH/2+52,w:144,h:24};
 const R_DOUBLE={x:VW/2-94,y:VH/2+78,w:188,h:22};
 // in-run pause: corner toggle that maps to the same icon area people already use, just bigger so a deliberate tap is unambiguous
 const R_PAUSE={x:VW-44,y:VH-44,w:36,h:36};
-// dev menu — pick the starting level (tunnel/mid · above/upper · mine/lower); top row, clear of other UI, on ready + dead
-const DEVW=84, DEVG=6, DEVY=5, DEVH=17, DEVX0=VW/2-(DEVW*3+DEVG*2)/2;
-const R_DEV=[{x:DEVX0,y:DEVY,w:DEVW,h:DEVH},{x:DEVX0+DEVW+DEVG,y:DEVY,w:DEVW,h:DEVH},{x:DEVX0+2*(DEVW+DEVG),y:DEVY,w:DEVW,h:DEVH}];
+// dev menu — pick the starting line (downline/mid · upline/upper); top row, clear of other UI, on ready + dead
+const DEVW=104, DEVG=8, DEVY=5, DEVH=17, DEVX0=VW/2-(DEVW*2+DEVG)/2;
+const R_DEV=[{x:DEVX0,y:DEVY,w:DEVW,h:DEVH},{x:DEVX0+DEVW+DEVG,y:DEVY,w:DEVW,h:DEVH}];
 function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
 function score(){ return dist; }
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
@@ -418,7 +422,8 @@ let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
 let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
 let paused=false, pausedAtMode="ready", doubledFlag=false;
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
-let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0, segStep=0, acclimT=0;   // 0 mid-tunnel / 1 upper-sky / 2 lower-mine; segStep walks SEG_SEQ; acclimT=post-transition speed ease-in
+let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0, segStep=0, acclimT=0;   // 0 downline/mid / 1 upline/upper; segStep walks SEG_SEQ; acclimT=post-transition speed ease-in
+let onGround=true;   // upline: resting on the floor or a platform (gates the fixed-arc jump — no double-jump)
 let devSeg=0;   // dev menu: which level a run starts in (0 tunnel/mid, 1 above/upper, 2 mine/lower)
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
@@ -433,6 +438,7 @@ function reset(){
   py=BOTY-PS; vy=0; gdir=1; sq=1;
   speed=SPEED0; worldX=0; dist=0; spawnCd=GAP0; nextAd=1; runCoinBonus=0;
   for(const o of obs) o.on=false;
+  for(const pl of plat) pl.on=false; onGround=true;
   for(const p of trail) p.on=false; trHead=0;
   for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
   shake=0; flash=0; freeze=0; lastMile=0; bgPulse=0; landT=0; doubledFlag=false;
@@ -454,7 +460,7 @@ function start(){ Snd.ensure();
   startAll=false; mode="play"; Ads.gameplayStart();
 }
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(gdir<0); }   // gdir<0 → rising to the ceiling = "up" whoosh
-function skyJump(){ if(py>=BOTY-PS-0.5){ vy=-SKY_JUMP; sq=0.6; Snd.flip(true); } }   // sky mode: grounded-only fixed-arc hop (no double-jump = fair)
+function skyJump(){ if(onGround){ vy=-SKY_JUMP; onGround=false; sq=0.6; Snd.flip(true); } }   // upline: fixed-arc hop, only when resting on floor/platform (no double-jump = fair)
 // A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
 function onCrash(){
   shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
@@ -495,8 +501,8 @@ addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"|
     if(inR(p,R_END)){ reviveUsedAd=true; finalDeath(); return; }
     return; }
   if(mode==="play" && inR(p,R_PAUSE)){ togglePause(); return; }   // pause from in-run via corner tap
-  if(mode==="ready"||mode==="dead"){   // DEV: top-row pills launch straight into a chosen level (works from menu AND dead screen)
-    for(let i=0;i<3;i++) if(inR(p,R_DEV[i])){ devSeg=i; start(); return; } }
+  if(mode==="ready"||mode==="dead"){   // DEV: top-row pills launch straight into a chosen line (works from menu AND dead screen)
+    for(let i=0;i<2;i++) if(inR(p,R_DEV[i])){ devSeg=i; start(); return; } }
   if(mode==="ready"||mode==="dead"){
     if(inR(p,R_SHOPBTN)){ mode="shop"; shopCat=0; sel[0]=equipped; sel[1]=equippedTrail; sel[2]=equippedAura; return; }
     for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
@@ -594,7 +600,15 @@ function spawnSky(spacing){            // single short red floor-jut you hop (al
     o.style=(Math.random()<0.5)|0; lastObsSide=0; clearLootNear(o); spawnCd+=spacing; return; } }
   spawnCd+=spacing;
 }
-function spawnMine(spacing){           // MINE: 50/50 a stompable crawling enemy (k=1) or a lethal red spike (k=0)
+function spawnPlatform(spacing){       // UPLINE: a floating ledge at one of the set heights, with light-coins riding its top
+  for(const pl of plat){ if(!pl.on){ pl.on=true; pl.x=VW+24;
+    pl.w=70+(Math.random()*50|0); pl.y=BOTY-PLAT_H[Math.random()*PLAT_H.length|0];
+    const n=1+(Math.random()<0.5?1:0);
+    for(let i=0;i<n;i++) placeCoin(pl.x+pl.w*(0.32+0.36*i), pl.y-PS, COIN_VAL);   // light to gather up on the ledge
+    spawnCd+=spacing; return; } }
+  spawnCd+=spacing;
+}
+function spawnMine(spacing){           // MINE (PARKED — no longer in rotation): stompable enemy (k=1) or lethal red spike (k=0)
   for(const o of obs){ if(!o.on){ o.on=true; o.x=VW+24; o.side=0; o.style=(Math.random()<0.5)|0;
     if(Math.random()<0.5){ o.k=1; o.h=ENEMY_HMIN+(Math.random()*(ENEMY_HMAX-ENEMY_HMIN)|0); o.w=22; }  // critter — stomp the head
     else { o.k=0; o.h=SPIKE_H; o.w=SKY_WMIN+(Math.random()*(SKY_WMAX-SKY_WMIN)|0); }                    // red spike — jump only
@@ -680,8 +694,7 @@ function update(dt){
 
   // difficulty ramp (baseline curve LOCKED — buffs never touch it)
   speed=Math.min(SPEEDMX, SPEED0+dist*RAMP);
-  const spacing=segType===1 ? Math.max(SKY_GAPMIN, SKY_GAP0-dist*0.15)
-              : segType===2 ? Math.max(MINE_GAPMIN, MINE_GAP0-dist*0.12)
+  const spacing=segType===1 ? Math.max(PLAT_GAPMIN, PLAT_GAP0-dist*0.1)
               : Math.max(GAPMIN, GAP0-dist*0.35);
   const speedMul = acclimT>0 ? 1-SPEED_DROP*(acclimT/ACCLIM_DUR) : 1;   // 0.75 right after a transition → eases back to 1
   const dx=speed*speedMul*dt;
@@ -697,6 +710,7 @@ function update(dt){
   if(dist>=nextSeg && xfade<=0){
     nextSeg+=SEG_LEN; prevSegType=segType; segType=SEG_SEQ[segStep%SEG_SEQ.length]; segStep++; xfade=XFADE; acclimT=ACCLIM_DUR;
     for(const o of obs) o.on=false;                       // clear danger so the switch is always survivable
+    for(const pl of plat) pl.on=false;                    // clear upline platforms
     for(const c of col){ if(c.kind===0) c.on=false; }     // drop loose coins (orbs harmless)
     vy=0; gdir=1; spawnCd=GAP0;                            // settle + a safe runway before the first new hazard
     zoneSweep=1; bgPulse=Math.max(bgPulse,0.6); beaconPulse=Math.max(beaconPulse,0.95); lightR=Math.max(lightR,LR_BASE);
@@ -705,10 +719,14 @@ function update(dt){
 
   // player physics
   const pyPrev=py;   // pre-move y → the swept collectible grab below stays tunnel-proof on fast flips
-  if(segType>=1){   // SKY/MINE: down-only gravity, land on the floor (fixed-arc hop via skyJump)
+  if(segType>=1){   // UPLINE: down-only gravity + one-way platform landing; fixed-arc hop via skyJump
     vy+=SKY_GRAV*dt; if(vy>MAXVY)vy=MAXVY;
     py+=vy*dt;
-    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;sq=0.7;} py=BOTY-PS; vy=0; }  // squash on impact = bounce
+    onGround=false;
+    const pcx=PX+PS/2;
+    if(vy>=0){ for(const pl of plat){ if(!pl.on) continue;          // land on a platform top when descending across it
+      if(pcx>pl.x && pcx<pl.x+pl.w && pyPrev+PS<=pl.y+4 && py+PS>=pl.y){ py=pl.y-PS; vy=0; onGround=true; sq=0.7; break; } } }
+    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;sq=0.7;} py=BOTY-PS; vy=0; onGround=true; }  // floor (squash = bounce)
     else if(py<TOPY){ py=TOPY; if(vy<0)vy=0; }
   } else {           // FLIP: gravity along gdir, snap floor<->ceiling (LOCKED feel)
     vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
@@ -723,7 +741,8 @@ function update(dt){
   trailPush(PX+PS/2, py+PS/2);
 
   // obstacles: move, recycle, collide, score
-  spawnCd-=dx; if(spawnCd<=0 && xfade<=0){ segType===1?spawnSky(spacing):segType===2?spawnMine(spacing):spawnObstacle(spacing); }
+  spawnCd-=dx; if(spawnCd<=0 && xfade<=0){ segType===1?spawnPlatform(spacing):spawnObstacle(spacing); }
+  for(const pl of plat){ if(!pl.on) continue; pl.x-=dx; if(pl.x+pl.w<-4) pl.on=false; }   // scroll/recycle upline platforms
   const hx=PX+2, hy=py+2, hw=PS-4, hh=PS-4;      // inset hitbox = fair
   let nd=1e9;                                    // nearest upcoming obstacle edge → drives the light's "fear"
   for(const o of obs){ if(!o.on) continue;
@@ -774,8 +793,7 @@ function update(dt){
 
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
   if(dist>=COL_FROM && dist>=nextLure && xfade<=0){
-    if(segType>=1) spawnSkyArc();
-    else if(dist>=WEAVE_MAX) spawnLure();   // tunnel: below 175m coins come ONLY from weave-coins (placed at pipe spawn)
+    if(segType===0 && dist>=WEAVE_MAX) spawnLure();   // downline: below 175m coins come ONLY from weave-coins (at pipe spawn); upline coins ride the platforms
     nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
   if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && BT[0]<=0&&BT[1]<=0&&BT[2]<=0 && !orbArmed) orbArmed=true;
 
@@ -897,6 +915,13 @@ function draw(){
   // walls
   ctx.fillStyle=wallCss; ctx.fillRect(0,0,VW,WALL); ctx.fillRect(0,VH-WALL,VW,WALL);
   ctx.fillStyle="#262f45"; ctx.fillRect(0,WALL-2,VW,2); ctx.fillRect(0,VH-WALL,VW,2);
+
+  // UPLINE platforms — friendly light ledges (never red); soft glow + lit top surface + underside shadow
+  for(const pl of plat){ if(!pl.on) continue; const x=pl.x|0;
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(x-2,pl.y-3,pl.w+4,9);
+    ctx.fillStyle=accCss; ctx.fillRect(x,pl.y,pl.w,5);
+    ctx.fillStyle="rgba(255,255,255,0.5)"; ctx.fillRect(x,pl.y,pl.w,1);
+    ctx.fillStyle="rgba(0,0,0,0.20)"; ctx.fillRect(x,pl.y+5,pl.w,3); }
 
   // obstacles (always red; tech-panel look: dual seam, panel lines, dual bevel, corner accents)
   const seamY=(t*70)|0, seamY2=(t*47)|0;   // two seams marching in opposite directions
@@ -1028,7 +1053,7 @@ function draw(){
     ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_PAUSE.x,R_PAUSE.y,R_PAUSE.w,R_PAUSE.h);
     ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16);
     if(xfade>0){ ctx.globalAlpha=Math.min(1,xfade*1.6);   // portal banner — which world you're entering
-      txt(segType===1?"▲  SKYWARD":segType===2?"▼  THE MINE":"▬  TUNNEL", VW/2, VH/2-30, 22, accCss, 800);
+      txt(segType===1?"▲  UPLINE":"▼  DOWNLINE", VW/2, VH/2-30, 22, accCss, 800);
       txt(segType>=1?"tap to jump":"tap to flip", VW/2, VH/2-8, 12, "#e8ecf1", 600); ctx.globalAlpha=1; } }
 
   ctx.restore();
@@ -1083,9 +1108,9 @@ function draw(){
 }
 
 function devRow(){   // top-row dev affordance: tap a pill to launch straight into that level (shown on ready + dead)
-  txt("DEV",42,DEVY+13,9,"#5f6b85",800);
-  const lab=["▬ TUNNEL","▲ ABOVE","▼ MINE"];
-  for(let i=0;i<3;i++){ const r=R_DEV[i], on=devSeg===i;
+  txt("DEV",36,DEVY+13,9,"#5f6b85",800);
+  const lab=["▼ DOWNLINE","▲ UPLINE"];
+  for(let i=0;i<2;i++){ const r=R_DEV[i], on=devSeg===i;
     ctx.fillStyle=on?"rgba(94,242,194,0.18)":"rgba(255,255,255,0.06)"; ctx.fillRect(r.x,r.y,r.w,r.h);
     if(on){ ctx.strokeStyle="#5ef2c2"; ctx.lineWidth=1; ctx.strokeRect(r.x+0.5,r.y+0.5,r.w-1,r.h-1); }
     txt(lab[i],r.x+r.w/2,r.y+12,10,on?"#9bf0d0":"#9aa4b8",700); }
