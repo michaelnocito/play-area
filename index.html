@@ -195,8 +195,12 @@ const WMIN   = 26, WMAX=46;   // obstacle width range
    short red floor-juts you hop. Tuned so a single fixed jump ALWAYS clears one jut (apex 96px >> tallest jut)
    AND always lands in a gap (jump reach < tightest spacing) — fair by construction. */
 const SEG_LEN  = 250;         // metres per segment before the world flips mode
-const SKY_GRAV = 2900;        // down-only gravity (floatier than flip's GRAV → an airy, bouncy hop)
-const SKY_JUMP = 880;         // fixed launch velocity on a tap (one consistent arc; apex ~133px, airtime ~0.61s — bouncy, clears barriers easily)
+const SKY_GRAV = 2900;        // FALL gravity once a glide is canceled (2nd tap) → a deliberate drop to land precisely
+const SKY_JUMP = 880;         // (parked — upline now glides, not hops)
+// UPLINE glide: 1st tap launches a floaty glide; weak gravity + capped descent = a long gentle float; 2nd tap cancels → drop
+const GLIDE_LIFT = 500;       // gentle launch velocity into the glide (apex ~125px — clears the platforms)
+const GLIDE_GRAV = 1000;      // weak gravity WHILE gliding (floaty rise, slow fall) — not bouncy
+const GLIDE_VMAX = 260;       // capped descent speed while gliding (steady, gentle float-down)
 const SKY_GAP0 = 270, SKY_GAPMIN=230;   // jut spacing — GAPMIN > max jump reach (~219px@cap) so you never land ON a jut
 const SKY_HMIN = 28, SKY_HMAX=56;       // floor-jut height range (all clearable by the fixed arc)
 const SKY_WMIN = 20, SKY_WMAX=40;
@@ -423,7 +427,7 @@ let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
 let paused=false, pausedAtMode="ready", doubledFlag=false;
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
 let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0, segStep=0, acclimT=0;   // 0 downline/mid / 1 upline/upper; segStep walks SEG_SEQ; acclimT=post-transition speed ease-in
-let onGround=true;   // upline: resting on the floor or a platform (gates the fixed-arc jump — no double-jump)
+let onGround=true, gliding=false;   // upline: onGround gates launch (no double-glide); gliding = currently in a glide
 let devSeg=0;   // dev menu: which level a run starts in (0 tunnel/mid, 1 above/upper, 2 mine/lower)
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
@@ -438,7 +442,7 @@ function reset(){
   py=BOTY-PS; vy=0; gdir=1; sq=1;
   speed=SPEED0; worldX=0; dist=0; spawnCd=GAP0; nextAd=1; runCoinBonus=0;
   for(const o of obs) o.on=false;
-  for(const pl of plat) pl.on=false; onGround=true;
+  for(const pl of plat) pl.on=false; onGround=true; gliding=false;
   for(const p of trail) p.on=false; trHead=0;
   for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
   shake=0; flash=0; freeze=0; lastMile=0; bgPulse=0; landT=0; doubledFlag=false;
@@ -460,7 +464,10 @@ function start(){ Snd.ensure();
   startAll=false; mode="play"; Ads.gameplayStart();
 }
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(gdir<0); }   // gdir<0 → rising to the ceiling = "up" whoosh
-function skyJump(){ if(onGround){ vy=-SKY_JUMP; onGround=false; sq=0.6; Snd.flip(true); } }   // upline: fixed-arc hop, only when resting on floor/platform (no double-jump = fair)
+function skyJump(){   // UPLINE glide: 1st tap (grounded) launches a floaty glide; 2nd tap (airborne) cancels it → drop to land precisely
+  if(onGround){ vy=-GLIDE_LIFT; onGround=false; gliding=true; sq=0.78; Snd.flip(true); }
+  else if(gliding){ gliding=false; Snd.flip(false); }
+}
 // A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
 function onCrash(){
   shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
@@ -719,14 +726,15 @@ function update(dt){
 
   // player physics
   const pyPrev=py;   // pre-move y → the swept collectible grab below stays tunnel-proof on fast flips
-  if(segType>=1){   // UPLINE: down-only gravity + one-way platform landing; fixed-arc hop via skyJump
-    vy+=SKY_GRAV*dt; if(vy>MAXVY)vy=MAXVY;
+  if(segType>=1){   // UPLINE: GLIDE physics (weak gravity + capped descent while gliding; full gravity once canceled) + one-way platform landing
+    vy += (gliding?GLIDE_GRAV:SKY_GRAV)*dt;
+    if(gliding){ if(vy>GLIDE_VMAX) vy=GLIDE_VMAX; } else if(vy>MAXVY) vy=MAXVY;
     py+=vy*dt;
     onGround=false;
     const pcx=PX+PS/2;
     if(vy>=0){ for(const pl of plat){ if(!pl.on) continue;          // land on a platform top when descending across it
-      if(pcx>pl.x && pcx<pl.x+pl.w && pyPrev+PS<=pl.y+4 && py+PS>=pl.y){ py=pl.y-PS; vy=0; onGround=true; sq=0.7; break; } } }
-    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;sq=0.7;} py=BOTY-PS; vy=0; onGround=true; }  // floor (squash = bounce)
+      if(pcx>pl.x && pcx<pl.x+pl.w && pyPrev+PS<=pl.y+4 && py+PS>=pl.y){ py=pl.y-PS; vy=0; onGround=true; gliding=false; sq=0.9; break; } } }
+    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; onGround=true; gliding=false; sq=Math.min(sq,0.92); }  // soft land (no bounce)
     else if(py<TOPY){ py=TOPY; if(vy<0)vy=0; }
   } else {           // FLIP: gravity along gdir, snap floor<->ceiling (LOCKED feel)
     vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
