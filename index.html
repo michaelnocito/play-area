@@ -206,10 +206,11 @@ const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.04, FLOW_MULT
    we ADD a generous NICE tier (so anyone tastes it) + a PERFECT tier (mastery). Judged on closest approach (minClr). */
 // The skim window is a FRACTION of each obstacle's available gap, so "the window to skim == the window to not
 // skim": clear it by less than half the gap → it's a skim. Symmetric for floor (down) and ceiling (up) juts.
-const GRAZE_FRAC=0.5;                                        // skim if clearance < half the available gap (big, forgiving)
-const GRAZE_T_PERFECT=0.18, GRAZE_T_CLEAN=0.5;              // within the skim window: inner 18% PERFECT, inner 50% CLEAN, rest NICE
+// Every non-crash pass is at least NICE — skim feedback is constant; precision climbs the ladder.
+// Tier thresholds are fractions of the SAFE LANE for each obstacle (so they scale with how much room you have).
+const GRAZE_T_PERFECT=0.08, GRAZE_T_CLEAN=0.25;             // inner 8% PERFECT, inner 25% CLEAN, rest NICE
 const GRAZE_LABEL=["","NICE","CLEAN","PERFECT"];             // tier 0/1/2/3 (module-level → no per-frame alloc)
-const GRAZE_COL=["","#9bf0d0","#7fe0ff","#ffe08a"];         // nice teal · clean cyan · perfect gold
+const GRAZE_COL=["","#ffd6a8","#ffb86b","#ffe08a"];         // warm ladder: peach (NICE) → amber (CLEAN) → gold (PERFECT) — no blue/cyan in the score-driver palette
 const GRAZE_FLOWK=[0,0.6,1.0,1.4];                          // Flow-gain multiplier per tier (precision charges faster)
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
@@ -603,8 +604,8 @@ function update(dt){
     if(flow<=0){ flow=0; flowActive=false; Music.flow=false; Music.applyMute(); } }
   else if(flow>=1){ flowActive=true; flow=1; Music.flow=true; Music.applyMute(); Snd.flow(); bgPulse=Math.max(bgPulse,0.7); beaconPulse=Math.max(beaconPulse,1.2); Ads.happytime(); }   // entering Flow ("HOMEWARD") — earned, triumphant
   else if(flow>0){ flow-=FLOW_IDLE*dt; if(flow<0)flow=0; }
-  if(dist>=lastMile+50){ lastMile+=50; mileVal=lastMile; mileT=0.9; flash=Math.max(flash,0.16); flashCol="#5ef2c2"; Snd.point();
-    bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer
+  if(dist>=lastMile+50){ lastMile+=50; Snd.point();
+    bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer — no cyan strobe; the spotlight bloom + beacon step does the talking
   // X3 lore: crossing into a new land (every ZONELEN) — fire a wordless "new land" sweep, bloom the light, step the beacon closer
   { const zNow=(dist/ZONELEN)|0;
     if(zNow>lastZone){ lastZone=zNow; zonesRun++; zoneSweep=1; bgPulse=Math.max(bgPulse,0.55); beaconPulse=Math.max(beaconPulse,0.9); } }
@@ -640,8 +641,9 @@ function update(dt){
       if(cNow>=0 && cNow<o.minClr) o.minClr=cNow; }
     if(!o.scored && o.x+o.w*0.5<PX+PS*0.5){ o.scored=true;   // fire the MOMENT the player passes the column's top (its centre crosses you), not at full clear → immediate, in-sync feedback
       const clr=o.minClr;   // closest approach during the pass (>=0, or 1e9 if never alongside)
-      const skimMax=(210-o.h)*GRAZE_FRAC;   // 210 = full safe gap (VH-2*WALL-PS); skim if you cleared by less than half of it
-      let tier=0; if(clr<skimMax){ tier = clr<skimMax*GRAZE_T_PERFECT?3 : clr<skimMax*GRAZE_T_CLEAN?2 : 1; }
+      const safeLane=210-o.h;   // vertical room the player has to thread (gap between the obstacle tip and the opposite wall)
+      // Every survival = at least NICE; tighter clearances climb the ladder. Skim is no longer a gated bonus, it IS the scoring loop.
+      let tier=1; if(clr<safeLane*GRAZE_T_PERFECT) tier=3; else if(clr<safeLane*GRAZE_T_CLEAN) tier=2;
       if(tier>0){ combo++; comboVal=combo; comboTier=tier; comboT=0.8;
         bonusM += tier*combo;                                  // SKIM is the score driver: tier × streak, kept OFF dist so the difficulty curve stays locked
         runCoinBonus += tier;                                  // coins scale with precision
@@ -916,7 +918,7 @@ function draw(){
     // Flow meter — thin bar under the score; fills with skim skill, blazes + "HOMEWARD" when lit
     if(flow>0||flowActive){ const fw=120, fx=VW/2-fw/2, fy=WALL+3;
       ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(fx,fy,fw,3);
-      ctx.fillStyle=flowActive?"#ffd66b":"#7fe0c8"; ctx.fillRect(fx,fy,fw*Math.min(1,flow),3);
+      ctx.fillStyle=flowActive?"#ffd66b":"#ffb86b"; ctx.fillRect(fx,fy,fw*Math.min(1,flow),3);   // warm amber while charging (was cyan/teal), gold when lit
       if(flowActive){ ctx.globalAlpha=0.7+0.3*Math.sin(t*8); txt("HOMEWARD",VW/2,fy+15,10,"#ffe08a",800); ctx.globalAlpha=1; } } }
 
   ctx.restore();
@@ -927,9 +929,6 @@ function draw(){
     let k=0; for(let i=0;i<3;i++){ if(BT[i]<=0) continue; const c=GATECOL[i], a=Math.min(0.5,BT[i]/ORB_DUR);
       ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; ctx.lineWidth=3; const ins=2+k*4; ctx.strokeRect(ins,ins,VW-ins*2,VH-ins*2);
       ctx.globalAlpha=Math.min(1,BT[i]*1.2); txt(GATELABEL[i],VW/2+(k-(n-1)/2)*92,VH-10,11,ORBCSS[i],800); ctx.globalAlpha=1; k++; } }
-
-  if(mileT>0){ ctx.globalAlpha=Math.min(1,mileT*1.4);
-    txt(mileVal+"m",VW/2,VH*0.40-(1-mileT)*10,20,"#5ef2c2",800); ctx.globalAlpha=1; }
 
   if(mode==="reviving"){            // "GET READY" 3..2..1 over the cleared field
     const n=Math.ceil(reviveT);
