@@ -200,22 +200,6 @@ const MAG_R=150;                               // MAGNET buff pull radius — co
 /* Warp tubes — optional HIGH-SKILL forward skip (teal/friendly, never red, never kills; miss = no penalty) */
 const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; +28m skip (leaderboard-safe)
 const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
-/* Flow State ("Homeward") — EARNED by skill (clean passes), NOT a pickup. Sustain skims → bonus score + a gold bloom. */
-const FLOW_GAIN=0.45, FLOW_COIN=0.10, FLOW_DRAIN=0.16, FLOW_IDLE=0.018, FLOW_MULT=0.5;   // SHOWY: ~2-3 skims ignite, slow idle decay so progress sticks, coins feed it (was 0.16/0.05/0.22/0.10); +score fraction 0.5 → 1.5×
-/* ===== Graze ladder — skim = fly within 75% of the safe lane from the obstacle tip.
-   Natural play (go to safe wall) = ~10-25% clearance from safe side = ~75-90% from obstacle = NO SKIM.
-   Deliberate close play = small clearance = NICE/CLEAN/PERFECT. Outer 25% = wide safe dodge, combo resets.
-   Judged on minClr (closest approach tracked during horizontal overlap). */
-// Tiers (fractions of safeLane = 210 - obs.h):
-//   clr >= 75% lane → NO SKIM: combo resets, soft chime
-//   clr  < 75% lane → NICE    (tier 1): popup, flow +0.30×GAIN (~20 passes to ignite)
-//   clr  < 40% lane → CLEAN   (tier 2): popup, flow +0.80×GAIN (~4 passes), bonusM
-//   clr  < 12% lane → PERFECT (tier 3): gold pop, flow +1.40×GAIN (~2 passes), bonusM+coins
-const SKIM_FRAC=0.75;                                        // outer gate — far-wall safe play doesn't skim
-const GRAZE_T_PERFECT=0.12, GRAZE_T_CLEAN=0.40;             // precision upgrade thresholds (inner fractions)
-const GRAZE_LABEL=["","NICE","CLEAN","PERFECT"];             // tier 0/1/2/3 (module-level → no per-frame alloc)
-const GRAZE_COL=["","#ffd6a8","#ffb86b","#ffe08a"];         // warm ladder: peach → amber → gold
-const GRAZE_FLOWK=[0,0.42,0.80,1.40];                       // NICE ~8 passes to ignite, CLEAN ~3, PERFECT ~2
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
@@ -377,7 +361,7 @@ const R_DOUBLE={x:VW/2-94,y:VH/2+78,w:188,h:22};
 // in-run pause: corner toggle that maps to the same icon area people already use, just bigger so a deliberate tap is unambiguous
 const R_PAUSE={x:VW-44,y:VH-44,w:36,h:36};
 function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
-function score(){ return dist + (bonusM|0); }   // shown/banked score = real distance + Flow bonus metres
+function score(){ return dist; }
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
 function shopAction(){ const c=shopCat, i=sel[c], list=catList(c), own=catOwned(c), it=list[i];
   if(own.includes(i)){ catSetEquipped(c,i); persist(); }
@@ -388,17 +372,14 @@ let mode="ready";            // ready | play | dead
 let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
 let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
 let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
-let flowAnnounce=0, flowBarPulse=0;   // HOMEWARD ignite: one-shot headline banner + meter-bar height pulse (the "this just turned on" beat)
-let paused=false, pausedAtMode="ready", doubledFlag=false;   // manual pause (phone-call recovery) + rewarded-ad "double coins" once-per-run flag
-let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;   // formation sequencer (replaces the old pairNext flag)
-let combo=0, comboVal=0, comboT=0, comboTier=0;   // skim streak (combo = multiplier), comboTier = last graze tier 1/2/3
+let paused=false, pausedAtMode="ready", doubledFlag=false;
+let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
 let lastZone=0, zoneSweep=0, zonesRun=0;   // X3 lore: land tracking — crossing fires a "new land" sweep + steps the beacon closer
 let reviveT=0, reviveUsedFree=false, reviveUsedAd=false;   // revive: 1 free + 1 ad per run (precision, never every death)
 let nextWarp=WARP_FROM, warpFx=0;                          // warp tubes: next spawn distance + nail-it flourish timer
-let flow=0, flowActive=false, bonusM=0;                    // Flow State: skill meter (0..1), active bloom, bonus metres (kept off `dist` so difficulty/spacing stay locked)
 let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
 let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so new players FEEL a buff
 
@@ -408,13 +389,12 @@ function reset(){
   for(const o of obs) o.on=false;
   for(const p of trail) p.on=false; trHead=0;
   for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
-  shake=0; flash=0; freeze=0; lastMile=0; combo=0; comboT=0; comboTier=0; bgPulse=0; landT=0;
-  flowAnnounce=0; flowBarPulse=0; doubledFlag=false;   // fresh run = fresh Flow banner + fresh ad-double offer
+  shake=0; flash=0; freeze=0; lastMile=0; bgPulse=0; landT=0; doubledFlag=false;
   fmId=0; fmStep=0; fmLen=0; hardCount=0;
   lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
   reviveT=0; reviveUsedFree=false; reviveUsedAd=false;
   for(const w of warps) w.on=false; nextWarp=WARP_FROM; warpFx=0;
-  flow=0; flowActive=false; bonusM=0; Music.flow=false; Music.applyMute();
+  Music.flow=false; Music.applyMute();
   nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
 }
 function start(){ Snd.ensure();
@@ -427,8 +407,8 @@ function start(){ Snd.ensure();
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(gdir<0); }   // gdir<0 → rising to the ceiling = "up" whoosh
 // A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
 function onCrash(){
-  combo=0; shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
-  flow=0; flowActive=false; Music.flow=false; Music.applyMute();   // crash drops you out of Flow
+  shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
+  Music.flow=false; Music.applyMute();
   lightR=26; lightTarget=26;   // snuff the light to a spark
   if(!reviveUsedFree){ reviveUsedFree=true; beginRevive(false); }      // death #1 → FREE revive, no ad
   else if(!reviveUsedAd){ mode="offer"; Ads.gameplayStop(); }          // death #2 → optional 1-ad continue (offered once)
@@ -533,7 +513,7 @@ function pickFormation(){            // only called when no formation is active
   else if((s-=wZig)<0){ fmId=3; fmLen=3; fmSide=rndSide(); }         // zig-zag
   else { fmId=2; fmLen=2; }                                          // wDbl → double-flip
 }
-function placeRect(o,side,h){ o.on=true; o.x=VW+24; o.scored=false; o.minClr=1e9;
+function placeRect(o,side,h){ o.on=true; o.x=VW+24;
   o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side; o.style=(Math.random()<0.5)|0;
   lastObsSide=side; clearLootNear(o); }   // record the danger lane + evict any loot this jut would trap
 function spawnObstacle(spacing){
@@ -601,11 +581,8 @@ function update(dt){
   for(const p of par){ if(p.life>0){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=520*dt; } }
   if(shake>0){ shake-=dt*60; if(shake<0)shake=0; }
   if(flash>0){ flash-=dt*2.4; if(flash<0)flash=0; }
-  if(flowAnnounce>0){ flowAnnounce-=dt; if(flowAnnounce<0)flowAnnounce=0; }   // HOMEWARD ignite banner timer
-  if(flowBarPulse>0){ flowBarPulse-=dt; if(flowBarPulse<0)flowBarPulse=0; }    // bar-height pulse on ignite
   if(needRotate){ if(mode==="play" && !rotatePaused){ rotatePaused=true; Ads.gameplayStop(); } return; }
   if(rotatePaused){ rotatePaused=false; if(mode==="play") Ads.gameplayStart(); }
-  if(comboT>0){ comboT-=dt*1.6; if(comboT<0)comboT=0; }
   if(bgPulse>0){ bgPulse-=dt*2.4; if(bgPulse<0)bgPulse=0; }
   if(beaconPulse>0){ beaconPulse-=dt*1.1; if(beaconPulse<0)beaconPulse=0; }
   if(zoneSweep>0){ zoneSweep-=dt*1.15; if(zoneSweep<0)zoneSweep=0; }   // ~0.9s "new land" wash
@@ -626,12 +603,6 @@ function update(dt){
   const spacing=Math.max(GAPMIN, GAP0-dist*0.35);
   const dx=speed*dt;
   worldX += dx * (BT[2]>0 ? 2 : 1); dist=worldX/40|0;
-  // Flow State ("Homeward") — earned by skim skill (charged in the Clean-Pass block); drains while active, bonus metres while lit
-  if(flowActive){ flow-=FLOW_DRAIN*dt; bonusM+=(dx/40)*FLOW_MULT;       // +score WITHOUT touching dist → spacing/difficulty stay locked
-    if(flow<=0){ flow=0; flowActive=false; Music.flow=false; Music.applyMute(); } }
-  else if(flow>=1){ flowActive=true; flow=1; Music.flow=true; Music.applyMute(); Snd.flow(); bgPulse=Math.max(bgPulse,0.7); beaconPulse=Math.max(beaconPulse,1.2); Ads.happytime();
-    flowAnnounce=1.4; flowBarPulse=0.18; }   // entering Flow ("HOMEWARD") — earned, triumphant; fire the headline banner + meter pulse
-  else if(flow>0){ flow-=FLOW_IDLE*dt; if(flow<0)flow=0; }
   if(dist>=lastMile+50){ lastMile+=50; Snd.point();
     bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer — no cyan strobe; the spotlight bloom + beacon step does the talking
   // X3 lore: crossing into a new land (every ZONELEN) — fire a wordless "new land" sweep, bloom the light, step the beacon closer
@@ -662,25 +633,6 @@ function update(dt){
     if(hx<o.x+o.w && hx+hw>o.x && hy<ry+o.h && hy+hh>ry){
       if(BT[1]>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
       onCrash(); return; }
-    // track CLOSEST vertical clearance while the obstacle is over the player (skim = min gap during the pass,
-    // NOT the gap at pass-completion — sampling only at completion missed the actual closest approach by ~13
-    // frames, so genuine skims read as wide misses and Clean Pass / Flow almost never fired)
-    if(o.x<PX+PS && o.x+o.w>PX){ const cNow=o.side===0 ? (BOTY-o.h)-(py+PS) : py-(TOPY+o.h);
-      if(cNow>=0 && cNow<o.minClr) o.minClr=cNow; }
-    if(!o.scored && o.x+o.w*0.5<PX+PS*0.5){ o.scored=true;   // fire the MOMENT the player passes the column's top (its centre crosses you), not at full clear → immediate, in-sync feedback
-      const clr=o.minClr;   // closest approach during the pass (>=0, or 1e9 if never alongside)
-      const safeLane=210-o.h;
-      let tier=0;
-      if(clr<safeLane*SKIM_FRAC){ tier = clr<safeLane*GRAZE_T_PERFECT?3 : clr<safeLane*GRAZE_T_CLEAN?2 : 1; }
-      if(tier>0){ combo++; comboVal=combo; comboTier=tier;
-        comboT = tier===1 ? 0.50 : 0.85;                      // NICE fades faster; CLEAN/PERFECT linger
-        flow=Math.min(1,flow+FLOW_GAIN*GRAZE_FLOWK[tier]);
-        bgPulse=Math.max(bgPulse,tier===1?0.08:0.16+0.10*tier);
-        if(tier>1){ bonusM += tier*combo; runCoinBonus += tier;
-          spark(PX+PS/2,py+PS/2); if(tier===3) coinFx(PX+PS/2,py+PS/2); }
-        Snd.clean(combo+tier); }
-      else { combo=0; comboTier=0; Snd.point(); }
-    }
   }
 
   // collectibles: move with world, generous SWEPT grab (tunnel-proof on fast flips), recycle
@@ -698,7 +650,7 @@ function update(dt){
     if(ddx*ddx+ddy*ddy<=R*R){ c.on=false;
       if(isOrb){ BT[c.kind-1]=Math.max(BT[c.kind-1],ORB_DUR); flash=Math.max(flash,0.18); flashCol=ORBCSS[c.kind-1];
         beaconPulse=Math.max(beaconPulse,0.5); spark(c.x,c.y); Snd.clean(4); }
-      else { runCoinBonus+=c.val; coinPopV+=c.val; coinPopT=0.7; coinFx(c.x,c.y); Snd.coin(); flow=Math.min(1,flow+FLOW_COIN); } }
+      else { runCoinBonus+=c.val; coinPopV+=c.val; coinPopT=0.7; coinFx(c.x,c.y); Snd.coin(); } }
   }
   // onboarding SHIELD: a free orb on the START surface in the opening metres — grabbed just by running, so a
   // first-timer feels a buff smash a jut before they ever reach the earned 150m orbs. Placed clear of any red.
@@ -727,7 +679,6 @@ function update(dt){
   if(BT[1]>0) lt=Math.max(lt,LR_MAX);            // SHIELD — bold (gold flare in render)
   if(BT[0]>0) lt=Math.max(lt,LR_BASE+34);        // MAGNET — gentle bloom while pulling
   if(BT[2]>0) lt=Math.max(lt,LR_BASE+30);        // 2× — bright
-  if(flowActive) lt=Math.max(lt,LR_MAX);          // Flow State — the world opens up (homeward)
   if(lowFx && lt<LR_LOWMIN) lt=LR_LOWMIN;                        // reduce-flashing: keep it open + un-oppressive
   lightTarget = lt<LR_MIN?LR_MIN:(lt>LR_MAX+40?LR_MAX+40:lt);
   lightR += (lightTarget-lightR)*Math.min(1,dt*8);              // eased, dt-based
@@ -845,8 +796,7 @@ function draw(){
   }
 
   // surfing trail — style by equipped TRAIL cosmetic, coloured by equipped AURA (newest=brightest)
-  const tcol=flowActive?"#ffe6a0":trailC;   // Flow State blazes the trail gold
-  for(const p of trail){ if(!p.on) continue; const f=p.x/PX; if(f<0) continue; trailDot(p.x,p.y,f,tcol,trStyle); }
+  for(const p of trail){ if(!p.on) continue; const f=p.x/PX; if(f<0) continue; trailDot(p.x,p.y,f,trailC,trStyle); }
   ctx.globalAlpha=1;
 
   // player (glow + squash along gravity axis, color harmonized to zone)
@@ -869,9 +819,6 @@ function draw(){
   else { ctx.fillRect(-2.4,3,4.8,1.6); }                               // neutral
   ctx.restore();
 
-  // Clean Pass flair
-  if(comboT>0 && comboTier>0){ ctx.globalAlpha=Math.min(1,comboT*1.6);   // tier-aware skim popup: name the tier + the metres banked (so the score economy is visible)
-    txt(GRAZE_LABEL[comboTier]+(comboVal>1?" ×"+comboVal:"")+"  +"+(comboTier*comboVal)+"m", PX+30, gdir>0?py-10:py+PS+18, comboTier===3?13:11, GRAZE_COL[comboTier], 800); ctx.globalAlpha=1; }
   if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
     txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
   if(warpFx>0){ ctx.globalAlpha=Math.min(1,warpFx*2);   // nail-it "WARP +Nm" flourish
@@ -942,23 +889,8 @@ function draw(){
   if(mode==="play"){ const sc=score();
     // HUD scrim — a single translucent band keeps score + coin readable across every zone (gold-on-gold luminance collision in warm zones)
     ctx.fillStyle="rgba(0,0,0,0.25)"; ctx.fillRect(0,0,VW,WALL);
-    txt(sc+"m",VW/2,WALL-6,13,flowActive?"#ffe08a":"#aeb8cc",700);
-    txt("◆ "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);   // pulses gold on grab
-    if(combo>1 && comboT>0){ const pul=comboT>0.5?1.3:1; txt("SKIM ×"+combo,58,WALL+11,12*pul,GRAZE_COL[comboTier]||"#ffb86b",800); }   // persistent skim multiplier (gated on comboT so it doesn't go stale during breathers)
-    // Flow meter — thin bar under the score; charge color is cool peach (distinct), lit is gold; bar bumps in height on ignite
-    if(flow>0||flowActive){ const fw=120, fx=VW/2-fw/2, fy=WALL+3, bh=3+(flowBarPulse>0?2:0);
-      ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(fx,fy,fw,bh);
-      ctx.fillStyle=flowActive?"#ffd66b":"#ffd6a8"; ctx.fillRect(fx,fy,fw*Math.min(1,flow),bh);   // cool peach charging → reserved gold for lit, so the threshold reads
-      if(flowActive){ ctx.globalAlpha=0.75+0.25*Math.sin(t*8); txt("HOMEWARD ×1.5",VW/2,fy+15,10,"#ffe08a",800); ctx.globalAlpha=1; }   // name the multiplier inline — "music sped up" isn't the only signal anymore
-    }
-    // Flow-only edge vignette — gives HOMEWARD a unique visual identity (zone pulses don't do this)
-    if(flowActive){ const va=0.10; ctx.fillStyle="rgba(255,224,138,"+va+")";
-      ctx.fillRect(0,0,VW,8); ctx.fillRect(0,VH-8,VW,8); ctx.fillRect(0,0,8,VH); ctx.fillRect(VW-8,0,8,VH); }
-    // HOMEWARD ignite headline — the biggest text in the game, fading over 1.4s, so the peak reward gets the peak announcement
-    if(flowAnnounce>0){ ctx.globalAlpha=Math.min(1,flowAnnounce/1.4);
-      txt("HOMEWARD",VW/2,VH/2-22,28,"#ffe08a",800);
-      txt("+50% SCORE",VW/2,VH/2-2,12,"#ffd66b",700);
-      ctx.globalAlpha=1; }
+    txt(sc+"m",VW/2,WALL-6,13,"#aeb8cc",700);
+    txt("◆ "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);
     // pause chip — small corner affordance so phone-call recovery + intentional pause is always available
     ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_PAUSE.x,R_PAUSE.y,R_PAUSE.w,R_PAUSE.h);
     ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16); }
@@ -991,8 +923,7 @@ function draw(){
   else if(mode==="shop"){ drawShop(); }
   else if(mode==="ready"){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — skim the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
-    txt("the closer you fly, the brighter you burn",VW/2,VH/2+34,11,"#ffd6a8",600);   // names the signature mechanic (HOMEWARD) wordlessly
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — thread the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
     if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
     shopBtn(); drawBoostRow();
   } else if(mode==="dead"){
