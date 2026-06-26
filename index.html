@@ -284,7 +284,8 @@ const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side
 // UPLINE platforms — floating ledges you jump onto/across (one-way landing); pooled, alloc-free
 const PLN=8, plat=[]; for(let i=0;i<PLN;i++) plat.push({on:false,x:0,y:0,w:0});
 const PLAT_H=[34,52,68];                // ledge heights above the floor (top ≤ glide apex, with ceiling headroom when launching from it)
-const PLAT_GAP0=210, PLAT_GAPMIN=170;   // spacing between ledges
+const PLAT_GAP0=320, PLAT_GAPMIN=280;   // spacing between ledges (increased for Mario-style longer spacing)
+const PLAT_WMIN=140, PLAT_WMAX=200;     // platform length range (longer, like Mario level 2)
 // warp-tube pool (sparse) — mid-lane rings you flip THROUGH for a forward skip; alloc-free
 const WARPN=3, warps=[]; for(let i=0;i<WARPN;i++) warps.push({on:false,x:0,y:0,used:false});
 function spawnWarp(){ for(const w of warps){ if(!w.on){ w.on=true; w.used=false; w.x=VW+20; w.y=(Math.random()<0.5?108:162); return; } } }  // mid-lane → must time a flip
@@ -438,6 +439,25 @@ let nextWarp=WARP_FROM, warpFx=0;                          // warp tubes: next s
 let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
 let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so new players FEEL a buff
 
+/* ===== TEST MODE: platform spacing measurement ===== */
+let testMode=false, testStart=0, testGaps=[150,175,200,225,250,275,300];   // gaps to test (px)
+let testIdx=0, testLastLand=0, testResults=[];
+function testPlatformSpacing(){
+  // spawn platforms at exact test distances
+  testIdx=(testStart/40|0)%testGaps.length;
+  const targetDist=testStart+(testGaps[testIdx]*0.5);   // stagger across a half-gap
+  if(dist>testLastLand+50 && spawnCd<=0){
+    for(let i=0;i<plat.length;i++){ if(!plat[i].on){
+      plat[i].on=true; plat[i].x=VW+24; plat[i].w=160; plat[i].y=BOTY-PLAT_H[1];   // fixed size/height for clean measurements
+      console.log(`[TEST] Platform ${testGaps[testIdx]}px gap at dist=${dist}, x=${plat[i].x}, y=${plat[i].y}`);
+      spawnCd+=testGaps[testIdx];
+      testLastLand=dist;
+      testIdx=(testIdx+1)%testGaps.length;
+      return;
+    } }
+  }
+}
+
 function reset(){
   py=BOTY-PS; vy=0; gdir=1; sq=1;
   speed=SPEED0; worldX=0; dist=0; spawnCd=GAP0; nextAd=1; runCoinBonus=0;
@@ -467,6 +487,7 @@ function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(gdir<0); }   // 
 function skyJump(){   // UPLINE glide: 1st tap (grounded) launches a floaty glide; 2nd tap (airborne) cancels it → drop to land precisely
   if(onGround){ vy=-GLIDE_LIFT; onGround=false; gliding=true; sq=0.78; Snd.flip(true); }
   else if(gliding){ gliding=false; Snd.flip(false); }
+  // else: airborne but not gliding → do nothing (prevents jitter on key repeat)
 }
 // A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
 function onCrash(){
@@ -523,9 +544,14 @@ addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"|
     return;   // rest of dead-screen is inert — no accidental restarts on text/score taps
   }
   tap(); },{passive:false});
+/* ===== Key state tracking (prevent jitter on key repeat) ===== */
+const keyState={};
+addEventListener("keydown",e=>{ if(e.repeat) return; keyState[e.key]=true; });  // mark key as pressed, but ignore repeats
+addEventListener("keyup",e=>{ keyState[e.key]=false; });                      // mark key as released
+
 addEventListener("visibilitychange",()=>{ if(document.hidden && mode==="play" && !paused) togglePause(); });   // phone-call / tab-switch recovery
 addEventListener("keydown",e=>{ if(e.key==="Escape" || e.key==="p" || e.key==="P"){ if(mode==="play"||paused){ togglePause(); e.preventDefault(); } } });
-addEventListener("keydown",e=>{
+addEventListener("keydown",e=>{ if(e.repeat) return;
   if(mode==="shop"){ const c=shopCat, n=catList(c).length;
     if(e.key==="ArrowLeft") sel[c]=(sel[c]-1+n)%n;
     else if(e.key==="ArrowRight") sel[c]=(sel[c]+1)%n;
@@ -534,7 +560,8 @@ addEventListener("keydown",e=>{
     else if(e.key==="Enter"||e.key===" ") shopAction();
     else if(e.key==="Escape") mode="ready";
     e.preventDefault(); return; }
-  if([" ","ArrowUp","w","W"].includes(e.key)){ e.preventDefault(); tap(); } });
+  if([" ","ArrowUp","w","W"].includes(e.key)){ e.preventDefault(); tap(); }
+  if(e.key==="t" || e.key==="T"){ testMode=!testMode; console.log(`[TEST] Mode: ${testMode}, start dist: ${dist}`); if(testMode){ mode="ready"; devSeg=1; } } });
 function shopTap(p){
   for(let c=0;c<3;c++) if(inR(p,R_TAB[c])){ shopCat=c; return; }   // switch axis
   const c=shopCat, n=catList(c).length;
@@ -609,7 +636,7 @@ function spawnSky(spacing){            // single short red floor-jut you hop (al
 }
 function spawnPlatform(spacing){       // UPLINE: a floating ledge at one of the set heights, with light-coins riding its top
   for(const pl of plat){ if(!pl.on){ pl.on=true; pl.x=VW+24;
-    pl.w=70+(Math.random()*50|0); pl.y=BOTY-PLAT_H[Math.random()*PLAT_H.length|0];
+    pl.w=PLAT_WMIN+(Math.random()*(PLAT_WMAX-PLAT_WMIN)|0); pl.y=BOTY-PLAT_H[Math.random()*PLAT_H.length|0];
     const n=1+(Math.random()<0.5?1:0);
     for(let i=0;i<n;i++) placeCoin(pl.x+pl.w*(0.32+0.36*i), pl.y-PS, COIN_VAL);   // light to gather up on the ledge
     spawnCd+=spacing; return; } }
@@ -749,7 +776,10 @@ function update(dt){
   trailPush(PX+PS/2, py+PS/2);
 
   // obstacles: move, recycle, collide, score
-  spawnCd-=dx; if(spawnCd<=0 && xfade<=0){ segType===1?spawnPlatform(spacing):spawnObstacle(spacing); }
+  spawnCd-=dx; if(spawnCd<=0 && xfade<=0){
+    if(testMode && segType===1) testPlatformSpacing();
+    else segType===1?spawnPlatform(spacing):spawnObstacle(spacing);
+  }
   for(const pl of plat){ if(!pl.on) continue; pl.x-=dx; if(pl.x+pl.w<-4) pl.on=false; }   // scroll/recycle upline platforms
   const hx=PX+2, hy=py+2, hw=PS-4, hh=PS-4;      // inset hitbox = fair
   let nd=1e9;                                    // nearest upcoming obstacle edge → drives the light's "fear"
