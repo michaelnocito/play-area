@@ -198,9 +198,9 @@ const SEG_LEN  = 250;         // metres per segment before the world flips mode
 const SKY_GRAV = 2900;        // FALL gravity once a glide is canceled (2nd tap) → a deliberate drop to land precisely
 const SKY_JUMP = 880;         // (parked — upline now glides, not hops)
 // UPLINE glide: 1st tap launches a floaty glide; weak gravity + capped descent = a long gentle float; 2nd tap cancels → drop
-const GLIDE_LIFT = 375;       // gentle launch into the glide (apex ~100px — reaches the top platform without bonking the ceiling from it)
-const GLIDE_GRAV = 700;       // weak gravity WHILE gliding — floatier rise + fall (lower = floatier)
-const GLIDE_VMAX = 200;       // capped descent speed while gliding (lower = slower, floatier drift-down)
+const GLIDE_LIFT = 375;       // gentle launch into the glide (apex ~85px)
+const GLIDE_GRAV = 825;       // gravity WHILE gliding — lower = floatier (raised for a less-floaty feel)
+const GLIDE_VMAX = 300;       // capped descent speed while gliding — lower = floatier (raised for a less-floaty fall)
 const SKY_GAP0 = 270, SKY_GAPMIN=230;   // jut spacing — GAPMIN > max jump reach (~219px@cap) so you never land ON a jut
 const SKY_HMIN = 28, SKY_HMAX=56;       // floor-jut height range (all clearable by the fixed arc)
 const SKY_WMIN = 20, SKY_WMAX=40;
@@ -283,7 +283,7 @@ const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps 
 const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0,style:0,k:0});  // k: 0 obstacle/spike · 1 stompable enemy (mine)
 // UPLINE platforms — floating ledges you jump onto/across (one-way landing); pooled, alloc-free
 const PLN=8, plat=[]; for(let i=0;i<PLN;i++) plat.push({on:false,x:0,y:0,w:0});
-const PLAT_H=[38,64,85];                // ledge heights above the floor (top ≤ glide apex, with ceiling headroom when launching from it)
+const PLAT_H=[34,52,68];                // ledge heights above the floor (top ≤ glide apex, with ceiling headroom when launching from it)
 const PLAT_GAP0=210, PLAT_GAPMIN=170;   // spacing between ledges
 // warp-tube pool (sparse) — mid-lane rings you flip THROUGH for a forward skip; alloc-free
 const WARPN=3, warps=[]; for(let i=0;i<WARPN;i++) warps.push({on:false,x:0,y:0,used:false});
@@ -733,8 +733,8 @@ function update(dt){
     onGround=false;
     const pcx=PX+PS/2;
     if(vy>=0){ for(const pl of plat){ if(!pl.on) continue;          // land on a platform top when descending across it
-      if(pcx>pl.x && pcx<pl.x+pl.w && pyPrev+PS<=pl.y+4 && py+PS>=pl.y){ py=pl.y-PS; vy=0; onGround=true; gliding=false; sq=0.9; break; } } }
-    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; onGround=true; gliding=false; sq=Math.min(sq,0.92); }  // soft land (no bounce)
+      if(pcx>pl.x && pcx<pl.x+pl.w && pyPrev+PS<=pl.y+4 && py+PS>=pl.y){ py=pl.y-PS; vy=0; onGround=true; gliding=false; break; } } }
+    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; onGround=true; gliding=false; }  // no squash on land (no bounce)
     else if(py<TOPY){ py=TOPY; if(vy<0)vy=0; }
   } else {           // FLIP: gravity along gdir, snap floor<->ceiling (LOCKED feel)
     vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
