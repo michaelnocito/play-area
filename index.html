@@ -746,7 +746,7 @@ function update(dt){
     for(const o of obs) o.on=false;                       // clear danger so the switch is always survivable
     for(const pl of plat) pl.on=false;                    // clear upline platforms
     for(const c of col){ if(c.kind===0) c.on=false; }     // drop loose coins (orbs harmless)
-    vy=0; gdir=1; spawnCd=GAP0;                            // settle + a safe runway before the first new hazard
+    vy=0; gdir=1; spawnCd=GAP0*2;                          // settle + a generous safe runway after transition
     zoneSweep=1; bgPulse=Math.max(bgPulse,0.6); beaconPulse=Math.max(beaconPulse,0.95); lightR=Math.max(lightR,LR_BASE);
     Snd.warp();                                            // reuse the portal breakout sting
   }
@@ -1126,10 +1126,10 @@ function draw(){
     if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
     shopBtn(); drawBoostRow(); devRow();
   } else if(mode==="dead"){
-    txt("CRASHED",VW/2,VH/2-26,30,"#ff5468",800);
-    txt(score()+"m",VW/2,VH/2+0,18,"#e8ecf1",700);
-    txt(score()>=best?"★ NEW BEST ★":"best  "+best+"m",VW/2,VH/2+20,12,score()>=best?"#ffcf5c":"#aeb8cc",700);
-    txt("+◆ "+lastEarned+"   (◆ "+coins+")",VW/2,VH/2+40,12,"#ffcf5c",700);
+    txt("CRASHED",VW/2,VH/2-32,30,"#ff5468",800);
+    txt(score()+"m",VW/2,VH/2+4,18,"#e8ecf1",700);
+    txt(score()>=best?"★ NEW BEST ★":"best  "+best+"m",VW/2,VH/2+26,12,score()>=best?"#ffcf5c":"#aeb8cc",700);
+    txt("+◆ "+lastEarned+"   (◆ "+coins+")",VW/2,VH/2+42,12,"#ffcf5c",700);
     // explicit RETRY pill — rest of the dead screen is now inert so a casual tap on the score won't restart the run
     ctx.fillStyle="rgba(94,242,194,0.16)"; ctx.fillRect(R_RETRY.x,R_RETRY.y,R_RETRY.w,R_RETRY.h);
     ctx.globalAlpha=0.7+0.3*Math.sin(t*5); txt("▶  TAP TO RETRY",VW/2,R_RETRY.y+16,12,"#9bf0d0",800); ctx.globalAlpha=1;
@@ -1138,7 +1138,7 @@ function draw(){
       txt("▶ watch ad → DOUBLE coins (+◆ "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); }
     shopBtn(); drawBoostRow(); devRow();
     const nu=nextUnlock();   // dead-screen carrot: progress toward the cheapest unowned cosmetic
-    if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,244,10,"#9bf0d0",700);
+    if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,236,10,"#9bf0d0",700);
       const bw=150,bx=VW/2-bw/2,by=250,pr=Math.min(1,coins/nu.cost);
       ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(bx,by,bw,4);
       ctx.fillStyle="#ffcf5c"; ctx.fillRect(bx,by,bw*pr,4); }
