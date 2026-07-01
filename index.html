@@ -526,6 +526,8 @@ addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"|
   if(mode==="play" && inR(p,R_PAUSE)){ togglePause(); return; }   // pause from in-run via corner tap
   if(mode==="ready"||mode==="dead"){
     if(inR(p,R_SHOPBTN)){ mode="shop"; shopCat=0; sel[0]=equipped; sel[1]=equippedTrail; sel[2]=equippedAura; return; }
+  }
+  if(mode==="ready"){   // boost-row pre-run picks — ready screen only, not drawn on dead so not tappable there either
     for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
     if(inR(p,R_BUFFALL)){ Ads.rewarded(()=>{ startAll=true; start(); }, ()=>{ start(); }); return; } // watch ad → all 3
   }
@@ -1117,6 +1119,7 @@ function draw(){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — thread the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
     if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
+    R_SHOPBTN.y=VH/2+72;   // boost-row-only screen: shop sits below it, no dead-screen crowding to account for
     shopBtn(); drawBoostRow();
   } else if(mode==="dead"){
     txt("CRASHED",VW/2,VH/2-32,30,"#ff5468",800);
@@ -1126,13 +1129,18 @@ function draw(){
     // explicit RETRY pill — rest of the dead screen is now inert so a casual tap on the score won't restart the run
     ctx.fillStyle="rgba(94,242,194,0.16)"; ctx.fillRect(R_RETRY.x,R_RETRY.y,R_RETRY.w,R_RETRY.h);
     ctx.globalAlpha=0.7+0.3*Math.sin(t*5); txt("▶  TAP TO RETRY",VW/2,R_RETRY.y+16,12,"#9bf0d0",800); ctx.globalAlpha=1;
-    // optional rewarded-ad coin doubler — strategic ad: shown only when the run was meaningful (≥5◆) and never twice on the same run
-    if(!doubledFlag && lastEarned>=5){ ctx.fillStyle="rgba(255,207,92,0.12)"; ctx.fillRect(R_DOUBLE.x,R_DOUBLE.y,R_DOUBLE.w,R_DOUBLE.h);
-      txt("▶ watch ad → DOUBLE coins (+◆ "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); }
-    shopBtn(); drawBoostRow();
-    const nu=nextUnlock();   // dead-screen carrot: progress toward the cheapest unowned cosmetic
-    if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,236,10,"#9bf0d0",700);
-      const bw=150,bx=VW/2-bw/2,by=250,pr=Math.min(1,coins/nu.cost);
+    // stack whatever comes next below the retry pill instead of fixed constants — the coin-double offer
+    // is conditional, so a fixed SHOP/next-unlock position either overlapped it or floated with gaps
+    let dy=R_RETRY.y+R_RETRY.h+5;
+    const showDouble=!doubledFlag && lastEarned>=5;
+    if(showDouble){ R_DOUBLE.y=dy; ctx.fillStyle="rgba(255,207,92,0.12)"; ctx.fillRect(R_DOUBLE.x,R_DOUBLE.y,R_DOUBLE.w,R_DOUBLE.h);
+      txt("▶ watch ad → DOUBLE coins (+◆ "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); dy+=R_DOUBLE.h+5; }
+    R_SHOPBTN.y=dy; shopBtn(); dy+=R_SHOPBTN.h+8;
+    // the coin-double offer and the next-unlock carrot are both upsell nudges — showing only one at a
+    // time (prioritising the ad offer when it applies) keeps the 270px-tall screen from overflowing
+    const nu=!showDouble && nextUnlock();
+    if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,dy+8,10,"#9bf0d0",700);
+      const bw=150,bx=VW/2-bw/2,by=dy+18,pr=Math.min(1,coins/nu.cost);
       ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(bx,by,bw,4);
       ctx.fillStyle="#ffcf5c"; ctx.fillRect(bx,by,bw*pr,4); }
   }
