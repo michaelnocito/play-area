@@ -372,7 +372,15 @@ const AURAS=[
 const SAVE="flipline.v1";
 let coins=0, owned=[0], equipped=0, ownedTrail=[0], equippedTrail=0, ownedAura=[0], equippedAura=0;
 let runCoinBonus=0, shopCat=0, sel=[0,0,0], lastEarned=0, lowFx=false, pickBuff=1, startAll=false;   // default pickBuff=SHIELD so a first-timer FEELS a buff in run 1 without choosing
-function loadSave(){ try{ const d=JSON.parse(localStorage.getItem(SAVE)); if(d){
+// CrazyGames Data Module has the same sync API as localStorage (setItem/getItem/removeItem) and adds
+// cross-device sync for logged-in users + auto-migrates guest localStorage data on sign-in — prefer it
+// when the SDK is up, fall back to plain localStorage otherwise (offline / itch.io mirror / SDK not yet ready).
+const Store = {
+  get(){ try{ return (window.CrazyGames?.SDK?.data || localStorage); }catch(e){ return localStorage; } },
+  getItem(k){ try{ return this.get().getItem(k); }catch(e){ return null; } },
+  setItem(k,v){ try{ this.get().setItem(k,v); }catch(e){} },
+};
+function loadSave(){ try{ const d=JSON.parse(Store.getItem(SAVE)); if(d){
     coins=d.coins|0; owned=Array.isArray(d.owned)?d.owned:[0]; equipped=d.equipped|0; best=d.best|0; lowFx=!!d.lowFx;
     if(typeof d.pickBuff==="number") pickBuff=d.pickBuff;
     if(Array.isArray(d.ownedTrail)) ownedTrail=d.ownedTrail; equippedTrail=d.equippedTrail|0;
@@ -380,8 +388,8 @@ function loadSave(){ try{ const d=JSON.parse(localStorage.getItem(SAVE)); if(d){
   if(!owned.includes(0)) owned.push(0); if(!owned.includes(equipped)) equipped=0;
   if(!ownedTrail.includes(0)) ownedTrail.push(0); if(!ownedTrail.includes(equippedTrail)) equippedTrail=0;
   if(!ownedAura.includes(0)) ownedAura.push(0); if(!ownedAura.includes(equippedAura)) equippedAura=0; }
-function persist(){ try{ localStorage.setItem(SAVE, JSON.stringify(
-    {coins,owned,equipped,ownedTrail,equippedTrail,ownedAura,equippedAura,best,lowFx,pickBuff})); }catch(e){} }
+function persist(){ Store.setItem(SAVE, JSON.stringify(
+    {coins,owned,equipped,ownedTrail,equippedTrail,ownedAura,equippedAura,best,lowFx,pickBuff})); }
 function skinCol(){ return SKINS[equipped].col; }   // null → zone-reactive
 function hexA(h,a){ const n=parseInt(h.slice(1),16); return "rgba("+(n>>16&255)+","+(n>>8&255)+","+(n&255)+","+a+")"; }
 // cosmetic-category accessors (0 SHAPE, 1 TRAIL, 2 AURA)
@@ -471,7 +479,7 @@ function reset(){
   nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
 }
 function start(){ Snd.ensure();
-  let gift=false; try{ const d=new Date().toDateString(); if(localStorage.getItem("flipline.day")!==d){ localStorage.setItem("flipline.day",d); gift=true; } }catch(e){}  // daily: first run of the day = all 3 free
+  let gift=false; { const d=new Date().toDateString(); if(Store.getItem("flipline.day")!==d){ Store.setItem("flipline.day",d); gift=true; } }  // daily: first run of the day = all 3 free
   reset(); lightR=74;                                  // re-bloom from small
   if(segType>=1){ py=BOTY-PS; vy=0; gdir=1; }          // above-ground / mine start grounded
   if(startAll||gift){ BT[0]=BT[1]=BT[2]=START_BUFF; }  // rewarded ad OR daily gift → start with ALL 3
@@ -1219,13 +1227,14 @@ function frame(now){
 }
 
 function boot(){
-  loadSave();
   buildArt();
-  document.getElementById("fx").textContent = lowFx?"✧":"✦";
   reset();
-  // v3 lifecycle: init FIRST (SDK is unusable until it resolves), THEN bracket the (instant) load so
-  // CrazyGames' loader hides correctly. Offline/no-SDK → init cb fires synchronously; 700ms = SDK-blocked fallback.
-  let done=false; const ready=()=>{ if(done)return; done=true; Ads.loadingStop(); mode="ready"; };
+  // v3 lifecycle: init FIRST (SDK — and Store, which reads it — is unusable until init resolves), THEN
+  // bracket the (instant) load so CrazyGames' loader hides correctly. Offline/no-SDK → init cb fires
+  // synchronously; 700ms = SDK-blocked fallback. loadSave() runs here (not before) so a returning
+  // logged-in player's synced Data Module save is what actually loads, not a stale local guest copy.
+  let done=false; const ready=()=>{ if(done)return; done=true; loadSave();
+    document.getElementById("fx").textContent = lowFx?"✧":"✦"; Ads.loadingStop(); mode="ready"; };
   Ads.init(()=>{ if(!done){ Ads.loadingStart(); ready(); } }); setTimeout(ready,700);
   requestAnimationFrame(frame);
 }
