@@ -1,0 +1,2498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0b0a1f" />
+<title>Rune Dash</title>
+<style>
+  :root{
+    --ink:#e8e6ff; --dim:#9a98c8; --gold:#ffd479; --rune:#7fd4ff;
+    --bg0:#0b0a1f; --bg1:#1a1140; --panel:#140f33;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:var(--bg0);color:var(--ink);
+    font-family:"Segoe UI",system-ui,sans-serif;overflow:hidden;}
+  body{display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(140% 120% at 50% -10%, #15103a 0%, #07061a 72%);}
+  /* Windowed by default, sized to a comfortable half-ish of the screen and
+     driven by whichever dimension keeps the 16:9 box from clipping content. */
+  #wrap{position:relative;width:min(72vw,160vh);aspect-ratio:16/9;max-width:96vw;max-height:92vh;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
+    border-radius:16px;border:1px solid #2a2360;
+    box-shadow:0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(127,212,255,.06);}
+  /* Phones / small or touch screens: fill the viewport instead. */
+  @media (max-width:820px),(pointer:coarse){
+    #wrap{width:100vw;height:100vh;max-width:none;max-height:none;
+      aspect-ratio:auto;border:0;border-radius:0;box-shadow:none;}
+  }
+  canvas{background:#000;display:block;width:100%;height:100%;max-width:100vw;max-height:100vh;
+    image-rendering:auto;touch-action:none;}
+  .screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
+    justify-content:safe center;text-align:center;gap:18px;
+    overflow-y:auto;padding:24px 16px;
+    background:radial-gradient(120% 100% at 50% 0%, #1a1140 0%, #0b0a1f 70%);}
+  .screen.on{display:flex;}
+  .screen>*{flex-shrink:0;}
+  h1{font-size:clamp(34px,8vw,72px);margin:0;letter-spacing:.06em;font-weight:800;
+    background:linear-gradient(180deg,#fff,#9fb8ff 60%,#7fd4ff);-webkit-background-clip:text;
+    background-clip:text;color:transparent;text-shadow:0 0 40px rgba(127,212,255,.25);}
+  h2{font-size:clamp(20px,4vw,30px);margin:0 0 4px;color:var(--gold);letter-spacing:.04em;}
+  p.sub{color:var(--dim);margin:0;max-width:560px;line-height:1.5;padding:0 16px;}
+  .btn{appearance:none;border:1px solid #4a3f8f;background:#191347;color:var(--ink);
+    padding:14px 26px;border-radius:14px;font-size:18px;font-weight:600;cursor:pointer;
+    min-width:230px;transition:transform .08s, background .15s, border-color .15s;}
+  .btn:hover{background:#241a5e;border-color:#7c6fd6;transform:translateY(-1px);}
+  .btn.primary{background:linear-gradient(180deg,#3a2f8f,#241a5e);border-color:#8a7cff;
+    box-shadow:0 0 24px rgba(127,212,255,.25);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+  .row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;}
+  .realmcard{width:200px;background:var(--panel);border:1px solid #3a3270;border-radius:16px;
+    padding:16px;display:flex;flex-direction:column;gap:8px;align-items:center;cursor:pointer;
+    transition:transform .1s,border-color .15s;}
+  .realmcard:hover{transform:translateY(-3px);border-color:#7c6fd6;}
+  .realmcard.locked{opacity:.45;cursor:not-allowed;}
+  .realmcard .glyph{font-size:42px;line-height:1;}
+  .realmcard .nm{font-weight:700;letter-spacing:.04em;}
+  .realmcard .meta{font-size:12px;color:var(--dim);}
+  /* RD-#036: Isa is the combo prototype — oversize its card as a build reminder. */
+  .realmcard.proto{width:300px;padding:24px 22px;border-color:#7fd4ff;
+    background:linear-gradient(180deg,#16263f,#0e1730);
+    box-shadow:0 0 0 1px #7fd4ff,0 0 34px rgba(127,212,255,.35);}
+  .realmcard.proto .glyph{font-size:68px;}
+  .realmcard.proto .nm{font-size:23px;}
+  .realmcard.proto:hover{border-color:#aee6ff;}
+  .realmcard .tag{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#9fe8ff;
+    border:1px solid #3a5a7a;border-radius:6px;padding:2px 9px;}
+  .ess{color:var(--gold);font-weight:700;}
+  .shrine-row{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    width:min(520px,92vw);background:var(--panel);border:1px solid #3a3270;border-radius:14px;
+    padding:14px 18px;text-align:left;}
+  .shrine-row .info{flex:1;}
+  .shrine-row .lvl{font-size:13px;color:var(--dim);}
+  .pips{letter-spacing:3px;color:var(--rune);}
+  .hint{font-size:13px;color:var(--dim);}
+  #snd-btn{position:absolute;bottom:14px;right:16px;z-index:20;
+    background:rgba(10,8,28,0.72);border:1px solid #3a3270;color:#9a98c8;
+    font-size:14px;padding:10px 16px;border-radius:9px;cursor:pointer;min-height:44px;
+    font-family:"Segoe UI",system-ui,sans-serif;letter-spacing:.04em;
+    transition:border-color .15s,color .15s;}
+  #snd-btn:hover{border-color:#7c6fd6;color:#e8e6ff;}
+  #snd-btn.on{color:#7fd4ff;border-color:#7fd4ff;}
+  .ad-btn{border-color:rgba(255,212,121,0.45)!important;color:#ffd479!important;
+    font-size:15px;letter-spacing:.02em;}
+  .ad-btn:hover{border-color:rgba(255,212,121,0.8)!important;background:#1e1a08!important;}
+  .ad-btn:disabled{opacity:.5;}
+  .btn.sm{min-width:0;padding:10px 18px;font-size:15px;}
+  /* ---- Pre-level rune reading (RD-#024) — read a rune to choose your omen ---- */
+  #s-reading{justify-content:safe center;}
+  .read-cloth{display:flex;gap:clamp(10px,3vw,22px);align-items:center;justify-content:center;
+    padding:clamp(16px,4vw,26px) clamp(18px,5vw,32px);border-radius:18px 22px 14px 20px;
+    transform:rotate(-1deg);
+    background:radial-gradient(125% 130% at 50% 26%, #efe6cb 0%, #d6c8a2 58%, #b1a279 100%);
+    box-shadow:0 22px 60px rgba(0,0,0,.5), inset 0 0 44px rgba(120,96,52,.32), inset 0 2px 0 rgba(255,250,235,.5);}
+  .read-stone{width:clamp(56px,15vw,80px);aspect-ratio:.92;border-radius:32% 26% 30% 28%;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;
+    background:linear-gradient(155deg,#f4eede,#cabd9a 68%,#a89a72);
+    box-shadow:0 7px 16px rgba(0,0,0,.4), inset 0 2px 3px rgba(255,255,255,.6), inset 0 -3px 5px rgba(90,70,40,.32);
+    transition:transform .12s, box-shadow .15s; animation:stoneDrop .5s cubic-bezier(.2,.7,.25,1) both;}
+  .read-stone.settled{animation:none;}
+  .read-stone:hover{transform:translateY(-4px) rotate(-1deg);}
+  .read-stone.chosen{box-shadow:0 0 0 3px hsla(var(--sh,210),85%,66%,.95), 0 10px 22px rgba(0,0,0,.45);}
+  .read-stone .g{font-size:clamp(30px,8vw,44px);font-weight:800;color:hsl(var(--sh,210),44%,30%);
+    text-shadow:0 1px 0 rgba(255,255,255,.5),0 0 12px hsla(var(--sh,210),85%,60%,.5);}
+  @keyframes stoneDrop{0%{opacity:0;transform:translateY(-40px) rotate(-28deg) scale(.7)}
+    100%{opacity:1;transform:translateY(0) rotate(-1deg) scale(1)}}
+  .read-panel{width:min(520px,92vw);background:var(--panel);border:1px solid #3a3270;border-radius:16px;
+    padding:15px 18px;text-align:center;display:flex;flex-direction:column;gap:11px;align-items:center;}
+  .read-q{font-size:16px;color:#e9ecff;line-height:1.45;} .read-q b{color:#fff;}
+  .read-opts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:360px;}
+  .read-omen{font-size:15px;color:var(--gold);font-weight:700;}
+  .read-desc{font-size:14px;color:#d6dcf6;line-height:1.5;}
+  .read-correct{color:#8fe6a0;font-weight:700;} .read-wrong{color:#ffc08a;font-weight:700;}
+  .read-master{font-size:12px;color:var(--dim);letter-spacing:.04em;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="960" height="540"></canvas>
+  <button id="snd-btn" class="on" onclick="toggleSound()">♪ Sound: ON</button>
+
+  <!-- TITLE -->
+  <div class="screen on" id="s-title">
+    <h1>RUNE DASH</h1>
+    <p class="sub">The völva runs the bridge of realms. Tap to leap, hold to soar.
+      Gather amber and grow your power. One run at a time.</p>
+    <div class="row">
+      <button class="btn primary" data-go="realm">Begin the Run</button>
+    </div>
+    <p class="hint">Tap = Jump &nbsp;•&nbsp; Tap right edge = Rune Bolt &nbsp;•&nbsp; Hold to Soar &nbsp;•&nbsp; M / ♪ = Sound</p>
+  </div>
+
+  <!-- REALM SELECT -->
+  <div class="screen" id="s-realm">
+    <h2>Choose a Realm</h2>
+    <p class="sub">Amber: <span class="ess" id="r-ess">0</span>
+      &nbsp;•&nbsp; Whispers heard: <span style="color:var(--rune)" id="r-lore">0/0</span></p>
+    <div class="row" id="realm-list"></div>
+    <div class="row">
+      <button class="btn" data-go="shrine">✦ Shrine of Skills</button>
+      <button class="btn" data-go="title">Back</button>
+    </div>
+  </div>
+
+  <!-- SHRINE -->
+  <div class="screen" id="s-shrine">
+    <h2>Shrine of Skills</h2>
+    <p class="sub">Spend amber to deepen the run.
+      Amber: <span class="ess" id="sh-ess">0</span>
+      &nbsp;•&nbsp; Rune Shards: <span style="color:#9fe8ff;font-weight:700" id="sh-shards">0</span></p>
+    <div id="shrine-list" style="display:flex;flex-direction:column;gap:12px;"></div>
+    <button class="btn" data-go="realm">Back</button>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="screen" id="s-result">
+    <h2 id="res-title">Realm Cleared</h2>
+    <p class="sub" id="res-body"></p>
+    <div class="row">
+      <button class="btn primary" id="res-again">Run Again</button>
+      <button class="btn" data-go="realm">Realm Select</button>
+    </div>
+    <div id="ad-essence-row" style="display:none;margin-top:4px;">
+      <button class="btn ad-btn" id="ad-essence-btn" style="min-width:280px;">
+        ✦ Claim Bonus Amber — Watch a short ad
+      </button>
+    </div>
+  </div>
+
+  <!-- PRE-LEVEL RUNE READING — read a rune to choose your omen (shapes the run) -->
+  <div class="screen" id="s-reading"></div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   RUNE DASH — single-file auto-runner platformer
+   Realms 1–4 playable. Web Audio SFX + music (M to toggle).
+   ============================================================ */
+
+const cv = document.getElementById("game");
+const ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height;
+
+/* ---------- persistent save ---------- */
+const SAVE_KEY = "runeDash.save.v2"; // v2: realm reorder (Wunjo inserted at id:2)
+const defaultSave = {
+  essence:0, upgrades:{jump:0,bolt:0,shield:0}, // 'essence' kept as code id; player-facing name = Amber
+  sounds:{ward:false,echo:false,shimmer:false},
+  boons:{shield:0,surge:0,twin:0}, // consumable provisions, banked + auto-used next run
+  hero:0, heroes:[0], // RD-#020: equipped völva skin + unlocked skin ids (cosmetic only)
+  runeMastery:{},     // RD-#024: id -> times you've correctly read this rune (learn-to-read progress)
+  shards:0,           // RD-#032: Rune Shards — skill-only currency from freeze-stomp chains
+  stats:{runs:0,kills:0,frozen:0,coins:0,shards:0,bestCombo:0}, // RD-#030: lifetime metrics (data geeks)
+  badges:{},          // RD-#031: per-realm badges earned {id:{conqueror,deepfreeze,collector,swift}}
+  realmsUnlocked:1, best:{}, loreSeen:{}
+};
+const CUR="Amber"; // player-facing currency name (Freya's tears)
+let save = load();
+function load(){
+  try{ return Object.assign({},defaultSave,JSON.parse(localStorage.getItem(SAVE_KEY))||{}); }
+  catch(e){ return JSON.parse(JSON.stringify(defaultSave)); }
+}
+function persist(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(save)); }catch(e){ /* file:// or private-mode storage blocked — keep playing */ } }
+
+/* ---------- upgrades ---------- */
+const UPGRADES=[
+  {key:"jump",  name:"Wind-Step", desc:"Higher, floatier jumps.",         cost:[40,90,160]},
+  {key:"bolt",  name:"Rune Bolt", desc:"Faster, stronger Rune Bolts.", cost:[40,90,160]},
+  {key:"shield",name:"Ward",      desc:"Start each run with a shield.",   cost:[60,120,220]},
+];
+const SOUND_PACKS=[
+  {key:"ward",   name:"Ward Pulse",   desc:"A resonant bell chord when your shield absorbs a hit.", cost:15},
+  {key:"echo",   name:"Double Echo",  desc:"A rising chime accent on your second jump.",            cost:15},
+  {key:"shimmer",name:"Gate Shimmer", desc:"Shimmering high overtones when you clear the gate.",    cost:20},
+];
+// Provisions — consumable boons. Bought at the Shrine, banked, auto-applied to your next run.
+// This is the EVERGREEN sink: always something to spend Amber on, run after run.
+const BOONS=[
+  {key:"shield",name:"Ember Ward",  desc:"Begin your next run shielded from one hit.",  cost:12},
+  {key:"surge", name:"Amber Surge", desc:"Double all Amber gathered on your next run.",  cost:20},
+  {key:"twin",  name:"Twin Leap",   desc:"Gain a second jump for your next run.",        cost:15},
+];
+// Heroes — cosmetic-only völva reskins (RD-#020). Purely visual: same hitbox, same powers.
+// id 0 is the default seer, owned for free. Others unlock for Amber OR a single rewarded ad.
+// pal = cloak gradient + hood fill swapped into drawPlayer; the magical aura stays realm-hued.
+const HEROES=[
+  {id:0,name:"The Völva",     lore:"The seer who walks the bridge of realms. Casts the rune-bolt.", cost:0,
+    pal:{cloakTop:"#2a2058",cloakBot:"#120d2e",hood:"#1b1440"}, bolt:{core:"#eaffff",rgb:"127,212,255",shape:"shard"}},
+  {id:1,name:"The Berserker", lore:"Bear-pelt and battle-fury — hurls a whirling ice axe.", cost:60,
+    pal:{cloakTop:"#5a2a22",cloakBot:"#2a1310",hood:"#3a1a12"}, bolt:{core:"#e6f6ff",rgb:"150,210,255",shape:"axe"}},
+  {id:2,name:"Thor's Chosen", lore:"Storm-blue and bronze — throws a sparking hammer.", cost:120,
+    pal:{cloakTop:"#1d3a6a",cloakBot:"#0c1830",hood:"#15294e"}, bolt:{core:"#ffe6a0",rgb:"255,205,80",shape:"hammer"}},
+  {id:3,name:"Odin's Eye",    lore:"Raven-grey and indigo — looses a raven-feather dart.", cost:200,
+    pal:{cloakTop:"#34314c",cloakBot:"#14121f",hood:"#23213a"}, bolt:{core:"#d3c4f2",rgb:"150,120,220",shape:"feather"}},
+];
+function heroBolt(){ return (HEROES[save.hero]||HEROES[0]).bolt; }
+const HERO_SHARD_COST={1:8,2:16,3:26}; // RD-#032: heroes also buyable with skill-earned Rune Shards
+// Rune omens (RD-#024) — the völva reads the runes for the ROAD AHEAD (not your fate).
+// Before a run she casts 3 runes; you must READ one (predict its meaning) to choose it, and
+// that rune's omen reshapes the level. You learn to read a rune by feeling what it does.
+// `read` = the true meaning (quiz answer + what's taught); `omen`/`desc` = the run effect.
+const RUNE_OMEN={
+  0:{glyph:"ᛋ",name:"Sowilo", read:"sun · victory",      omen:"Radiance",    desc:"The sun favors the road — amber shines +50% richer.", fx:{essMul:1.5}},
+  1:{glyph:"ᚱ",name:"Raidho", read:"the ride · motion",  omen:"Swift Road",  desc:"The road quickens beneath you — you run swifter.",     fx:{speedMul:1.12}},
+  2:{glyph:"ᚹ",name:"Wunjo",  read:"joy · lightness",    omen:"Lifted Heart",desc:"Joy lifts your step — a second leap is yours.",        fx:{twin:true}},
+  3:{glyph:"ᚺ",name:"Hagalaz",read:"hail · disruption",  omen:"Hailstorm",   desc:"A harsh road, but rich: double amber, no starting ward.",fx:{essMul:2.0,noShield:true}},
+  4:{glyph:"ᛁ",name:"Isa",    read:"ice · stillness",    omen:"Stillness",   desc:"Time slows — a calmer, steadier run.",                  fx:{speedMul:0.85}},
+  5:{glyph:"ᛉ",name:"Algiz",  read:"protection",         omen:"The Ward",    desc:"You set out shielded from the first blow.",            fx:{startShield:true}},
+  6:{glyph:"ᛏ",name:"Tiwaz",  read:"justice · the trial",omen:"The Trial",   desc:"Honor in battle — each shattered shade gives +6 amber.",fx:{killBonus:6}},
+  7:{glyph:"ᛚ",name:"Laguz",  read:"water · flow",       omen:"Flow",        desc:"You soar longer and fall softer.",                     fx:{glide:true}},
+  8:{glyph:"ᛞ",name:"Dagaz",  read:"dawn · breakthrough",omen:"Breakthrough",desc:"Reach the gate for a burst of +40 dawn-amber.",        fx:{gateBonus:40}},
+};
+const OMEN_IDS=Object.keys(RUNE_OMEN).map(Number);
+function heroOwned(id){ return id===0 || (save.heroes&&save.heroes.indexOf(id)>=0); }
+function unlockHero(id){ if(!save.heroes) save.heroes=[0]; if(save.heroes.indexOf(id)<0) save.heroes.push(id); save.hero=id; persist(); openShrine(); }
+function equipHero(id){ if(heroOwned(id)){ save.hero=id; persist(); openShrine(); } }
+function upgCost(key){
+  const u=UPGRADES.find(u=>u.key===key), lv=save.upgrades[key];
+  return lv>=3?null:u.cost[lv];
+}
+
+/* ---------- realms — 3 Acts × 3 Realms, 9 total ---------- */
+// speed: per-realm multiplier on base runSpeed (thematic pacing)
+const REALMS=[
+  // ACT 1 — The Awakening (Freya's Aett) — no checkpoints
+  {id:0,name:"Sowilo", glyph:"ᛋ",sub:"Realm of the Sun",       hue:42,  sky:["#241327","#5a2c4a","#c25e5e"], act:1,speed:1.00},
+  {id:1,name:"Raidho", glyph:"ᚱ",sub:"Realm of the Ride",      hue:200, sky:["#0c1330","#1b2c66","#3f7fb5"], act:1,speed:1.10},
+  {id:2,name:"Wunjo",  glyph:"ᚹ",sub:"Realm of Joy",           hue:85,  sky:["#121a06","#263c10","#5a8a1e"], act:1,speed:1.05},
+  // ACT 2 — The Crossing (Heimdall's Aett) — 1 checkpoint each
+  {id:3,name:"Hagalaz",glyph:"ᚺ",sub:"Realm of Storms",        hue:280, sky:["#140b2a","#2a1a52","#5a3f9a"], act:2,speed:1.22},
+  {id:4,name:"Isa",    glyph:"ᛁ",sub:"Realm of Ice",           hue:190, sky:["#0a1a2a","#143a52","#3f9ab5"], act:2,speed:0.84}, // RD-#038: slower for combo prototype
+  {id:5,name:"Algiz",  glyph:"ᛉ",sub:"Realm of Protection",    hue:130, sky:["#0a1c0e","#143a1e","#2a7840"], act:2,speed:1.08},
+  // ACT 3 — The Mastery (Tyr's Aett) — 2-3 checkpoints each
+  {id:6,name:"Tiwaz",  glyph:"ᛏ",sub:"Realm of Justice",       hue:4,   sky:["#1e0a0a","#3a1010","#8a2828"], act:3,speed:1.18},
+  {id:7,name:"Laguz",  glyph:"ᛚ",sub:"Realm of Flow",          hue:220, sky:["#060a18","#0e1830","#1a3060"], act:3,speed:1.00},
+  {id:8,name:"Dagaz",  glyph:"ᛞ",sub:"Realm of Dawn",          hue:48,  sky:["#1a1606","#36300c","#a07c18"], act:3,speed:1.28},
+];
+
+/* ---------- rune lore — 9 realms ---------- */
+const RUNE_LORE={
+  0:{meaning:"sun · guidance · victory", phonetic:"SOH-wee-loh",
+    lifeMeaning:"Clarity returns. Energy aligns. Move toward what lights you — victory is already turning your way.",
+    whispers:[
+    "Sowilo is the sun-wheel — the unconquered light that guides the lost back home.",
+    "The Norse named the sun Sól, who flees forever before the wolf Sköll.",
+    "Sailors carved Sowilo into their hulls for clear horizons and safe passage.",
+    "Twin Sowilo runes were bound as a sigil of victory in battle.",
+    "Where Sowilo burns, the old said, despair can find no root."]},
+  1:{meaning:"the ride · rhythm · the right path", phonetic:"RYE-thoh",
+    lifeMeaning:"Something is in motion. Trust the timing. The right road reveals itself to those who keep moving.",
+    whispers:[
+    "Raidho is the rune of the ride — the wagon, the road, the rhythm of travel.",
+    "It teaches that the journey itself, not the destination, is what shapes us.",
+    "Raidho governs right timing: moving with the world rather than against it.",
+    "Old riders carved Raidho to keep their road true and their horses sure.",
+    "To ride Raidho is to find the steady rhythm beneath all motion."]},
+  2:{meaning:"joy · harmony · well-being", phonetic:"WOON-yoh",
+    lifeMeaning:"The storm has passed. Something is aligning. Let yourself receive what is already here — you have earned it.",
+    whispers:[
+    "Wunjo is the banner rune — joy shared between kin, the feast after the long crossing.",
+    "Where Wunjo shines, the fractured find common rhythm again.",
+    "It is not grasping joy but allowing it — the way a field does not reach for the sun.",
+    "Wunjo warns: too much brightness too soon can blind. Joy without roots has no staying.",
+    "The Norse flew Wunjo's banner over the mead-hall when the long voyage was finally done."]},
+  3:{meaning:"hail · disruption · renewal", phonetic:"HAH-gah-lahz",
+    lifeMeaning:"A disruption is arriving or passing. Let it clear. What breaks now was never built to last.",
+    whispers:[
+    "Hagalaz is the hailstone — ruin that melts to water the spring to come.",
+    "It is the rune of storms that break the old to clear room for the new.",
+    "Even the gods bend before Hagalaz; the Norns answer to it alone.",
+    "What survives the hail was always the thing meant to endure.",
+    "Hagalaz warns that chaos is never the end — only the turning."]},
+  4:{meaning:"ice · stillness · patience", phonetic:"EE-sah",
+    lifeMeaning:"A pause is being asked of you. Do not force movement. Clarity and strength are found in stillness.",
+    whispers:[
+    "Isa is ice — the great stillness, the world holding its breath.",
+    "It teaches patience: even frozen rivers keep moving beneath the surface.",
+    "In Isa all things pause, and the wise learn to listen in the silence.",
+    "Ice preserves as surely as fire destroys.",
+    "Isa is the rune of waiting — and of the clarity found in stillness."]},
+  5:{meaning:"protection · the elk · divine shelter", phonetic:"AL-geez",
+    lifeMeaning:"You are more protected than you know. Hold your ground. What reaches for you now will not find purchase.",
+    whispers:[
+    "Algiz is the elk-sedge — a grass so sharp that grasping it cuts the hand that grabs.",
+    "It is drawn as antlers raised: the sacred warding of those under divine watch.",
+    "Warriors tattooed Algiz before battle not for invincibility but for clarity in danger.",
+    "Algiz teaches that the best protection is attentiveness — to see the threat before it arrives.",
+    "Under Algiz, nothing can reach you that you have not first seen coming."]},
+  6:{meaning:"justice · sacrifice · Tyr the one-handed", phonetic:"TEE-wahz",
+    lifeMeaning:"Something asks you to hold the line. A cost is real. Pay it willingly — what follows is earned.",
+    whispers:[
+    "Tiwaz is Tyr, who placed his hand in the great wolf's mouth so the gods could bind it.",
+    "It is the north star — the fixed point by which wanderers navigate the dark.",
+    "Tiwaz does not promise victory. It promises that the right action is its own reward.",
+    "Justice without sacrifice is simply preference. Tiwaz asks what you will actually give.",
+    "The sword rune: to carry Tiwaz is to carry the weight of choosing rightly."]},
+  7:{meaning:"water · flow · deep intuition", phonetic:"LAH-gooz",
+    lifeMeaning:"Stop directing. Let it carry you. The answer you are forcing already knows the way.",
+    whispers:[
+    "Laguz is the lake, the river, the deep ocean — all water that finds its own path.",
+    "It governs the tidal pull of intuition, the knowing that cannot be reasoned into.",
+    "Old Norse ships bore Laguz to ask the sea for safe passage and honest depths.",
+    "Laguz warns against fighting the current. The river reaches the sea either way.",
+    "In Laguz, wisdom is not built — it is remembered. The body knows before the mind does."]},
+  8:{meaning:"dawn · breakthrough · the threshold between", phonetic:"DAH-gahz",
+    lifeMeaning:"You are at the turning point. Whatever felt impossible is already shifting. Step through.",
+    whispers:[
+    "Dagaz is the horizon moment — that breath between night and the very first light.",
+    "It is paradox made visible: the point where darkness and light are the same thing.",
+    "Dagaz marks irreversible change — the breakthrough that cannot be undone.",
+    "To cross a Dagaz threshold is to become the next version of yourself before you name it.",
+    "The sun's two-faced rune: the völva walks between worlds and finds the new one waiting."]},
+};
+const TOTAL_WHISPERS=Object.values(RUNE_LORE).reduce((n,r)=>n+r.whispers.length,0);
+function whispersHeard(){ return Object.keys(save.loreSeen).length; }
+
+
+/* ============================================================
+   AUDIO — Adaptive Norse score: calm base, big payoffs. Default ON.
+   Base: warm drone + frame-drum pulse + seed shaker + woven bone-flute
+   motif that IS each rune's signature melody (the audio teaches the runes).
+   Payoffs: kill = war-horn boom; gate = drum+flute flourish.
+   FREE sfx; UNLOCKABLE at Shrine: ward bell, double echo, gate shimmer.
+   ============================================================ */
+const Snd=(()=>{
+  let AC=null,master=null,sfxBus=null,musBus=null,on=true;
+  let musicNodes=[],musicPlaying=false,schedTimer=null;
+  let glideNodes=[];
+  let uSounds={ward:false,echo:false,shimmer:false};
+  let activityScore=0; // bumped by player actions, decays over time → reactive beat
+
+  // [bass root Hz, 5th Hz, pad Hz, LFO Hz, BPM]
+  const REALM_AMB=[
+    [55, 82,  220, 0.55,  88],  // 0 Sowilo  A1  — warm, steady
+    [49, 73,  196, 0.80, 108],  // 1 Raidho  G1  — driving forward
+    [37, 55,  147, 0.65,  96],  // 2 Wunjo   D1  — festive lift
+    [41, 61,  164, 1.10, 126],  // 3 Hagalaz E1  — storm pulse
+    [46, 69,  185, 0.38,  70],  // 4 Isa     Bb1 — slow, patient
+    [44, 66,  175, 0.72,  84],  // 5 Algiz   Ab1 — protective pulse
+    [34, 51,  138, 0.92, 112],  // 6 Tiwaz   C#1 — martial drive
+    [29, 44,  117, 0.48,  76],  // 7 Laguz   Bb0 — deep flow
+    [55, 82,  220, 0.55,  88],  // 8 Dagaz   A1  — sun returns (mirrors Sowilo)
+  ];
+
+  // Pentatonic ratios for the bone-flute motif (root, +2, +4, +5, +6, octave)
+  const PENTA=[1, 1.125, 1.25, 1.5, 1.6667, 2];
+  // Per-rune signature motif — a short flute phrase that IS each rune's musical identity.
+  // Values index PENTA. Distinct contour per realm so the ear learns the rune by its melody.
+  const REALM_MOTIF=[
+    [0,2,3,4],     // 0 Sowilo  — rising, victorious
+    [0,1,2,1],     // 1 Raidho  — steady travel
+    [2,4,3,2],     // 2 Wunjo   — joyful leap
+    [4,2,3,0],     // 3 Hagalaz — unsettled, falling
+    [0,0,2],       // 4 Isa     — still, sparse
+    [0,2,4],       // 5 Algiz   — guarded, upward
+    [3,0,3,0],     // 6 Tiwaz   — martial, resolute
+    [2,3,4,3,2],   // 7 Laguz   — flowing wave
+    [0,2,4,5],     // 8 Dagaz   — rising to the octave dawn
+  ];
+
+  function boot(){
+    if(AC) return;
+    AC=new(window.AudioContext||window.webkitAudioContext)();
+    master=AC.createGain(); master.gain.value=0.55; master.connect(AC.destination);
+    sfxBus=AC.createGain(); sfxBus.gain.value=0.72; sfxBus.connect(master);
+    musBus=AC.createGain(); musBus.gain.value=0.42; musBus.connect(master);
+  }
+
+  /* ---------- music: hybrid drone + rhythmic beat, player-reactive ---------- */
+  // Frame drum (bodhrán-style) — woody low thud with a soft skin slap
+  function _kick(t,vol=0.18){
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(66,t+0.10);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.20);
+    o.connect(g); g.connect(musBus); o.start(t); o.stop(t+0.22);
+    // skin slap — soft lowpassed noise body
+    const sz=Math.ceil(AC.sampleRate*0.05);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=(Math.random()*2-1)*(1-i/sz);
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1500;
+    const sg=AC.createGain(); sg.gain.setValueAtTime(vol*0.5,t); sg.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+    src.connect(lp); lp.connect(sg); sg.connect(musBus); src.start(t); src.stop(t+0.06);
+  }
+  // Seed shaker — soft woody rustle (replaces the metallic hi-hat)
+  function _hat(t,vol=0.06){
+    const sz=Math.ceil(AC.sampleRate*0.04);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=(Math.random()*2-1)*(1-i/sz);
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const hpf=AC.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=5200;
+    const g=AC.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.042);
+    src.connect(hpf); hpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+0.05);
+  }
+  // Bone flute — breathy triangle tone with a soft scoop and air noise. The rune's voice.
+  function _flute(t,freq,vol=0.12){
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='triangle';
+    o.frequency.setValueAtTime(freq*0.992,t); o.frequency.linearRampToValueAtTime(freq,t+0.06);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.05);
+    g.gain.setValueAtTime(vol,t+0.18); g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+    o.connect(g); g.connect(musBus); o.start(t); o.stop(t+0.55);
+    // breath layer
+    const sz=Math.ceil(AC.sampleRate*0.4);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=Math.random()*2-1;
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=freq*2; bp.Q.value=0.8;
+    const bg=AC.createGain(); bg.gain.setValueAtTime(vol*0.16,t); bg.gain.exponentialRampToValueAtTime(0.001,t+0.3);
+    src.connect(bp); bp.connect(bg); bg.connect(musBus); src.start(t); src.stop(t+0.4);
+  }
+
+  function startMusic(realmId){
+    stopMusic();
+    if(!on||!AC) return;
+    try{ AC.resume(); }catch(e){}
+    const [root,fifth,pad,lfoHz,bpm]=REALM_AMB[realmId]||REALM_AMB[0];
+    const motif=REALM_MOTIF[realmId]||REALM_MOTIF[0];
+    const t=AC.currentTime;
+    musicPlaying=true;
+
+    // Warm organic drone — layered sine/triangle (throat-sung / horn feel), gently filtered.
+    const dg=AC.createGain(); dg.gain.setValueAtTime(0,t);
+    dg.gain.linearRampToValueAtTime(0.15,t+2.4); dg.connect(musBus);
+    musicNodes.push(dg);
+    const dlpf=AC.createBiquadFilter(); dlpf.type='lowpass'; dlpf.frequency.value=300; dlpf.connect(dg);
+    [['sine',root,0,1.0],['triangle',root,6,0.5],['sine',fifth,-4,0.4]].forEach(([type,f,det,a])=>{
+      const o=AC.createOscillator(),og=AC.createGain();
+      o.type=type; o.frequency.value=f; o.detune.value=det; og.gain.value=a;
+      o.connect(og); og.connect(dlpf); o.start(t); musicNodes.push(o,og);
+    });
+    const lfo=AC.createOscillator(),lfoG=AC.createGain();
+    lfo.type='sine'; lfo.frequency.value=lfoHz*0.5; lfoG.gain.value=0.045;
+    lfo.connect(lfoG); lfoG.connect(dg.gain); lfo.start(t); musicNodes.push(lfo);
+
+    // Thin mid-register pad (tonal context)
+    const pg=AC.createGain(); pg.gain.setValueAtTime(0,t);
+    pg.gain.linearRampToValueAtTime(0.07,t+2.8); pg.connect(musBus);
+    musicNodes.push(pg);
+    const po=AC.createOscillator(),pog=AC.createGain();
+    po.type='triangle'; po.frequency.value=pad; pog.gain.value=0.45;
+    po.connect(pog); pog.connect(pg); po.start(t); musicNodes.push(po,pog);
+
+    // Frame-drum pulse + shaker + woven bone-flute motif — reactive to activityScore
+    const beatDur=60/bpm, fluteBase=root*4;
+    let nextBeat=t+0.08, beat=0, motifPos=0;
+    function sched(){
+      if(!musicPlaying) return;
+      const ahead=AC.currentTime+0.36;
+      const act=Math.min(activityScore,8);
+      while(nextBeat<ahead){
+        const b=beat%4;
+        const kv=0.14+act*0.012;  // drum swells with activity
+        const hv=0.045+act*0.008;
+        if(b===0||b===2) _kick(nextBeat,kv);
+        else _hat(nextBeat,hv);
+        if(act>3) _hat(nextBeat+beatDur*0.5, hv*0.45); // off-beat shaker when busy
+        // bone-flute motif — one note every 2 beats, the rune's signature line
+        if(beat%2===0){
+          const idx=motif[motifPos%motif.length];
+          _flute(nextBeat, fluteBase*PENTA[idx], 0.085+act*0.004);
+          motifPos++;
+        }
+        nextBeat+=beatDur; beat++;
+      }
+      activityScore=Math.max(0,activityScore-0.14); // slow decay toward calm
+      schedTimer=setTimeout(sched,90);
+    }
+    sched();
+  }
+
+  function stopMusic(){
+    musicPlaying=false;
+    if(schedTimer){clearTimeout(schedTimer);schedTimer=null;}
+    const t=AC?AC.currentTime:0;
+    musicNodes.forEach(n=>{try{if(n.stop)n.stop(t+0.05);n.disconnect();}catch(e){}});
+    musicNodes=[];
+    glideEnd();
+  }
+
+  /* ---------- glide sound (the melodic driving sound) ---------- */
+  // Starts when player soars, sustains as long as they hold the glide,
+  // fades out on landing. Chord = 4th/5th/6th harmonic of realm bass root.
+  function glideStart(realmId){
+    if(!on||!AC||glideNodes.length) return;
+    const [root]=REALM_AMB[realmId||0];
+    const t=AC.currentTime;
+    const mg=AC.createGain();
+    mg.gain.setValueAtTime(0,t);
+    mg.gain.linearRampToValueAtTime(0.38,t+0.20); // 200ms fade-in
+    mg.connect(musBus);
+    glideNodes.push(mg);
+    // harmonic chord — root×4,5,6 land in the mid/upper register
+    [[root*4,0.36],[root*5,0.22],[root*6,0.14]].forEach(([f,vol])=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f; g.gain.value=vol;
+      o.connect(g); g.connect(mg); o.start(t);
+      glideNodes.push(o,g);
+    });
+    // soft vibrato on top harmonic for warmth
+    const vib=AC.createOscillator(),vibG=AC.createGain();
+    vib.type='sine'; vib.frequency.value=5.2; vibG.gain.value=root*6*0.012;
+    vib.connect(vibG); vibG.connect(glideNodes[5].frequency);
+    vib.start(t); glideNodes.push(vib,vibG);
+  }
+
+  function glideEnd(){
+    if(!glideNodes.length||!AC) return;
+    const t=AC.currentTime, mg=glideNodes[0];
+    try{ mg.gain.setValueAtTime(mg.gain.value,t); mg.gain.linearRampToValueAtTime(0,t+0.28); }catch(e){}
+    const dead=glideNodes.splice(0);
+    setTimeout(()=>dead.forEach(n=>{try{if(n.stop)n.stop();n.disconnect();}catch(e){}}),360);
+  }
+
+  /* ---------- helpers ---------- */
+  function _click(cf,Q,dur,vol){
+    if(!AC) return;
+    const t=AC.currentTime;
+    const sz=Math.ceil(AC.sampleRate*dur);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=Math.random()*2-1;
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const bpf=AC.createBiquadFilter(); bpf.type='bandpass'; bpf.frequency.value=cf; bpf.Q.value=Q;
+    const g=AC.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    src.connect(bpf); bpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+dur+0.01);
+  }
+
+  function _sweep(f0,f1,type,dur,vol,dest){
+    if(!AC) return;
+    const t=AC.currentTime;
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type=type; o.frequency.setValueAtTime(f0,t);
+    if(f1!==f0) o.frequency.exponentialRampToValueAtTime(f1,t+dur*0.72);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g); g.connect(dest||sfxBus); o.start(t); o.stop(t+dur+0.02);
+  }
+
+  /* ---------- FREE sfx ---------- */
+
+  // Jump: tight keystroke snap (the player's rhythm input)
+  function jump(){
+    if(!on||!AC) return;
+    _click(3000,4,0.042,0.34);       // crisp percussive click
+    _sweep(255,155,'triangle',0.07,0.20); // soft pitch pop beneath
+  }
+
+  // Kill: deep extended 808-style bass drop (the main beat-drop moment)
+  function bassHit(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const root=(typeof curRealm!=='undefined')?REALM_AMB[curRealm.id][0]:55;
+
+    // sub-bass sine: punches in then decays long (~1s)
+    const o1=AC.createOscillator(),g1=AC.createGain();
+    o1.type='sine';
+    o1.frequency.setValueAtTime(root*2.4,t);
+    o1.frequency.exponentialRampToValueAtTime(root,t+0.07);
+    o1.frequency.exponentialRampToValueAtTime(root*0.62,t+0.90);
+    g1.gain.setValueAtTime(0,t);
+    g1.gain.linearRampToValueAtTime(1.0,t+0.012);
+    g1.gain.setValueAtTime(0.88,t+0.06);
+    g1.gain.exponentialRampToValueAtTime(0.001,t+1.0);
+    o1.connect(g1); g1.connect(musBus); o1.start(t); o1.stop(t+1.1);
+
+    // impact transient: hi-mid click for presence
+    _click(1700,3,0.038,0.60);
+
+    // body mid: square into lowpass for meatiness
+    const o3=AC.createOscillator(),lpf=AC.createBiquadFilter(),g3=AC.createGain();
+    o3.type='square'; o3.frequency.setValueAtTime(root*1.9,t);
+    o3.frequency.exponentialRampToValueAtTime(root*0.88,t+0.24);
+    lpf.type='lowpass'; lpf.frequency.value=340;
+    g3.gain.setValueAtTime(0.30,t); g3.gain.exponentialRampToValueAtTime(0.001,t+0.42);
+    o3.connect(lpf); lpf.connect(g3); g3.connect(sfxBus); o3.start(t); o3.stop(t+0.45);
+
+    // war-horn swell — the triumphant Norse payoff over the drum-boom
+    const oh=AC.createOscillator(),hlp=AC.createBiquadFilter(),gh=AC.createGain();
+    oh.type='sawtooth'; oh.frequency.setValueAtTime(root*3,t);
+    hlp.type='lowpass';
+    hlp.frequency.setValueAtTime(420,t);
+    hlp.frequency.linearRampToValueAtTime(1300,t+0.12);
+    hlp.frequency.linearRampToValueAtTime(520,t+0.5);
+    gh.gain.setValueAtTime(0,t); gh.gain.linearRampToValueAtTime(0.20,t+0.05);
+    gh.gain.setValueAtTime(0.16,t+0.26); gh.gain.exponentialRampToValueAtTime(0.001,t+0.6);
+    oh.connect(hlp); hlp.connect(gh); gh.connect(musBus); oh.start(t); oh.stop(t+0.65);
+  }
+
+  // Runestone block: dull low thud
+  function runeBlock(){
+    if(!on||!AC) return;
+    _sweep(98,52,'sine',0.24,0.52,musBus);
+    _click(230,2,0.055,0.22);
+  }
+
+  // Gate clear: rising chord swell → shimmer (big reward)
+  function gateClear(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const root=(typeof curRealm!=='undefined')?REALM_AMB[curRealm.id][0]:55;
+    [root,root*1.25,root*1.5,root*2,root*3].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.07);
+      g.gain.linearRampToValueAtTime(0.28-i*0.04,t+i*0.07+0.18);
+      g.gain.setValueAtTime(0.28-i*0.04,t+0.88);
+      g.gain.linearRampToValueAtTime(0,t+2.3);
+      o.connect(g); g.connect(musBus); o.start(t+i*0.07); o.stop(t+2.4);
+    });
+    // Norse flourish — three frame-drum hits + an ascending flute run up the rune's octave
+    _kick(t,0.22); _kick(t+0.17,0.20); _kick(t+0.33,0.26);
+    [root*4,root*5,root*6,root*8].forEach((f,i)=>_flute(t+0.12+i*0.12,f,0.15));
+    const os=AC.createOscillator(),gs=AC.createGain();
+    os.type='triangle'; os.frequency.value=root*6;
+    gs.gain.setValueAtTime(0,t+0.38); gs.gain.linearRampToValueAtTime(0.15,t+0.48);
+    gs.gain.linearRampToValueAtTime(0,t+1.9);
+    os.connect(gs); gs.connect(sfxBus); os.start(t+0.38); os.stop(t+2.0);
+    // PAID: shimmer high overtones
+    if(uSounds.shimmer){
+      [root*9,root*12,root*15].forEach((f,i)=>{
+        const o2=AC.createOscillator(),g2=AC.createGain();
+        o2.type='triangle'; o2.frequency.value=f;
+        g2.gain.setValueAtTime(0,t+0.22+i*0.14); g2.gain.linearRampToValueAtTime(0.09,t+0.32+i*0.14);
+        g2.gain.linearRampToValueAtTime(0,t+1.5+i*0.22);
+        o2.connect(g2); g2.connect(sfxBus); o2.start(t+0.22+i*0.14); o2.stop(t+1.75+i*0.22);
+      });
+    }
+  }
+
+  /* ---------- always-free sfx ---------- */
+
+  // Coin: bright rising chime
+  function coin(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    [880,1320,1760].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.042); g.gain.linearRampToValueAtTime(0.20,t+i*0.042+0.012);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.042+0.24);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.042); o.stop(t+i*0.042+0.26);
+    });
+  }
+
+  // Bolt: sawtooth sweep + crack
+  function bolt(){
+    if(!on||!AC) return;
+    _sweep(660,160,'sawtooth',0.13,0.28);
+    _click(1500,5,0.028,0.38);
+  }
+
+  // Death: descending sine toll
+  function death(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    [280,220,174,138].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.14); g.gain.linearRampToValueAtTime(0.30,t+i*0.14+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.14+0.40);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.14); o.stop(t+i*0.14+0.44);
+    });
+  }
+
+  // Footstep: barely audible soft tap while running on ground
+  function footstep(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const sz=Math.ceil(AC.sampleRate*0.018);
+    const buf=AC.createBuffer(1,sz,AC.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<sz;i++) d[i]=Math.random()*2-1;
+    const src=AC.createBufferSource(); src.buffer=buf;
+    const lpf=AC.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=480;
+    const g=AC.createGain(); g.gain.setValueAtTime(0.065,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.018);
+    src.connect(lpf); lpf.connect(g); g.connect(sfxBus); src.start(t); src.stop(t+0.022);
+  }
+
+  // Land: soft low thud on hitting the ground
+  function land(){
+    if(!on||!AC) return;
+    _sweep(155,68,'sine',0.13,0.36,musBus);
+    _click(400,2,0.030,0.12);
+  }
+
+  // Shield absorb: resonant pulse (+ optional paid bell chord)
+  function shieldAbsorb(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const o=AC.createOscillator(),bpf=AC.createBiquadFilter(),g=AC.createGain();
+    o.type='sine'; o.frequency.value=520;
+    bpf.type='bandpass'; bpf.frequency.value=520; bpf.Q.value=10;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.42,t+0.014);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.28);
+    o.connect(bpf); bpf.connect(g); g.connect(sfxBus); o.start(t); o.stop(t+0.30);
+    _click(980,4,0.025,0.20);
+    // PAID: resonant bell chord overtone
+    if(uSounds.ward){
+      [260,390,520].forEach((f,i)=>{
+        const o2=AC.createOscillator(),g2=AC.createGain();
+        o2.type='sine'; o2.frequency.value=f;
+        g2.gain.setValueAtTime(0,t+i*0.022); g2.gain.linearRampToValueAtTime(0.16,t+i*0.022+0.03);
+        g2.gain.exponentialRampToValueAtTime(0.001,t+i*0.022+0.5);
+        o2.connect(g2); g2.connect(sfxBus); o2.start(t+i*0.022); o2.stop(t+i*0.022+0.55);
+      });
+    }
+  }
+
+  // Double jump: airy burst distinct from regular tap (+ optional paid chime)
+  function doubleJump(){
+    if(!on||!AC) return;
+    _click(2200,6,0.055,0.20);
+    _sweep(340,220,'sine',0.09,0.16);
+    if(uSounds.echo) _sweep(880,660,'triangle',0.16,0.18);
+  }
+
+  // RD-#037: freeze-stomp combo ping — pitch climbs ~a whole-step per chain link,
+  // so a long chain literally rises in pitch (Mario-stomp feel). + a soft body thump.
+  function comboStomp(n){
+    if(!on||!AC) return;
+    const t=AC.currentTime, step=Math.min(n,8);
+    const base=440*Math.pow(1.0595,step*2); // ~2 semitones per link
+    [base, base*1.5].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.018); g.gain.linearRampToValueAtTime(0.22,t+i*0.018+0.012);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.018+0.20);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.018); o.stop(t+i*0.018+0.22);
+    });
+    const ob=AC.createOscillator(),gb=AC.createGain();
+    ob.type='sine'; ob.frequency.setValueAtTime(150,t); ob.frequency.exponentialRampToValueAtTime(92,t+0.13);
+    gb.gain.setValueAtTime(0.30,t); gb.gain.exponentialRampToValueAtTime(0.001,t+0.18);
+    ob.connect(gb); gb.connect(musBus); ob.start(t); ob.stop(t+0.20);
+  }
+
+  // RD-#041: the CRESCENDO resolution — when a freeze-jump chain ends, the rising build finally
+  // lands on a warm major chord that swells then rings out. Fuller/brighter the longer the chain.
+  function comboResolve(n){
+    if(!on||!AC) return;
+    const t=AC.currentTime, step=Math.min(n,8), amp=0.10+step*0.02;
+    const root=330;                                  // tonic
+    const chord=[root, root*1.25, root*1.5];         // root · major third · fifth
+    if(step>=4) chord.push(root*2);                  // + octave on big chains
+    if(step>=6) chord.push(root*2.5);                // + major tenth for the biggest
+    chord.forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(amp,t+0.05+i*0.025); // swell up
+      g.gain.exponentialRampToValueAtTime(0.001,t+0.75+i*0.05);                         // ring out
+      o.connect(g); g.connect(sfxBus); o.start(t); o.stop(t+0.85);
+    });
+    // a low resolving root underneath
+    const ob=AC.createOscillator(),gb=AC.createGain();
+    ob.type='sine'; ob.frequency.value=root*0.5;
+    gb.gain.setValueAtTime(0.001,t); gb.gain.linearRampToValueAtTime(0.42,t+0.05); gb.gain.exponentialRampToValueAtTime(0.001,t+0.7);
+    ob.connect(gb); gb.connect(musBus); ob.start(t); ob.stop(t+0.8);
+  }
+
+  // Runestone destroy reward: ascending arpeggio
+  function runeDestroy(){
+    if(!on||!AC) return;
+    const t=AC.currentTime;
+    const root=(typeof curRealm!=='undefined')?REALM_AMB[curRealm.id][0]:55;
+    [root*4,root*5,root*6,root*8].forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t+i*0.07); g.gain.linearRampToValueAtTime(0.30,t+i*0.07+0.025);
+      g.gain.exponentialRampToValueAtTime(0.001,t+i*0.07+0.42);
+      o.connect(g); g.connect(sfxBus); o.start(t+i*0.07); o.stop(t+i*0.07+0.46);
+    });
+    // Sub-boom underneath
+    const ob=AC.createOscillator(),gb=AC.createGain();
+    ob.type='sine'; ob.frequency.setValueAtTime(root*2,t); ob.frequency.exponentialRampToValueAtTime(root*0.7,t+0.28);
+    gb.gain.setValueAtTime(0.5,t); gb.gain.exponentialRampToValueAtTime(0.001,t+0.38);
+    ob.connect(gb); gb.connect(musBus); ob.start(t); ob.stop(t+0.42);
+  }
+
+  // Called by any player action to make the beat more energetic
+  function activityBump(){ activityScore=Math.min(activityScore+1.8,10); }
+
+  function syncUnlocks(s){
+    uSounds={ ward:true, echo:true, shimmer:true }; // RD-#034: accents always-on (Sound Forge retired)
+  }
+
+  /* ---------- toggle ---------- */
+  function toggle(){
+    boot(); AC.resume();
+    on=!on;
+    const btn=document.getElementById('snd-btn');
+    if(on){
+      btn.textContent='♪ Sound: ON'; btn.classList.add('on');
+      startMusic(typeof curRealm!=='undefined'?curRealm.id:0);
+    } else {
+      btn.textContent='♪ Sound: OFF'; btn.classList.remove('on');
+      stopMusic();
+    }
+    return on;
+  }
+
+  // RD-#043: pause/resume the whole audio stream when the page is hidden or unloaded, so the
+  // Norse score never keeps playing in the background after you tab away / minimize / close.
+  function suspendAudio(){ try{ if(AC&&AC.state==='running') AC.suspend(); }catch(e){} }
+  function resumeAudio(){ try{ if(AC&&on&&AC.state==='suspended') AC.resume(); }catch(e){} }
+
+  return {
+    boot, toggle, startMusic, stopMusic, syncUnlocks, activityBump,
+    suspendAudio, resumeAudio,
+    jump, doubleJump, comboStomp, comboResolve, coin, bolt, bassHit, runeBlock, runeDestroy, gateClear, death,
+    footstep, land, shieldAbsorb,
+    glideStart, glideEnd,
+    get on(){ return on; }
+  };
+})();
+
+function toggleSound(){ Snd.toggle(); document.getElementById('snd-btn').blur(); }
+
+/* ============================================================
+   LEVEL GENERATION
+   ============================================================ */
+const GROUND_Y=430, PHeight=60;
+
+function buildLevel(realm){
+  const segs=[],coins=[],obs=[],foes=[],teach=[];
+  let x=0, foeIdx=0;
+
+  function ground(w,y=GROUND_Y){ segs.push({x,w,y}); x+=w; }
+  function gap(w){ x+=w; }
+  function coinArc(cx,cy,n=3,step=44){ for(let i=0;i<n;i++) coins.push({x:cx+i*step,y:cy,got:false}); }
+  function addFoe(wx,wy,opt){
+    opt=opt||{};
+    const idx=foeIdx++;
+    // RD-#027: ~2/3 of shades are "divers" — their bob dips to the run lane so a grounded
+    // runner must actually deal with them (jump / Rune Bolt / freeze), not just stroll under.
+    // opt.cen/opt.amp let a level hand-place a diver (e.g. RD-#035 Raidho freeze-staircase).
+    const dive = opt.dive!=null ? opt.dive : (idx%3!==0);
+    foes.push({
+      x:wx, y:wy, baseY:wy, dead:false, frozen:false,
+      type:(idx%2===0)?"excess":"lack",
+      dive,
+      amp: opt.amp!=null?opt.amp : (dive?48:18),                 // bob amplitude
+      cen: opt.cen!=null?opt.cen : (dive?(GROUND_Y-92):wy),      // bob center (divers dip to the lane)
+    });
+  }
+
+  // shared intro
+  ground(620);
+  teach.push({x:120,text:"SPACE to JUMP  •  Hold to SOAR"});
+  coinArc(340,GROUND_Y-70,3);
+
+  const id=realm.id;
+
+  if(id===0){
+    gap(120); ground(360); coinArc(x-300,GROUND_Y-90,3);
+    ground(80); obs.push({x:x-40-30,y:GROUND_Y-70,w:34,h:70}); ground(300);
+    coinArc(x-180,GROUND_Y-120,3,38);
+    gap(140); segs.push({x,w:280,y:GROUND_Y-120}); coinArc(x+60,GROUND_Y-190,3); x+=280;
+    gap(150); ground(300);
+    teach.push({x:x+40,text:"J / tap right = Rune Bolt — freezes a shade"});
+    addFoe(x+240,GROUND_Y-150);
+    teach.push({x:x+430,text:"Bolt it again to shatter — or leap off the frozen shade!"});
+    ground(220);
+    for(let i=0;i<5;i++){
+      obs.push({x:x-20,y:GROUND_Y-64,w:30,h:64});
+      ground(70); gap(90); ground(120);
+      coins.push({x:x-150,y:GROUND_Y-150,got:false});
+    }
+    ground(640);
+    for(let i=0;i<4;i++) addFoe(x-520+i*155,GROUND_Y-130-(i%2)*40);
+    coinArc(x-500,GROUND_Y-200,5,50);
+    gap(120);
+    for(let i=0;i<3;i++){ segs.push({x,w:160,y:GROUND_Y-60-i*60}); coins.push({x:x+70,y:GROUND_Y-130-i*60,got:false}); x+=160; gap(70); }
+    ground(300);
+    for(let i=0;i<3;i++){ ground(160); gap(110); }
+    ground(520); coinArc(x-460,GROUND_Y-80,7,56);
+    for(let i=0;i<2;i++) addFoe(x-380+i*180,GROUND_Y-130);
+
+  } else if(id===1){
+    gap(140); ground(400); coinArc(x-360,GROUND_Y-80,4);
+    ground(200);
+    teach.push({x:x+60,text:"Rune Bolt: J or tap the right edge"});
+    for(let i=0;i<6;i++){
+      obs.push({x:x-20,y:GROUND_Y-60,w:28,h:60});
+      ground(60); gap(100); ground(110);
+      coins.push({x:x-100,y:GROUND_Y-140,got:false});
+    }
+    // RD-#035 (Raidho only — timing test): spaced solo divers, then a freeze-staircase.
+    ground(820);
+    addFoe(x-620,GROUND_Y-92,{dive:true,amp:34});   // spaced practice diver (dips to the lane)
+    addFoe(x-320,GROUND_Y-92,{dive:true,amp:34});   // ~300px later → time to bolt + jump one
+    coinArc(x-560,GROUND_Y-180,4,54);
+    // FREEZE-STAIRCASE: bolt each rising shade to freeze a step, then climb the frozen
+    // staircase to the high amber. ~210px apart (~1s) = time to react. Ground below = safe retry.
+    ground(1240);
+    teach.push({x:x-1180,text:"Freeze the rising shades to climb them ↗"});
+    for(let i=0;i<5;i++){
+      const sxp=x-1140+i*210, hy=GROUND_Y-70-i*58;  // ascending step height
+      addFoe(sxp,hy,{dive:true,amp:16,cen:hy});      // gentle bob around the step's height
+      coins.push({x:sxp,y:hy-34,got:false});         // a coin riding each frozen step
+    }
+    coinArc(x-170,GROUND_Y-302,3,46);                // bonus amber at the top of the climb
+    gap(160); segs.push({x,w:220,y:GROUND_Y-110}); coinArc(x+50,GROUND_Y-180,3); x+=220;
+    gap(180); ground(280);
+    for(let i=0;i<4;i++){ segs.push({x,w:140,y:GROUND_Y-55-i*55}); coins.push({x:x+60,y:GROUND_Y-120-i*55,got:false}); x+=140; gap(60); }
+    ground(360); addFoe(x-220,GROUND_Y-92,{dive:true,amp:30});
+    for(let i=0;i<4;i++){ ground(140); gap(120); }
+    ground(560); coinArc(x-500,GROUND_Y-80,8,52);
+    addFoe(x-380,GROUND_Y-92,{dive:true,amp:30}); addFoe(x-170,GROUND_Y-92,{dive:true,amp:30});
+
+  } else if(id===2){
+    // Wunjo — joy · harmony — open, abundant, pairs of shades, vertical variety
+    gap(100); ground(380); coinArc(x-340,GROUND_Y-80,5,48);
+    teach.push({x:x+60,text:"Hold SPACE to SOAR over wide gaps"});
+    gap(170); segs.push({x,w:220,y:GROUND_Y-100}); coinArc(x+50,GROUND_Y-170,4,44); x+=220;
+    gap(150); ground(300); coinArc(x-260,GROUND_Y-90,4,44);
+    teach.push({x:x+50,text:"Rune Bolt the joyful shades — they run in pairs"});
+    addFoe(x+100,GROUND_Y-130); addFoe(x+170,GROUND_Y-120);
+    ground(480);
+    for(let i=0;i<4;i++) addFoe(x-460+i*122,GROUND_Y-125-(i%2)*32);
+    coinArc(x-440,GROUND_Y-195,7,52);
+    gap(150);
+    for(let i=0;i<4;i++){ segs.push({x,w:170,y:GROUND_Y-65-i*55}); coinArc(x+45,GROUND_Y-135-i*55,3,42); x+=170; gap(75); }
+    ground(360); addFoe(x-280,GROUND_Y-130); addFoe(x-150,GROUND_Y-130); addFoe(x-75,GROUND_Y-125);
+    for(let i=0;i<3;i++){ ground(140); gap(110); }
+    ground(560); coinArc(x-500,GROUND_Y-80,9,52);
+    for(let i=0;i<5;i++) addFoe(x-490+i*112,GROUND_Y-130-(i%2)*38);
+
+  } else if(id===3){
+    // Hagalaz — hail · disruption — dense obstacles, chaotic, hard
+    gap(100); ground(300); coinArc(x-260,GROUND_Y-90,3);
+    addFoe(x-180,GROUND_Y-140);
+    teach.push({x:x+40,text:"Rune Bolt — shades are thick here"});
+    for(let i=0;i<5;i++){
+      ground(140); obs.push({x:x-90,y:GROUND_Y-78,w:32,h:78});
+      gap(110+(i%2)*40); ground(140);
+      coins.push({x:x-160+i*8,y:GROUND_Y-160,got:false});
+      addFoe(x-80,GROUND_Y-120);
+    }
+    ground(800);
+    for(let i=0;i<6;i++) addFoe(x-750+i*130,GROUND_Y-130-(i%3)*28);
+    coinArc(x-740,GROUND_Y-200,7,54);
+    for(let i=0;i<5;i++){ segs.push({x,w:120,y:GROUND_Y-(i%2)*70}); x+=120; gap(130); coins.push({x:x-180,y:GROUND_Y-90-(i%2)*60,got:false}); }
+    ground(400); addFoe(x-300,GROUND_Y-130); addFoe(x-160,GROUND_Y-130);
+    ground(300);
+    for(let i=0;i<3;i++){ obs.push({x:x-250+i*80,y:GROUND_Y-70,w:30,h:70}); coins.push({x:x-230+i*80,y:GROUND_Y-160,got:false}); }
+    for(let i=0;i<5;i++){ ground(120); gap(100); }
+    ground(560); coinArc(x-500,GROUND_Y-80,8,50);
+    for(let i=0;i<5;i++) addFoe(x-500+i*110,GROUND_Y-130-(i%2)*40);
+
+  } else if(id===4){
+    // ISA — ice · stillness — THE FREEZE-JUMP REALM (RD-#041).
+    // The whole level is one mechanic: Rune Bolt freezes a shade into a permanent platform, you
+    // leap on to stomp-bounce, and you CHAIN those bounces up the ice without touching down. No
+    // double-jump here (see canDouble) — height = how long you hold the jump, distance = your
+    // GLIDE — so you must glide to bridge each step, and threading the amber is a test of touch.
+    // Each chain builds (pitch climbs) to a crescendo that RESOLVES when you finally glide back
+    // to the ice (Snd.comboResolve + the CHAIN ×N payoff). Solid ground under every chain = calm
+    // retries. First step of each chain sits low so you can freeze it from the ground; the rest
+    // you freeze from the bounce apex as you climb. Spacing/height are the dials we tune.
+
+    // — TEACH: one lone shade. freeze it, leap on it, feel the bounce. —
+    gap(120); ground(580);
+    addFoe(x-320,GROUND_Y-92,{dive:true,amp:34});       // dips into the lane → freezable from the ground
+    coinArc(x-480,GROUND_Y-92,3);
+    teach.push({x:x-520,text:"Rune Bolt a shade to freeze it ❄"});
+    teach.push({x:x-270,text:"…then leap onto the frozen shade ↗"});
+
+    // — CHAIN 1: a 4-step climb to learn the rhythm — (RD-#042 spacing 115→144, +25%)
+    ground(820);
+    teach.push({x:x-780,text:"Glide between leaps and chain up the ice — don't touch down!"});
+    for(let i=0;i<4;i++){ const s2=x-720+i*144, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
+
+    // — GLIDE GAP: no shades — float across on the glide, threading an amber arc —
+    teach.push({x:x+20,text:"Hold to GLIDE — float across and gather the amber"});
+    gap(120); coinArc(x+10,GROUND_Y-150,5,52); gap(150); ground(320);
+
+    // — CHAIN 2: a 7-step climb, higher —
+    ground(1180);
+    for(let i=0;i<7;i++){ const s2=x-1120+i*144, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:18,cen:hy}); coins.push({x:s2+17,y:hy-34,got:false}); }
+    coinArc(x-220,GROUND_Y-360,3,46);                   // amber at the top of the climb
+
+    // — GLIDE GAP 2: a longer float, a higher arc —
+    teach.push({x:x+20,text:"Glide the gap"});
+    gap(150); coinArc(x+10,GROUND_Y-180,4,56); gap(170); ground(300);
+
+    // — CRESCENDO FINALE: the long climb — let the chain build, then resolve — (spacing 120→150)
+    ground(1560);
+    teach.push({x:x-1520,text:"The long climb — let the chain build ⚡"});
+    for(let i=0;i<8;i++){ const s2=x-1480+i*150, hy=GROUND_Y-58-i*46; addFoe(s2,hy,{dive:true,amp:16,cen:hy}); coins.push({x:s2+17,y:hy-32,got:false}); }
+    coinArc(x-340,GROUND_Y-430,5,44);                   // a shower of amber at the summit
+    teach.push({x:x-360,text:"Glide down — feel it resolve ❄"});
+
+    // glide down to the finish
+    gap(120); ground(780); coinArc(x-700,GROUND_Y-90,8,54);
+
+  } else {
+    // Act 2-3 — per-realm layouts differentiated by id-seeded knobs (RD-#029; were identical for 4-8)
+    const K=n=>0.5+0.5*Math.sin(id*1.7+n);   // deterministic 0..1 knob, distinct per realm
+    const obsHeavy=(id%2===0);               // alternate obstacle gauntlet vs sky-platform climb
+    const cluster=3+(id%3);                  // foe cluster size 3..5
+    gap(110+Math.round(K(0)*70)); ground(300+Math.round(K(1)*150)); coinArc(x-280,GROUND_Y-90,3+(id%2));
+    teach.push({x:x+40,text:"Rune Bolt — "+REALMS[id].sub.toLowerCase()});
+    addFoe(x-150,GROUND_Y-118-Math.round(K(2)*44));
+    gap(150+Math.round(K(3)*70)); ground(260+Math.round(K(4)*120));
+    if(obsHeavy){                            // signature: carved-menhir gauntlet
+      for(let i=0;i<4+(id%3);i++){
+        ground(150); obs.push({x:x-100,y:GROUND_Y-70-Math.round(K(i)*14),w:30,h:70+Math.round(K(i)*14)});
+        gap(120+Math.round(K(i+1)*60)); ground(150); coins.push({x:x-220,y:GROUND_Y-150,got:false});
+      }
+    } else {                                 // signature: ascending sky platforms
+      for(let i=0;i<4+(id%3);i++){
+        segs.push({x,w:150,y:GROUND_Y-55-i*46}); coinArc(x+38,GROUND_Y-118-i*46,2,40); x+=150; gap(80+Math.round(K(i)*40));
+      }
+      ground(220);
+    }
+    ground(560+Math.round(K(5)*160)); coinArc(x-Math.round(440+K(6)*110),GROUND_Y-90,7+(id%3),52);
+    for(let i=0;i<cluster;i++) addFoe(x-520+i*120,GROUND_Y-120-Math.round(K(i)*50));
+    for(let i=0;i<3+(id%2);i++){ ground(160+Math.round(K(i)*60)); gap(120+Math.round(K(i)*40)); }
+    ground(520);
+    for(let i=0;i<cluster;i++) addFoe(x-460+i*116,GROUND_Y-125-(i%2)*36);
+  }
+
+  // RD-#028: kill the dead air — seed amber into long empty stretches above ANY walkable surface
+  (function fillDeadAir(){
+    const endX=x;
+    const marks=[...coins.map(c=>c.x),...foes.map(f=>f.x),...obs.map(o=>o.x),620,endX].sort((a,b)=>a-b);
+    const segAt=q=>{ for(const s of segs){ if(q>=s.x+30 && q<=s.x+s.w-30) return s; } return null; };
+    for(let i=1;i<marks.length;i++){
+      for(let cx=marks[i-1]+500; cx<marks[i]-200; cx+=460){ // ~every 2.2s of void → amber to chase
+        const s=segAt(cx);
+        if(s){ if(s.w>=260) coinArc(cx-80,s.y-90,5,40); else coins.push({x:cx,y:s.y-90,got:false}); }
+      }
+    }
+  })();
+
+  const gateX=x-160;
+  ground(280);
+  return {segs,coins,obs,foes,teach,gateX,len:x,realm};
+}
+
+/* ============================================================
+   GAME STATE
+   ============================================================ */
+let state="menu",level=null,cam=0,runTime=0,runEssence=0,runKills=0,runCoins=0,footstepDist=0;
+let runFroze=0,runShards=0,comboChain=0,runComboBest=0; // RD-#030/#032 run metrics + skill combo
+let usedRevive=false; // RD-#033: one ad-revive per run
+let curRealm=REALMS[0],shieldCharges=0,endReason="",runWhisper=null,runScene=null;
+let runBoons={shield:false,surge:false,twin:false}; // boons active this run
+let runOmen=null;       // RD-#024: the rune omen shaping THIS run (set from the reading)
+let pendingOmen=null;   // chosen on the reading screen, consumed by startRun
+let introPaused=false;
+// ghost system (session-only, not persisted)
+const ghostData={};       // realmId -> [{cam,y}] from best run
+let ghostRecording=[];    // frames recorded this run
+let ghostPlayback=null;   // ghost to replay this run
+let ghostFrame=0;
+let showGhost=true;
+let screenFlash=0;        // 0..1, decays after big kill burst
+// RD-#037 (Isa prototype) freeze-stomp impact system — juice / hit-stop / apex slow-mo
+let hitStop=0;            // frames to freeze the sim on a stomp (impact weight)
+let slowmoT=0;            // frames of bullet-time after a chained stomp (apex dip)
+let shake=0;             // screen-shake magnitude (decays)
+let comboFlash=0;        // 0..1 cyan bloom on a stomp
+const comboRing=[];       // expanding shockwave rings {x,y,r,max,life}
+const SLOW_FACTOR=0.42;   // sim time-scale while bullet-time is active
+let comboBank=null;       // RD-#041: the crescendo payoff pop shown when a chain resolves {n,shards,life,max}
+let lunge=0;              // RD-#043: brief forward surge on a freeze-stomp — momentum toward the next frozen target (decays)
+
+const player={x:220,y:0,vy:0,w:30,h:44,onGround:false,coyote:0,jumpBuf:0,jumpsLeft:1,alive:true,flash:0,gliding:false};
+const bolts=[],particles=[];
+let boltCD=0;
+
+// RD-#039: global pace dial — experiment with a slower, still-constantly-moving game.
+// Scales every realm's run speed; level spacing that's tuned to the bounce arc should scale
+// with it too (see Isa staircase) so the input rhythm stays invariant, only the felt pace slows.
+const GAME_SPEED=0.77;
+function cfg(){
+  const j=save.upgrades.jump;
+  const baseJump=-14.6-j*0.9;
+  return {
+    // RD-#022: 3.42 px/frame @60fps = ~205 px/s at speed 1 (was ~168). Research note: calm
+    // auto-runners read well ~180–230 px/s; below ~170 feels sluggish. Per-realm `speed`
+    // still scales it (Isa 0.90=~185, Dagaz 1.28=~262). Dropped RD-#013's 0.85 dampener.
+    runSpeed:3.42*GAME_SPEED*(curRealm.speed||1)*((runOmen&&runOmen.fx.speedMul)||1), // RD-#024 omen, RD-#039 pace dial
+    grav:0.60, jumpV:baseJump*1.05, bounceV:baseJump*0.78*1.5, cutMul:0.45, // RD-#042: jump +10% height, freeze-stomp bounce +50%
+    coyoteMax:7, bufMax:7, maxFall:14,
+    glideMul:((runOmen&&runOmen.fx.glide)?0.13:0.2)*0.9, glideFall:((runOmen&&runOmen.fx.glide)?1.6:2.3)*0.9, // Laguz softer; RD-#042 +~10% glide distance
+    boltCD:Math.max(14,26-save.upgrades.bolt*4),
+    boltV:9+save.upgrades.bolt*1.2,
+  };
+}
+
+/* ---------- input ---------- */
+const keys={jump:false,jumpEdge:false,cast:false};
+function jumpDown(){
+  if(introPaused){ introPaused=false; return; }
+  keys.jump=true; keys.jumpEdge=true; player.jumpBuf=cfg().bufMax;
+  Snd.jump(); Snd.activityBump();
+}
+function jumpUp(){ keys.jump=false; }
+
+window.addEventListener("keydown",e=>{
+  if(e.repeat) return;
+  if(e.code==="KeyM"){ e.preventDefault(); Snd.toggle(); return; }
+  if(e.code==="KeyG"){ showGhost=!showGhost; return; }
+  if(e.code==="Space"||e.code==="ArrowUp"||e.code==="KeyW"){
+    e.preventDefault();
+    if(state==="play"){ if(introPaused){ Snd.boot(); introPaused=false; } else jumpDown(); }
+  }
+  if(e.code==="KeyJ"||e.code==="KeyK"||e.code==="ShiftLeft"){ if(state==="play") keys.cast=true; }
+});
+window.addEventListener("keyup",e=>{
+  if(e.code==="Space"||e.code==="ArrowUp"||e.code==="KeyW") jumpUp();
+  if(e.code==="KeyJ"||e.code==="KeyK"||e.code==="ShiftLeft") keys.cast=false;
+});
+cv.addEventListener("pointerdown",e=>{
+  if(state!=="play") return;
+  Snd.boot();
+  if(introPaused){ introPaused=false; return; }
+  const r=cv.getBoundingClientRect(), fx=(e.clientX-r.left)/r.width;
+  if(fx>0.8) keys.cast=true;
+  else jumpDown();
+});
+cv.addEventListener("pointerup",()=>{ jumpUp(); keys.cast=false; });
+
+/* ============================================================
+   ADS — rewarded video stub
+   In a real mobile build, set window.adProvider = { showRewarded(onReward,onSkip){...} }
+   before the game loads (AdMob, Unity Ads, AppLovin MAX, etc.).
+   The stub auto-rewards so dev flow is uninterrupted.
+   ============================================================ */
+const Ads={
+  showRewarded(onReward,onSkip){
+    if(window.adProvider&&window.adProvider.showRewarded){
+      window.adProvider.showRewarded(onReward,onSkip);
+    } else {
+      onReward(); // dev/web: instant reward, no real ad
+    }
+  }
+};
+
+/* ============================================================
+   START / END RUN
+   ============================================================ */
+function startRun(realm){
+  curRealm=realm;
+  level=buildLevel(realm);
+  level.obs.forEach(o=>{o.health=2;o.destroyed=false;});
+  cam=0; runTime=0; runEssence=0; runKills=0; runCoins=0; footstepDist=0;
+  runFroze=0; runShards=0; comboChain=0; runComboBest=0; usedRevive=false;
+  bolts.length=0; particles.length=0; boltCD=0;
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; lunge=0; // RD-#037/#041/#043 impact reset
+  // consume banked provisions for this run
+  if(!save.boons) save.boons={shield:0,surge:0,twin:0};
+  runBoons={shield:false,surge:false,twin:false};
+  BOONS.forEach(b=>{ if(save.boons[b.key]>0){ runBoons[b.key]=true; save.boons[b.key]--; } });
+  shieldCharges=(save.upgrades.shield>0?1:0)+(runBoons.shield?1:0);
+  // RD-#024: apply the chosen rune omen for this run
+  runOmen=pendingOmen; pendingOmen=null;
+  if(runOmen){ const fx=runOmen.fx;
+    if(fx.twin) runBoons.twin=true;          // joy → a second leap
+    if(fx.startShield) shieldCharges+=1;      // protection → start warded
+    if(fx.noShield) shieldCharges=0;          // disruption → no ward, but rich
+  }
+  player.x=220; player.y=GROUND_Y-player.h; player.vy=0;
+  player.onGround=true; player.coyote=0; player.jumpBuf=0;
+  player.jumpsLeft=1; player.alive=true; player.flash=0; player.gliding=false;
+  keys.jump=false; keys.cast=false; keys.jumpEdge=false;
+  const pool=(RUNE_LORE[realm.id]||RUNE_LORE[0]).whispers;
+  const wi=(Math.random()*pool.length)|0;
+  runWhisper={id:realm.id+":"+wi,text:pool[wi]};
+  save.loreSeen[runWhisper.id]=true; persist();
+  const SCENES=["yggdrasil","longship","serpent","ravens","stones","wolf"];
+  runScene={hueShift:((Math.random()*30)|0)-15,pieces:[]};
+  for(let i=0;i<2;i++) runScene.pieces.push({type:SCENES[(Math.random()*SCENES.length)|0],x:700+i*1900+Math.random()*700,z:0.30+Math.random()*0.14,scale:0.85+Math.random()*0.5});
+  introPaused=true;
+  ghostPlayback=ghostData[realm.id]||null;
+  ghostRecording=[]; ghostFrame=0;
+  Snd.boot();
+  Snd.syncUnlocks(save);
+  Snd.startMusic(realm.id);
+  state="play"; showScreen(null);
+}
+
+function endRun(won){
+  state=won?"won":"dead";
+  if(runOmen){ // RD-#024 omen payouts
+    if(won&&runOmen.fx.gateBonus) runEssence+=runOmen.fx.gateBonus; // Dagaz → dawn burst at the gate
+    if(runOmen.fx.essMul) runEssence=Math.round(runEssence*runOmen.fx.essMul); // Sowilo/Hagalaz richer amber
+  }
+  if(runBoons.surge) runEssence=Math.round(runEssence*2); // Amber Surge doubles the haul
+  save.essence+=runEssence;
+  // RD-#032: bank skill-earned Rune Shards · RD-#030: lifetime stats
+  save.shards=(save.shards||0)+runShards;
+  if(!save.stats) save.stats={runs:0,kills:0,frozen:0,coins:0,shards:0,bestCombo:0};
+  save.stats.runs++; save.stats.kills+=runKills; save.stats.frozen+=runFroze;
+  save.stats.coins+=runCoins; save.stats.shards+=runShards;
+  if(runComboBest>(save.stats.bestCombo||0)) save.stats.bestCombo=runComboBest;
+  let newBadges=[];
+  if(won){
+    const t=runTime;
+    if(save.realmsUnlocked<curRealm.id+2&&curRealm.id+1<REALMS.length) save.realmsUnlocked=curRealm.id+2;
+    if(!save.best[curRealm.id]||t<save.best[curRealm.id]){
+      save.best[curRealm.id]=t;
+      ghostData[curRealm.id]=ghostRecording.slice(); // new best run → save as ghost
+    }
+    // RD-#031: per-realm badges (sticky once earned)
+    if(!save.badges) save.badges={};
+    const b=save.badges[curRealm.id]||(save.badges[curRealm.id]={});
+    const totF=level.foes.length, totC=level.coins.length, swiftSec=level.gateX/180;
+    [["conqueror","⚔ Conqueror", totF>0&&runKills>=totF],
+     ["deepfreeze","❄ Deep Freeze", totF>0&&runFroze>=totF],
+     ["collector","✦ Coin Collector", totC>0&&runCoins>=totC],
+     ["swift","⌛ Swift", runTime<=swiftSec]
+    ].forEach(([k,label,got])=>{ if(got&&!b[k]){ b[k]=true; newBadges.push(label); } });
+  }
+  persist(); Snd.stopMusic();
+  setTimeout(()=>{
+    document.getElementById("res-title").textContent=won?"✦ Realm Cleared ✦":"The run ends…";
+    const best=save.best[curRealm.id];
+    document.getElementById("res-body").innerHTML=
+      (won
+        ?`You crossed <b>${curRealm.name}</b> in <b>${runTime.toFixed(1)}s</b>.`+(best!=null?` &nbsp;Best: <b>${best.toFixed(1)}s</b>`:"")
+        :`${endReason||"A misstep."} You kept what you gathered.`)+
+      `<br>⏱ ${runTime.toFixed(1)}s &nbsp;•&nbsp; ⚔ ${runKills} shattered &nbsp;•&nbsp; ❄ ${runFroze} frozen &nbsp;•&nbsp; ✦ ${runCoins} amber`+
+      (runComboBest>1?`<br><span style="color:#9fe8ff">Best freeze-stomp chain: ⚡×${runComboBest}</span>`:"")+
+      (runShards>0?`<br><span style="color:#9fe8ff">◆ +${runShards} Rune Shards</span> &nbsp;<span class="hint">(total ${save.shards})</span>`:"")+
+      (newBadges.length?`<br><span style="color:var(--gold)">★ Badge earned: ${newBadges.join(" · ")}</span>`:"")+
+      (runBoons.surge?`<br><span style="color:var(--gold)">Amber Surge doubled your haul!</span>`:"")+
+      `<br><br>Amber gathered: <span class="ess">+${runEssence}</span> &nbsp;•&nbsp; Total: <span class="ess">${save.essence}</span>`+
+      `<br><span class="hint">Lifetime: ${save.stats.runs} runs · ${save.stats.kills} shattered · ${save.stats.frozen} frozen · ${save.stats.shards} shards</span>`+
+      (runWhisper?`<br><br><span style="color:hsl(${curRealm.hue},70%,80%)">${curRealm.glyph} "${runWhisper.text}"</span>`:"");
+    document.getElementById("res-again").onclick=()=>openReading(curRealm); // re-read the road each run
+    showScreen("result");
+    // RD-#033: revive-by-ad on death (once per run)
+    let revRow=document.getElementById("revive-row");
+    if(!revRow){ revRow=document.createElement("div"); revRow.id="revive-row"; revRow.style.marginTop="6px";
+      const sr=document.getElementById("s-result"); sr.insertBefore(revRow, document.getElementById("ad-essence-row")); }
+    revRow.innerHTML="";
+    if(!won && !usedRevive){
+      const rb=document.createElement("button"); rb.className="btn ad-btn"; rb.style.minWidth="280px";
+      rb.textContent="▶ Rise where you fell — watch an ad";
+      rb.onclick=()=>Ads.showRewarded(reviveRun);
+      revRow.appendChild(rb);
+    }
+    // Rewarded-ad bonus — show when run earned enough to make the offer meaningful
+    const adRow=document.getElementById('ad-essence-row');
+    const adBtn=document.getElementById('ad-essence-btn');
+    const adBonus=Math.floor(runEssence*0.5);
+    if(adBonus>0){
+      adRow.style.display='flex';
+      adBtn.textContent=`✦ Claim +${adBonus} Bonus Amber — Watch a short ad`;
+      adBtn.disabled=false;
+      adBtn.onclick=()=>{
+        Ads.showRewarded(()=>{
+          save.essence+=adBonus; persist();
+          adBtn.textContent=`✦ +${adBonus} ✦ Claimed!`;
+          adBtn.disabled=true;
+          document.getElementById('r-ess').textContent=save.essence;
+        });
+      };
+    } else {
+      adRow.style.display='none';
+    }
+  },won?500:650);
+}
+
+/* ============================================================
+   UPDATE
+   ============================================================ */
+function rectHit(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by; }
+function spawnDeathBurst(x,y){
+  const hue=curRealm.hue;
+  // white core flash
+  for(let i=0;i<16;i++){ const a=Math.random()*Math.PI*2,s=Math.random()*8+4; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:0,max:16+Math.random()*10,c:"#ffffff",r:Math.random()*4+2}); }
+  // realm-color spread
+  for(let i=0;i<32;i++){ const a=Math.random()*Math.PI*2,s=Math.random()*10+3; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:0,max:28+Math.random()*16,c:`hsl(${hue},90%,74%)`,r:Math.random()*5+2.5}); }
+  // gold sparkles
+  for(let i=0;i<20;i++){ const a=Math.random()*Math.PI*2,s=Math.random()*7+5; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2.5,life:0,max:18+Math.random()*12,c:"#ffd479",r:Math.random()*3+1.5}); }
+  // evenly-spread ring burst
+  for(let i=0;i<24;i++){ const a=i/24*Math.PI*2,s=11+Math.random()*5; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0,max:22+Math.random()*10,c:"#c9a3ff",r:Math.random()*3.5+2}); }
+  screenFlash=0.42;
+}
+function spawnBurst(x,y,c,n=10,spd=3){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2,s=Math.random()*spd+0.6;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:0,max:24+Math.random()*16,c,r:Math.random()*3+1.5});
+  }
+}
+
+function update(){
+  if(state!=="play"||introPaused) return;
+  const C=cfg();
+  runTime+=1/60;
+  // RD-#043: forward momentum — a freeze-stomp adds a brief surge so you shoot toward the next
+  // frozen target (the world rushes past), then it eases back to the calm constant pace.
+  cam+=C.runSpeed+lunge;
+  if(lunge>0.05) lunge*=0.84; else lunge=0;
+  ghostRecording.push({cam,y:player.y});
+  if(ghostPlayback&&ghostFrame<ghostPlayback.length-1) ghostFrame++;
+  if(screenFlash>0) screenFlash=Math.max(0,screenFlash-0.045);
+  player.x=220;
+  const px=player.x+cam;
+
+  if(player.jumpBuf>0) player.jumpBuf--;
+  if(player.onGround){ player.coyote=C.coyoteMax; player.jumpsLeft=1; }
+  else if(player.coyote>0) player.coyote--;
+
+  // RD-#041: no double-jump on Isa (freeze-jump realm) — it overrode the glide and wrecked the
+  // fine touch needed to thread amber. Here air control = jump-height (hold) + glide only.
+  const canDouble=(save.upgrades.jump>=2||runBoons.twin)&&curRealm.id!==4;
+  if(player.jumpBuf>0){
+    if(player.coyote>0||player.onGround){
+      player.vy=C.jumpV; player.onGround=false; player.coyote=0; player.jumpBuf=0;
+      player.jumpsLeft=canDouble?1:0;
+      spawnBurst(px-cam,player.y+player.h,"#bfe9ff",6,2);
+    } else if(player.jumpsLeft>0&&canDouble){
+      player.vy=C.jumpV*0.9; player.jumpsLeft=0; player.jumpBuf=0;
+      spawnBurst(px-cam,player.y+player.h*0.5,"#ffe6a8",8,2.4);
+      Snd.doubleJump();
+    }
+  }
+  if(!keys.jump&&player.vy<-3.0) player.vy=-3.0;
+
+  const wasGliding=player.gliding;
+  const gliding=!player.onGround&&player.vy>0&&keys.jump;
+  player.gliding=gliding;
+  if(gliding&&!wasGliding) Snd.glideStart(curRealm.id);
+  else if(!gliding&&wasGliding) Snd.glideEnd();
+  const g=gliding?C.grav*C.glideMul:C.grav;
+  const term=gliding?C.glideFall:C.maxFall;
+  player.vy=Math.min(player.vy+g,term);
+  player.y+=player.vy;
+
+  // ground
+  const wasOnGround=player.onGround;
+  player.onGround=false;
+  const footY=player.y+player.h;
+  for(const s of level.segs){
+    if(px+player.w*0.5>s.x&&px+player.w*0.5<s.x+s.w){
+      if(player.vy>=0&&footY>=s.y&&footY<=s.y+28+player.vy){
+        player.y=s.y-player.h; player.vy=0; player.onGround=true;
+      }
+    }
+  }
+  if(player.y>H+80){ endReason="You fell into the void."; Snd.glideEnd(); Snd.death(); doDeath(); return; }
+
+  // casting
+  if(boltCD>0) boltCD--;
+  if(keys.cast&&boltCD<=0){
+    bolts.push({x:px+player.w,y:player.y+player.h*0.4,vx:C.boltV});
+    boltCD=C.boltCD;
+    spawnBurst(px-cam+player.w,player.y+player.h*0.4,heroBolt().core,5,2);
+    Snd.bolt(); Snd.activityBump();
+  }
+  for(let i=bolts.length-1;i>=0;i--){ bolts[i].x+=bolts[i].vx; if(bolts[i].x-cam>W+40) bolts.splice(i,1); }
+
+  // foes — Rune Bolt freezes a shade (1st hit), shatters it (2nd hit).
+  // A frozen shade hangs still and is safe to leap off (stomp = bounce).
+  for(const f of level.foes){
+    if(f.dead) continue;
+    if(!f.frozen) f.y=f.cen+Math.sin((cam+f.x)*0.01)*f.amp; // frozen shades stop drifting; divers dip to the lane
+    // RD-#038: on Isa (combo prototype) bolts PASS THROUGH already-frozen shades — they stay
+    // solid stomp-platforms (freeze-only; you clear them by leaping, never by a 2nd bolt).
+    // Everywhere else a 2nd bolt still shatters the shade at range.
+    const boltSolid=!(f.frozen && curRealm.id===4);
+    if(boltSolid) for(let i=bolts.length-1;i>=0;i--){
+      if(rectHit(bolts[i].x,bolts[i].y,10,6,f.x,f.y,34,34)){
+        bolts.splice(i,1);
+        if(!f.frozen){                       // 1st hit → freeze
+          f.frozen=true; runFroze++;
+          spawnBurst(f.x-cam+17,f.y+17,"#bfe9ff",12,2.6);
+          Snd.runeBlock(); Snd.activityBump();
+        } else {                             // 2nd hit → shatter (non-Isa)
+          f.dead=true;
+          spawnDeathBurst(f.x-cam+17,f.y+17);
+          spawnBurst(f.x-cam+17,f.y+17,"#cfeeff",14,3.2);
+          runEssence+=5+((runOmen&&runOmen.fx.killBonus)||0); runKills++; // Tiwaz → +kill amber
+          Snd.bassHit(); Snd.activityBump(); Snd.activityBump();
+        }
+        break;
+      }
+    }
+    if(f.dead) continue;
+    if(rectHit(px,player.y,player.w,player.h,f.x,f.y,34,34)){
+      if(f.frozen){
+        // Freeze-stomp (RD-#032): drop onto a frozen shade → it shatters, you bounce, and you
+        // bank a combo-scaled Rune Shard chain. Chain across shades before landing for more.
+        const feet=player.y+player.h;
+        if(player.vy>0 && feet-player.vy<=f.y+18){
+          f.dead=true; runKills++;
+          comboChain++; if(comboChain>runComboBest) runComboBest=comboChain;
+          // RD-#043: the bounce GROWS with the chain — each frozen target you pop off launches
+          // you higher than the last, so you build momentum to reach the next one (Mario stomp-
+          // chain). Capped so a long chain stays controllable. + a forward surge toward the next.
+          const climb=Math.min(1+(comboChain-1)*0.13, 1.7);
+          player.y=f.y-player.h; player.vy=C.bounceV*climb; player.onGround=false;
+          player.coyote=0; player.jumpsLeft=canDouble?1:0;
+          lunge=Math.max(lunge, 1.6+Math.min(comboChain,6)*0.55);
+          runShards+=comboChain;                 // 1st stomp +1, chained +2, +3 …
+          spawnDeathBurst(f.x-cam+17,f.y+17);
+          for(let s=0;s<comboChain*2+2;s++){ const a=Math.random()*6.28; particles.push({x:f.x-cam+17,y:f.y+8,vx:Math.cos(a)*3.2,vy:Math.sin(a)*3.2-2,life:0,max:30,c:"#9fe8ff",r:2.6}); }
+          Snd.activityBump();
+          // RD-#037 (Isa prototype): escalating impact — pitch-rising sfx + hit-stop + shake
+          // + cyan bloom + shockwave ring, and an apex bullet-time dip once you're chaining.
+          if(curRealm.id===4){
+            const lk=Math.min(comboChain,6);
+            Snd.comboStomp(comboChain);
+            hitStop=Math.max(hitStop, Math.round((2+lk)*0.45)); // RD-#039 pause -10%, RD-#040 a further -50%
+            shake=Math.min((2.2+lk*1.3)*0.9, 9);               // RD-#039: shake -10%
+            comboFlash=Math.min(0.45+lk*0.12, 1);
+            comboRing.push({x:f.x+17,y:f.y+17,r:10,max:46+lk*10,life:0}); // world x → drawn at x-cam
+            if(comboChain>=2) slowmoT=Math.max(slowmoT, 10+lk*4); // bullet-time only while chaining
+          } else {
+            Snd.doubleJump();                          // other realms unchanged until rollout
+          }
+        }
+        // side / underside contact with a frozen shade is harmless — pass through
+      } else if(takeHit()){
+        f.dead=true; spawnBurst(f.x-cam+17,f.y+17,"#ff9a9a",14,3);
+      } else return;
+    }
+  }
+
+  // bolts vs runestones
+  for(let i=bolts.length-1;i>=0;i--){
+    for(const o of level.obs){
+      if(o.destroyed) continue;
+      if(rectHit(bolts[i].x,bolts[i].y,10,6,o.x,o.y,o.w,o.h)){
+        o.health--;
+        bolts.splice(i,1);
+        if(o.health<=0){
+          o.destroyed=true;
+          spawnDeathBurst(o.x-cam+o.w*0.5,o.y+o.h*0.5);
+          Snd.runeDestroy(); Snd.activityBump(); Snd.activityBump();
+          runEssence+=8;
+        } else {
+          spawnBurst(o.x-cam+o.w*0.5,o.y+o.h*0.4,"#ff8830",10,2.8);
+          Snd.runeBlock();
+        }
+        break;
+      }
+    }
+  }
+
+  // runestones — block player (skip destroyed)
+  for(const o of level.obs){
+    if(o.destroyed) continue;
+    if(rectHit(px,player.y,player.w,player.h,o.x,o.y,o.w,o.h)){
+      // RD-#043: BOUNCE-SMASH — drop onto a runestone while a chain is hot (≥2) and your
+      // momentum crashes through it: it shatters, you bounce, the chain rolls on. Same
+      // freeze-stomp verb, now an offensive tool against obstacles (not just bolts).
+      if(player.vy>0&&comboChain>=2&&(player.y+player.h)-o.y<18){
+        o.destroyed=true;
+        spawnDeathBurst(o.x-cam+o.w*0.5,o.y+o.h*0.5);
+        runEssence+=8; runShards++;
+        const climb=Math.min(1+(comboChain-1)*0.13,1.7);
+        player.y=o.y-player.h; player.vy=C.bounceV*climb; player.onGround=false;
+        lunge=Math.max(lunge,1.6+Math.min(comboChain,6)*0.55);
+        comboChain++; if(comboChain>runComboBest) runComboBest=comboChain;
+        Snd.runeDestroy(); Snd.activityBump(); Snd.activityBump();
+        if(curRealm.id===4){ shake=Math.min(shake+3,9); comboFlash=Math.min(comboFlash+0.4,1); }
+        continue;
+      }
+      if(player.vy>=0&&(player.y+player.h)-o.y<16){
+        player.y=o.y-player.h; player.vy=0; player.onGround=true;
+      } else {
+        const maxCam=o.x-player.x-player.w;
+        if(cam>maxCam){ cam=maxCam; Snd.runeBlock(); }
+      }
+    }
+  }
+
+  // landing + footstep
+  if(!wasOnGround&&player.onGround){
+    // RD-#041: a freeze-jump chain RESOLVES on touchdown — crescendo chord + a payoff "bank" pop,
+    // so the rising build has an ending. Plain land thud otherwise.
+    if(curRealm.id===4 && comboChain>=2){
+      Snd.comboResolve(comboChain);
+      comboBank={n:comboChain, shards:comboChain*(comboChain+1)/2, life:0, max:50};
+      comboFlash=Math.min(0.6, 0.28+comboChain*0.06);
+    } else { Snd.land(); }
+    comboChain=0; // touching down ends a freeze-stomp chain
+  }
+  footstepDist+=C.runSpeed;
+  if(player.onGround&&footstepDist>=42){ Snd.footstep(); footstepDist=0; }
+
+  // coins
+  for(const c of level.coins){
+    if(c.got) continue;
+    if(rectHit(px,player.y,player.w,player.h,c.x-10,c.y-10,20,20)){
+      c.got=true; runEssence+=1; runCoins++;
+      spawnBurst(c.x-cam,c.y,"#ffd479",8,2.4);
+      Snd.coin();
+    }
+  }
+
+  // gate
+  if(px>=level.gateX){
+    spawnBurst(level.gateX-cam,GROUND_Y-90,"#fff",30,5);
+    Snd.gateClear();
+    endRun(true); return;
+  }
+
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.life++; p.x+=p.vx; p.y+=p.vy; p.vy+=0.12; p.vx*=0.96;
+    if(p.life>=p.max) particles.splice(i,1);
+  }
+  // RD-#037 impact decay (advances in sim time, so rings expand in slow-mo too)
+  if(shake>0.05) shake*=0.86; else shake=0;
+  if(comboFlash>0) comboFlash=Math.max(0,comboFlash-0.045);
+  for(let i=comboRing.length-1;i>=0;i--){ const r=comboRing[i]; r.r+=(r.max-r.r)*0.22; r.life++; if(r.life>22) comboRing.splice(i,1); }
+  if(comboBank){ comboBank.life++; if(comboBank.life>=comboBank.max) comboBank=null; }
+  if(player.flash>0) player.flash--;
+}
+
+function takeHit(){
+  if(shieldCharges>0){ shieldCharges--; player.flash=18; spawnBurst(player.x,player.y,"#7fd4ff",18,3.5); Snd.shieldAbsorb(); return true; }
+  endReason="A shade caught you."; Snd.glideEnd(); Snd.death(); doDeath(); return false;
+}
+function doDeath(){ spawnBurst(player.x,player.y,"#ff9a9a",26,4); endRun(false); }
+
+// RD-#033: rise where you fell (rewarded ad, once per run). Earnings already banked stay;
+// run accumulators reset so they don't double-bank (badges thus reflect only post-revive play).
+function reviveRun(){
+  usedRevive=true;
+  runEssence=0; runShards=0; runKills=0; runFroze=0; runCoins=0; comboChain=0; runComboBest=0;
+  hitStop=0; slowmoT=0; shake=0; comboFlash=0; comboRing.length=0; comboBank=null; lunge=0; // RD-#037/#041/#043 impact reset
+  const px=player.x+cam;
+  // if we died over a pit, back up to the nearest solid ground behind us
+  let onSeg=level.segs.some(s=>s.y===GROUND_Y && px>=s.x && px<=s.x+s.w);
+  if(!onSeg){ let best=null; for(const s of level.segs){ if(s.y===GROUND_Y && s.x+s.w<px && (!best||s.x>best.x)) best=s; }
+    if(best) cam=best.x+best.w-80-player.x; }
+  for(const f of level.foes){ if(Math.abs(f.x-(player.x+cam))<420) f.dead=true; } // clear the threat that got us
+  player.y=GROUND_Y-player.h; player.vy=0; player.onGround=true; player.gliding=false; player.flash=80;
+  shieldCharges=Math.max(shieldCharges,1); // grace ward
+  bolts.length=0; keys.jump=false; keys.cast=false; keys.jumpEdge=false;
+  state="play"; showScreen(null); introPaused=false;
+  Snd.boot(); Snd.startMusic(curRealm.id);
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+let animT=0;
+function glow(x,y,r,c0,c1){ const g=ctx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,c0); g.addColorStop(1,c1); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+function hash(n){ const s=Math.sin(n*127.1+311.7)*43758.5453; return s-Math.floor(s); }
+
+const stars=Array.from({length:80},()=>({x:Math.random()*W,y:Math.random()*H*0.72,r:Math.random()*1.3+0.3,tw:Math.random()*6.28,z:Math.random()*0.5+0.2}));
+const constLinks=(()=>{ const pts=Array.from({length:11},()=>({x:Math.random()*W,y:Math.random()*H*0.42+18})); const links=[]; for(let i=0;i<7;i++){ const a=pts[(i*3)%pts.length],b=pts[(i*5+2)%pts.length]; if(a!==b) links.push([a,b]); } return links; })();
+const monoliths=Array.from({length:7},()=>({x:Math.random()*5200,y:H*0.40+Math.random()*72,s:0.5+Math.random()*0.9,z:0.20+Math.random()*0.14}));
+const auroras=[{y:H*0.23,amp:26,sp:0.55,a:0.11,hue:0},{y:H*0.33,amp:36,sp:0.38,a:0.08,hue:40}];
+
+function drawSky(realm){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,realm.sky[0]); g.addColorStop(0.5,realm.sky[1]); g.addColorStop(1,realm.sky[2]);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  for(const a of auroras){
+    ctx.beginPath();
+    for(let x=0;x<=W;x+=22){ const y=a.y+Math.sin(x*0.012+animT*a.sp)*a.amp+Math.sin(x*0.031-animT*a.sp*1.6)*a.amp*0.4; x===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    for(let x=W;x>=0;x-=22){ const y=a.y+Math.sin(x*0.012+animT*a.sp)*a.amp+Math.sin(x*0.031-animT*a.sp*1.6)*a.amp*0.4+72; ctx.lineTo(x,y); }
+    ctx.closePath();
+    const ag=ctx.createLinearGradient(0,a.y-a.amp,0,a.y+a.amp+72);
+    ag.addColorStop(0,`hsla(${realm.hue+a.hue},90%,72%,0)`);
+    ag.addColorStop(0.5,`hsla(${realm.hue+a.hue},90%,68%,${a.a})`);
+    ag.addColorStop(1,`hsla(${realm.hue+a.hue+30},90%,58%,0)`);
+    ctx.fillStyle=ag; ctx.fill();
+  }
+  ctx.restore();
+  const cpar=(cam*0.02)%W;
+  ctx.strokeStyle=`hsla(${realm.hue},60%,82%,0.09)`; ctx.lineWidth=1; ctx.beginPath();
+  for(const [a,b] of constLinks){ let ax=a.x-cpar; if(ax<0)ax+=W; let bx=b.x-cpar; if(bx<0)bx+=W; if(Math.abs(ax-bx)<W*0.4){ ctx.moveTo(ax,a.y); ctx.lineTo(bx,b.y); } }
+  ctx.stroke();
+  for(const s of stars){ let x=(s.x-cam*0.03*s.z)%W; if(x<0)x+=W; ctx.globalAlpha=0.45+0.55*(0.5+0.5*Math.sin(animT*2+s.tw)); ctx.fillStyle="#e3ecff"; ctx.beginPath(); ctx.arc(x,s.y,s.r,0,7); ctx.fill(); }
+  ctx.globalAlpha=1;
+  const sx=W*0.76,sy=H*0.27,R=66;
+  glow(sx,sy,150,`hsla(${realm.hue},90%,72%,0.26)`,`hsla(${realm.hue},90%,60%,0)`);
+  const dg=ctx.createRadialGradient(sx-14,sy-14,6,sx,sy,R);
+  dg.addColorStop(0,`hsl(${realm.hue},92%,88%)`); dg.addColorStop(1,`hsl(${realm.hue},80%,60%)`);
+  ctx.fillStyle=dg; ctx.beginPath(); ctx.arc(sx,sy,R,0,7); ctx.fill();
+  ctx.save(); ctx.translate(sx,sy); ctx.rotate(animT*0.04);
+  ctx.strokeStyle=`hsla(${realm.hue},90%,90%,0.4)`; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,0,R+12,0,7); ctx.stroke();
+  ctx.strokeStyle=`hsla(${realm.hue},90%,92%,0.3)`;
+  for(let i=0;i<16;i++){ ctx.rotate(Math.PI/8); ctx.beginPath(); ctx.moveTo(R+16,0); ctx.lineTo(R+22,0); ctx.stroke(); }
+  ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  ctx.fillStyle=`hsla(${realm.hue},20%,18%,0.82)`; ctx.font="bold 54px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(realm.glyph,sx,sy+2); ctx.restore();
+  for(const m of monoliths){ let mx=(m.x-cam*m.z)%(W+420); if(mx<-210)mx+=W+420; drawMonolith(mx,m.y+Math.sin(animT*0.6+m.x)*4,m.s,realm); }
+  drawSetPieces(realm);
+  drawRidge(0.16,H-64,"rgba(14,10,38,0.6)",300,150);
+  drawRidge(0.30,H-24,"rgba(8,6,22,0.85)",210,108);
+}
+
+function drawSetPieces(realm){
+  if(!runScene) return;
+  const hue=realm.hue+runScene.hueShift;
+  for(const p of runScene.pieces){ const sx=p.x-cam*p.z; if(sx>W+220||sx<-220) continue; drawSetPiece(p.type,sx,H-150,p.scale,hue); }
+}
+function drawSetPiece(type,x,baseY,s,hue){
+  ctx.save(); ctx.translate(x,baseY); ctx.scale(s,s);
+  const fill="rgba(12,9,30,0.85)",line=`hsla(${hue},70%,72%,0.55)`;
+  ctx.fillStyle=fill; ctx.strokeStyle=line; ctx.lineWidth=2; ctx.lineCap="round";
+  const lit=()=>{ ctx.save(); ctx.globalCompositeOperation="lighter"; };
+  if(type==="yggdrasil"){
+    ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(-3,-70); ctx.lineTo(3,-70); ctx.lineTo(7,0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); for(let a=-1.2;a<=1.2;a+=0.4){ ctx.moveTo(0,-66); ctx.lineTo(Math.sin(a)*60,-120-Math.cos(a)*18); } ctx.moveTo(-6,0); ctx.lineTo(-30,24); ctx.moveTo(6,0); ctx.lineTo(28,22); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0,-110,62,34,0,0,7); ctx.fillStyle="rgba(14,11,34,0.7)"; ctx.fill();
+    lit(); glow(0,-66,10,`hsla(${hue},90%,80%,0.7)`,`hsla(${hue},90%,70%,0)`); ctx.restore();
+  } else if(type==="longship"){
+    ctx.beginPath(); ctx.moveTo(-70,0); ctx.quadraticCurveTo(-86,-20,-70,-22); ctx.lineTo(64,-22); ctx.quadraticCurveTo(96,-26,86,-46); ctx.quadraticCurveTo(70,-30,58,-30); ctx.lineTo(-58,-30); ctx.quadraticCurveTo(-78,-30,-70,0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0,-30); ctx.lineTo(0,-92); ctx.stroke();
+    ctx.fillStyle="rgba(16,12,36,0.8)"; ctx.beginPath(); ctx.moveTo(-30,-86); ctx.lineTo(30,-86); ctx.lineTo(30,-44); ctx.lineTo(-30,-44); ctx.closePath(); ctx.fill();
+    lit(); ctx.strokeStyle=`hsla(${hue},80%,76%,0.5)`; for(let i=-24;i<=24;i+=12){ ctx.beginPath(); ctx.moveTo(i,-84); ctx.lineTo(i,-46); ctx.stroke(); } ctx.restore();
+  } else if(type==="serpent"){
+    lit(); ctx.strokeStyle=`hsla(${hue},80%,72%,0.4)`; ctx.lineWidth=9;
+    ctx.beginPath(); for(let t=0;t<=1;t+=0.04){ const px=(t-0.5)*340,py=-60+Math.sin(t*Math.PI*3+animT*0.5)*34; t===0?ctx.moveTo(px,py):ctx.lineTo(px,py); } ctx.stroke(); ctx.restore();
+    ctx.fillStyle=fill; ctx.beginPath(); ctx.ellipse(-170,-60,12,9,0,0,7); ctx.fill();
+  } else if(type==="ravens"){
+    ctx.strokeStyle=`hsla(${hue},60%,78%,0.6)`; ctx.lineWidth=3;
+    for(const o of [[-40,-60],[26,-92]]){ const f=Math.sin(animT*3+o[0])*8; ctx.beginPath(); ctx.moveTo(o[0]-16,o[1]+f); ctx.quadraticCurveTo(o[0],o[1]-10,o[0]+16,o[1]+f); ctx.moveTo(o[0],o[1]-2); ctx.lineTo(o[0],o[1]+6); ctx.stroke(); }
+  } else if(type==="stones"){
+    for(let i=-3;i<=3;i++){ const px=i*26,h=40-Math.abs(i)*4; ctx.fillStyle=fill; ctx.fillRect(px-6,-h,12,h); }
+    lit(); glow(0,-20,16,`hsla(${hue},85%,75%,0.4)`,`hsla(${hue},85%,70%,0)`); ctx.restore();
+  } else {
+    ctx.beginPath(); ctx.moveTo(-60,6); ctx.lineTo(-44,-16); ctx.lineTo(-50,-26); ctx.lineTo(-38,-22); ctx.lineTo(-30,-34); ctx.lineTo(-18,-22); ctx.lineTo(24,-26); ctx.lineTo(40,-40); ctx.lineTo(44,-22); ctx.lineTo(58,-8); ctx.lineTo(40,-6); ctx.lineTo(34,8); ctx.lineTo(28,-4); ctx.lineTo(-20,-2); ctx.lineTo(-30,12); ctx.lineTo(-36,-2); ctx.lineTo(-48,6); ctx.closePath(); ctx.fill();
+    lit(); glow(38,-34,5,"rgba(255,170,140,0.8)","rgba(255,150,120,0)"); ctx.restore();
+  }
+  ctx.restore();
+}
+function drawMonolith(x,y,s,realm){
+  ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.globalAlpha=0.5;
+  ctx.fillStyle="rgba(20,16,46,0.95)"; ctx.beginPath(); ctx.moveTo(0,-26); ctx.lineTo(24,-6); ctx.lineTo(13,30); ctx.lineTo(-15,26); ctx.lineTo(-24,-4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=`hsla(${realm.hue},55%,58%,0.5)`; ctx.beginPath(); ctx.moveTo(0,-26); ctx.lineTo(24,-6); ctx.lineTo(-24,-4); ctx.closePath(); ctx.fill();
+  ctx.globalCompositeOperation="lighter"; glow(0,2,9,`hsla(${realm.hue},90%,80%,0.6)`,`hsla(${realm.hue},90%,70%,0)`);
+  ctx.fillStyle=`hsla(${realm.hue},80%,70%,0.55)`; ctx.font="bold 18px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(realm.glyph,0,8); ctx.restore(); ctx.globalAlpha=1;
+}
+function drawRidge(par,baseY,color,span,height){
+  ctx.fillStyle=color; ctx.beginPath(); ctx.moveTo(-span,H);
+  const startI=Math.floor((cam*par-span)/span);
+  for(let i=startI;i*span-cam*par<W+span;i++){ const bx=i*span-cam*par,h=height*(0.55+0.45*hash(i)); ctx.lineTo(bx,baseY); ctx.lineTo(bx+span*0.5,baseY-h); }
+  ctx.lineTo(W+span,baseY); ctx.lineTo(W+span,H); ctx.closePath(); ctx.fill();
+}
+
+function drawGround(){
+  for(const s of level.segs){
+    const sx=s.x-cam; if(sx>W||sx+s.w<0) continue;
+    if(s.y<GROUND_Y-8){ drawCrystalPlatform(sx,s.y,s.w); continue; }
+    const bottom=H+10;
+    const g=ctx.createLinearGradient(0,s.y,0,bottom);
+    g.addColorStop(0,"#2a2358"); g.addColorStop(0.25,"#1d1742"); g.addColorStop(1,"#100b26");
+    ctx.fillStyle=g; ctx.fillRect(sx,s.y,s.w,bottom-s.y);
+    ctx.save(); ctx.beginPath(); ctx.rect(sx,s.y,s.w,bottom-s.y); ctx.clip();
+    for(let i=Math.floor(s.x/70);i<(s.x+s.w)/70+1;i++){ const fx=i*70-cam,t=hash(i); ctx.fillStyle=t>0.5?"rgba(255,255,255,0.035)":"rgba(0,0,0,0.13)"; ctx.beginPath(); ctx.moveTo(fx,s.y+6); ctx.lineTo(fx+50,s.y+30+t*34); ctx.lineTo(fx-10,s.y+90); ctx.closePath(); ctx.fill(); }
+    ctx.restore(); drawCrust(sx,s.y,s.w);
+  }
+}
+function drawCrust(sx,sy,w){
+  const cg=ctx.createLinearGradient(0,sy-2,0,sy+12);
+  cg.addColorStop(0,`hsl(${curRealm.hue},55%,42%)`); cg.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=cg; ctx.fillRect(sx,sy,w,12);
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  ctx.strokeStyle=`hsla(${curRealm.hue},90%,76%,0.8)`; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(sx,sy+1); ctx.lineTo(sx+w,sy+1); ctx.stroke();
+  ctx.fillStyle=`hsla(${curRealm.hue},90%,84%,0.85)`; const wx=sx+cam;
+  for(let i=Math.ceil(wx/48);i*48<wx+w;i++){ const gx=i*48-cam; ctx.beginPath(); ctx.moveTo(gx,sy-3); ctx.lineTo(gx+3,sy+1); ctx.lineTo(gx,sy+5); ctx.lineTo(gx-3,sy+1); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+function drawCrystalPlatform(sx,sy,w){
+  const h=44, g=ctx.createLinearGradient(0,sy,0,sy+h);
+  g.addColorStop(0,`hsl(${curRealm.hue},45%,34%)`); g.addColorStop(1,"#0e0a24");
+  ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+w,sy); ctx.lineTo(sx+w-10,sy+h*0.5); ctx.lineTo(sx+w*0.5,sy+h); ctx.lineTo(sx+10,sy+h*0.5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+w*0.5,sy+h); ctx.lineTo(sx+10,sy+h*0.5); ctx.closePath(); ctx.fill();
+  drawCrust(sx,sy,w);
+}
+
+function drawObstacles(){
+  for(const o of level.obs){
+    if(o.destroyed) continue;
+    const sx=o.x-cam; if(sx>W||sx+o.w<0) continue;
+    const cracked=(o.health<=1);
+    const grad=ctx.createLinearGradient(0,o.y,0,o.y+o.h);
+    if(cracked){ grad.addColorStop(0,"#7a3818"); grad.addColorStop(1,"#3a1408"); }
+    else        { grad.addColorStop(0,"#473a72"); grad.addColorStop(1,"#1d1640"); }
+    ctx.fillStyle=grad; ctx.beginPath();
+    ctx.moveTo(sx+4,o.y+o.h); ctx.lineTo(sx+o.w-4,o.y+o.h); ctx.lineTo(sx+o.w-1,o.y+8);
+    ctx.lineTo(sx+o.w*0.5,o.y); ctx.lineTo(sx+1,o.y+8); ctx.closePath(); ctx.fill();
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    if(cracked){
+      glow(sx+o.w*0.5,o.y+o.h*0.42,16,"rgba(255,90,10,0.85)","rgba(255,40,0,0)");
+      // crack lines
+      ctx.strokeStyle="rgba(255,160,40,0.75)"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(sx+o.w*0.5,o.y+4); ctx.lineTo(sx+o.w*0.34,o.y+o.h*0.55); ctx.lineTo(sx+o.w*0.60,o.y+o.h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx+o.w*0.34,o.y+o.h*0.3); ctx.lineTo(sx+o.w*0.14,o.y+o.h*0.72); ctx.stroke();
+      ctx.fillStyle="rgba(255,130,40,0.9)";
+    } else {
+      glow(sx+o.w*0.5,o.y+o.h*0.42,11,"rgba(255,190,80,0.55)","rgba(255,140,40,0)");
+      ctx.fillStyle=`hsla(${curRealm.hue},90%,80%,0.9)`;
+    }
+    ctx.font=`bold ${Math.min(o.h-12,28)}px serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(curRealm.glyph,sx+o.w*0.5,o.y+o.h*0.44); ctx.restore();
+  }
+}
+
+function drawCoins(){
+  // Amber droplets (Freya's tears) — warm resin teardrops with an inner sun-glow
+  for(const c of level.coins){
+    if(c.got) continue;
+    const sx=c.x-cam; if(sx>W+20||sx<-20) continue;
+    const cy=c.y+Math.sin(animT*2+c.x*0.05)*3;
+    const breathe=1+Math.sin(animT*3+c.x*0.3)*0.07; // gentle pulse instead of coin-spin
+    const s=12*breathe;
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    glow(sx,cy+2,17,"rgba(255,180,70,0.45)","rgba(255,140,30,0)"); ctx.restore();
+    // teardrop body
+    const g=ctx.createLinearGradient(sx,cy-s,sx,cy+s);
+    g.addColorStop(0,"#fff0c8"); g.addColorStop(0.45,"#ffb83c"); g.addColorStop(1,"#b85e12");
+    ctx.fillStyle=g; ctx.beginPath();
+    ctx.moveTo(sx,cy-s);
+    ctx.quadraticCurveTo(sx+s*0.95,cy,sx+s*0.6,cy+s*0.72);
+    ctx.quadraticCurveTo(sx,cy+s*1.28,sx-s*0.6,cy+s*0.72);
+    ctx.quadraticCurveTo(sx-s*0.95,cy,sx,cy-s);
+    ctx.closePath(); ctx.fill();
+    // inner warm core
+    ctx.save(); ctx.globalCompositeOperation="lighter";
+    glow(sx,cy+s*0.2,s*0.5,"rgba(255,235,180,0.7)","rgba(255,190,90,0)"); ctx.restore();
+    // rim + highlight
+    ctx.strokeStyle="rgba(255,240,200,0.6)"; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle="rgba(255,255,255,0.6)"; ctx.beginPath();
+    ctx.ellipse(sx-s*0.26,cy-s*0.1,s*0.16,s*0.32,0.4,0,7); ctx.fill();
+  }
+}
+
+function drawFoes(){
+  for(const f of level.foes){
+    if(f.dead) continue;
+    const sx=f.x-cam; if(sx>W+50||sx<-50) continue;
+    drawFoe(f,sx);
+  }
+}
+function drawFrozenFoe(cx,cy){
+  // shade trapped inside a pale ice crystal — clearly readable as "frozen / safe to land on"
+  ctx.save();
+  ctx.globalAlpha=0.5; ctx.fillStyle="rgba(28,38,68,0.7)";
+  ctx.beginPath(); ctx.arc(cx,cy,11,0,7); ctx.fill(); ctx.globalAlpha=1;
+  const r=21;
+  ctx.beginPath();
+  for(let i=0;i<6;i++){ const a=i/6*Math.PI*2-Math.PI/2,px=cx+Math.cos(a)*r,py=cy+Math.sin(a)*r; i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+  ctx.closePath();
+  const ig=ctx.createLinearGradient(cx,cy-r,cx,cy+r);
+  ig.addColorStop(0,"rgba(214,242,255,0.82)"); ig.addColorStop(0.5,"rgba(150,210,250,0.5)"); ig.addColorStop(1,"rgba(120,180,235,0.66)");
+  ctx.fillStyle=ig; ctx.fill();
+  ctx.strokeStyle="rgba(236,250,255,0.9)"; ctx.lineWidth=2; ctx.stroke();
+  ctx.strokeStyle="rgba(255,255,255,0.5)"; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(cx,cy-r); ctx.lineTo(cx,cy+r);
+  ctx.moveTo(cx-r*0.86,cy-r*0.5); ctx.lineTo(cx+r*0.86,cy+r*0.5);
+  ctx.moveTo(cx+r*0.86,cy-r*0.5); ctx.lineTo(cx-r*0.86,cy+r*0.5);
+  ctx.stroke();
+  ctx.globalCompositeOperation="lighter";
+  glow(cx-6,cy-7,4,"rgba(255,255,255,0.9)","rgba(200,240,255,0)");
+  glow(cx+5,cy+4,3,"rgba(220,245,255,0.7)","rgba(180,230,255,0)");
+  ctx.restore();
+}
+function drawFoe(f,sx){
+  const cx=sx+17,cy=f.y+17,rid=curRealm.id,hue=curRealm.hue,excess=(f.type==="excess");
+  if(f.frozen){ drawFrozenFoe(cx,cy); return; }
+  ctx.save();
+  // Universal visibility base: pulsing silhouette ring so foes are never invisible
+  ctx.strokeStyle=`hsla(${hue},80%,72%,0.55)`;
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(cx,cy,21+Math.sin(animT*2.1+f.x*0.7)*2.5,0,7); ctx.stroke();
+  if(rid===0){
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,32,"rgba(255,160,40,0.45)","rgba(255,100,0,0)");
+      glow(cx,cy,16,"rgba(255,220,140,0.70)","rgba(255,180,60,0)");
+      ctx.strokeStyle="rgba(255,200,80,0.7)"; ctx.lineWidth=2;
+      for(let i=0;i<8;i++){ const a=i/8*Math.PI*2+animT*1.2; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*14,cy+Math.sin(a)*14); ctx.lineTo(cx+Math.cos(a)*28,cy+Math.sin(a)*28); ctx.stroke(); }
+      const fg=ctx.createRadialGradient(cx,cy,2,cx,cy,16);
+      fg.addColorStop(0,"#fff8e0"); fg.addColorStop(0.5,"#ffb030"); fg.addColorStop(1,"rgba(255,80,0,0)");
+      ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(cx,cy,16,0,7); ctx.fill();
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,24,"rgba(40,20,80,0.35)","rgba(20,10,40,0)");
+      const bg=ctx.createRadialGradient(cx,cy,2,cx,cy,18);
+      bg.addColorStop(0,"#0a0618"); bg.addColorStop(1,"rgba(8,4,18,0)");
+      ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,18,0,7); ctx.fill();
+      ctx.strokeStyle="rgba(120,80,200,0.4)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,14,0,7); ctx.stroke();
+      glow(cx-4,cy-2,3,"rgba(140,160,255,0.6)","rgba(100,120,220,0)");
+      glow(cx+4,cy-2,3,"rgba(140,160,255,0.6)","rgba(100,120,220,0)");
+    }
+  } else if(rid===1){
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,26,"rgba(80,140,255,0.35)","rgba(40,80,200,0)");
+      ctx.strokeStyle="rgba(100,180,255,0.35)"; ctx.lineWidth=3;
+      for(let k=1;k<=4;k++){ ctx.beginPath(); ctx.moveTo(cx-k*9,cy+2); ctx.lineTo(cx-k*9-12,cy+2); ctx.stroke(); ctx.globalAlpha=0.6/k; }
+      ctx.globalAlpha=1;
+      const bg2=ctx.createLinearGradient(cx-14,cy-18,cx+14,cy+14);
+      bg2.addColorStop(0,"#2a4a8a"); bg2.addColorStop(1,"#0e1f40");
+      ctx.fillStyle=bg2; ctx.beginPath(); ctx.moveTo(cx-10,cy+12); ctx.lineTo(cx-6,cy-16); ctx.lineTo(cx+14,cy-6); ctx.lineTo(cx+12,cy+12); ctx.closePath(); ctx.fill();
+      glow(cx+6,cy-10,4,"rgba(120,200,255,0.8)","rgba(80,160,255,0)");
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,20,"rgba(60,80,140,0.25)","rgba(30,40,100,0)");
+      const bg3=ctx.createLinearGradient(cx-10,cy-14,cx+10,cy+16);
+      bg3.addColorStop(0,"#1a2248"); bg3.addColorStop(1,"#0a1028");
+      ctx.fillStyle=bg3; ctx.beginPath();
+      const sway2=Math.sin(animT*1.2+f.x)*5;
+      ctx.moveTo(cx-10+sway2,cy+14); ctx.quadraticCurveTo(cx-14+sway2,cy,cx-4+sway2,cy-12); ctx.quadraticCurveTo(cx+8+sway2,cy-14,cx+8+sway2,cy-4); ctx.lineTo(cx+6+sway2,cy+14); ctx.closePath(); ctx.fill();
+      glow(cx-3,cy-5,2.5,"rgba(100,120,200,0.5)","rgba(80,100,160,0)");
+      glow(cx+4,cy-4,2.5,"rgba(100,120,200,0.5)","rgba(80,100,160,0)");
+    }
+  } else if(rid===2){
+    // Wunjo — excess: manic spinning radiance; lack: dim flickering spark
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,30,"rgba(160,220,60,0.40)","rgba(80,160,20,0)");
+      ctx.strokeStyle="rgba(200,255,100,0.65)"; ctx.lineWidth=2;
+      for(let i=0;i<6;i++){ const a=i/6*Math.PI*2+animT*1.4; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*10,cy+Math.sin(a)*10); ctx.lineTo(cx+Math.cos(a)*26,cy+Math.sin(a)*26); ctx.stroke(); }
+      const wg=ctx.createRadialGradient(cx,cy,2,cx,cy,14);
+      wg.addColorStop(0,"#f0ffb0"); wg.addColorStop(1,"rgba(140,220,40,0)");
+      ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(cx,cy,14,0,7); ctx.fill();
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      const flicker=0.10+Math.abs(Math.sin(animT*3.8+f.x))*0.14;
+      glow(cx,cy,16,`rgba(120,180,40,${flicker})`,`rgba(60,120,20,0)`);
+      ctx.strokeStyle=`rgba(160,220,80,${flicker*1.6})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(cx,cy,9+Math.sin(animT*4+f.x)*2,0,7); ctx.stroke();
+    }
+  } else if(rid===3){
+    // Hagalaz — excess: crystalline shard storm; lack: fading ghost ring
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,28,"rgba(180,100,255,0.45)","rgba(120,60,200,0)");
+      ctx.fillStyle="#5a2c8a"; ctx.beginPath();
+      ctx.moveTo(cx,cy-20); ctx.lineTo(cx+10,cy-6); ctx.lineTo(cx+18,cy+2); ctx.lineTo(cx+8,cy+14); ctx.lineTo(cx-2,cy+18); ctx.lineTo(cx-14,cy+8); ctx.lineTo(cx-16,cy-4); ctx.lineTo(cx-6,cy-18); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle="rgba(220,160,255,0.85)"; ctx.lineWidth=1.5;
+      const shards=[[-16,-4],[-6,-18],[0,-20],[10,-6],[18,2],[8,14],[-2,18],[-14,8]];
+      for(let i=0;i<shards.length;i++){ const [ax,ay]=shards[i],[bx,by]=shards[(i+1)%shards.length]; if(hash(i+(animT*2|0))>0.4){ ctx.beginPath(); ctx.moveTo(cx+ax,cy+ay); ctx.lineTo(cx+(ax+bx)/2+(hash(i*7)*8-4),cy+(ay+by)/2+(hash(i*13)*8-4)); ctx.lineTo(cx+bx,cy+by); ctx.stroke(); } }
+      glow(cx,cy,8,"rgba(255,240,255,0.7)","rgba(200,160,255,0)");
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      const fa=0.18+Math.sin(animT*1.8+f.x)*0.08;
+      glow(cx,cy,22,`rgba(160,140,200,${fa})`,`rgba(120,100,180,0)`);
+      ctx.strokeStyle=`rgba(180,160,220,${fa*1.4})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(cx,cy,12+Math.sin(animT*2.5+f.x)*3,0,7); ctx.stroke();
+    }
+  } else if(rid===4){
+    // Isa — excess: solid ice hexagon; lack: melting ellipse
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,26,"rgba(140,220,255,0.40)","rgba(80,160,220,0)");
+      ctx.strokeStyle="rgba(200,240,255,0.9)"; ctx.lineWidth=2;
+      ctx.fillStyle="rgba(60,100,160,0.7)"; ctx.beginPath();
+      for(let i=0;i<6;i++){ const a=i/6*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(cx+Math.cos(a)*16,cy+Math.sin(a)*16):ctx.lineTo(cx+Math.cos(a)*16,cy+Math.sin(a)*16); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle="rgba(220,248,255,0.7)"; ctx.lineWidth=1;
+      for(let i=0;i<3;i++){ const a=i/3*Math.PI; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*16,cy+Math.sin(a)*16); ctx.lineTo(cx-Math.cos(a)*16,cy-Math.sin(a)*16); ctx.stroke(); }
+      glow(cx,cy,5,"rgba(240,252,255,0.9)","rgba(180,230,255,0)");
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      const melt=Math.sin(animT*1.4+f.x)*0.12;
+      glow(cx,cy+8,20,"rgba(80,160,200,0.25)","rgba(40,100,160,0)");
+      ctx.strokeStyle="rgba(160,220,240,0.45)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(cx,cy+4,10+melt*20,16-melt*8,0,0,7); ctx.stroke();
+      glow(cx,cy-6,4,"rgba(180,230,255,0.55)","rgba(120,190,220,0)");
+    }
+  } else {
+    // Generic for Act 2-3 new realms — hue-tinted glow body, readable at any palette
+    if(excess){
+      ctx.globalCompositeOperation="lighter";
+      glow(cx,cy,28,`hsla(${hue},80%,65%,0.40)`,`hsla(${hue},80%,50%,0)`);
+      ctx.strokeStyle=`hsla(${hue},90%,80%,0.75)`; ctx.lineWidth=2;
+      for(let i=0;i<5;i++){ const a=i/5*Math.PI*2+animT*0.9; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*12,cy+Math.sin(a)*12); ctx.lineTo(cx+Math.cos(a)*24,cy+Math.sin(a)*24); ctx.stroke(); }
+      const gg=ctx.createRadialGradient(cx,cy,2,cx,cy,14);
+      gg.addColorStop(0,`hsla(${hue},100%,90%,0.8)`); gg.addColorStop(1,`hsla(${hue},80%,60%,0)`);
+      ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(cx,cy,14,0,7); ctx.fill();
+    } else {
+      ctx.globalCompositeOperation="lighter";
+      const fa=0.12+Math.sin(animT*2.2+f.x)*0.07;
+      glow(cx,cy,20,`hsla(${hue},70%,55%,${fa})`,`hsla(${hue},70%,40%,0)`);
+      ctx.strokeStyle=`hsla(${hue},80%,72%,${fa*1.8})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(cx,cy,11+Math.sin(animT*2.8+f.x)*2.5,0,7); ctx.stroke();
+    }
+  }
+  // Universal bright eyes — always readable regardless of foe type
+  ctx.globalCompositeOperation="lighter";
+  glow(cx-5,cy-3,7,`hsla(${(hue+40)%360},100%,90%,0.80)`,"rgba(0,0,0,0)");
+  glow(cx+5,cy-3,7,`hsla(${(hue+40)%360},100%,90%,0.80)`,"rgba(0,0,0,0)");
+  ctx.fillStyle="#ffffff"; ctx.beginPath(); ctx.arc(cx-5,cy-3,2.8,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+5,cy-3,2.8,0,7); ctx.fill();
+  ctx.restore();
+}
+
+function drawBolts(){
+  const bs=heroBolt(); // RD-#020+: equipped hero reskins the projectile (ice axe / hammer / feather / shard)
+  for(const b of bolts){
+    const sx=b.x-cam; ctx.save(); ctx.globalCompositeOperation="lighter";
+    for(let k=1;k<=3;k++) glow(sx-k*9,b.y,7-k,`rgba(${bs.rgb},${0.22/k})`,`rgba(${bs.rgb},0)`);
+    glow(sx,b.y,12,`rgba(${bs.rgb},0.7)`,`rgba(${bs.rgb},0)`);
+    ctx.fillStyle=bs.core; ctx.strokeStyle=bs.core;
+    if(bs.shape==="axe"){
+      ctx.save(); ctx.translate(sx,b.y); ctx.rotate(animT*16); ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(8,0); ctx.stroke();                    // haft
+      ctx.beginPath(); ctx.moveTo(6,-3); ctx.quadraticCurveTo(16,-10,16,0); ctx.quadraticCurveTo(16,10,6,3); ctx.closePath(); ctx.fill(); // blade
+      ctx.restore();
+    } else if(bs.shape==="hammer"){
+      ctx.save(); ctx.translate(sx,b.y); ctx.rotate(animT*13); ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(6,0); ctx.stroke(); ctx.fillRect(5,-6,9,12); // haft + head
+      ctx.restore();
+    } else if(bs.shape==="feather"){
+      ctx.save(); ctx.translate(sx,b.y);
+      ctx.beginPath(); ctx.moveTo(13,0); ctx.quadraticCurveTo(2,-6,-10,0); ctx.quadraticCurveTo(2,6,13,0); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,0.6)"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(13,0); ctx.lineTo(-10,0); ctx.stroke();
+      ctx.restore();
+    } else { // shard (default rune-bolt)
+      ctx.beginPath(); ctx.moveTo(sx+12,b.y); ctx.lineTo(sx,b.y-5); ctx.lineTo(sx-8,b.y); ctx.lineTo(sx,b.y+5); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+function drawGate(){
+  const sx=level.gateX-cam; if(sx>W+120||sx<-160) return;
+  const cx=sx+30,top=GROUND_Y-180,baseY=GROUND_Y,midY=(top+baseY)/2;
+  const vg=ctx.createLinearGradient(0,top,0,baseY);
+  vg.addColorStop(0,`hsla(${curRealm.hue},90%,75%,0.05)`); vg.addColorStop(0.5,`hsla(${curRealm.hue},90%,70%,0.22)`); vg.addColorStop(1,`hsla(${curRealm.hue},90%,60%,0.05)`);
+  ctx.fillStyle=vg; ctx.fillRect(cx-26,top+12,52,baseY-top-12);
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.strokeStyle=`hsla(${curRealm.hue},90%,85%,0.28)`; ctx.lineWidth=1;
+  for(let i=0;i<4;i++){ ctx.beginPath(); for(let y=top+12;y<baseY;y+=10){ const xx=cx-20+i*12+Math.sin(y*0.06+animT*2+i)*4; y===top+12?ctx.moveTo(xx,y):ctx.lineTo(xx,y); } ctx.stroke(); }
+  ctx.restore();
+  for(const side of [-1,1]){ const p=cx+side*34; const g=ctx.createLinearGradient(p-9,0,p+9,0); g.addColorStop(0,"#241c4a"); g.addColorStop(0.5,"#4a3f80"); g.addColorStop(1,"#1f183f"); ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(p-9,baseY); ctx.lineTo(p+9,baseY); ctx.lineTo(p+7,top+18); ctx.lineTo(p,top+8); ctx.lineTo(p-7,top+18); ctx.closePath(); ctx.fill(); }
+  ctx.strokeStyle="#4a3f80"; ctx.lineWidth=10; ctx.beginPath(); ctx.arc(cx,top+24,40,Math.PI*1.06,Math.PI*1.94); ctx.stroke();
+  ctx.save(); ctx.translate(cx,midY); ctx.globalCompositeOperation="lighter";
+  ctx.strokeStyle=`hsla(${curRealm.hue},90%,80%,0.5)`; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,30,0,7); ctx.stroke();
+  ctx.rotate(animT*0.4); for(let i=0;i<8;i++){ ctx.rotate(Math.PI/4); ctx.beginPath(); ctx.moveTo(34,0); ctx.lineTo(40,0); ctx.stroke(); }
+  ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.fillStyle=`hsl(${curRealm.hue},90%,86%)`; ctx.font="bold 44px serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(curRealm.glyph,cx,midY); ctx.restore();
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+}
+
+function drawPlayer(){
+  if(player.flash>0&&(player.flash>>1)&1) return;
+  const x=player.x,cx=x+15,feet=player.y+player.h,air=!player.onGround,hue=curRealm.hue;
+  const stride=cam*0.2,headY=feet-44;
+  ctx.save(); ctx.globalCompositeOperation="lighter"; glow(cx,feet-22,26,`hsla(${hue},90%,78%,0.16)`,`hsla(${hue},90%,70%,0)`); ctx.restore();
+  ctx.strokeStyle="#15102e"; ctx.lineWidth=6; ctx.lineCap="round";
+  const hipY=feet-20,hipX=cx-1;
+  if(air){
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX-6,feet-9); ctx.lineTo(hipX+2,feet-3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+8,feet-11); ctx.lineTo(hipX+14,feet-7); ctx.stroke();
+  } else {
+    const a=Math.sin(stride),b=Math.sin(stride+Math.PI);
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+a*8,feet-6-Math.abs(a)*3); ctx.lineTo(hipX+a*12,feet); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(hipX+b*8,feet-6-Math.abs(b)*3); ctx.lineTo(hipX+b*12,feet); ctx.stroke();
+  }
+  const billow=air?-10:0,sway=Math.sin(animT*4)*3;
+  const pal=(HEROES[save.hero]||HEROES[0]).pal; // RD-#020: equipped hero skin (cosmetic)
+  const cg=ctx.createLinearGradient(cx-22,headY,cx+10,feet);
+  cg.addColorStop(0,pal.cloakTop); cg.addColorStop(1,pal.cloakBot);
+  ctx.fillStyle=cg; ctx.beginPath(); ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2); ctx.lineTo(cx-6,feet-2); ctx.quadraticCurveTo(cx-22+sway,feet-6+billow,cx-26+sway,feet-18+billow); ctx.quadraticCurveTo(cx-14,headY+10,cx-6,headY+6); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle=`hsla(${hue},90%,78%,0.7)`; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2); ctx.stroke();
+  ctx.fillStyle=pal.hood; ctx.beginPath(); ctx.moveTo(cx-8,headY+12); ctx.quadraticCurveTo(cx-2,headY-6,cx+8,headY+2); ctx.quadraticCurveTo(cx+10,headY+12,cx+4,headY+16); ctx.lineTo(cx-6,headY+16); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.globalCompositeOperation="lighter"; glow(cx-1,headY+9,6,`hsla(${hue},95%,82%,0.85)`,`hsla(${hue},95%,75%,0)`); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.strokeStyle=`hsla(${hue},90%,82%,0.9)`; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx,feet-30); ctx.lineTo(cx,feet-20); ctx.moveTo(cx,feet-27); ctx.lineTo(cx+4,feet-24); ctx.stroke(); ctx.restore();
+  const handX=cx+6,handY=feet-24,tipX=cx+18,tipY=headY-2;
+  ctx.strokeStyle="#6b5a36"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(handX,handY); ctx.lineTo(tipX,tipY); ctx.stroke();
+  ctx.save(); ctx.globalCompositeOperation="lighter"; const cast=boltCD>0?Math.min(1,boltCD/12):0.4; glow(tipX,tipY,6+cast*6,`hsla(${hue},95%,82%,${0.55+cast*0.4})`,`hsla(${hue},95%,72%,0)`); ctx.restore();
+  ctx.strokeStyle=`hsla(${hue},90%,75%,0.5)`; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(cx-6,feet-30); ctx.quadraticCurveTo(cx-22-Math.sin(animT*5)*5,feet-26,cx-32,feet-34+Math.sin(animT*4)*4); ctx.stroke();
+  ctx.lineCap="butt";
+}
+
+function drawGhost(){
+  if(!showGhost||!ghostPlayback||ghostFrame>=ghostPlayback.length) return;
+  const g=ghostPlayback[ghostFrame];
+  const gsx=220+g.cam-cam;
+  if(gsx<-70||gsx>W+50) return;
+  const hue=curRealm.hue,cx=gsx+15,feet=g.y+player.h,headY=feet-44;
+  ctx.save(); ctx.globalAlpha=0.30; ctx.globalCompositeOperation="lighter";
+  // cloak silhouette
+  const cg=ctx.createLinearGradient(cx-22,headY,cx+10,feet);
+  cg.addColorStop(0,`hsla(${hue},80%,72%,0.7)`); cg.addColorStop(1,`hsla(${hue},80%,52%,0.2)`);
+  ctx.fillStyle=cg; ctx.beginPath();
+  ctx.moveTo(cx+6,headY+6); ctx.quadraticCurveTo(cx+14,feet-18,cx+8,feet-2);
+  ctx.lineTo(cx-6,feet-2); ctx.quadraticCurveTo(cx-22,feet-14,cx-26,feet-22);
+  ctx.quadraticCurveTo(cx-14,headY+10,cx-6,headY+6); ctx.closePath(); ctx.fill();
+  // hood
+  ctx.fillStyle=`hsla(${hue},80%,76%,0.55)`; ctx.beginPath();
+  ctx.moveTo(cx-8,headY+12); ctx.quadraticCurveTo(cx-2,headY-6,cx+8,headY+2);
+  ctx.quadraticCurveTo(cx+10,headY+12,cx+4,headY+16); ctx.lineTo(cx-6,headY+16); ctx.closePath(); ctx.fill();
+  glow(cx-1,headY+9,10,`hsla(${hue},95%,86%,0.5)`,`hsla(${hue},95%,75%,0)`);
+  ctx.restore();
+}
+function drawParticles(){
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  for(const p of particles){ const a=Math.max(0,1-p.life/p.max); ctx.globalAlpha=a; ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.r*a+0.4,0,7); ctx.fill(); }
+  ctx.restore(); ctx.globalAlpha=1;
+}
+function drawVignette(){
+  const g=ctx.createRadialGradient(W/2,H*0.46,H*0.36,W/2,H*0.5,H*0.86);
+  g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,0.42)");
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+function drawTeach(){
+  for(const t of level.teach){
+    const sx=t.x-cam; if(sx>W||sx<-220) continue;
+    const a=Math.max(0,Math.min(1,1-Math.abs(sx-300)/360));
+    ctx.globalAlpha=a*0.9; ctx.fillStyle="rgba(10,8,28,0.7)"; ctx.font="bold 20px Segoe UI";
+    const tw=ctx.measureText(t.text).width;
+    roundRect(sx-tw/2-14,120,tw+28,38,10); ctx.fill();
+    ctx.fillStyle="#cfe0ff"; ctx.textAlign="center"; ctx.fillText(t.text,sx,145); ctx.textAlign="left"; ctx.globalAlpha=1;
+  }
+}
+function roundRect(x,y,w,h,r){
+  ctx.beginPath(); ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function drawAmberDrop(x,y,s){
+  // small amber teardrop icon (point up, round bottom)
+  ctx.save();
+  ctx.globalCompositeOperation="lighter";
+  glow(x,y+s*0.2,s*1.6,"rgba(255,180,70,0.5)","rgba(255,150,40,0)");
+  ctx.restore();
+  const g=ctx.createLinearGradient(x,y-s,x,y+s);
+  g.addColorStop(0,"#ffe6a8"); g.addColorStop(0.5,"#ffb030"); g.addColorStop(1,"#c8741a");
+  ctx.fillStyle=g; ctx.beginPath();
+  ctx.moveTo(x,y-s);
+  ctx.quadraticCurveTo(x+s*0.95,y,x+s*0.6,y+s*0.7);
+  ctx.quadraticCurveTo(x,y+s*1.25,x-s*0.6,y+s*0.7);
+  ctx.quadraticCurveTo(x-s*0.95,y,x,y-s);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.beginPath();
+  ctx.ellipse(x-s*0.22,y-s*0.05,s*0.18,s*0.3,0.4,0,7); ctx.fill();
+}
+function drawHUD(){
+  ctx.fillStyle="rgba(10,8,28,0.55)"; ctx.fillRect(0,0,W,46);
+  ctx.fillStyle="#fff"; ctx.font="bold 18px Segoe UI"; ctx.textAlign="left";
+  ctx.fillText(`${curRealm.glyph}  Reach the ${curRealm.name}-Gate`,16,29);
+  ctx.textAlign="right"; ctx.fillStyle="#ffd479"; ctx.font="bold 18px Segoe UI";
+  ctx.fillText(`${runEssence}`,W-16,29);
+  const numW=ctx.measureText(`${runEssence}`).width;
+  drawAmberDrop(W-16-numW-12,22,6);
+  let rx=W-72-numW;
+  if(shieldCharges>0){ ctx.fillStyle="#7fd4ff"; ctx.fillText(`◈×${shieldCharges}`,rx,29); rx-=48; }
+  if(ghostPlayback){ ctx.fillStyle=showGhost?`hsla(${curRealm.hue},80%,75%,0.8)`:"rgba(120,110,180,0.5)"; ctx.fillText(showGhost?"◑ Ghost":"◑ off",rx,29); }
+  ctx.textAlign="left"; ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI";
+  ctx.fillText(`❄ ${runFroze}   ⚔ ${runKills}   ✦ ${runCoins}` + (runShards>0?`   ◆ ${runShards}`:""),16,58);
+  // active boon badges
+  const badges=[]; if(runBoons.surge) badges.push("⟡ Surge"); if(runBoons.twin) badges.push("⟡ Twin Leap"); if(runBoons.shield) badges.push("⟡ Ward");
+  if(badges.length){ ctx.textAlign="right"; ctx.fillStyle=`hsla(${curRealm.hue},70%,78%,0.85)`; ctx.fillText(badges.join("   "),W-16,58); ctx.textAlign="left"; }
+  // RD-#032/#037: live freeze-stomp combo over the player — grows + heats up as it climbs
+  if(comboChain>1){
+    ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.textAlign="center";
+    const lk=Math.min(comboChain,6), cs=1+lk*0.16;
+    // hue ramps cyan(195) → gold(48) → hot(8) the longer the chain holds
+    const hue=Math.round(195-(lk-1)/5*187), col=`hsl(${hue},95%,72%)`;
+    ctx.shadowColor=col; ctx.shadowBlur=10+lk*3;
+    ctx.font=`bold ${Math.round(24*cs)}px Segoe UI`; ctx.fillStyle=col;
+    ctx.fillText(`⚡ ×${comboChain}`, player.x+10, player.y-16);
+    ctx.restore(); ctx.textAlign="left";
+  }
+  ctx.textAlign="center"; ctx.fillStyle="#9a98c8"; ctx.fillText(`${runTime.toFixed(1)}s`,W/2,58); ctx.textAlign="left";
+  const prog=Math.min(1,(player.x+cam)/level.gateX);
+  ctx.fillStyle="rgba(255,255,255,0.15)"; ctx.fillRect(16,34,W-32,5);
+  ctx.fillStyle=`hsl(${curRealm.hue},90%,70%)`; ctx.fillRect(16,34,(W-32)*prog,5);
+}
+function drawIntroCard(){
+  if(!introPaused||!runWhisper) return;
+  const cx=W/2,cy=H*0.42,hue=curRealm.hue;
+  const lore=RUNE_LORE[curRealm.id]||RUNE_LORE[0];
+  ctx.save();
+  // panel — taller to fit phonetic + life meaning
+  ctx.fillStyle="rgba(8,6,24,0.88)"; roundRect(cx-270,cy-118,540,292,18); ctx.fill();
+  ctx.strokeStyle=`hsla(${hue},80%,70%,0.55)`; ctx.lineWidth=1.5; ctx.stroke();
+  // big rune glyph left column
+  ctx.save(); ctx.globalCompositeOperation="lighter";
+  glow(cx-196,cy-10,46,`hsla(${hue},90%,72%,0.5)`,`hsla(${hue},90%,65%,0)`);
+  ctx.fillStyle=`hsl(${hue},90%,85%)`; ctx.font="bold 84px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(curRealm.glyph,cx-196,cy-10); ctx.restore();
+  // phonetic under glyph
+  ctx.fillStyle=`hsla(${hue},60%,68%,0.8)`; ctx.font="13px Segoe UI"; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  ctx.fillText(`[ ${lore.phonetic} ]`,cx-196,cy+46);
+  // right column
+  ctx.textAlign="left";
+  ctx.fillStyle="#fff"; ctx.font="bold 26px Segoe UI"; ctx.fillText(curRealm.name,cx-136,cy-72);
+  ctx.fillStyle=`hsl(${hue},70%,78%)`; ctx.font="italic 14px Segoe UI";
+  ctx.fillText(lore.meaning,cx-136,cy-50);
+  // divider
+  ctx.strokeStyle=`hsla(${hue},60%,60%,0.25)`; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx-136,cy-38); ctx.lineTo(cx+190,cy-38); ctx.stroke();
+  // whisper
+  ctx.fillStyle="#cfd3f0"; ctx.font="14px Segoe UI";
+  wrapText(runWhisper.text,cx-136,cy-22,366,19);
+  // divider
+  ctx.strokeStyle=`hsla(${hue},60%,60%,0.20)`; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx-136,cy+30); ctx.lineTo(cx+190,cy+30); ctx.stroke();
+  // omen for THIS road — the rune you read and chose (replaces personal "your life" reading)
+  ctx.fillStyle=`hsla(${hue},75%,72%,0.9)`; ctx.font="bold 11px Segoe UI";
+  ctx.fillText(runOmen?`THE OMEN YOU READ — ${runOmen.omen.toUpperCase()}`:"THE ROAD AHEAD",cx-136,cy+44);
+  ctx.fillStyle=`hsl(${hue+15},65%,82%)`; ctx.font="italic 13px Segoe UI";
+  wrapText(runOmen?runOmen.desc:"You walk an unread road.",cx-136,cy+60,366,18);
+  // whisper learned tag
+  ctx.fillStyle=`hsla(${hue},80%,80%,0.75)`; ctx.font="11px Segoe UI";
+  ctx.fillText(`✦ whisper learned — ${whispersHeard()}/${TOTAL_WHISPERS}`,cx-136,cy+102);
+  // press to begin
+  const pulse=0.65+0.35*Math.sin(animT*3);
+  ctx.fillStyle=`rgba(255,255,255,${pulse})`; ctx.font="bold 14px Segoe UI"; ctx.textAlign="center";
+  ctx.fillText("PRESS SPACE  /  TAP  TO  BEGIN",cx,cy+128);
+  if(navigator.maxTouchPoints>0){
+    ctx.fillStyle=`rgba(127,212,255,${pulse*0.65})`; ctx.font="12px Segoe UI";
+    ctx.fillText("TAP RIGHT SIDE OF SCREEN  =  RUNE BOLT",cx,cy+148);
+  }
+  ctx.restore();
+}
+function wrapText(text,x,y,maxW,lh){
+  const words=text.split(" "); let line="",yy=y;
+  for(const w of words){ const t=line?line+" "+w:w; if(ctx.measureText(t).width>maxW&&line){ ctx.fillText(line,x,yy); line=w; yy+=lh; } else line=t; }
+  if(line) ctx.fillText(line,x,yy);
+}
+
+function drawComboRings(){
+  if(!comboRing.length) return;
+  ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.lineWidth=2.5;
+  for(const r of comboRing){
+    const a=Math.max(0,1-r.life/22);
+    ctx.strokeStyle=`rgba(159,232,255,${a*0.8})`;
+    ctx.beginPath(); ctx.arc(r.x-cam,r.y,r.r,0,7); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawComboBank(){
+  if(!comboBank) return;
+  const p=comboBank.life/comboBank.max, rise=p*34;
+  const a=Math.max(0,Math.min(1, p<0.16?(p/0.16):(1-(p-0.16)/0.84)));  // snap in, slow fade
+  const n=comboBank.n, lk=Math.min(n,6), hue=Math.round(190-(lk-1)/5*182); // cyan→hot by size
+  ctx.save(); ctx.textAlign="center"; ctx.globalAlpha=a;
+  const cx=W/2, cy=H*0.32-rise;
+  ctx.shadowColor=`hsl(${hue},95%,70%)`; ctx.shadowBlur=18;
+  ctx.fillStyle=`hsl(${hue},95%,72%)`; ctx.font="bold 42px Segoe UI";
+  ctx.fillText(`❄ CHAIN ×${n}`, cx, cy);
+  ctx.shadowBlur=8; ctx.font="bold 22px Segoe UI"; ctx.fillStyle="#9fe8ff";
+  ctx.fillText(`+${comboBank.shards} ◆`, cx, cy+34);
+  ctx.restore(); ctx.globalAlpha=1; ctx.textAlign="left";
+}
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawSky(curRealm);
+  if(state==="play"||state==="won"||state==="dead"){
+    // RD-#037: shake the world layer only (HUD/vignette stay steady)
+    const sm=shake>0.05, sx=sm?(Math.random()*2-1)*shake:0, sy=sm?(Math.random()*2-1)*shake:0;
+    ctx.save(); ctx.translate(sx,sy);
+    drawGround(); drawGate(); drawObstacles(); drawCoins(); drawFoes();
+    drawBolts(); drawGhost(); drawPlayer(); drawParticles(); drawComboRings();
+    ctx.restore();
+    drawVignette(); drawTeach(); drawHUD(); drawIntroCard();
+    if(screenFlash>0){ ctx.fillStyle=`rgba(200,140,255,${screenFlash*0.16})`; ctx.fillRect(0,0,W,H); }
+    if(comboFlash>0){ ctx.save(); ctx.globalCompositeOperation="lighter"; ctx.fillStyle=`rgba(110,210,255,${comboFlash*0.14})`; ctx.fillRect(0,0,W,H); ctx.restore(); }
+    drawComboBank();
+  } else {
+    drawVignette();
+  }
+}
+
+/* ---------- main loop ---------- */
+let acc=0,last=performance.now(),running=true,loopErr=null;
+function loop(now){
+  try {
+    animT=now*0.001;
+    // RD-#037: hit-stop freezes the sim a few frames (render continues) for impact weight.
+    if(hitStop>0 && state==="play"){
+      hitStop--; acc=0; last=now;
+      render();
+    } else {
+      // bullet-time scales real elapsed time before it feeds the fixed-step accumulator.
+      let ts=1;
+      if(slowmoT>0 && state==="play"){ ts=SLOW_FACTOR; slowmoT--; }
+      acc+=Math.min(now-last,50)*ts; last=now;
+      let steps=0;
+      while(acc>=1000/60&&steps<5){ update(); acc-=1000/60; steps++; }
+      render();
+    }
+  } catch(err){
+    if(!loopErr){ loopErr=err; console.error("Rune Dash frame error:",err); }
+    try {
+      ctx.fillStyle="rgba(10,8,28,0.92)"; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle="#ff9ad1"; ctx.font="bold 18px Segoe UI"; ctx.textAlign="center";
+      ctx.fillText("A frame hiccuped — the run keeps going.",W/2,H/2-10);
+      ctx.fillStyle="#9a98c8"; ctx.font="13px Segoe UI";
+      ctx.fillText(String(loopErr&&loopErr.message||loopErr).slice(0,90),W/2,H/2+16);
+      ctx.textAlign="left";
+    } catch(_){}
+  }
+  if(running) requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){ Snd.suspendAudio(); }            // RD-#043: silence the score when tabbed away
+  else { last=performance.now(); Snd.resumeAudio(); }
+});
+// belt-and-suspenders: also kill audio on actual unload / mobile bfcache freeze
+window.addEventListener("pagehide",()=>{ Snd.suspendAudio(); });
+window.addEventListener("pageshow",()=>{ last=performance.now(); Snd.resumeAudio(); });
+
+window.__dev={
+  start:i=>startRun(REALMS[i]),
+  jump:()=>jumpDown(),
+  step:(n=1)=>{ for(let k=0;k<n;k++) update(); render(); },
+  freeze:()=>{ running=false; },
+  thaw:()=>{ if(!running){ running=true; last=performance.now(); requestAnimationFrame(loop); } },
+  setCam:v=>{ cam=v; },
+  skipIntro:()=>{ introPaused=false; },
+};
+
+/* ============================================================
+   MENUS
+   ============================================================ */
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("on"));
+  if(id){ document.getElementById("s-"+id).classList.add("on"); state="menu"; }
+}
+document.querySelectorAll("[data-go]").forEach(b=>{
+  b.addEventListener("click",()=>{
+    const t=b.dataset.go;
+    if(t==="realm") openRealm();
+    else if(t==="shrine") openShrine();
+    else showScreen(t);
+  });
+});
+
+function openRealm(){
+  document.getElementById("r-ess").textContent=save.essence;
+  document.getElementById("r-lore").textContent=`${whispersHeard()}/${TOTAL_WHISPERS}`;
+  const list=document.getElementById("realm-list"); list.innerHTML="";
+  const ACT_LABELS={1:"Act I — The Awakening",2:"Act II — The Crossing",3:"Act III — The Mastery"};
+  let lastAct=0;
+  REALMS.forEach(r=>{
+    if(r.act!==lastAct){
+      lastAct=r.act;
+      const lbl=document.createElement("div");
+      lbl.style.cssText="width:100%;text-align:center;color:var(--dim);font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin:10px 0 2px;padding-top:6px;border-top:1px solid #252060;";
+      if(r.act===1) lbl.style.borderTop="none";
+      lbl.textContent=ACT_LABELS[r.act]||`Act ${r.act}`;
+      list.appendChild(lbl);
+    }
+    const unlocked=r.id<save.realmsUnlocked;
+    const isProto=r.id===4; // Isa — the combo prototype canvas (RD-#036)
+    const card=document.createElement("div");
+    card.className="realmcard"+(unlocked?"":" locked")+(isProto?" proto":"");
+    const best=save.best[r.id];
+    const bg=(save.badges&&save.badges[r.id])||{};
+    const bIcons=[bg.conqueror?"⚔":"",bg.deepfreeze?"❄":"",bg.collector?"✦":"",bg.swift?"⌛":""].filter(Boolean).join(" ");
+    card.innerHTML=`<div class="glyph" style="color:hsl(${r.hue},90%,75%)">${r.glyph}</div>
+      <div class="nm">${r.name}</div><div class="meta">${r.sub}</div>`+
+      (isProto?`<div class="tag">✦ Prototype — patience</div>`:"")+
+      `<div class="meta">${unlocked?(best!=null?`best ${best.toFixed(1)}s`:"new"):"locked"}</div>`+
+      (bIcons?`<div class="meta" style="color:var(--gold);letter-spacing:2px">${bIcons}</div>`:"");
+    if(unlocked) card.addEventListener("click",()=>openReading(r));
+    list.appendChild(card);
+  });
+  showScreen("realm");
+}
+
+/* ============================================================
+   PRE-LEVEL RUNE READING (RD-#024)
+   The völva casts 3 runes for the road ahead. You READ one (predict its
+   meaning) to choose it — generation effect — and its omen reshapes the run.
+   ============================================================ */
+let readingState=null;
+function pickReadingRunes(){
+  // 3 distinct runes, biased toward the ones you've read least (gentle spaced practice)
+  const pool=OMEN_IDS.slice().sort((a,b)=>((save.runeMastery[a]||0)-(save.runeMastery[b]||0))||(Math.random()-0.5));
+  const top=pool.slice(0,Math.min(6,pool.length)), pick=[];
+  for(let i=0;i<3&&top.length;i++) pick.push(top.splice((Math.random()*top.length)|0,1)[0]);
+  return pick;
+}
+function makeMeaningOptions(id){
+  const correct=RUNE_OMEN[id].read;
+  const pool=OMEN_IDS.filter(x=>x!==id).map(x=>RUNE_OMEN[x].read), ds=[];
+  while(ds.length<2&&pool.length) ds.push(pool.splice((Math.random()*pool.length)|0,1)[0]);
+  const opts=[{text:correct,correct:true},...ds.map(t=>({text:t,correct:false}))];
+  for(let i=opts.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const t=opts[i]; opts[i]=opts[j]; opts[j]=t; }
+  return opts;
+}
+function openReading(realm){
+  if(!save.runeMastery) save.runeMastery={};
+  readingState={realm,runes:pickReadingRunes(),chosen:null,answered:false,shown:false,quiz:null};
+  try{ Snd.boot&&Snd.boot(); }catch(e){}
+  renderReading();
+  showScreen("reading");
+}
+function renderReading(){
+  const sc=document.getElementById("s-reading");
+  const {realm,runes,chosen}=readingState;
+  const mastered=OMEN_IDS.filter(id=>(save.runeMastery[id]||0)>0).length;
+  sc.innerHTML=`<h2>The Völva Reads the Road</h2>
+    <p class="sub">She casts three runes for the path to <b>${realm.name}</b>.
+      Read one to walk its omen.</p>
+    <div class="read-cloth" id="read-cloth"></div>
+    <div class="read-panel" id="read-panel"></div>
+    <button class="btn" id="read-back">Back</button>`;
+  const cloth=sc.querySelector("#read-cloth"), firstShow=!readingState.shown;
+  readingState.shown=true;
+  runes.forEach((id,i)=>{
+    const o=RUNE_OMEN[id];
+    const st=document.createElement("div");
+    st.className="read-stone"+(chosen===id?" chosen":"")+(firstShow?"":" settled");
+    st.style.setProperty("--sh",REALMS[id].hue); st.style.animationDelay=(i*120)+"ms";
+    st.innerHTML=`<span class="g">${o.glyph}</span>`;
+    st.onclick=()=>{ readingState.chosen=id; readingState.answered=false; readingState.quiz=null;
+      try{ Snd.land&&Snd.land(); }catch(e){} renderReading(); };
+    cloth.appendChild(st);
+  });
+  sc.querySelector("#read-back").onclick=()=>openRealm();
+
+  const panel=sc.querySelector("#read-panel");
+  if(chosen==null){
+    panel.innerHTML=`<div class="read-q">Tap a rune to read it.</div>
+      <div class="read-master">Runes you can read: ${mastered}/${OMEN_IDS.length}</div>`;
+    // RD-#026: re-cast the runes — don't like this hand? reroll for an ad or a little Amber
+    const recast=()=>{ readingState.runes=pickReadingRunes(); readingState.shown=false; readingState.chosen=null; readingState.answered=false; readingState.quiz=null; try{Snd.boot&&Snd.boot();}catch(e){} renderReading(); };
+    const row=document.createElement("div"); row.className="row"; row.style.marginTop="4px";
+    const adB=document.createElement("button"); adB.className="btn sm ad-btn";
+    adB.textContent="▶ Re-cast (ad)"; adB.onclick=()=>Ads.showRewarded(recast);
+    const payB=document.createElement("button"); payB.className="btn sm";
+    payB.textContent="✦ 10 — Re-cast"; payB.disabled=save.essence<10;
+    payB.onclick=()=>{ save.essence-=10; persist(); recast(); };
+    row.appendChild(adB); row.appendChild(payB); panel.appendChild(row);
+    return;
+  }
+  const o=RUNE_OMEN[chosen];
+  if(!readingState.answered){
+    if(!readingState.quiz) readingState.quiz=makeMeaningOptions(chosen);
+    const q=document.createElement("div"); q.className="read-q";
+    q.innerHTML=`What does <b>${o.glyph} ${o.name}</b> lay on the road?`;
+    panel.appendChild(q);
+    const og=document.createElement("div"); og.className="read-opts";
+    readingState.quiz.forEach(opt=>{
+      const b=document.createElement("button"); b.className="btn sm"; b.textContent=opt.text;
+      b.onclick=()=>{ readingState.answered=true; readingState.correct=opt.correct;
+        if(opt.correct){ save.runeMastery[chosen]=(save.runeMastery[chosen]||0)+1; persist(); try{Snd.coin&&Snd.coin();}catch(e){} }
+        else { try{Snd.runeBlock&&Snd.runeBlock();}catch(e){} }
+        renderReading();
+      };
+      og.appendChild(b);
+    });
+    panel.appendChild(og);
+  } else {
+    const rev=document.createElement("div");
+    rev.innerHTML=`<div class="${readingState.correct?'read-correct':'read-wrong'}">${readingState.correct?'You read it true.':'Not quite — now you know.'}</div>
+      <div class="read-q" style="margin-top:6px"><b>${o.glyph} ${o.name}</b> — ${o.read}</div>
+      <div class="read-omen" style="margin-top:8px">Omen — ${o.omen}</div>
+      <div class="read-desc">${o.desc}</div>`;
+    panel.appendChild(rev);
+    const row=document.createElement("div"); row.className="row"; row.style.marginTop="4px";
+    const walk=document.createElement("button"); walk.className="btn primary"; walk.style.minWidth="0"; walk.textContent="Walk this path ›";
+    walk.onclick=()=>{ pendingOmen=RUNE_OMEN[chosen]; startRun(readingState.realm); };
+    const other=document.createElement("button"); other.className="btn sm"; other.textContent="Read another";
+    other.onclick=()=>{ readingState.chosen=null; readingState.answered=false; readingState.quiz=null; renderReading(); };
+    row.appendChild(walk); row.appendChild(other); panel.appendChild(row);
+  }
+}
+
+function openShrine(){
+  document.getElementById("sh-ess").textContent=save.essence;
+  document.getElementById("sh-shards").textContent=save.shards||0;
+  const list=document.getElementById("shrine-list"); list.innerHTML="";
+  UPGRADES.forEach(u=>{
+    const lv=save.upgrades[u.key],cost=upgCost(u.key);
+    const row=document.createElement("div"); row.className="shrine-row";
+    const pips="◆".repeat(lv)+"◇".repeat(3-lv);
+    row.innerHTML=`<div class="info"><b>${u.name}</b> <span class="pips">${pips}</span>
+        <div class="lvl">${u.desc}${u.key==="jump"&&lv>=2?" (double-jump active)":""}</div></div>`;
+    const btn=document.createElement("button"); btn.className="btn"; btn.style.minWidth="120px";
+    if(cost==null){ btn.textContent="MAX"; btn.disabled=true; }
+    else { btn.textContent=`${cost} ✦`; btn.disabled=save.essence<cost;
+      btn.onclick=()=>{ save.essence-=cost; save.upgrades[u.key]++; persist(); openShrine(); }; }
+    row.appendChild(btn); list.appendChild(row);
+  });
+  // Provisions divider — consumable boons (the evergreen sink)
+  if(!save.boons) save.boons={shield:0,surge:0,twin:0};
+  const pdiv=document.createElement("div");
+  pdiv.style.cssText="width:min(520px,92vw);border-top:1px solid #3a3270;margin:8px 0 2px;text-align:center;padding-top:10px;";
+  pdiv.innerHTML=`<span style="color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase;">⟡ Provisions — used on your next run</span>`;
+  list.appendChild(pdiv);
+  BOONS.forEach(b=>{
+    const held=save.boons[b.key]||0;
+    const row=document.createElement("div"); row.className="shrine-row";
+    row.innerHTML=`<div class="info"><b>${b.name}</b>${held>0?` <span style="color:var(--gold);font-size:13px;">×${held} held</span>`:''}
+        <div class="lvl">${b.desc}</div></div>`;
+    const btn=document.createElement("button"); btn.className="btn"; btn.style.minWidth="120px";
+    btn.textContent=`${b.cost} ✦`; btn.disabled=save.essence<b.cost;
+    btn.onclick=()=>{ save.essence-=b.cost; save.boons[b.key]=(save.boons[b.key]||0)+1; persist(); openShrine(); };
+    row.appendChild(btn); list.appendChild(row);
+  });
+  // Heroes divider — cosmetic völva reskins (RD-#020), unlock with Amber OR a rewarded ad
+  if(!save.heroes) save.heroes=[0]; if(save.hero==null) save.hero=0;
+  const hdiv=document.createElement("div");
+  hdiv.style.cssText="width:min(520px,92vw);border-top:1px solid #3a3270;margin:8px 0 2px;text-align:center;padding-top:10px;";
+  hdiv.innerHTML=`<span style="color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase;">⚔ Heroes — change your look</span>`;
+  list.appendChild(hdiv);
+  HEROES.forEach(h=>{
+    const owned=heroOwned(h.id), equipped=(save.hero===h.id);
+    const row=document.createElement("div"); row.className="shrine-row";
+    const swatch=`<span style="display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:middle;margin-right:6px;border:1px solid rgba(255,255,255,.25);background:linear-gradient(${h.pal.cloakTop},${h.pal.cloakBot})"></span>`;
+    row.innerHTML=`<div class="info"><b>${swatch}${h.name}</b>${equipped?' <span style="color:var(--rune);font-size:13px;">★ worn</span>':''}
+        <div class="lvl">${h.lore}</div></div>`;
+    if(owned){
+      const btn=document.createElement("button"); btn.className="btn"; btn.style.minWidth="120px";
+      if(equipped){ btn.textContent="Worn"; btn.disabled=true; }
+      else{ btn.textContent="Wear"; btn.onclick=()=>equipHero(h.id); }
+      row.appendChild(btn);
+    } else {
+      const grp=document.createElement("div"); grp.style.cssText="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;";
+      const adB=document.createElement("button"); adB.className="btn ad-btn"; adB.style.minWidth="0";
+      adB.textContent="▶ Ad"; adB.onclick=()=>Ads.showRewarded(()=>unlockHero(h.id));
+      const payB=document.createElement("button"); payB.className="btn"; payB.style.minWidth="0";
+      payB.textContent=`${h.cost} ✦`; payB.disabled=save.essence<h.cost;
+      payB.onclick=()=>{ save.essence-=h.cost; unlockHero(h.id); };
+      grp.appendChild(adB); grp.appendChild(payB);
+      // RD-#032: also buyable with skill-earned Rune Shards
+      const sCost=HERO_SHARD_COST[h.id];
+      if(sCost){
+        const shB=document.createElement("button"); shB.className="btn"; shB.style.minWidth="0";
+        shB.textContent=`${sCost} ◆`; shB.disabled=(save.shards||0)<sCost;
+        shB.onclick=()=>{ save.shards-=sCost; unlockHero(h.id); };
+        grp.appendChild(shB);
+      }
+      row.appendChild(grp);
+    }
+    list.appendChild(row);
+  });
+  // RD-#034: Sound Forge removed — those audio accents are now always-on/free (no dead spend).
+  showScreen("shrine");
+}
+
+// Surface any uncaught error on-screen (so a freeze is never silent — esp. on mobile)
+window.addEventListener("error",e=>{
+  try{
+    let d=document.getElementById("errbar");
+    if(!d){ d=document.createElement("div"); d.id="errbar";
+      d.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:99;background:#3a0a12;"+
+        "color:#ffd0d8;font:12px/1.4 'Segoe UI',sans-serif;padding:8px 12px;text-align:left;";
+      document.body.appendChild(d); }
+    d.textContent="⚠ "+(e.message||(e.error&&e.error.message)||"error")+
+      " @"+String(e.filename||"").split("/").pop()+":"+(e.lineno||"?");
+  }catch(_){}
+});
+
+window.addEventListener("resize",()=>{});
+</script>
+</body>
+</html>
