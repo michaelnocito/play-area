@@ -1,7 +1,7 @@
 # FLIPLINE — Dev Handoff / Resume Point
 
 **Repo:** `github.com/michaelnocito/flipline` (PRIVATE, branch `main`) · **Local:** `C:\Users\Mike\Projects\GAMES\flipline`
-**HEAD at handoff:** `ccf360d` (2026-07-01) · **Deliverable:** one file `index.html` (vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
+**HEAD at handoff:** `490da9d` (2026-07-01) · **Deliverable:** one file `index.html` (vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
 **Read first:** `HANDOFF.md` (visual/level-design spec), `FLIPLINE_lore_bible.md` (wordless "Long Way Home" lore), `FLIPLINE_store_copy.md` (submission copy — now accurate to v1). Memory `project_flipline_state.md` auto-loads with full per-feature detail.
 
 ## 🎬 LAUNCH GATE STATUS (2026-07-01) — what's left before submitting
@@ -11,6 +11,7 @@
 4. ✅ Cover art done (`covers/`)
 5. ✅ Store copy accurate to the shipped build
 6. ✅ CrazyGames SDK v3 call names spot-checked against current docs (`game.gameplayStart/Stop`, `game.loadingStart/Stop`, `ad.requestAd`, `game.happytime` — all confirmed current, 2026-07-01)
+6b. ✅ Save data now goes through the SDK Data Module (cross-device sync + guest auto-migrate) instead of plain localStorage — was neither "yes" nor "no" on the submission form before this fix
 7. ⏳ **Mike:** create/log into CrazyGames developer account, create the game listing, upload the build
 8. ⏳ **Mike:** run the CrazyGames QA tool against the uploaded build, fix anything it flags
 9. ⏳ **Mike:** paste in `FLIPLINE_store_copy.md` content + upload cover art + attach the two gameplay clips
