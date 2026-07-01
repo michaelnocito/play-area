@@ -1228,6 +1228,12 @@ function frame(now){
 }
 
 function boot(){
+  Ads.loadingStart();   // fire immediately — this must bracket the WHOLE load (any path to ready()),
+  // not just the SDK-init-success path. It used to live inside the init callback below, guarded by
+  // `if(!done)`; if the 700ms fallback timeout won the race (very plausible on a real network — local
+  // testing made SDK.init() resolve near-instantly, which hid this), loadingStart() never fired at all,
+  // while loadingStop() still fired unconditionally from ready() — an unpaired stop signal, which is
+  // almost certainly why QA measured a ~104s load time on a 0.1MB single-file game.
   buildArt();
   reset();
   // v3 lifecycle: init FIRST (SDK — and Store, which reads it — is unusable until init resolves), THEN
@@ -1243,7 +1249,7 @@ function boot(){
       Snd.platformMuted=!!s.muteAudio; updateMuteIcon(); Music.applyMute(); }); }catch(e){}
     updateMuteIcon(); Music.applyMute();
     Ads.loadingStop(); mode="ready"; };
-  Ads.init(()=>{ if(!done){ Ads.loadingStart(); ready(); } }); setTimeout(ready,700);
+  Ads.init(()=>{ ready(); }); setTimeout(ready,700);
   requestAnimationFrame(frame);
 }
 boot();
