@@ -609,7 +609,7 @@ function spawnObstacle(spacing){
   for(const o of obs){ if(!o.on){
     let side, h=HMIN+(Math.random()*(HMAX-HMIN)|0), gap=spacing;
     switch(fmId){
-      case 2: side=fmStep===0?1:0; if(fmStep===0)gap=Math.max(104,spacing*0.55); break;                 // ceiling → floor
+      case 2: side=fmStep===0?1:0; if(fmStep===0)gap=Math.max(130,spacing*0.55); break;                 // ceiling → floor
       case 3: case 6: side=fmSide^(fmStep&1); break;                                                     // alternating flips
       case 4: side=fmSide; h=Math.min(HMAX,HMIN+fmStep*18); if(fmStep<fmLen-1)gap=Math.max(104,spacing*0.55); break; // same-side rising stair (escape lane clear)
       case 5: side=fmStep===0?0:1; if(fmStep===0)gap=Math.max(110,spacing*0.6); break;                   // offset pinch (never overlaps)

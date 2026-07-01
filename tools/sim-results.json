@@ -1,0 +1,144 @@
+{
+  "flipTransitMs": 266.6666666666667,
+  "reactionBudgetMs": 66.66666666666666,
+  "GAP0": 200,
+  "GAPMIN": 120,
+  "SPEEDMX": 360,
+  "results": [
+    {
+      "tier": "frame-perfect (sanity ceiling)",
+      "reactionTime": 0.03,
+      "runs": 300,
+      "deathRate": "0.99",
+      "survivedFullRange": 2,
+      "meanDist": 1464,
+      "p10": 1105,
+      "median": 1336,
+      "p90": 2041,
+      "earlyDeathRate": "0.00",
+      "deathsBySpeedBucket": {
+        "280": 1,
+        "300": 7,
+        "320": 30,
+        "340": 66,
+        "360": 194
+      },
+      "deathsByFormation": {
+        "1": 64,
+        "2": 120,
+        "3": 29,
+        "4": 20,
+        "5": 13,
+        "6": 51,
+        "7": 1
+      }
+    },
+    {
+      "tier": "expert",
+      "reactionTime": 0.12,
+      "runs": 300,
+      "deathRate": "1.00",
+      "survivedFullRange": 0,
+      "meanDist": 1281,
+      "p10": 1124,
+      "median": 1260,
+      "p90": 1479,
+      "earlyDeathRate": "0.00",
+      "deathsBySpeedBucket": {
+        "280": 1,
+        "300": 6,
+        "320": 30,
+        "340": 122,
+        "360": 141
+      },
+      "deathsByFormation": {
+        "1": 76,
+        "2": 101,
+        "3": 19,
+        "4": 18,
+        "5": 14,
+        "6": 69,
+        "7": 3
+      }
+    },
+    {
+      "tier": "average",
+      "reactionTime": 0.22,
+      "runs": 300,
+      "deathRate": "1.00",
+      "survivedFullRange": 0,
+      "meanDist": 897,
+      "p10": 815,
+      "median": 892,
+      "p90": 982,
+      "earlyDeathRate": "0.00",
+      "deathsBySpeedBucket": {
+        "260": 4,
+        "280": 91,
+        "300": 186,
+        "320": 19
+      },
+      "deathsByFormation": {
+        "1": 54,
+        "2": 100,
+        "3": 28,
+        "4": 18,
+        "5": 24,
+        "6": 74,
+        "7": 2
+      }
+    },
+    {
+      "tier": "novice",
+      "reactionTime": 0.35,
+      "runs": 300,
+      "deathRate": "1.00",
+      "survivedFullRange": 0,
+      "meanDist": 549,
+      "p10": 454,
+      "median": 554,
+      "p90": 638,
+      "earlyDeathRate": "0.00",
+      "deathsBySpeedBucket": {
+        "220": 44,
+        "240": 184,
+        "260": 72
+      },
+      "deathsByFormation": {
+        "1": 56,
+        "2": 109,
+        "3": 24,
+        "4": 18,
+        "5": 20,
+        "6": 70,
+        "7": 3
+      }
+    },
+    {
+      "tier": "slow/AFK-ish (failure floor)",
+      "reactionTime": 0.45,
+      "runs": 300,
+      "deathRate": "1.00",
+      "survivedFullRange": 0,
+      "meanDist": 386,
+      "p10": 306,
+      "median": 384,
+      "p90": 462,
+      "earlyDeathRate": "0.00",
+      "deathsBySpeedBucket": {
+        "200": 59,
+        "220": 217,
+        "240": 24
+      },
+      "deathsByFormation": {
+        "1": 73,
+        "2": 103,
+        "3": 24,
+        "4": 36,
+        "5": 29,
+        "6": 34,
+        "7": 1
+      }
+    }
+  ]
+}
