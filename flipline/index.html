@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FLIPLINE</title>
+<!-- Verify against current CrazyGames SDK docs before submitting -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent;
+      -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  html,body { position:fixed; inset:0; height:100%; width:100%; background:#0c0e14; overflow:hidden; touch-action:none;
+              font-family:system-ui,sans-serif; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { background:#0c0e14; image-rendering:pixelated; touch-action:none; }
+  #mute { position:fixed; top:8px; right:10px; width:44px; height:44px; border-radius:10px;
+          background:rgba(232,236,241,.10); border:1px solid rgba(232,236,241,.30);
+          color:#e8ecf1; font-size:19px; cursor:pointer; z-index:5; }
+  #fx { position:fixed; top:8px; right:60px; width:44px; height:44px; border-radius:10px;
+        background:rgba(232,236,241,.10); border:1px solid rgba(232,236,241,.30);
+        color:#e8ecf1; font-size:17px; cursor:pointer; z-index:5; }
+  #rotate { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+            background:#0c0e14; color:#e8ecf1; z-index:20; text-align:center;
+            font-weight:700; font-size:17px; letter-spacing:.5px; }
+  #rotate .ic { display:block; font-size:48px; margin-bottom:12px; animation:spin 2.4s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<button id="fx" aria-label="Reduce flashing">✦</button>
+<button id="mute" aria-label="Mute">🔊</button>
+<div id="rotate"><div><span class="ic">⟳</span>rotate to landscape</div></div>
+<script>
+"use strict";
+
+/* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
+const Ads = {
+  init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>cb&&cb()).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
+  loadingStart(){ try{ window.CrazyGames?.SDK?.game?.loadingStart?.(); }catch(e){} },  // v3 name (verified vs docs 2026-06; sdkGameLoadingStart was v2 → never fired on v3)
+  loadingStop(){ try{ window.CrazyGames?.SDK?.game?.loadingStop?.(); }catch(e){} },
+  gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
+  gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
+  happytime(){ try{ window.CrazyGames?.SDK?.game?.happytime?.(); }catch(e){} },   // v3: positive-moment signal (new personal best) — platform may add flourishes; no gameplay impact
+  interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame",
+      { adStarted(){ Snd.duck(true); }, adFinished(){ Snd.duck(false); }, adError(){ Snd.duck(false); } }); }catch(e){} },  // mute during ad (policy)
+  rewarded(onReward,onSkip){            // opt-in rewarded ad; mutes audio during play (policy); graceful offline
+    try{ if(window.CrazyGames?.SDK?.ad?.requestAd){
+      window.CrazyGames.SDK.ad.requestAd("rewarded",{
+        adStarted(){ Snd.duck(true); },
+        adFinished(){ Snd.duck(false); onReward&&onReward(); },
+        adError(){ Snd.duck(false); onSkip&&onSkip(); } });   // adError → do NOT reward (policy)
+      return; } }catch(e){}
+    onReward&&onReward();               // no SDK (local/itch) → grant so the button never dead-ends
+  }
+};
+
+/* ===== Procedural audio — persistent SFX voices (zero alloc) + a synth music bed (audio-thread only, never per render-frame) ===== */
+const PENT=[440,523.25,587.33,659.25,783.99,880,1046.5,1174.66,1318.5];   // A-minor pentatonic (A C D E G…) — keeps SFX in-key with the bed
+const Snd = {
+  ctx:null, master:null, voices:[], vi:0, muted:false, adMuted:false, platformMuted:false, noise:null,   // platformMuted = CrazyGames SDK muteAudio setting; takes priority over the in-game toggle (policy)
+  duck(b){ this.adMuted=b; if(this.master&&this.ctx){ try{ this.master.gain.setTargetAtTime(b?0.0001:0.9,this.ctx.currentTime,0.02); }catch(e){} } },  // mute audio during ads
+  ensure(){
+    if(!this.ctx){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+      if(this.ctx){
+        this.master=this.ctx.createGain(); this.master.gain.value=0.9; this.master.connect(this.ctx.destination);
+        // SFX bus: each voice osc -> gain -> shared lowpass -> master (warms the tone; kills the harsh square 'blip')
+        for(let i=0;i<4;i++){ const o=this.ctx.createOscillator(), g=this.ctx.createGain(), lp=this.ctx.createBiquadFilter();
+          lp.type="lowpass"; lp.frequency.value=3400; g.gain.value=0.0001; o.connect(g); g.connect(lp); lp.connect(this.master); o.start(); this.voices.push({o,g}); }
+        const n=this.ctx.sampleRate*0.5|0, buf=this.ctx.createBuffer(1,n,this.ctx.sampleRate), d=buf.getChannelData(0);  // one reusable noise buffer
+        for(let i=0;i<n;i++) d[i]=Math.random()*2-1; this.noise=buf;
+        Music.start();
+      } }
+    if(this.ctx?.state==="suspended") this.ctx.resume();
+  },
+  play(f1,f2,dur,type,vol){ if(this.muted||this.adMuted||this.platformMuted)return; this.ensure(); if(!this.voices.length)return;
+    const v=this.voices[this.vi]; this.vi=(this.vi+1)%this.voices.length; const t=this.ctx.currentTime;
+    v.o.type=type||"square";
+    v.o.frequency.cancelScheduledValues(t); v.o.frequency.setValueAtTime(f1,t);
+    v.o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),t+dur);
+    v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(0.0001,t);
+    v.g.gain.exponentialRampToValueAtTime(vol||0.16,t+0.006);
+    v.g.gain.exponentialRampToValueAtTime(0.0001,t+dur); },
+  // a filtered noise burst (whoosh / impact texture) — short one-shot nodes on the audio thread, not the render loop
+  burstN(f1,f2,dur,vol,type){ if(this.muted||this.adMuted||this.platformMuted||!this.ctx||!this.noise)return; const t=this.ctx.currentTime;
+    const s=this.ctx.createBufferSource(); s.buffer=this.noise;
+    const bp=this.ctx.createBiquadFilter(); bp.type=type||"bandpass"; bp.frequency.setValueAtTime(f1,t);
+    bp.frequency.exponentialRampToValueAtTime(Math.max(40,f2),t+dur); bp.Q.value=0.8;
+    const g=this.ctx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    s.connect(bp); bp.connect(g); g.connect(this.master); s.start(t); s.stop(t+dur+0.03); },
+  // a scheduled pitched one-shot at an ABSOLUTE time (for musical stings / the portal breakout) — audio-thread node, not per-frame
+  tone(f,time,dur,vol,type){ if(this.muted||this.adMuted||this.platformMuted||!this.ctx)return; const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type=type||"triangle"; o.frequency.setValueAtTime(f,time);
+    g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol||0.09,time+0.01); g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
+    o.connect(g); g.connect(this.master); o.start(time); o.stop(time+dur+0.03); },
+  flip(up){ // action click + a whoosh that ASCENDS on an up-flip / DESCENDS on a down-flip — directional, smooth
+    if(up){ this.play(300,540,0.12,"sawtooth",0.09); this.burstN(900,3200,0.12,0.05,"bandpass"); }
+    else  { this.play(360,205,0.12,"sawtooth",0.10); this.burstN(2800,700,0.13,0.06,"bandpass"); } },
+  point(){ this.play(740,980,0.06,"triangle",0.07); },                  // soft milestone tick
+  coin(){ const f=PENT[6+(Math.random()*3|0)]; this.play(f,f*1.5,0.06,"triangle",0.10); },   // bright in-key sparkle (high pentatonic)
+  clean(n){ const f=PENT[Math.min(PENT.length-1,(n||1)-1+3)];           // skim chains WALK UP the A-minor scale → melodic combos
+    this.play(f,f*1.35,0.10,"triangle",0.10); this.burstN(1500,4200,0.10,0.05,"highpass"); },  // + a passing whoosh as the pillar flies by
+  die(){ this.play(200,42,0.34,"sawtooth",0.17); this.burstN(1900,120,0.30,0.10,"lowpass"); },  // downward glitch + noise impact
+  warp(){ if(this.muted||this.adMuted||this.platformMuted)return; this.ensure(); const t=this.ctx?this.ctx.currentTime:0;
+    this.play(170,440,0.16,"sawtooth",0.10); this.burstN(400,2800,0.16,0.10,"bandpass");        // ENTER — intake whoomp + rising whoosh
+    this.tone(659.25,t+0.18,0.5,0.09); this.tone(987.77,t+0.25,0.45,0.08); this.tone(1318.5,t+0.32,0.55,0.09); },  // BREAKOUT — bright ascending triad (the unexpected help)
+  flow(){ if(this.muted||this.adMuted||this.platformMuted)return; this.ensure(); const t=this.ctx?this.ctx.currentTime:0;   // entering Flow — warm rising A-minor arpeggio
+    this.tone(440,t,0.6,0.09); this.tone(523.25,t+0.07,0.6,0.09); this.tone(659.25,t+0.14,0.7,0.10); this.tone(880,t+0.22,0.8,0.10); }
+};
+
+/* ===== Music — a dark minor "Matrix techno" bed, synthesized live (no audio files → zero load latency).
+   Runs on a setInterval lookahead scheduler off the render loop; a few short nodes per beat on the audio
+   thread (NOT per-frame render allocation). Routes through Snd.master so the mute button + ad-duck silence it. */
+const M_BASS=[55,55,65.41,82.41,55,55,82.41,65.41];                 // A A C E A A E C — low A-minor, hypnotic
+const M_LEAD=[659.25,587.33,523.25,440,392.0,523.25,659.25,880.0];  // sparse minor-pentatonic "digital rain"
+const Music = {
+  on:true, flow:false, started:false, gain:null, bassLP:null, timer:null, next:0, step:0, lead:0, BPM:126,
+  start(){ if(this.started||!Snd.ctx) return; this.started=true; const c=Snd.ctx;
+    this.gain=c.createGain(); this.gain.gain.value=0.0001; this.gain.connect(Snd.master);
+    this.bassLP=c.createBiquadFilter(); this.bassLP.type="lowpass"; this.bassLP.frequency.value=420; this.bassLP.Q.value=6; this.bassLP.connect(this.gain);
+    this.next=c.currentTime+0.12; this.step=0; this.lead=0;
+    this.timer=setInterval(()=>this.sched(),25); this.applyMute(); },
+  applyMute(){ if(!this.gain||!Snd.ctx) return; const tgt=(this.on&&!Snd.muted&&!Snd.platformMuted)?(this.flow?0.22:0.16):0.0001; this.gain.gain.setTargetAtTime(tgt,Snd.ctx.currentTime,0.1); },  // swell in Flow State
+  sched(){ const c=Snd.ctx; if(!c) return; const sp16=(60/this.BPM)/4;
+    const sp=(typeof mode!=="undefined"&&mode==="play")?(speed-SPEED0)/(SPEEDMX-SPEED0):0;   // tension: bass filter opens as you speed up
+    this.bassLP.frequency.setTargetAtTime(this.flow?1150:380+Math.max(0,Math.min(1,sp))*560,c.currentTime,0.15);   // Flow State opens it wide
+    while(this.next < c.currentTime+0.14){ this.note(this.step,this.next); this.next+=sp16; this.step=(this.step+1)%32; } },
+  note(s,t){ if(Snd.muted||Snd.adMuted||Snd.platformMuted) return;        // skip node creation when silenced (step still advances → stays in time)
+    if(s%4===0) this.kick(t);                            // four-on-the-floor
+    if(s%2===0) this.hat(t, s%4===2);                    // 8th-note hats; offbeat = open accent
+    if(s%4===2) this.bass(M_BASS[((s-2)/4)%8],t);        // rolling offbeat bass — the techno pump
+    if(s>=16 && (s===16||s===19||s===22||s===27)){ this.blip(M_LEAD[this.lead%M_LEAD.length],t); this.lead++; } },  // sparse rain in bar 2
+  kick(t){ const c=Snd.ctx, o=c.createOscillator(), g=c.createGain(); o.type="sine";
+    o.frequency.setValueAtTime(160,t); o.frequency.exponentialRampToValueAtTime(48,t+0.11);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.9,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+0.20);
+    o.connect(g); g.connect(this.gain); o.start(t); o.stop(t+0.22); },
+  hat(t,open){ const c=Snd.ctx, s=c.createBufferSource(); s.buffer=Snd.noise;
+    const hp=c.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=7200;
+    const g=c.createGain(), dur=open?0.09:0.032, vol=open?0.16:0.09;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.002); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    s.connect(hp); hp.connect(g); g.connect(this.gain); s.start(t); s.stop(t+dur+0.02); },
+  bass(f,t){ const c=Snd.ctx, o=c.createOscillator(), g=c.createGain(); o.type="sawtooth"; o.frequency.setValueAtTime(f,t);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.5,t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+0.17);
+    o.connect(g); g.connect(this.bassLP); o.start(t); o.stop(t+0.2); },
+  blip(f,t){ const c=Snd.ctx, o=c.createOscillator(), g=c.createGain(); o.type="triangle";
+    o.frequency.setValueAtTime(f,t); o.frequency.exponentialRampToValueAtTime(f*0.82,t+0.18);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.06,t+0.005); g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+    o.connect(g); g.connect(this.gain); o.start(t); o.stop(t+0.24); }
+};
+document.getElementById("mute").addEventListener("click",e=>{
+  Snd.muted=!Snd.muted; updateMuteIcon(); Music.applyMute(); });   // one mute kills music + SFX
+function updateMuteIcon(){ document.getElementById("mute").textContent=(Snd.muted||Snd.platformMuted)?"🔇":"🔊"; }
+document.getElementById("fx").addEventListener("click",e=>{
+  lowFx=!lowFx; e.currentTarget.textContent=lowFx?"✧":"✦"; persist(); });
+
+/* ===== Canvas (DPR-aware, authored in 480x270 logical space) ===== */
+const VW=480, VH=270;
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+let scale=1, needRotate=false, rotatePaused=false, baseW=0, baseH=0;
+const rotateEl=document.getElementById("rotate");
+function resize(){
+  const w=innerWidth||1, h=innerHeight||1;
+  const coarse = !!(window.matchMedia?.("(pointer:coarse)")?.matches);
+  needRotate = coarse && h>w;
+  rotateEl.style.display = needRotate ? "flex" : "none";
+  const landscape = w>=h;
+  // desktop: ALWAYS fill the current window (so maximising/resizing scales up). mobile: lock per orientation (ignore URL-bar jitter).
+  if(!coarse || baseW===0 || landscape!==(baseW>=baseH)){ baseW=w; baseH=h; }
+  scale=Math.min(baseW/VW, baseH/VH);
+  const dpr=devicePixelRatio||1;
+  cv.width=VW*dpr*scale|0; cv.height=VH*dpr*scale|0;
+  cv.style.width=VW*scale+"px"; cv.style.height=VH*scale+"px";
+  ctx.setTransform(dpr*scale,0,0,dpr*scale,0,0); ctx.imageSmoothingEnabled=false;
+}
+addEventListener("resize",resize); addEventListener("orientationchange",resize); resize();
+
+/* ===== Tunables — all framerate-independent. Change ONE number to tune feel. ===== */
+const WALL   = 22;            // top/bottom wall thickness
+const TOPY   = WALL;          // ceiling inner surface
+const BOTY   = VH-WALL;       // floor inner surface
+const PX     = 96;            // player fixed x
+const PS     = 16;            // player size
+const GRAV   = 4200;          // gravity px/s^2
+const FLIPKICK = 240;         // instant velocity on flip (crisp snap off the surface)
+const MAXVY  = 1300;          // terminal vertical speed
+const SPEED0 = 170;           // starting scroll speed px/s
+const SPEEDMX= 360;           // max scroll speed px/s
+const RAMP   = 0.15;          // ⚠️ speed gained per meter — DROPPED from 0.35 (Mike: "really drop the speed increase" for the calmer two-line journey; overrides the old locked-feel value)
+const GAP0   = 200;           // starting world spacing between obstacles
+const GAPMIN = 120;           // tightest spacing
+const HMIN   = 66, HMAX=118;  // obstacle jut height range
+const WMIN   = 26, WMAX=46;   // obstacle width range
+
+/* ===== Mode B — SKY platformer (its OWN constant set; the LOCKED flip block above is never touched) =====
+   Every SEG_LEN metres the world switches flip<->sky. Sky = down-only gravity, one-button FIXED-ARC jump,
+   short red floor-juts you hop. Tuned so a single fixed jump ALWAYS clears one jut (apex 96px >> tallest jut)
+   AND always lands in a gap (jump reach < tightest spacing) — fair by construction. */
+const SEG_LEN  = 250;         // metres per segment before the world flips mode
+const SKY_GRAV = 2900;        // FALL gravity once a glide is canceled (2nd tap) → a deliberate drop to land precisely
+const SKY_JUMP = 880;         // (parked — upline now glides, not hops)
+// UPLINE glide: 1st tap launches a floaty glide; weak gravity + capped descent = a long gentle float; 2nd tap cancels → drop
+const GLIDE_LIFT = 375;       // gentle launch into the glide (apex ~85px)
+const GLIDE_GRAV = 825;       // gravity WHILE gliding — lower = floatier (raised for a less-floaty feel)
+const GLIDE_VMAX = 300;       // capped descent speed while gliding — lower = floatier (raised for a less-floaty fall)
+const SKY_GAP0 = 270, SKY_GAPMIN=230;   // jut spacing — GAPMIN > max jump reach (~219px@cap) so you never land ON a jut
+const SKY_HMIN = 28, SKY_HMAX=56;       // floor-jut height range (all clearable by the fixed arc)
+const SKY_WMIN = 20, SKY_WMAX=40;
+const XFADE    = 1.5;         // portal-transition duration (s): colour sweep + settle, field cleared (non-lethal) — calmer, gives prep time
+const SPEED_DROP = 0.25;      // on entering a new level, scroll speed drops to 75% so the player can acclimate...
+const ACCLIM_DUR = 3.0;       // ...then eases linearly back to full over this many seconds
+
+/* ===== Mode C — LOWER mine (segType 2): underground stomp-runner ===== */
+// Same ground physics + fixed-arc jump as sky, but hazards include CRAWLING ENEMIES you can defeat by stomping
+// their head (Goomba logic). Enemies are RED (pillar: danger is always red) — side/below contact kills; a top-stomp
+// pops them for coins + a bounce. Red spikes are jump-only. Tuned so spacing absorbs the crawl + stays jump-fair.
+const MINE_GAP0=270, MINE_GAPMIN=240;   // > sky's, to absorb enemy closing speed and stay land-in-gap fair (with the bigger jump)
+const ENEMY_VX=16;                      // critters crawl toward you (subtle — keeps the jump-over escapable)
+const ENEMY_HMIN=22, ENEMY_HMAX=32;     // critter height (short → the fixed arc can land on the head)
+const SPIKE_H=44;                       // lethal red floor-spike (jump-only; apex 90 clears it)
+const STOMP_BOUNCE=560;                 // hop imparted by a successful stomp (smaller than a full jump)
+const STOMP_TOL=9;                      // grace px for the "landed on the head" window
+const ENEMY_COIN=2;                     // coins for a clean stomp
+// Two-line flow: start DOWNLINE/mid(0) ⇄ UPLINE/upper(1). (Lower mine = PARKED; removed from rotation.)
+const SEG_SEQ=[0];   // v1 CrazyGames ship: downline-only. Upline (glide/platforms) parked as a post-launch content update — see FLIPLINE_DEV_NOTES.md
+
+/* ===== Collectible tunables (coins + earned power-orbs) ===== */
+const COL_FROM=60;            // metres before any loot appears (gentle early game)
+const LURE_GAP_MIN=30, LURE_GAP_RND=24;        // metres between lures (cadence breathes 30–54m)
+const STEPX=24, DIP_STEPX=60, SCAT_STEPX=90;   // horizontal spacing within a lure
+const COIN_VAL=1, COIN_VAL_RISK=3;             // base vs danger-lane risk-premium payout
+const COIN_R=14, ORB_R=22;                     // GENEROUS grab radii (>> the ~8/11px visuals)
+const WEAVE_MAX=175;                           // TUNNEL only: below this distance coins appear ONLY hugging a pipe's wall in the
+                                               // open gap just past it (tempts a quick weave up/down into the empty space + back);
+                                               // at/above 175m speed is too high to weave safely → revert to the normal lures
+const WEAVE_COIN_DX=44;                         // how far into the trailing opening the weave coin sits (clearLootNear prunes unsafe ones)
+const MAG_R=150;                               // MAGNET buff pull radius — coins within this glide to the player
+/* Warp tubes — optional HIGH-SKILL forward skip (teal/friendly, never red, never kills; miss = no penalty) */
+const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; +28m skip (leaderboard-safe)
+const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
+const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
+const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
+const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
+
+/* ===== Premium obstacle look (precomputed strings — zero per-frame allocation) ===== */
+const OBGLOW=[]; for(let i=0;i<8;i++) OBGLOW.push("rgba(255,84,104,"+(0.10+0.16*(i/7)).toFixed(3)+")"); // tension-glow LUT
+const OBSEAM="rgba(255,154,162,0.55)";   // animated energy-seam color, reused forever
+const OBSEAM2="rgba(255,110,130,0.28)"; // reverse-direction counterpoint seam
+const OBPANEL="rgba(0,0,0,0.20)";       // internal tech-panel separator line
+
+/* ===== Precomputed art + lighting (built once at boot, then only blitted) =====
+   Long Way Home is told wordlessly with light: a player-centred spotlight that breathes,
+   a warm home-beacon on the horizon, and zones re-themed as lands. */
+let RIDGE=null, RIDGEBUF=null, RIDGECTX=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
+function mkCanvas(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
+function radialSprite(size,r,g,b){   // soft radial glow, baked ONCE; reused for spotlight + beacon
+  const c=mkCanvas(size,size), x=c.getContext("2d");
+  const gr=x.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  gr.addColorStop(0,   "rgba("+r+","+g+","+b+",1)");
+  gr.addColorStop(0.45,"rgba("+r+","+g+","+b+",0.92)");
+  gr.addColorStop(0.75,"rgba("+r+","+g+","+b+",0.32)");
+  gr.addColorStop(1,   "rgba("+r+","+g+","+b+",0)");
+  x.fillStyle=gr; x.fillRect(0,0,size,size); return c;
+}
+function buildArt(){
+  // mid-parallax ridge — silhouettes baked as a WHITE MASK; tinted per-land each frame on RIDGEBUF
+  // (cool->warm with the zone) then wrap-blitted. Recedes behind the danger layer; never red.
+  RIDGE=mkCanvas(VW,VH); { const g=RIDGE.getContext("2d"); g.fillStyle="#fff";
+    let x=0; while(x<VW){ const w=20+((x*131)%18), hh=14+((x*97)%26);
+      g.fillRect(x,BOTY-hh,w,hh); g.fillRect(x,TOPY,w-4,10+((x*53)%16)); x+=w+8; } }
+  RIDGEBUF=mkCanvas(VW,VH); RIDGECTX=RIDGEBUF.getContext("2d");
+  // emotional-light sprites (white spotlight + warm home glow) + reusable darkness buffer
+  LIGHTSPR =radialSprite(128,255,255,255);
+  LIGHTGOLD=radialSprite(128,255,205,120);
+  for(let k=0;k<3;k++) ORBSPR[k]=radialSprite(64,GATECOL[k][0],GATECOL[k][1],GATECOL[k][2]); // power-orb glow per buff
+  DARK=mkCanvas(VW,VH); DARKCTX=DARK.getContext("2d");
+  for(const a of AURAS) a.glow=a.col?hexA(a.col,0.30):null;   // precompute aura glow strings (fixed hues → no per-frame alloc)
+}
+/* lighting tunables (logical-px radius) + cached darkness strings (no per-frame alloc).
+   Darkness is kept moderate so incoming RED obstacles stay readable through the gloom. */
+const LR_MIN=104, LR_BASE=160, LR_MAX=240, LR_LOWMIN=212;
+const DK_NORMAL="rgba(6,8,16,0.38)", DK_LOW="rgba(6,8,16,0.20)";  // 0.38 keeps worst-case dimmed red readable in warm zones
+
+/* ===== Object pools (no per-frame allocation) ===== */
+const OBN=20, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,x:0,w:0,h:0,side:0,style:0,k:0});  // k: 0 obstacle/spike · 1 stompable enemy (mine)
+// UPLINE platforms — floating ledges you jump onto/across (one-way landing); pooled, alloc-free
+const PLN=8, plat=[]; for(let i=0;i<PLN;i++) plat.push({on:false,x:0,y:0,w:0});
+const PLAT_H=[34,52,68];                // ledge heights above the floor (top ≤ glide apex, with ceiling headroom when launching from it)
+const PLAT_GAP0=320, PLAT_GAPMIN=280;   // spacing between ledges (increased for Mario-style longer spacing)
+const PLAT_WMIN=140, PLAT_WMAX=200;     // platform length range (longer, like Mario level 2)
+// warp-tube pool (sparse) — mid-lane rings you flip THROUGH for a forward skip; alloc-free
+const WARPN=3, warps=[]; for(let i=0;i<WARPN;i++) warps.push({on:false,x:0,y:0,used:false});
+function spawnWarp(){ for(const w of warps){ if(!w.on){ w.on=true; w.used=false; w.x=VW+20; w.y=(Math.random()<0.5?108:162); return; } } }  // mid-lane → must time a flip
+
+/* ===== Collectible pool (coins + earned power-orbs) — no per-frame allocation =====
+   kind: 0 coin · 1 MAGNET · 2 SHIELD · 3 2×  (orb kind k → buff timer BT[k-1]) */
+const COLN=28, col=[]; for(let i=0;i<COLN;i++) col.push({on:false,x:0,y:0,kind:0,val:1,bob:0});
+let colHead=0;
+function colAlloc(){ const c=col[colHead]; colHead=(colHead+1)%COLN; return c; }
+function placeCoin(x,y,val){ const c=colAlloc(); c.on=true; c.x=x; c.y=y; c.kind=0; c.val=val; c.bob=Math.random()*6.283; }
+function placeOrb(x,y,kind){ const c=colAlloc(); c.on=true; c.x=x; c.y=y; c.kind=kind; c.val=0; c.bob=Math.random()*6.283; }
+const PN=120, par=[]; for(let i=0;i<PN;i++) par.push({life:0,x:0,y:0,vx:0,vy:0,r:2,c:"#ffcf5c"});
+let parHead=0;
+function emit(x,y,vx,vy,life,r,c){ const p=par[parHead]; parHead=(parHead+1)%PN;
+  p.life=life; p.x=x; p.y=y; p.vx=vx; p.vy=vy; p.r=r; p.c=c; }
+function burst(x,y){ for(let i=0;i<22;i++){ const a=Math.random()*6.283, s=40+Math.random()*220;
+  emit(x,y,Math.cos(a)*s,Math.sin(a)*s,0.5+Math.random()*0.4,1+(Math.random()*2|0),"#ff6478"); } }
+function spark(x,y){ for(let i=0;i<8;i++){ const a=Math.random()*6.283, s=30+Math.random()*120;
+  emit(x,y,Math.cos(a)*s,Math.sin(a)*s,0.30+Math.random()*0.25,1+(Math.random()*2|0),"#bff5e2"); } }
+function coinFx(x,y){ for(let i=0;i<9;i++){ const a=Math.random()*6.283, s=30+Math.random()*110;   // gold burst on coin grab
+  emit(x,y,Math.cos(a)*s,Math.sin(a)*s-50,0.4+Math.random()*0.3,1+(Math.random()*2|0),"#ffcf5c"); } }
+
+/* ===== Glowing "surfing" trail (fixed ring buffer, zero alloc) ===== */
+const TRN=20, trail=[]; for(let i=0;i<TRN;i++) trail.push({x:0,y:0,on:false});
+let trHead=0;
+function trailPush(x,y){ const p=trail[trHead]; p.x=x; p.y=y; p.on=true; trHead=(trHead+1)%TRN; }
+
+/* ===== Dynamic zone palette (evolving "worlds", cheap) — danger stays red for fairness ===== */
+const ZONELEN=55;   // metres per palette zone — short so new players see the world evolve fast
+// Zones as lands (Feature 3): the journey trends cool/lonely -> warm/golden (homeward) each cycle.
+const ZONES  =[[10,14,28],[20,16,40],[12,26,36],[34,22,16],[34,28,14]]; // night -> dusk -> cold dawn -> amber -> gold-home
+const ACCENTS=[[120,160,255],[170,150,255],[120,225,210],[255,180,110],[255,212,120]]; // cool blue -> violet -> teal -> amber -> gold
+// UPPER (above-ground) palette — a calm OUTDOOR sky, deliberately muted/mid-brightness so it's easy on the eyes
+// (replaces the harsh colour-invert). Danger reds are hardcoded → still pop against it.
+const UPPER_ZONES=[[58,92,128],[84,118,150],[110,134,158],[92,116,150]];   // dawn-blue -> daytime -> haze -> dusk sky (soft)
+const UPPER_ACC  =[[150,196,150],[206,194,150],[168,204,222],[196,208,168]]; // foliage green / warm sun / pale sky / meadow
+// LOWER (underground mine) palette — dark warm earth + amber lantern glow. Dark like the tunnel but earthy/warm.
+const LOWER_ZONES=[[26,18,12],[36,24,14],[28,22,18],[40,28,16]];            // coal / soil / clay / ore-dark
+const LOWER_ACC  =[[214,150,70],[234,182,92],[182,128,78],[240,200,112]];   // lantern amber / ore glint / copper / gold-dust
+function palZ(s){ return s===1?UPPER_ZONES:s===2?LOWER_ZONES:ZONES; }        // zone palette per level
+function palA(s){ return s===1?UPPER_ACC:s===2?LOWER_ACC:ACCENTS; }          // accent palette per level
+function lerpi(a,b,k){ return (a+(b-a)*k)|0; }
+function zoneRGB(arr,d){ const f=d/ZONELEN, i=((f|0)%arr.length+arr.length)%arr.length, j=(i+1)%arr.length, k=f-(f|0);
+  const A=arr[i],B=arr[j]; return [lerpi(A[0],B[0],k),lerpi(A[1],B[1],k),lerpi(A[2],B[2],k)]; }
+let accCss="#ffcf5c", accGlow="rgba(255,207,92,0.30)";
+
+/* ===== Run-modifier buffs (MAGNET / SHIELD / 2×) — EARNED from power-orbs, not free gates ===== */
+const GATECOL=[[90,220,255],[255,212,90],[255,120,220]];  // 0 MAGNET (cyan), 1 SHIELD (gold), 2 DOUBLE (magenta) — the buff colour language
+const GATELABEL=["MAGNET","SHIELD","2× SCORE"];
+const ORBCSS=["rgb(90,220,255)","rgb(255,212,90)","rgb(255,120,220)"];  // precomputed orb-core strings (no per-frame alloc)
+const BUFFSEL=["rgba(90,220,255,0.30)","rgba(255,212,90,0.30)","rgba(255,120,220,0.30)"];  // selected pre-run chip fill
+const BSHORT=["MAGNET","SHIELD","2×"];   // compact buff labels for the pre-run chips
+const START_BUFF=5;                    // seconds of pre-run head-start buff
+const REVIVE_CD=3, GRACE=1.6;          // revive: 3s "get ready" countdown + shield grace on resume (fair, no instant re-death)
+const BT=[0,0,0];                      // buff timers: 0 MAGNET, 1 SHIELD, 2 2× — INDEPENDENT so they can stack
+
+/* ===== Cosmetics + coin economy (cosmetic only — never touches physics) =====
+   THREE independent axes: SHAPE (body silhouette), TRAIL (how the surf-trail renders),
+   AURA (glow + trail colour). `reactive:true` = colour shifts with the zone palette →
+   shown as a ◆ REACTIVE rarity badge; everything else is FIXED. */
+const SKINS=[
+  {name:"Chroma", cost:0,   col:null,      shape:0, reactive:true},  // square, zone-reactive (default)
+  {name:"Orbit",  cost:30,  col:"#5ef2c2", shape:1},  // circle
+  {name:"Dart",   cost:50,  col:"#ffcf5c", shape:2},  // triangle (faces flip)
+  {name:"Gem",    cost:70,  col:"#c97bff", shape:3},  // diamond
+  {name:"Hex",    cost:100, col:"#5aa0ff", shape:4},  // hexagon
+  {name:"Nova",   cost:140, col:"#ff7a52", shape:5},  // star
+  {name:"Arrow",  cost:200, col:"#e8ecf1", shape:6}   // arrow (faces flip)
+];
+const TRAILS=[
+  {name:"Classic", cost:0,   r:0},                 // tapered squares (default)
+  {name:"Comet",   cost:45,  r:1},                 // bright core + soft wide ghost
+  {name:"Spark",   cost:65,  r:2},                 // twinkling motes
+  {name:"Prism",   cost:120, r:1, reactive:true}   // comet render, zone-reactive colour
+];
+const AURAS=[
+  {name:"Match",    cost:0,   col:null},           // glow/trail match the skin (default)
+  {name:"Aqua",     cost:30,  col:"#5ef2c2"},
+  {name:"Rose",     cost:50,  col:"#ff7ab0"},
+  {name:"Amber",    cost:75,  col:"#ffcf5c"},
+  {name:"Violet",   cost:110, col:"#c97bff"},
+  {name:"Spectrum", cost:160, col:null, reactive:true}  // zone-reactive glow/trail
+];
+const SAVE="flipline.v1";
+let coins=0, owned=[0], equipped=0, ownedTrail=[0], equippedTrail=0, ownedAura=[0], equippedAura=0;
+let runCoinBonus=0, shopCat=0, sel=[0,0,0], lastEarned=0, lowFx=false, pickBuff=1, startAll=false;   // default pickBuff=SHIELD so a first-timer FEELS a buff in run 1 without choosing
+// CrazyGames Data Module has the same sync API as localStorage (setItem/getItem/removeItem) and adds
+// cross-device sync for logged-in users + auto-migrates guest localStorage data on sign-in — prefer it
+// when the SDK is up, fall back to plain localStorage otherwise (offline / itch.io mirror / SDK not yet ready).
+const Store = {
+  get(){ try{ return (window.CrazyGames?.SDK?.data || localStorage); }catch(e){ return localStorage; } },
+  getItem(k){ try{ return this.get().getItem(k); }catch(e){ return null; } },
+  setItem(k,v){ try{ this.get().setItem(k,v); }catch(e){} },
+};
+function loadSave(){ try{ const d=JSON.parse(Store.getItem(SAVE)); if(d){
+    coins=d.coins|0; owned=Array.isArray(d.owned)?d.owned:[0]; equipped=d.equipped|0; best=d.best|0; lowFx=!!d.lowFx;
+    if(typeof d.pickBuff==="number") pickBuff=d.pickBuff;
+    if(Array.isArray(d.ownedTrail)) ownedTrail=d.ownedTrail; equippedTrail=d.equippedTrail|0;
+    if(Array.isArray(d.ownedAura))  ownedAura=d.ownedAura;   equippedAura=d.equippedAura|0; } }catch(e){}
+  if(!owned.includes(0)) owned.push(0); if(!owned.includes(equipped)) equipped=0;
+  if(!ownedTrail.includes(0)) ownedTrail.push(0); if(!ownedTrail.includes(equippedTrail)) equippedTrail=0;
+  if(!ownedAura.includes(0)) ownedAura.push(0); if(!ownedAura.includes(equippedAura)) equippedAura=0; }
+function persist(){ Store.setItem(SAVE, JSON.stringify(
+    {coins,owned,equipped,ownedTrail,equippedTrail,ownedAura,equippedAura,best,lowFx,pickBuff})); }
+function skinCol(){ return SKINS[equipped].col; }   // null → zone-reactive
+function hexA(h,a){ const n=parseInt(h.slice(1),16); return "rgba("+(n>>16&255)+","+(n>>8&255)+","+(n&255)+","+a+")"; }
+// cosmetic-category accessors (0 SHAPE, 1 TRAIL, 2 AURA)
+function catList(c){ return c===0?SKINS:c===1?TRAILS:AURAS; }
+function catOwned(c){ return c===0?owned:c===1?ownedTrail:ownedAura; }
+function catEquipped(c){ return c===0?equipped:c===1?equippedTrail:equippedAura; }
+function catSetEquipped(c,i){ if(c===0)equipped=i; else if(c===1)equippedTrail=i; else equippedAura=i; }
+function nextUnlock(){ let bestIt=null;   // cheapest still-unowned cosmetic across all axes (dead-screen carrot)
+  for(let c=0;c<3;c++){ const L=catList(c), O=catOwned(c);
+    for(let i=0;i<L.length;i++){ const it=L[i]; if(it.cost>0 && !O.includes(i) && (!bestIt||it.cost<bestIt.cost)) bestIt=it; } }
+  return bestIt; }
+
+// UI hit-regions (virtual 480x270 space)
+const R_SHOPBTN={x:VW/2-54,y:VH/2+72,w:108,h:26};
+const BCW=66, BCH=24, BCY=42, BCGAP=8, BCX0=VW/2-(BCW*3+BCGAP*2)/2;   // pre-run "start boost" chips
+const R_BUFF=[{x:BCX0,y:BCY,w:BCW,h:BCH},{x:BCX0+BCW+BCGAP,y:BCY,w:BCW,h:BCH},{x:BCX0+2*(BCW+BCGAP),y:BCY,w:BCW,h:BCH}];
+const R_BUFFALL={x:VW/2-82,y:BCY+28,w:164,h:22};
+const TABW=104, TABGAP=8, TABX0=VW/2-(TABW*3+TABGAP*2)/2;   // shop category tabs
+const R_TAB=[{x:TABX0,y:58,w:TABW,h:22},{x:TABX0+TABW+TABGAP,y:58,w:TABW,h:22},{x:TABX0+2*(TABW+TABGAP),y:58,w:TABW,h:22}];
+const R_PREV={x:52,y:112,w:36,h:44}, R_NEXT={x:392,y:112,w:36,h:44};
+const R_ACT={x:VW/2-72,y:196,w:144,h:30}, R_BACK={x:16,y:236,w:80,h:24};
+// revive "CONTINUE?" offer — two EQUAL-weight buttons (policy: skip/continue must match in size/font/colour)
+const R_CONT={x:VW/2-94,y:VH/2+4,w:188,h:30}, R_END={x:VW/2-94,y:VH/2+40,w:188,h:28};
+// dead screen: explicit retry pill (so the rest of the screen is inert) + optional rewarded-ad coin doubler
+const R_RETRY={x:VW/2-72,y:VH/2+52,w:144,h:24};
+const R_DOUBLE={x:VW/2-94,y:VH/2+78,w:188,h:22};
+// in-run pause: corner toggle that maps to the same icon area people already use, just bigger so a deliberate tap is unambiguous
+const R_PAUSE={x:VW-44,y:VH-44,w:36,h:36};
+function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
+function score(){ return dist; }
+function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
+function shopAction(){ const c=shopCat, i=sel[c], list=catList(c), own=catOwned(c), it=list[i];
+  if(own.includes(i)){ catSetEquipped(c,i); persist(); }
+  else if(coins>=it.cost){ coins-=it.cost; own.push(i); catSetEquipped(c,i); persist(); Snd.clean(6); } }
+
+/* ===== State ===== */
+let mode="ready";            // ready | play | dead
+let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
+let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
+let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
+let paused=false, pausedAtMode="ready", doubledFlag=false;
+let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
+let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0, segStep=0, acclimT=0;   // 0 downline/mid / 1 upline/upper; segStep walks SEG_SEQ; acclimT=post-transition speed ease-in
+let onGround=true, gliding=false;   // upline: onGround gates launch (no double-glide); gliding = currently in a glide
+let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
+let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
+let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
+let lastZone=0, zoneSweep=0, zonesRun=0;   // X3 lore: land tracking — crossing fires a "new land" sweep + steps the beacon closer
+let reviveT=0, reviveUsedFree=false, reviveUsedAd=false;   // revive: 1 free + 1 ad per run (precision, never every death)
+let nextWarp=WARP_FROM, warpFx=0;                          // warp tubes: next spawn distance + nail-it flourish timer
+let nextLure=COL_FROM, lastObsSide=0, orbArmed=false, lastOrbDist=-999, lureSeq=0;   // collectible lures
+let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so new players FEEL a buff
+
+/* ===== TEST MODE: platform spacing measurement ===== */
+let testMode=false, testStart=0, testGaps=[150,175,200,225,250,275,300];   // gaps to test (px)
+let testIdx=0, testLastLand=0, testResults=[];
+function testPlatformSpacing(){
+  // spawn platforms at exact test distances
+  testIdx=(testStart/40|0)%testGaps.length;
+  const targetDist=testStart+(testGaps[testIdx]*0.5);   // stagger across a half-gap
+  if(dist>testLastLand+50 && spawnCd<=0){
+    for(let i=0;i<plat.length;i++){ if(!plat[i].on){
+      plat[i].on=true; plat[i].x=VW+24; plat[i].w=160; plat[i].y=BOTY-PLAT_H[1];   // fixed size/height for clean measurements
+      console.log(`[TEST] Platform ${testGaps[testIdx]}px gap at dist=${dist}, x=${plat[i].x}, y=${plat[i].y}`);
+      spawnCd+=testGaps[testIdx];
+      testLastLand=dist;
+      testIdx=(testIdx+1)%testGaps.length;
+      return;
+    } }
+  }
+}
+
+function reset(){
+  py=BOTY-PS; vy=0; gdir=1; sq=1;
+  speed=SPEED0; worldX=0; dist=0; spawnCd=GAP0; nextAd=1; runCoinBonus=0;
+  for(const o of obs) o.on=false;
+  for(const pl of plat) pl.on=false; onGround=true; gliding=false;
+  for(const p of trail) p.on=false; trHead=0;
+  for(const c of col) c.on=false; colHead=0; BT[0]=BT[1]=BT[2]=0;
+  shake=0; flash=0; freeze=0; lastMile=0; bgPulse=0; landT=0; doubledFlag=false;
+  fmId=0; fmStep=0; fmLen=0; hardCount=0;
+  segType=0; prevSegType=0; nextSeg=SEG_LEN; xfade=0; segStep=0; acclimT=0;
+  lightR=LR_BASE; lightTarget=LR_BASE; beaconPulse=0; lastZone=0; zoneSweep=0; zonesRun=0;
+  reviveT=0; reviveUsedFree=false; reviveUsedAd=false;
+  for(const w of warps) w.on=false; nextWarp=WARP_FROM; warpFx=0;
+  Music.flow=false; Music.applyMute();
+  nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
+}
+function start(){ Snd.ensure();
+  let gift=false; { const d=new Date().toDateString(); if(Store.getItem("flipline.day")!==d){ Store.setItem("flipline.day",d); gift=true; } }  // daily: first run of the day = all 3 free
+  reset(); lightR=74;                                  // re-bloom from small
+  if(segType>=1){ py=BOTY-PS; vy=0; gdir=1; }          // above-ground / mine start grounded
+  if(startAll||gift){ BT[0]=BT[1]=BT[2]=START_BUFF; }  // rewarded ad OR daily gift → start with ALL 3
+  else if(pickBuff>=0){ BT[pickBuff]=START_BUFF; }     // everyday free pick-1
+  startAll=false; mode="play"; Ads.gameplayStart();
+}
+function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(gdir<0); }   // gdir<0 → rising to the ceiling = "up" whoosh
+function skyJump(){   // UPLINE glide: 1st tap (grounded) launches a floaty glide; 2nd tap (airborne) cancels it → drop to land precisely
+  if(onGround){ vy=-GLIDE_LIFT; onGround=false; gliding=true; sq=0.78; Snd.flip(true); }
+  else if(gliding){ gliding=false; Snd.flip(false); }
+  // else: airborne but not gliding → do nothing (prevents jitter on key repeat)
+}
+// A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
+function onCrash(){
+  shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
+  Music.flow=false; Music.applyMute();
+  lightR=26; lightTarget=26;   // snuff the light to a spark
+  if(!reviveUsedFree){ reviveUsedFree=true; beginRevive(false); }      // death #1 → FREE revive, no ad
+  else if(!reviveUsedAd){ mode="offer"; Ads.gameplayStop(); }          // death #2 → optional 1-ad continue (offered once)
+  else finalDeath();                                                    // death #3+ → run ends
+}
+// Resume the SAME run: clear the field so you don't instantly re-die, reset to a safe surface, shield grace, 3s countdown.
+function beginRevive(withBuffs){
+  for(const o of obs){ if(o.on){ burst(o.x+o.w/2,(o.side===0?BOTY-o.h:TOPY)+o.h/2); o.on=false; } }   // clear + juice the field
+  for(const c of col){ if(c.kind===0) c.on=false; }   // clear loose coins (orbs are harmless, leave them)
+  py=BOTY-PS; vy=0; gdir=1; sq=1; spawnCd=GAP0;        // stable on the start surface; first new jut isn't instant
+  BT[1]=Math.max(BT[1],GRACE);                          // shield grace so the first new obstacle is survivable
+  if(withBuffs){ BT[0]=BT[1]=BT[2]=START_BUFF; }        // ad reward → revive WITH all 3 buffs
+  reviveT=REVIVE_CD; mode="reviving"; lightR=70;        // bloom the light back up during the countdown
+  beaconPulse=Math.max(beaconPulse,0.8); Snd.clean(5); Ads.gameplayStart();
+}
+function finalDeath(){
+  mode="dead"; Ads.gameplayStop();
+  if(adPending){ adPending=false; Ads.interstitial(); }   // midgame ONLY when the run truly ends (never with a revive — policy)
+  const sc=score(); if(sc>best){ best=sc; Ads.happytime(); }   // new personal best = a genuine happy moment
+  lastEarned=(sc/14|0)+runCoinBonus; coins+=lastEarned; persist();
+  lightR=26; lightTarget=26;
+}
+
+/* ===== Input ===== */
+function togglePause(){ if(paused){ paused=false; if(pausedAtMode==="play") Ads.gameplayStart(); }   // resume first — mode is still "play" while paused
+  else if(mode==="play"){ paused=true; pausedAtMode="play"; Ads.gameplayStop(); } }
+function tap(){ if(mode==="play"){ segType>=1?skyJump():flip(); } else if(mode==="ready") start(); }   // one button: flip (tunnel) OR jump (sky/mine); ready taps-to-start
+addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
+  if(paused){ if(inR(p,R_PAUSE)) togglePause(); else if(pausedAtMode==="play") togglePause(); return; }   // any tap resumes from play-pause
+  if(mode==="shop"){ shopTap(p); return; }
+  if(mode==="reviving") return;                      // countdown is automatic — taps ignored
+  if(mode==="offer"){                                // the once-per-run "CONTINUE? watch ad" choice
+    if(inR(p,R_CONT)){ Ads.rewarded(()=>{ reviveUsedAd=true; beginRevive(true); }, ()=>{ reviveUsedAd=true; finalDeath(); }); return; }
+    if(inR(p,R_END)){ reviveUsedAd=true; finalDeath(); return; }
+    return; }
+  if(mode==="play" && inR(p,R_PAUSE)){ togglePause(); return; }   // pause from in-run via corner tap
+  if(mode==="ready"||mode==="dead"){
+    if(inR(p,R_SHOPBTN)){ mode="shop"; shopCat=0; sel[0]=equipped; sel[1]=equippedTrail; sel[2]=equippedAura; return; }
+  }
+  if(mode==="ready"){   // boost-row pre-run picks — ready screen only, not drawn on dead so not tappable there either
+    for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
+    if(inR(p,R_BUFFALL)){ Ads.rewarded(()=>{ startAll=true; start(); }, ()=>{ start(); }); return; } // watch ad → all 3
+  }
+  if(mode==="dead"){
+    if(inR(p,R_RETRY)){ start(); return; }
+    if(!doubledFlag && lastEarned>=5 && inR(p,R_DOUBLE)){
+      Ads.rewarded(()=>{ coins+=lastEarned; doubledFlag=true; persist(); Snd.coin(); }, ()=>{ doubledFlag=true; });   // doubledFlag also set on error so the offer can't be ad-spammed
+      return; }
+    return;   // rest of dead-screen is inert — no accidental restarts on text/score taps
+  }
+  tap(); },{passive:false});
+/* ===== Key state tracking (prevent jitter on key repeat) ===== */
+const keyState={};
+addEventListener("keydown",e=>{ if(e.repeat) return; keyState[e.key]=true; });  // mark key as pressed, but ignore repeats
+addEventListener("keyup",e=>{ keyState[e.key]=false; });                      // mark key as released
+
+addEventListener("visibilitychange",()=>{ if(document.hidden && mode==="play" && !paused) togglePause(); });   // phone-call / tab-switch recovery
+addEventListener("keydown",e=>{ if(e.key==="Escape" || e.key==="p" || e.key==="P"){ if(mode==="play"||paused){ togglePause(); e.preventDefault(); } } });
+addEventListener("keydown",e=>{ if(e.repeat) return;
+  if(mode==="shop"){ const c=shopCat, n=catList(c).length;
+    if(e.key==="ArrowLeft") sel[c]=(sel[c]-1+n)%n;
+    else if(e.key==="ArrowRight") sel[c]=(sel[c]+1)%n;
+    else if(e.key==="ArrowUp") shopCat=(shopCat+2)%3;       // cycle category tab
+    else if(e.key==="ArrowDown") shopCat=(shopCat+1)%3;
+    else if(e.key==="Enter"||e.key===" ") shopAction();
+    else if(e.key==="Escape") mode="ready";
+    e.preventDefault(); return; }
+  if([" ","ArrowUp","w","W"].includes(e.key)){ e.preventDefault(); tap(); }
+  if(e.key==="t" || e.key==="T"){ testMode=!testMode; console.log(`[TEST] Mode: ${testMode}, start dist: ${dist}`); if(testMode){ mode="ready"; } } });
+function shopTap(p){
+  for(let c=0;c<3;c++) if(inR(p,R_TAB[c])){ shopCat=c; return; }   // switch axis
+  const c=shopCat, n=catList(c).length;
+  if(inR(p,R_PREV)){ sel[c]=(sel[c]-1+n)%n; }
+  else if(inR(p,R_NEXT)){ sel[c]=(sel[c]+1)%n; }
+  else if(inR(p,R_ACT)){ shopAction(); }
+  else if(inR(p,R_BACK)){ mode="ready"; }
+}
+
+/* ===== Spawning — formation sequencer (one rect per call; pooled, alloc-free) =====
+   Every formation is composed from the SAME floor/ceiling jut primitive. A cursor
+   (fmId/fmStep/fmLen) emits the next rect of the active formation each call, then
+   clears it. Difficulty unlocks gradually with distance; <100m stays solo-only so
+   the deliberately gentle early game is preserved. */
+function cl01(x){ return x<0?0:x>1?1:x; }     // clamp to 0..1 (smooth onset ramps — no difficulty cliffs)
+function rndSide(){ return Math.random()<0.5?0:1; }
+function pickFormation(){            // only called when no formation is active
+  fmStep=0;
+  if(dist<100){ fmId=1; fmLen=1; return; }                  // gentle early game: solos only
+  if(hardCount>=3){ fmId=7; fmLen=1; hardCount=0; return; } // forced breather after a hard streak
+  // master difficulty 0→1 over 100→420m. Everything below scales smoothly off it / off ramped onsets,
+  // so formations FADE IN gradually instead of switching on at a hard distance (kills the "jumpy steps").
+  const D=cl01((dist-100)/320), r=Math.random();
+  const fFeat=0.06+0.18*D;                                  // "feature" share ramps 6%→24% (was a flat 18% cliff)
+  if(r>fFeat){                                              // non-feature beat: solo vs double-flip (double grows with D)
+    if(Math.random()<0.24+0.18*D){ fmId=2; fmLen=2; }      // double-flip 24%→42%
+    else { fmId=1; fmLen=1; }                               // plain solo — still the most common beat
+    return;
+  }
+  // feature slot: weighted pick where each pattern's weight ramps in from its onset over a window
+  // (e.g. staircase is near-0 at 185m, common by ~275m) → a smooth ramp, never a step.
+  const wDbl=0.6,                                           // gentle always-on feature so early features stay easy
+    wZig  =cl01((dist-120)/70),                             // zig-zag    phases in 120→190
+    wStair=cl01((dist-185)/90),                             // staircase  185→275
+    wPinch=cl01((dist-245)/100),                            // pinch      245→345
+    wGaunt=cl01((dist-330)/130);                            // gauntlet   330→460
+  let s=Math.random()*(wDbl+wZig+wStair+wPinch+wGaunt);
+  if((s-=wGaunt)<0){ fmId=6; fmLen=6; fmSide=rndSide(); }            // gauntlet
+  else if((s-=wPinch)<0){ fmId=5; fmLen=2; }                         // offset pinch
+  else if((s-=wStair)<0){ fmId=4; fmLen=3; fmSide=rndSide(); }       // staircase
+  else if((s-=wZig)<0){ fmId=3; fmLen=3; fmSide=rndSide(); }         // zig-zag
+  else { fmId=2; fmLen=2; }                                          // wDbl → double-flip
+}
+function placeRect(o,side,h){ o.on=true; o.x=VW+24; o.k=0;
+  o.w=WMIN+(Math.random()*(WMAX-WMIN)|0); o.h=h; o.side=side; o.style=(Math.random()<0.5)|0;
+  lastObsSide=side; clearLootNear(o); }   // record the danger lane + evict any loot this jut would trap
+function spawnObstacle(spacing){
+  if(fmLen===0) pickFormation();
+  if(fmId===7){ spawnCd+=spacing*1.6; fmLen=0; return; }    // breather: open a clear lane, emit nothing
+  for(const o of obs){ if(!o.on){
+    let side, h=HMIN+(Math.random()*(HMAX-HMIN)|0), gap=spacing;
+    switch(fmId){
+      case 2: side=fmStep===0?1:0; if(fmStep===0)gap=Math.max(130,spacing*0.55); break;                 // ceiling → floor
+      case 3: case 6: side=fmSide^(fmStep&1); break;                                                     // alternating flips
+      case 4: side=fmSide; h=Math.min(HMAX,HMIN+fmStep*18); if(fmStep<fmLen-1)gap=Math.max(104,spacing*0.55); break; // same-side rising stair (escape lane clear)
+      case 5: side=fmStep===0?0:1; if(fmStep===0)gap=Math.max(110,spacing*0.6); break;                   // offset pinch (never overlaps)
+      default: side=Math.random()<0.5?0:1;                                                               // F1 solo
+    }
+    placeRect(o,side,h);
+    if(dist>=COL_FROM && dist<WEAVE_MAX) placeWeaveCoin(o);   // tempt a weave into the empty space beside the pipe (early game only)
+    spawnCd+=gap; fmStep++;
+    if(fmStep>=fmLen){ if(fmId>=4&&fmId<=6) hardCount++; else if(fmId<=3) hardCount=0; fmLen=0; }
+    return; } }
+  spawnCd+=spacing;   // pool full (shouldn't happen) — avoid tight loop
+}
+/* ===== Mode B spawners — reuse the obstacle/coin pools; floor-only juts + a jump-arc coin line ===== */
+function spawnSky(spacing){            // single short red floor-jut you hop (always red — pillar); solos only = fair fixed-arc
+  for(const o of obs){ if(!o.on){ o.on=true; o.x=VW+24; o.side=0; o.k=0;
+    o.w=SKY_WMIN+(Math.random()*(SKY_WMAX-SKY_WMIN)|0); o.h=SKY_HMIN+(Math.random()*(SKY_HMAX-SKY_HMIN)|0);
+    o.style=(Math.random()<0.5)|0; lastObsSide=0; clearLootNear(o); spawnCd+=spacing; return; } }
+  spawnCd+=spacing;
+}
+function spawnPlatform(spacing){       // UPLINE: a floating ledge at one of the set heights, with light-coins riding its top
+  for(const pl of plat){ if(!pl.on){ pl.on=true; pl.x=VW+24;
+    pl.w=PLAT_WMIN+(Math.random()*(PLAT_WMAX-PLAT_WMIN)|0); pl.y=BOTY-PLAT_H[Math.random()*PLAT_H.length|0];
+    const n=1+(Math.random()<0.5?1:0);
+    for(let i=0;i<n;i++) placeCoin(pl.x+pl.w*(0.32+0.36*i), pl.y-PS, COIN_VAL);   // light to gather up on the ledge
+    spawnCd+=spacing; return; } }
+  spawnCd+=spacing;
+}
+function spawnMine(spacing){           // MINE (PARKED — no longer in rotation): stompable enemy (k=1) or lethal red spike (k=0)
+  for(const o of obs){ if(!o.on){ o.on=true; o.x=VW+24; o.side=0; o.style=(Math.random()<0.5)|0;
+    if(Math.random()<0.5){ o.k=1; o.h=ENEMY_HMIN+(Math.random()*(ENEMY_HMAX-ENEMY_HMIN)|0); o.w=22; }  // critter — stomp the head
+    else { o.k=0; o.h=SPIKE_H; o.w=SKY_WMIN+(Math.random()*(SKY_WMAX-SKY_WMIN)|0); }                    // red spike — jump only
+    lastObsSide=0; clearLootNear(o); spawnCd+=spacing; return; } }
+  spawnCd+=spacing;
+}
+function spawnSkyArc(){                // a low arc of coins peaking near jump apex — a well-timed hop sweeps them up
+  const N=5, peak=72;
+  for(let i=0;i<N;i++){ const u=i/(N-1), x=VW+i*STEPX, y=(BOTY-PS/2)-Math.sin(u*Math.PI)*peak;
+    if(lootClear(x,y)) placeCoin(x,y,COIN_VAL); }
+}
+
+// a coin in the open gap just PAST a pipe, hugging that pipe's wall → tempts a quick weave to the danger wall and back.
+// Placed deliberately near the pipe (no lootClear gate); clearLootNear() on later juts prunes any that become unsafe.
+function placeWeaveCoin(o){
+  const y = o.side===1 ? TOPY+PS/2 : BOTY-PS/2;          // at the player's rest-centre on the pipe's wall (ceiling or floor)
+  placeCoin(o.x + o.w + WEAVE_COIN_DX, y, COIN_VAL_RISK);
+}
+/* ===== Collectible lures — entice skilful flips; pooled, fair, never co-located with danger ===== */
+function lootClear(x,y){            // true if (x,y) keeps clear of every active red
+  for(const o of obs){ if(!o.on) continue;
+    if(x>o.x-KEEPX && x<o.x+o.w+KEEPX){ const ry=o.side===0?BOTY-o.h:TOPY;
+      if(y>ry-KEEPY && y<ry+o.h+KEEPY) return false; } }
+  return true;
+}
+function clearLootNear(o){          // evict loot a freshly-placed jut would otherwise trap
+  const ry=o.side===0?BOTY-o.h:TOPY;
+  for(const c of col){ if(c.on && c.x>o.x-KEEPX && c.x<o.x+o.w+KEEPX && c.y>ry-KEEPY && c.y<ry+o.h+KEEPY) c.on=false; }
+}
+function spawnLure(){
+  if(orbArmed){ if(spawnOrb()){ orbArmed=false; lastOrbDist=dist; } return; }   // rare earned jackpot
+  const pick=Math.random();
+  if(pick<0.45) spawnSwoop();       // arc that spans a flip (everyday lure)
+  else if(pick<0.72){ if(dist>=110) spawnDip(); else spawnSwoop(); }   // dips (risk) only after 110m — gentle early game
+  else spawnScatter();              // singles on opposite surfaces (collecting both needs a flip)
+}
+function spawnSwoop(){              // 5 coins bowing from one surface to the other → rewards a flip
+  const fromFloor=(lastObsSide===0), y0=fromFloor?210:42, y1=fromFloor?42:210, N=5;
+  for(let i=0;i<N;i++){ const u=i/(N-1), x=VW+i*STEPX;
+    const base=y0+(y1-y0)*(0.5-0.5*Math.cos(u*Math.PI)), y=base+Math.sin(u*Math.PI)*(135-base)*0.55;
+    if(lootClear(x,y)) placeCoin(x,y,COIN_VAL); }
+}
+function spawnDip(){                // 3 coins toward the recent danger surface — only ones in a real gap survive
+  const y=(lastObsSide===0)?186:86;   // moderate dip (not a deep hug) → always escapable from a max-height jut
+  for(let i=0;i<3;i++){ const x=VW+i*DIP_STEPX; if(lootClear(x,y)) placeCoin(x,y,COIN_VAL_RISK); }
+}
+function spawnScatter(){            // two singles on opposite surfaces — collecting both needs a flip
+  const a=lastObsSide===0?42:210, b=lastObsSide===0?210:42;
+  if(lootClear(VW,a)) placeCoin(VW,a,COIN_VAL);
+  if(lootClear(VW+SCAT_STEPX,b)) placeCoin(VW+SCAT_STEPX,b,COIN_VAL);
+}
+function spawnOrb(){                // one buff orb in a committed-flip spot, opposite the recent danger (fair)
+  let y=(lastObsSide===0)?92:178; if(!lootClear(VW,y)) y=135;   // fall back to dead-centre (clear of side juts)
+  if(!lootClear(VW,y)) return false;                            // even centre blocked → re-arm, try next lure
+  const kind=(lastOrbDist<0)?2:(1+(lureSeq++%3));               // first orb SHIELD (onboarding), then cycle
+  placeOrb(VW,y,kind); beaconPulse=Math.max(beaconPulse,0.6); return true;   // telegraph: home draws the eye
+}
+
+/* ===== Update (dt seconds, capped upstream) ===== */
+function update(dt){
+  // particles always animate (even on death) for juice
+  for(const p of par){ if(p.life>0){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=520*dt; } }
+  if(shake>0){ shake-=dt*60; if(shake<0)shake=0; }
+  if(flash>0){ flash-=dt*2.4; if(flash<0)flash=0; }
+  if(needRotate){ if(mode==="play" && !rotatePaused){ rotatePaused=true; Ads.gameplayStop(); } return; }
+  if(rotatePaused){ rotatePaused=false; if(mode==="play") Ads.gameplayStart(); }
+  if(bgPulse>0){ bgPulse-=dt*2.4; if(bgPulse<0)bgPulse=0; }
+  if(beaconPulse>0){ beaconPulse-=dt*1.1; if(beaconPulse<0)beaconPulse=0; }
+  if(zoneSweep>0){ zoneSweep-=dt*1.15; if(zoneSweep<0)zoneSweep=0; }   // ~0.9s "new land" wash
+  if(landT>0){ landT-=dt; if(landT<0)landT=0; }
+  if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
+  if(warpFx>0){ warpFx-=dt; if(warpFx<0)warpFx=0; }
+  if(xfade>0){ xfade-=dt; if(xfade<0)xfade=0; }   // mode-switch portal sweep
+  if(acclimT>0){ acclimT-=dt; if(acclimT<0)acclimT=0; }   // post-transition speed ease-in
+  if(paused) return;   // manual pause / phone-call recovery — particles still animate above for life, gameplay frozen
+  if(mode==="reviving"){ reviveT-=dt; lightR+=(LR_BASE-lightR)*Math.min(1,dt*6);   // bloom back over the "get ready" countdown
+    if(reviveT<=0){ reviveT=0; mode="play"; } return; }
+  if(mode!=="play") return;
+  if(freeze>0){ freeze-=dt; return; }
+
+  // active run-modifiers — independent timers, so they can STACK (pre-run pick / ad / orbs)
+  for(let i=0;i<3;i++) if(BT[i]>0){ BT[i]-=dt; if(BT[i]<0)BT[i]=0; }   // 0 MAGNET (pull, below) · 1 SHIELD · 2 2×
+
+  // difficulty ramp (baseline curve LOCKED — buffs never touch it)
+  speed=Math.min(SPEEDMX, SPEED0+dist*RAMP);
+  const spacing=segType===1 ? Math.max(PLAT_GAPMIN, PLAT_GAP0-dist*0.1)
+              : Math.max(GAPMIN, GAP0-dist*0.35);
+  const speedMul = acclimT>0 ? 1-SPEED_DROP*(acclimT/ACCLIM_DUR) : 1;   // 0.75 right after a transition → eases back to 1
+  const dx=speed*speedMul*dt;
+  worldX += dx * (BT[2]>0 ? 2 : 1); dist=worldX/40|0;
+  if(dist>=lastMile+50){ lastMile+=50; Snd.point();
+    bgPulse=Math.max(bgPulse,0.4); beaconPulse=Math.max(beaconPulse,0.8); }  // hope: light blooms, home draws nearer — no cyan strobe; the spotlight bloom + beacon step does the talking
+  // X3 lore: crossing into a new land (every ZONELEN) — fire a wordless "new land" sweep, bloom the light, step the beacon closer
+  { const zNow=(dist/ZONELEN)|0;
+    if(zNow>lastZone){ lastZone=zNow; zonesRun++; zoneSweep=1; bgPulse=Math.max(bgPulse,0.55); beaconPulse=Math.max(beaconPulse,0.9); } }
+
+  // Mode B: cross a SEG_LEN boundary → switch flip<->sky. Non-lethal: clear the field, settle to the floor,
+  // run the colour-invert portal sweep. gdir reset to 1 so flip resumes clean; sky's down-gravity just lands you.
+  if(SEG_SEQ.length>1 && dist>=nextSeg && xfade<=0){
+    nextSeg+=SEG_LEN; prevSegType=segType; segType=SEG_SEQ[segStep%SEG_SEQ.length]; segStep++; xfade=XFADE; acclimT=ACCLIM_DUR;
+    for(const o of obs) o.on=false;                       // clear danger so the switch is always survivable
+    for(const pl of plat) pl.on=false;                    // clear upline platforms
+    for(const c of col){ if(c.kind===0) c.on=false; }     // drop loose coins (orbs harmless)
+    vy=0; gdir=1; spawnCd=GAP0*2;                          // settle + a generous safe runway after transition
+    zoneSweep=1; bgPulse=Math.max(bgPulse,0.6); beaconPulse=Math.max(beaconPulse,0.95); lightR=Math.max(lightR,LR_BASE);
+    Snd.warp();                                            // reuse the portal breakout sting
+  }
+
+  // player physics
+  const pyPrev=py;   // pre-move y → the swept collectible grab below stays tunnel-proof on fast flips
+  if(segType>=1){   // UPLINE: GLIDE physics (weak gravity + capped descent while gliding; full gravity once canceled) + one-way platform landing
+    vy += (gliding?GLIDE_GRAV:SKY_GRAV)*dt;
+    if(gliding){ if(vy>GLIDE_VMAX) vy=GLIDE_VMAX; } else if(vy>MAXVY) vy=MAXVY;
+    py+=vy*dt;
+    onGround=false;
+    const pcx=PX+PS/2;
+    if(vy>=0){ for(const pl of plat){ if(!pl.on) continue;          // land on a platform top when descending across it
+      if(pcx>pl.x && pcx<pl.x+pl.w && pyPrev+PS<=pl.y+4 && py+PS>=pl.y){ py=pl.y-PS; vy=0; onGround=true; gliding=false; break; } } }
+    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; onGround=true; gliding=false; }  // no squash on land (no bounce)
+    else if(py<TOPY){ py=TOPY; if(vy<0)vy=0; }
+  } else {           // FLIP: gravity along gdir, snap floor<->ceiling (LOCKED feel)
+    vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
+    py+=vy*dt;
+    if(py<TOPY){ if(vy<-40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=TOPY; vy=0; }
+    else if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; }
+  }
+  sq+=(1-sq)*Math.min(1,dt*14);   // ease squash back to 1
+
+  // surfing trail (drift existing points with the world, add one at the player)
+  for(const p of trail){ if(p.on){ p.x-=dx; if(p.x<-8)p.on=false; } }
+  trailPush(PX+PS/2, py+PS/2);
+
+  // obstacles: move, recycle, collide, score
+  spawnCd-=dx; if(spawnCd<=0 && xfade<=0){
+    if(testMode && segType===1) testPlatformSpacing();
+    else segType===1?spawnPlatform(spacing):spawnObstacle(spacing);
+  }
+  for(const pl of plat){ if(!pl.on) continue; pl.x-=dx; if(pl.x+pl.w<-4) pl.on=false; }   // scroll/recycle upline platforms
+  const hx=PX+2, hy=py+2, hw=PS-4, hh=PS-4;      // inset hitbox = fair
+  let nd=1e9;                                    // nearest upcoming obstacle edge → drives the light's "fear"
+  for(const o of obs){ if(!o.on) continue;
+    o.x-=dx; if(o.k===1) o.x-=ENEMY_VX*dt;                 // enemies crawl toward the player
+    if(o.x+o.w<-4){ o.on=false; continue; }
+    const ahead=o.x+o.w-PX; if(ahead>0&&ahead<nd)nd=ahead;
+    const ry=o.side===0 ? BOTY-o.h : TOPY;
+    if(hx<o.x+o.w && hx+hw>o.x && hy<ry+o.h && hy+hh>ry){
+      if(o.k===1 && vy>0 && (pyPrev+PS)<=ry+STOMP_TOL){    // STOMP: came down onto the critter's head → defeat + bounce
+        o.on=false; vy=-STOMP_BOUNCE; sq=0.6; burst(o.x+o.w/2,ry); spark(o.x+o.w/2,ry);
+        runCoinBonus+=ENEMY_COIN; coinPopV+=ENEMY_COIN; coinPopT=0.7; Snd.clean(5); continue; }
+      if(BT[1]>0){ o.on=false; burst(o.x+o.w/2,ry+o.h/2); shake=Math.max(shake,4); continue; } // SHIELD smash
+      onCrash(); return; }
+  }
+
+  // collectibles: move with world, generous SWEPT grab (tunnel-proof on fast flips), recycle
+  const pcx=PX+PS/2, pcyN=py+PS/2, pcyP=pyPrev+PS/2;
+  const cyLo=pcyP<pcyN?pcyP:pcyN, cyHi=pcyP<pcyN?pcyN:pcyP;
+  const mag=BT[0]>0;                                    // MAGNET active → coins glide in
+  for(const c of col){ if(!c.on) continue;
+    c.x-=dx;
+    if(c.x<-12){ c.on=false; continue; }
+    if(mag && c.kind===0){ const mx=pcx-c.x, my=pcyN-c.y;   // pull only coins (never orbs/danger), only within radius
+      if(mx*mx+my*my < MAG_R*MAG_R){ const k=Math.min(1,dt*9); c.x+=mx*k; c.y+=my*k; } }
+    const isOrb=c.kind>0, R=isOrb?ORB_R:COIN_R, ddx=c.x-pcx;
+    if(ddx>R||ddx<-R) continue;
+    const cyc=c.y<cyLo?cyLo:(c.y>cyHi?cyHi:c.y), ddy=c.y-cyc;
+    if(ddx*ddx+ddy*ddy<=R*R){ c.on=false;
+      if(isOrb){ BT[c.kind-1]=Math.max(BT[c.kind-1],ORB_DUR); flash=Math.max(flash,0.18); flashCol=ORBCSS[c.kind-1];
+        beaconPulse=Math.max(beaconPulse,0.5); spark(c.x,c.y); Snd.clean(4); }
+      else { runCoinBonus+=c.val; coinPopV+=c.val; coinPopT=0.7; coinFx(c.x,c.y); Snd.coin(); } }
+  }
+  // onboarding SHIELD: a free orb on the START surface in the opening metres — grabbed just by running, so a
+  // first-timer feels a buff smash a jut before they ever reach the earned 150m orbs. Placed clear of any red.
+  if(earlyOrb && dist>=2){ let y=BOTY-PS/2; if(!lootClear(VW,y)) y=135;
+    if(lootClear(VW,y)){ placeOrb(VW,y,2); earlyOrb=false; beaconPulse=Math.max(beaconPulse,0.7); } }
+
+  // warp tubes — PARKED (didn't convey benefit; replacement mechanic pending). Spawn disabled; entity/draw kept for reuse.
+  // if(dist>=WARP_FROM && dist>=nextWarp){ spawnWarp(); nextWarp=dist+WARP_GAP; }
+  for(const w of warps){ if(!w.on) continue;
+    w.x-=dx;
+    if(w.x<-24){ w.on=false; continue; }
+    if(!w.used && Math.abs(w.x-(PX+PS/2))<WARP_HITX && Math.abs((py+PS/2)-w.y)<WARP_HITY){   // flew through the ring
+      w.used=true; worldX+=WARP_M*40; runCoinBonus+=5; coinPopV+=5; coinPopT=0.7; warpFx=0.6;
+      flash=Math.max(flash,0.22); flashCol="#5ef2c2"; bgPulse=Math.max(bgPulse,0.6); beaconPulse=Math.max(beaconPulse,1);
+      lightR=Math.max(lightR,LR_MAX); spark(PX+PS/2,py+PS/2); spark(PX+PS/2,py+PS/2); Snd.warp(); }   // light flares with the "help"
+  }
+
+  // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
+  if(dist>=COL_FROM && dist>=nextLure && xfade<=0){
+    if(segType===0 && dist>=WEAVE_MAX) spawnLure();   // downline: below 175m coins come ONLY from weave-coins (at pipe spawn); upline coins ride the platforms
+    nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
+  if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && BT[0]<=0&&BT[1]<=0&&BT[2]<=0 && !orbArmed) orbArmed=true;
+
+  // emotional light (Feature 1): target radius blooms on hope (bgPulse), constricts on fear
+  let lt=LR_BASE+bgPulse*120;
+  const proxFear=nd<1e9?Math.max(0,1-nd/200):0, fallFear=Math.max(0,(Math.abs(vy)-240)/950);
+  lt-=Math.min(1,proxFear*0.85+fallFear*0.55)*(LR_BASE-LR_MIN);
+  if(BT[1]>0) lt=Math.max(lt,LR_MAX);            // SHIELD — bold (gold flare in render)
+  if(BT[0]>0) lt=Math.max(lt,LR_BASE+34);        // MAGNET — gentle bloom while pulling
+  if(BT[2]>0) lt=Math.max(lt,LR_BASE+30);        // 2× — bright
+  if(lowFx && lt<LR_LOWMIN) lt=LR_LOWMIN;                        // reduce-flashing: keep it open + un-oppressive
+  lightTarget = lt<LR_MIN?LR_MIN:(lt>LR_MAX+40?LR_MAX+40:lt);
+  lightR += (lightTarget-lightR)*Math.min(1,dt*8);              // eased, dt-based
+
+  // queue a restart-break interstitial roughly every ~250m (shown at the next death, NEVER mid-play — policy)
+  if(dist>=nextAd*250){ nextAd++; adPending=true; }
+}
+
+/* ===== Draw ===== */
+function txt(s,x,y,size,col,w){ ctx.fillStyle=col; ctx.textAlign="center";
+  ctx.font=(w||700)+" "+size+"px system-ui"; ctx.fillText(s,x,y); }
+// Build a player shape path at origin, radius r. `dir` (gravity facing) optional → defaults to gdir.
+function shapePath(shape,r,dir){ const d=dir===undefined?gdir:dir; ctx.beginPath();
+  switch(shape){
+    case 1: ctx.arc(0,0,r,0,6.2832); break;                                                   // circle
+    case 2: ctx.moveTo(0,r*d); ctx.lineTo(r,-r*0.8*d); ctx.lineTo(-r,-r*0.8*d); ctx.closePath(); break; // triangle
+    case 3: ctx.moveTo(0,-r); ctx.lineTo(r,0); ctx.lineTo(0,r); ctx.lineTo(-r,0); ctx.closePath(); break; // diamond
+    case 4: for(let i=0;i<6;i++){ const a=i*Math.PI/3+Math.PI/6,x=Math.cos(a)*r,y=Math.sin(a)*r; i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.closePath(); break; // hexagon
+    case 5: for(let i=0;i<10;i++){ const rr=i%2?r*0.45:r,a=-Math.PI/2+i*Math.PI/5,x=Math.cos(a)*rr,y=Math.sin(a)*rr; i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.closePath(); break; // star
+    case 6: ctx.moveTo(0,r*d); ctx.lineTo(r,-0.2*r*d); ctx.lineTo(0.4*r,-0.2*r*d); ctx.lineTo(0.4*r,-r*d);
+            ctx.lineTo(-0.4*r,-r*d); ctx.lineTo(-0.4*r,-0.2*r*d); ctx.lineTo(-r,-0.2*r*d); ctx.closePath(); break; // arrow
+    default: ctx.rect(-r,-r,2*r,2*r);                                                          // square
+  }
+}
+// One trail dot at (x,y); f=newness 0..1; alloc-free (colour passed in). Shared by gameplay + shop try-on.
+function trailDot(x,y,f,color,style){ ctx.fillStyle=color;
+  if(style===2){ const s=2+Math.abs(Math.sin(t*7+x*0.25))*2.4*f; ctx.globalAlpha=0.10+f*0.5;   // Spark — twinkling motes
+    ctx.fillRect(x-s/2,y-s/2,s,s); return; }
+  if(style===1){ ctx.globalAlpha=0.05+f*0.16; const w=4+(f*9|0); ctx.fillRect(x-w/2,y-w/2,w,w); // Comet — soft wide ghost…
+    ctx.globalAlpha=0.14+f*0.55; const s=2+(f*6|0); ctx.fillRect(x-s/2,y-s/2,s,s); return; }    // …+ bright core
+  const s=1+(f*5|0); ctx.globalAlpha=0.08+f*0.42; ctx.fillRect(x-s/2,y-s/2,s,s);               // Classic — tapered squares
+}
+
+// MINE enemy — a red critter (red = danger, pillar) with a bright stompable crown, googly eyes + wiggling legs.
+function drawCritter(ix,ry,o,near){ const w=o.w,h=o.h, cx=ix+w/2, ph=Math.sin(t*9+ix*0.12);
+  ctx.fillStyle=OBGLOW[(near*7)|0]; ctx.fillRect(ix-4,ry-4,w+8,h+8);
+  ctx.fillStyle="#6e1018";                                                  // legs (wiggle)
+  ctx.fillRect(ix+3,ry+h-2,3,4+ph*1.5); ctx.fillRect(ix+w-6,ry+h-2,3,4-ph*1.5);
+  ctx.fillStyle="#b82034"; ctx.fillRect(ix+1,ry+2,w-2,h-2);                  // body
+  ctx.fillStyle="#ff7184"; ctx.fillRect(ix,ry,w,4);                         // bright crown = the stomp target
+  ctx.fillStyle="#fff"; ctx.fillRect(cx-5,ry+6,3,3); ctx.fillRect(cx+2,ry+6,3,3);   // eyes
+  ctx.fillStyle="#0c0e14"; ctx.fillRect(cx-4,ry+7,1.6,1.6); ctx.fillRect(cx+3,ry+7,1.6,1.6);
+}
+// MINE spike — lethal red sawtooth from the floor (jump only).
+function drawSpike(ix,ry,o,near){ const w=o.w,h=o.h, n=Math.max(2,(w/8)|0), sw=w/n;
+  ctx.fillStyle=OBGLOW[(near*7)|0]; ctx.fillRect(ix-4,ry-4,w+8,h+8);
+  ctx.fillStyle="#5e0a12"; ctx.fillRect(ix,ry+h-4,w,4);                      // dark root band
+  ctx.fillStyle="#b82034"; ctx.beginPath();
+  for(let i=0;i<n;i++){ const x0=ix+i*sw; ctx.moveTo(x0,ry+h); ctx.lineTo(x0+sw/2,ry); ctx.lineTo(x0+sw,ry+h); }
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle="#ff7184"; for(let i=0;i<n;i++){ const x0=ix+i*sw; ctx.fillRect(x0+sw/2-1,ry,2,5); }  // hot tips
+}
+function draw(){
+  // dynamic zone palette (one calc per frame)
+  // Per-level palette (tunnel / sky / mine). During the portal sweep, blend from the previous level.
+  // Only these zone arrays change — obstacle reds are hardcoded, so DANGER STAYS RED (pillar).
+  const bg=zoneRGB(palZ(segType),dist), ac=zoneRGB(palA(segType),dist);
+  if(xfade>0 && prevSegType!==segType){ const k=xfade/XFADE;
+    const pb=zoneRGB(palZ(prevSegType),dist), pa=zoneRGB(palA(prevSegType),dist);
+    for(let q=0;q<3;q++){ bg[q]=(bg[q]+(pb[q]-bg[q])*k)|0; ac[q]=(ac[q]+(pa[q]-ac[q])*k)|0; } }
+  accCss="rgb("+ac[0]+","+ac[1]+","+ac[2]+")";
+  accGlow="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.30)";
+  const pb=lowFx?0:(bgPulse*55)|0;   // reactive brightness on good actions (off in reduce-flashing)
+  const wallCss="rgb("+(bg[0]+18+pb)+","+(bg[1]+22+pb)+","+(bg[2]+30+pb)+")";
+  const sc=skinCol(), pcol=sc||accCss, pglow=sc?hexA(sc,0.30):accGlow;
+  // aura = glow colour (precomputed string / accent if reactive / skin if Match); trail colour follows the aura (or accent for a reactive trail)
+  const au=AURAS[equippedAura], auraG=au.reactive?accGlow:(au.glow||pglow);
+  const tr=TRAILS[equippedTrail], trailC=tr.reactive?accCss:(au.reactive?accCss:(au.col||pcol)), trStyle=tr.r;
+
+  let ox=0,oy=0; if(shake>0){ const sk=lowFx?shake*0.35:shake; ox=(Math.random()-.5)*sk; oy=(Math.random()-.5)*sk; }
+  ctx.save(); ctx.translate(ox,oy);
+
+  const bgFill="rgb("+(bg[0]+pb)+","+(bg[1]+pb)+","+(bg[2]+pb)+")";  // built once; reused for corner bevels (no per-obstacle alloc)
+  ctx.fillStyle=bgFill; ctx.fillRect(-12,-12,VW+24,VH+24);
+
+  // mid-parallax ridge band — tint the silhouette MASK to THIS land (cool->warm) on a cached buffer, then wrap-blit.
+  // Alloc-free: 1 clear + 1 fill + 1 mask punch on RIDGEBUF, then two smoothed blits. Stays faint so danger pops.
+  { const rg=RIDGECTX;
+    rg.globalCompositeOperation="source-over"; rg.clearRect(0,0,VW,VH);
+    rg.fillStyle="rgb("+((28+ac[0]*0.15)|0)+","+((34+ac[1]*0.15)|0)+","+((44+ac[2]*0.15)|0)+")"; rg.fillRect(0,0,VW,VH);
+    rg.globalCompositeOperation="destination-in"; rg.drawImage(RIDGE,0,0);
+    rg.globalCompositeOperation="source-over"; }
+  ridgeOff=(worldX*0.30)%VW; { const rx=-(ridgeOff|0); ctx.imageSmoothingEnabled=true; ctx.globalAlpha=0.20;
+    ctx.drawImage(RIDGEBUF,rx,0); ctx.drawImage(RIDGEBUF,rx+VW,0); ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false; }
+
+  // far parallax motes (depth) — slow drift, faint zone-tinted diamonds
+  { const m=108, scr=worldX*0.22, n0=Math.floor(scr/m);
+    ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.06)";
+    for(let n=n0-1;n<n0+6;n++){ const h=(n*2654435761)>>>0, x=n*m-scr+m/2,
+      y=WALL+24+(h%(VH-WALL*2-48)), sz=7+(h>>9&6);
+      ctx.beginPath(); ctx.moveTo(x,y-sz); ctx.lineTo(x+sz,y); ctx.lineTo(x,y+sz); ctx.lineTo(x-sz,y); ctx.closePath(); ctx.fill(); } }
+
+  // far-2 parallax — very slow micro-squares (depth layer behind the ridge, distinct from diamond motes)
+  { const m2=172, scr2=worldX*0.11, n0b=Math.floor(scr2/m2);
+    ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.038)";
+    for(let n=n0b-1;n<n0b+4;n++){ const hh=(n*1831565813)>>>0, x2=n*m2-scr2+m2*0.4,
+      y2=WALL+16+(hh%(VH-WALL*2-32)), sz2=2+(hh>>12&3);
+      ctx.fillRect(x2-sz2/2|0,y2-sz2/2|0,sz2,sz2); } }
+
+  // moving speed stripes (cheap parallax, <=10 ticks) tinted to the zone accent
+  ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.05)";
+  const sp=48, off=worldX%sp;
+  for(let x=-off;x<VW;x+=sp){ ctx.fillRect(x,WALL,2,VH-WALL*2); }
+
+  // horizontal grid lines — static, very faint; combined with moving verticals = grid-tunnel speed feel
+  ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.018)";
+  for(let y=WALL+8;y<VH-WALL;y+=14) ctx.fillRect(0,y,VW,1);
+
+  // walls
+  ctx.fillStyle=wallCss; ctx.fillRect(0,0,VW,WALL); ctx.fillRect(0,VH-WALL,VW,WALL);
+  ctx.fillStyle="#262f45"; ctx.fillRect(0,WALL-2,VW,2); ctx.fillRect(0,VH-WALL,VW,2);
+
+  // UPLINE platforms — friendly light ledges (never red); soft glow + lit top surface + underside shadow
+  for(const pl of plat){ if(!pl.on) continue; const x=pl.x|0;
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(x-2,pl.y-3,pl.w+4,9);
+    ctx.fillStyle=accCss; ctx.fillRect(x,pl.y,pl.w,5);
+    ctx.fillStyle="rgba(255,255,255,0.5)"; ctx.fillRect(x,pl.y,pl.w,1);
+    ctx.fillStyle="rgba(0,0,0,0.20)"; ctx.fillRect(x,pl.y+5,pl.w,3); }
+
+  // obstacles (always red; tech-panel look: dual seam, panel lines, dual bevel, corner accents)
+  const seamY=(t*70)|0, seamY2=(t*47)|0;   // two seams marching in opposite directions
+  for(const o of obs){ if(!o.on) continue;
+    const ry=o.side===0 ? BOTY-o.h : TOPY, ix=o.x|0;
+    const near=Math.max(0,1-Math.abs((o.x+o.w/2)-PX)/220);
+    if(o.k===1){ drawCritter(ix,ry,o,near); continue; }      // mine enemy (stomp the head)
+    if(segType===2){ drawSpike(ix,ry,o,near); continue; }    // mine red spike (jump only)
+    ctx.fillStyle=OBGLOW[(near*7)|0]; ctx.fillRect(ix-4,ry-4,o.w+8,o.h+8);              // 1 tension glow (wider halo)
+    ctx.fillStyle="#5e0a12"; ctx.fillRect(ix,ry,o.w,o.h);                               // 2 dark base / frame
+    ctx.fillStyle="#b82034"; ctx.fillRect(ix+2,ry,o.w-4,o.h);                           // 3 body (richer dark-red)
+    const bh=(o.h*0.52)|0;                                                              // 4 volume band — hot half at play edge
+    ctx.fillStyle="#e8344f";
+    if(o.side===0) ctx.fillRect(ix+2,ry,o.w-4,bh); else ctx.fillRect(ix+2,ry+o.h-bh,o.w-4,bh);
+    const p1=(o.h*0.30)|0, p2=(o.h*0.62)|0;                                            // 4b tech panel separator lines
+    ctx.fillStyle=OBPANEL; ctx.fillRect(ix+2,ry+p1,o.w-4,1); ctx.fillRect(ix+2,ry+p2,o.w-4,1);
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(ix+2,ry,2,o.h);                // 5 left highlight bevel
+    ctx.fillStyle="rgba(0,0,0,0.16)"; ctx.fillRect(ix+o.w-4,ry,2,o.h);                 // 5b right shadow bevel (depth)
+    const sy=ry+((seamY+ix)%o.h);                                                       // 6 forward energy seam
+    ctx.fillStyle=OBSEAM; ctx.fillRect(ix+3,sy|0,o.w-6,2);
+    const sy2=ry+(o.h-1-((seamY2+ix)%o.h));                                            // 6b reverse energy seam (counterpoint)
+    ctx.fillStyle=OBSEAM2; ctx.fillRect(ix+4,sy2|0,o.w-8,1);
+    ctx.fillStyle="#ff7184";                                                            // 7 hot danger lip
+    if(o.side===0) ctx.fillRect(ix,ry,o.w,5); else ctx.fillRect(ix,ry+o.h-5,o.w,5);
+    ctx.fillStyle="rgba(0,0,0,0.28)";                                                   // 8 dark anchored edge
+    if(o.side===0) ctx.fillRect(ix,ry+o.h-3,o.w,3); else ctx.fillRect(ix,ry,o.w,3);
+    if(o.style===1){ ctx.fillStyle=bgFill;                                              // 8b pixel corner bevel: punches 4×4 off danger-lip corners → angular/crystalline silhouette
+      if(o.side===0){ ctx.fillRect(ix,ry,4,4); ctx.fillRect(ix+o.w-4,ry,4,4); }
+      else { ctx.fillRect(ix,ry+o.h-4,4,4); ctx.fillRect(ix+o.w-4,ry+o.h-4,4,4); } }
+  }
+
+  // surfing trail — style by equipped TRAIL cosmetic, coloured by equipped AURA (newest=brightest)
+  for(const p of trail){ if(!p.on) continue; const f=p.x/PX; if(f<0) continue; trailDot(p.x,p.y,f,trailC,trStyle); }
+  ctx.globalAlpha=1;
+
+  // player (glow + squash along gravity axis, color harmonized to zone)
+  const cx=PX+PS/2, cy=py+PS/2;
+  if(BT[0]>0){ const mr=MAG_R*(0.6+0.4*Math.abs(Math.sin(t*2.4)));   // MAGNET field — breathing cyan pull-ring (reads the radius; plain arcs, no glow churn)
+    ctx.strokeStyle="rgba(90,220,255,0.16)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,mr,0,6.2832); ctx.stroke();
+    ctx.fillStyle="rgba(90,220,255,0.06)"; ctx.beginPath(); ctx.arc(cx,cy,PS*1.5,0,6.2832); ctx.fill(); }
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(2-sq,sq);
+  const shp=SKINS[equipped].shape;
+  if(BT[1]>0){ const pul=5+4*Math.sin(t*11); ctx.fillStyle="rgba(255,212,90,0.38)"; shapePath(shp,PS/2+pul); ctx.fill(); }
+  ctx.fillStyle=auraG; shapePath(shp,PS/2+3); ctx.fill();
+  ctx.fillStyle=pcol;  shapePath(shp,PS/2);   ctx.fill();
+  // expressive face: eyes glance with motion, mouth reacts (whoa / worried / grin / neutral)
+  ctx.fillStyle="rgba(12,14,20,0.9)";
+  const lk=Math.max(-1.4,Math.min(1.4,vy*0.004));
+  ctx.fillRect(-4,-2+lk,2.6,2.6); ctx.fillRect(1.4,-2+lk,2.6,2.6);
+  if(landT>0){ ctx.fillRect(-3,3,6,1.6); ctx.fillRect(-4,2,1.8,1.8); ctx.fillRect(2.2,2,1.8,1.8); } // grin
+  else if(vy<-260){ ctx.fillRect(-1.8,2.2,3.6,3.6); }                  // whoa (launching)
+  else if(vy>260){ ctx.fillRect(-3,2.4,6,3.4); }                       // worried (falling fast)
+  else { ctx.fillRect(-2.4,3,4.8,1.6); }                               // neutral
+  ctx.restore();
+
+  if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
+    txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
+  if(warpFx>0){ ctx.globalAlpha=Math.min(1,warpFx*2);   // nail-it "WARP +Nm" flourish
+    txt("WARP +"+WARP_M+"m", PX+34, py-22-(0.6-warpFx)*26, 13, "#7af0ff", 800); ctx.globalAlpha=1; }
+
+  // particles
+  for(const p of par){ if(p.life>0){ ctx.globalAlpha=Math.min(1,p.life*2.2);
+    ctx.fillStyle=p.c; ctx.fillRect(p.x,p.y,p.r,p.r); } }
+  ctx.globalAlpha=1;
+
+  // === Emotional light pass (Feature 1) + home-beacon (Feature 2) — over the world, under the HUD ===
+  // Build darkness-with-a-hole on the cached offscreen, then blit it over the scene (alloc-free:
+  // 1 clear + 1 fill + 1 sprite punch + 1 blit). destination-out on the SEPARATE buffer reveals the
+  // lit world (doing it on the main canvas would punch through to the page bg instead).
+  { const dg=DARKCTX, lr=lightR, lx=PX+PS/2, ly=py+PS/2;
+    dg.globalCompositeOperation="source-over"; dg.clearRect(0,0,VW,VH);
+    dg.fillStyle=(lowFx||segType===1)?DK_LOW:DK_NORMAL; dg.fillRect(0,0,VW,VH);   // SKY: lighter vignette so the bright world stays airy
+    dg.globalCompositeOperation="destination-out"; dg.drawImage(LIGHTSPR,lx-lr,ly-lr,lr*2,lr*2);
+    dg.globalCompositeOperation="source-over";
+    ctx.imageSmoothingEnabled=true; ctx.drawImage(DARK,0,0,VW,VH);
+    // home-beacon: a warm light on the horizon — grows long-term with best distance, and STEPS CLOSER each land
+    // crossed this run (creeps toward centre + grows + brightens), so a good run visibly nears home (additive).
+    const bl=Math.min(1,best/600), zr=Math.min(1,zonesRun*0.12), bsz=10+bl*14+zr*8+beaconPulse*5;
+    const bgx=VW*(0.72-zr*0.05), bgy=12+zr*4;
+    ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=Math.min(0.6,0.12+bl*0.24+zr*0.10+beaconPulse*0.28);
+    ctx.drawImage(LIGHTGOLD, bgx-bsz, bgy-bsz, bsz*2, bsz*2);
+    // "new land" sweep: the new realm's light washes across once on each zone crossing (calmer with reduce-flashing)
+    if(zoneSweep>0){ const sw=zoneSweep, bx=VW*(1.15-(1-sw)*1.3), amp=lowFx?0.10:0.22;
+      ctx.globalAlpha=amp*sw; ctx.fillStyle="rgb("+ac[0]+","+ac[1]+","+ac[2]+")"; ctx.fillRect(bx-34,0,68,VH);
+      ctx.globalAlpha=amp*sw*0.7; ctx.fillStyle="#ffffff"; ctx.fillRect(bx-7,0,14,VH); }
+    if(BT[1]>0){ const sr=PS*3; ctx.globalAlpha=0.22; ctx.drawImage(LIGHTGOLD,lx-sr,ly-sr,sr*2,sr*2); } // SHIELD gold flare — radius pinned to ~3× the player (was the full spotlight radius)
+    ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over"; ctx.imageSmoothingEnabled=false; }
+
+  // collectibles — coins shine in the gloom, power-orbs glow their buff colour (never red); drawn OVER the
+  // darkness so loot is always readable (you can plan a flip toward it) — little lights in the dark.
+  ctx.imageSmoothingEnabled=true;
+  for(const c of col){ if(!c.on) continue; const bx=c.x, by=c.y+Math.sin(t*4+c.bob)*2;
+    ctx.globalAlpha=Math.max(0.5,1-Math.abs(bx-PX)/300);   // fade far loot so a distant dimmed-red jut stays the salient signal
+    if(c.kind===0){ const r=4+Math.sin(t*5+c.bob)*0.6;
+      ctx.fillStyle="rgba(255,207,92,0.28)";                                   // soft gold halo
+      ctx.beginPath(); ctx.moveTo(bx,by-r-1.6); ctx.lineTo(bx+r+1.6,by); ctx.lineTo(bx,by+r+1.6); ctx.lineTo(bx-r-1.6,by); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="#ffcf5c";                                                 // gold diamond
+      ctx.beginPath(); ctx.moveTo(bx,by-r); ctx.lineTo(bx+r,by); ctx.lineTo(bx,by+r); ctx.lineTo(bx-r,by); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,0.78)"; ctx.fillRect(bx-0.9,by-0.9,1.8,1.8);  // white sparkle → coins pop on warm zones
+    } else { const k=c.kind-1, sz=12+Math.sin(t*6+c.bob)*1.5;
+      ctx.globalCompositeOperation="lighter";
+      ctx.drawImage(ORBSPR[k], bx-sz, by-sz, sz*2, sz*2);                       // buff-colour halo (which buff)
+      ctx.drawImage(LIGHTSPR, bx-sz*0.6, by-sz*0.6, sz*1.2, sz*1.2);            // white-hot core → orbs POP on ANY zone
+      ctx.globalCompositeOperation="source-over";
+      ctx.fillStyle=ORBCSS[k]; ctx.beginPath(); ctx.arc(bx,by,3,0,6.2832); ctx.fill(); }  // buff-colour pip
+  }
+  ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false;
+
+  // warp tubes — teal "friendly tech" rings (never red); drawn over the dark so you can line up the flip. Used ones fade out.
+  for(const w of warps){ if(!w.on) continue; const wx=w.x, wy=w.y, br=13+Math.sin(t*6+wx*0.05)*2;
+    ctx.globalAlpha=w.used?Math.max(0,warpFx*1.4):1; ctx.globalCompositeOperation="lighter";
+    ctx.strokeStyle="rgba(90,240,255,0.55)"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(wx,wy,br,0,6.2832); ctx.stroke();
+    ctx.strokeStyle="rgba(200,255,255,0.45)"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(wx,wy,br*0.6,0,6.2832); ctx.stroke();
+    ctx.fillStyle="rgba(120,245,255,0.10)"; ctx.beginPath(); ctx.arc(wx,wy,br*0.6,0,6.2832); ctx.fill();
+    ctx.globalCompositeOperation="source-over"; }
+  // portal exit "breakout" — a teal ring bursting outward from the player on a nailed warp
+  if(warpFx>0){ const p=1-warpFx/0.6, rr=PS*0.5+p*66; ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=(1-p)*0.7;
+    ctx.strokeStyle="rgba(140,245,255,1)"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(cx,cy,rr,0,6.2832); ctx.stroke();
+    ctx.globalCompositeOperation="source-over"; }
+  ctx.globalAlpha=1;
+
+  // score (in-run only)
+  if(mode==="play"){ const sc=score();
+    // HUD scrim — a single translucent band keeps score + coin readable across every zone (gold-on-gold luminance collision in warm zones)
+    ctx.fillStyle="rgba(0,0,0,0.25)"; ctx.fillRect(0,0,VW,WALL);
+    txt(sc+"m",VW/2,WALL-6,13,"#aeb8cc",700);
+    txt("◆ "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);
+    // pause chip — small corner affordance so phone-call recovery + intentional pause is always available
+    ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_PAUSE.x,R_PAUSE.y,R_PAUSE.w,R_PAUSE.h);
+    ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16);
+    if(xfade>0){ ctx.globalAlpha=Math.min(1,xfade*1.6);   // portal banner — which world you're entering
+      txt(segType===1?"▲  UPLINE":"▼  DOWNLINE", VW/2, VH/2-30, 22, accCss, 800);
+      txt(segType>=1?"tap to jump":"tap to flip", VW/2, VH/2-8, 12, "#e8ecf1", 600); ctx.globalAlpha=1; } }
+
+  ctx.restore();
+
+  if(flash>0 && !lowFx){ ctx.fillStyle=flashCol; ctx.globalAlpha=flash; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
+
+  { let n=0; for(let i=0;i<3;i++) if(BT[i]>0) n++;   // active-buff chrome — nested borders + a centred row of timed labels (stack-aware)
+    let k=0; for(let i=0;i<3;i++){ if(BT[i]<=0) continue; const c=GATECOL[i], a=Math.min(0.5,BT[i]/ORB_DUR);
+      ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; ctx.lineWidth=3; const ins=2+k*4; ctx.strokeRect(ins,ins,VW-ins*2,VH-ins*2);
+      ctx.globalAlpha=Math.min(1,BT[i]*1.2); txt(GATELABEL[i],VW/2+(k-(n-1)/2)*92,VH-10,11,ORBCSS[i],800); ctx.globalAlpha=1; k++; } }
+
+  if(paused){                       // manual pause overlay — calm wash + clear "tap to resume" affordance
+    ctx.fillStyle="rgba(8,10,16,0.55)"; ctx.fillRect(0,0,VW,VH);
+    txt("PAUSED",VW/2,VH/2-12,28,"#ffe08a",800);
+    ctx.globalAlpha=0.7+0.3*Math.sin(t*5); txt("tap to resume",VW/2,VH/2+18,12,"#9bf0d0",600); ctx.globalAlpha=1; }
+  else if(mode==="reviving"){            // "GET READY" 3..2..1 over the cleared field
+    const n=Math.ceil(reviveT);
+    txt("GET READY",VW/2,VH/2-30,16,"#9bf0d0",700);
+    ctx.globalAlpha=0.5+0.5*(reviveT-(n-1)); txt(""+n,VW/2,VH/2+30,56,"#ffcf5c",800); ctx.globalAlpha=1;
+  } else if(mode==="offer"){         // once-per-run optional ad-revive — two EQUAL buttons (clearly optional)
+    txt("CONTINUE?",VW/2,VH/2-34,28,"#ffcf5c",800);
+    txt(dist+"m — keep your run going",VW/2,VH/2-12,12,"#aeb8cc",600);
+    ctx.fillStyle="rgba(94,242,194,0.16)"; ctx.fillRect(R_CONT.x,R_CONT.y,R_CONT.w,R_CONT.h);
+    txt("▶  CONTINUE — revive + all buffs",VW/2,R_CONT.y+20,12,"#9bf0d0",700);
+    ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_END.x,R_END.y,R_END.w,R_END.h);
+    txt("no thanks — end run",VW/2,R_END.y+19,12,"#aeb8cc",700);
+  }
+  else if(mode==="shop"){ drawShop(); }
+  else if(mode==="ready"){
+    txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — thread the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
+    if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
+    R_SHOPBTN.y=VH/2+72;   // boost-row-only screen: shop sits below it, no dead-screen crowding to account for
+    shopBtn(); drawBoostRow();
+  } else if(mode==="dead"){
+    txt("CRASHED",VW/2,VH/2-32,30,"#ff5468",800);
+    txt(score()+"m",VW/2,VH/2+4,18,"#e8ecf1",700);
+    txt(score()>=best?"★ NEW BEST ★":"best  "+best+"m",VW/2,VH/2+26,12,score()>=best?"#ffcf5c":"#aeb8cc",700);
+    txt("+◆ "+lastEarned+"   (◆ "+coins+")",VW/2,VH/2+42,12,"#ffcf5c",700);
+    // explicit RETRY pill — rest of the dead screen is now inert so a casual tap on the score won't restart the run
+    ctx.fillStyle="rgba(94,242,194,0.16)"; ctx.fillRect(R_RETRY.x,R_RETRY.y,R_RETRY.w,R_RETRY.h);
+    ctx.globalAlpha=0.7+0.3*Math.sin(t*5); txt("▶  TAP TO RETRY",VW/2,R_RETRY.y+16,12,"#9bf0d0",800); ctx.globalAlpha=1;
+    // stack whatever comes next below the retry pill instead of fixed constants — the coin-double offer
+    // is conditional, so a fixed SHOP/next-unlock position either overlapped it or floated with gaps
+    let dy=R_RETRY.y+R_RETRY.h+5;
+    const showDouble=!doubledFlag && lastEarned>=5;
+    if(showDouble){ R_DOUBLE.y=dy; ctx.fillStyle="rgba(255,207,92,0.12)"; ctx.fillRect(R_DOUBLE.x,R_DOUBLE.y,R_DOUBLE.w,R_DOUBLE.h);
+      txt("▶ watch ad → DOUBLE coins (+◆ "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); dy+=R_DOUBLE.h+5; }
+    R_SHOPBTN.y=dy; shopBtn(); dy+=R_SHOPBTN.h+8;
+    // the coin-double offer and the next-unlock carrot are both upsell nudges — showing only one at a
+    // time (prioritising the ad offer when it applies) keeps the 270px-tall screen from overflowing
+    const nu=!showDouble && nextUnlock();
+    if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,dy+8,10,"#9bf0d0",700);
+      const bw=150,bx=VW/2-bw/2,by=dy+18,pr=Math.min(1,coins/nu.cost);
+      ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(bx,by,bw,4);
+      ctx.fillStyle="#ffcf5c"; ctx.fillRect(bx,by,bw*pr,4); }
+  }
+}
+
+function shopBtn(){
+  ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_SHOPBTN.x,R_SHOPBTN.y,R_SHOPBTN.w,R_SHOPBTN.h);
+  txt("SHOP   ◆ "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);
+}
+const BDESC=["pulls coins to you","survives 1 hit","doubles your score"];   // plain-language tooltip per buff (FTUE: name what it actually does)
+function drawBoostRow(){   // pre-run free pick-1 buff + opt-in rewarded "all 3" (the 'not ad-spam' flex)
+  txt(pickBuff>=0?"START BOOST — free":"START BOOST — tap one (free)",VW/2,33,10,"#9bf0d0",700);
+  for(let i=0;i<3;i++){ const r=R_BUFF[i], sel=pickBuff===i;
+    ctx.fillStyle=sel?BUFFSEL[i]:"rgba(255,255,255,0.06)"; ctx.fillRect(r.x,r.y,r.w,r.h);
+    if(sel){ ctx.strokeStyle=ORBCSS[i]; ctx.lineWidth=2; ctx.strokeRect(r.x+1,r.y+1,r.w-2,r.h-2); }
+    txt(BSHORT[i],r.x+r.w/2,r.y+16,11,ORBCSS[i],700); }
+  if(pickBuff>=0) txt(BDESC[pickBuff],VW/2,R_BUFF[0].y+R_BUFF[0].h+11,10,"#aeb8cc",600);   // selected-buff plain-language description
+  ctx.fillStyle="rgba(255,255,255,0.05)"; ctx.fillRect(R_BUFFALL.x,R_BUFFALL.y,R_BUFFALL.w,R_BUFFALL.h);
+  ctx.globalAlpha=0.85+0.15*Math.sin(t*4); txt("▶ watch ad → start with ALL 3",VW/2,R_BUFFALL.y+15,11,"#ffcf5c",700); ctx.globalAlpha=1;
+}
+function drawShop(){
+  ctx.fillStyle="rgba(8,10,16,0.9)"; ctx.fillRect(0,0,VW,VH);
+  txt("COSMETICS",VW/2,30,20,"#e8ecf1",800);
+  txt("◆ "+coins,VW/2,48,12,"#ffcf5c",700);
+
+  // category tabs (SHAPE / TRAIL / AURA)
+  const TN=["SHAPE","TRAIL","AURA"];
+  for(let c=0;c<3;c++){ const r=R_TAB[c], on=shopCat===c;
+    ctx.fillStyle=on?"rgba(94,242,194,0.16)":"rgba(255,255,255,0.05)"; ctx.fillRect(r.x,r.y,r.w,r.h);
+    if(on){ ctx.fillStyle="#5ef2c2"; ctx.fillRect(r.x,r.y+r.h-2,r.w,2); }
+    txt(TN[c],r.x+r.w/2,r.y+15,12,on?"#5ef2c2":"#8b95a8",700); }
+
+  const c=shopCat, list=catList(c), own=catOwned(c), i=sel[c], it=list[i], cx=VW/2, cy=130;
+  // composite TRY-ON preview from all three selected axes; reactive items cycle hue so "reactive" reads
+  const rc="hsl("+(((t*46)|0)%360)+",78%,63%)";
+  const bodyCol=SKINS[sel[0]].col||rc;
+  const aIt=AURAS[sel[2]], auraCol=aIt.reactive?rc:(aIt.col||bodyCol);
+  const tIt=TRAILS[sel[1]], trailCol=tIt.reactive?rc:auraCol;
+  for(let n=0;n<10;n++){ const f=1-n/10, x=cx-22-n*9, y=cy+Math.sin(t*4+n*0.55)*3; trailDot(x,y,f,trailCol,tIt.r); }
+  ctx.globalAlpha=1;
+  ctx.save(); ctx.translate(cx,cy); const bob=1+0.04*Math.sin(t*4); ctx.scale(bob,bob);
+  ctx.globalAlpha=0.30; ctx.fillStyle=auraCol; shapePath(SKINS[sel[0]].shape,20,1); ctx.fill(); ctx.globalAlpha=1;
+  ctx.fillStyle=bodyCol; shapePath(SKINS[sel[0]].shape,15,1); ctx.fill();
+  ctx.fillStyle="rgba(12,14,20,0.9)"; ctx.fillRect(-4,-2,2.6,2.6); ctx.fillRect(1.4,-2,2.6,2.6); ctx.fillRect(-2.4,3,4.8,1.6);
+  ctx.restore();
+
+  ctx.globalAlpha=0.7+0.3*Math.sin(t*5);
+  txt("‹",R_PREV.x+18,cy+9,32,"#aeb8cc",700); txt("›",R_NEXT.x+18,cy+9,32,"#aeb8cc",700); ctx.globalAlpha=1;
+
+  txt(it.name,VW/2,176,15,"#e8ecf1",700);
+  if(it.reactive) txt("◆ REACTIVE",VW/2,189,9,"#ffcf5c",800);   // rarity badge: reactive = shifts with the zone
+  else txt("FIXED",VW/2,189,9,"#6f7a92",700);
+
+  const isOwned=own.includes(i); let label, lcol;
+  if(isOwned){ const eq=catEquipped(c)===i; label=eq?"EQUIPPED":"EQUIP"; lcol=eq?"#6f7a92":"#37e29a"; }
+  else { label="BUY   ◆ "+it.cost; lcol=coins>=it.cost?"#ffcf5c":"#6f7a92"; }
+  ctx.fillStyle="rgba(255,255,255,0.08)"; ctx.fillRect(R_ACT.x,R_ACT.y,R_ACT.w,R_ACT.h);
+  txt(label,VW/2,R_ACT.y+20,14,lcol,800);
+
+  // owned dots for this axis
+  for(let k=0;k<list.length;k++){ ctx.fillStyle=own.includes(k)?(k===catEquipped(c)?"#ffcf5c":"#56607a"):"#2a3245";
+    ctx.fillRect(VW/2-(list.length*8)/2+k*8, 230, 5,5); }
+
+  txt("‹ back",R_BACK.x+36,R_BACK.y+16,12,"#aeb8cc",600);
+}
+
+/* ===== Loop (capped delta-time → framerate independent, no tunneling) ===== */
+let lastT=0;
+function frame(now){
+  if(!lastT) lastT=now;
+  let dt=(now-lastT)/1000; lastT=now;
+  if(dt>0.033) dt=0.033;     // cap protects physics on hitches/background tabs
+  t+=dt;
+  update(dt); draw();
+  requestAnimationFrame(frame);
+}
+
+function boot(){
+  Ads.loadingStart();   // fire immediately — this must bracket the WHOLE load (any path to ready()),
+  // not just the SDK-init-success path. It used to live inside the init callback below, guarded by
+  // `if(!done)`; if the 700ms fallback timeout won the race (very plausible on a real network — local
+  // testing made SDK.init() resolve near-instantly, which hid this), loadingStart() never fired at all,
+  // while loadingStop() still fired unconditionally from ready() — an unpaired stop signal, which is
+  // almost certainly why QA measured a ~104s load time on a 0.1MB single-file game.
+  buildArt();
+  reset();
+  // v3 lifecycle: init FIRST (SDK — and Store, which reads it — is unusable until init resolves), THEN
+  // bracket the (instant) load so CrazyGames' loader hides correctly. Offline/no-SDK → init cb fires
+  // synchronously; 700ms = SDK-blocked fallback. loadSave() runs here (not before) so a returning
+  // logged-in player's synced Data Module save is what actually loads, not a stale local guest copy.
+  let done=false; const ready=()=>{ if(done)return; done=true; loadSave();
+    document.getElementById("fx").textContent = lowFx?"✧":"✦";
+    // platform mute setting takes priority over the in-game toggle (SDK policy) — read it once SDK is
+    // up, then stay live via addSettingsChangeListener (platform can flip it any time during play)
+    try{ Snd.platformMuted=!!window.CrazyGames?.SDK?.game?.settings?.muteAudio; }catch(e){}
+    try{ window.CrazyGames?.SDK?.game?.addSettingsChangeListener?.(s=>{
+      Snd.platformMuted=!!s.muteAudio; updateMuteIcon(); Music.applyMute(); }); }catch(e){}
+    updateMuteIcon(); Music.applyMute();
+    Ads.loadingStop(); mode="ready"; };
+  Ads.init(()=>{ ready(); }); setTimeout(ready,700);
+  requestAnimationFrame(frame);
+}
+boot();
+</script>
+</body>
+</html>

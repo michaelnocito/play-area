@@ -1,0 +1,50 @@
+CLAIM ANALYSIS: Rhythm Quest Audio Synchronization
+
+CLAIM STATEMENT:
+"Rhythm Quest uses DSP time (AudioSettings.dspTime) instead of frame-based game time for core music-gameplay synchronization, scheduled via PlayScheduled() at a calculated offset one second in advance to guarantee consistent playback timing within the audio subsystem."
+
+TECHNICAL PLAUSIBILITY CHECK:
+
+1. QUOTE SUPPORT ANALYSIS:
+   - Quote provided: "By scheduling the audio track one full second in advance using PlayScheduled(), the system guarantees consistent playback start timing within the audio subsystem."
+   - This quote DOES support the basic premise (PlayScheduled + scheduling in advance)
+   - BUT: The quote does NOT explicitly mention:
+     * AudioSettings.dspTime being used (not named)
+     * That this is instead of frame-based timing (not explicitly contrasted)
+     * The one-second offset is calculated specifically
+   - VERDICT: Quote partially supports but doesn't fully substantiate all claim details
+
+2. TECHNICAL VALIDITY CHECK:
+   - AudioSettings.dspTime (Unity API) = double-precision time maintained by audio thread
+   - PlayScheduled() = real scheduling function in Unity audio
+   - These are real Unity APIs used in games
+   - The general approach (DSP time + scheduled playback) is a known best practice in rhythm games
+   - However, these are engine-specific APIs
+
+3. SOURCE CREDIBILITY:
+   - ddrkirbyisq is a known indie game dev (credible)
+   - Medium devlog format is typical for game dev documentation
+   - URL suggests "devlog-4" (suggests documented series)
+   - However: Cannot access source directly (Cloudflare block), relying on quote alone
+   - No corroborating indie game dev sources found in searches
+
+4. CLAIM EXTRAORDINARINESS:
+   - Using DSP time for audio sync is NOT extraordinary (best practice)
+   - PlayScheduled for advance scheduling is NOT extraordinary (standard audio optimization)
+   - The combination is known approach but specific implementation details require primary source
+
+5. BEAT SABER / SYNTH RIDERS VERIFICATION:
+   - Beat Saber (commercial): Uses custom audio pipeline, proprietary sync (VR platform specific)
+   - Synth Riders: Also custom audio, less documented publicly
+   - Neither game documents their systems with PlayScheduled/dspTime specifically
+   - The claim is about Rhythm Quest, not these games (though prompt context is about them)
+
+6. POTENTIAL OVERREACH IN CLAIM:
+   - "Guarantee consistent playback timing" = strong word; scheduling reduces but doesn't guarantee
+   - "One second in advance" is specific; needs primary confirmation
+   - "Core music-gameplay synchronization" scope claim needs source verification
+
+7. OUTDATED / TIMING CHECK:
+   - Rhythm Quest development appears to be mid-2010s era indie game
+   - Unity audio APIs were stable by then
+   - No apparent date issues
