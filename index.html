@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Play Area</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Georgia', serif;
+    background: #0d0d12;
+    color: #f1e3c6;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 60px 20px;
+  }
+  h1 { font-size: 32px; letter-spacing: 3px; color: #e8c878; margin-bottom: 8px; }
+  p.sub { opacity: 0.7; margin-bottom: 40px; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    max-width: 800px;
+    width: 100%;
+  }
+  a.card {
+    display: block;
+    background: #1a1330;
+    border: 1px solid rgba(232,200,120,0.2);
+    border-radius: 8px;
+    padding: 24px;
+    text-decoration: none;
+    color: #f1e3c6;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  a.card:hover { border-color: #e8c878; transform: translateY(-2px); }
+  a.card h2 { font-size: 18px; color: #e8c878; margin-bottom: 6px; letter-spacing: 1px; }
+  a.card p { font-size: 12px; opacity: 0.75; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <h1>PLAY AREA</h1>
+  <p class="sub">Games — no build step, just click and play.</p>
+  <div class="grid">
+    <a class="card" href="flipline/">
+      <h2>Flipline</h2>
+      <p>One-button gravity-flip runner. Tap flips gravity, thread the obstacles.</p>
+    </a>
+    <a class="card" href="rooftop-sprint/">
+      <h2>Rooftop Sprint</h2>
+      <p>Auto-scroll rooftop runner. Jump the gaps, strike down guards.</p>
+    </a>
+    <a class="card" href="rune-dash/">
+      <h2>Rune Dash</h2>
+      <p>Calm auto-runner. Tap to jump, freeze shades into platforms.</p>
+    </a>
+  </div>
+</body>
+</html>
