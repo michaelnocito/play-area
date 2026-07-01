@@ -58,7 +58,7 @@ const Ads = {
 /* ===== Procedural audio — persistent SFX voices (zero alloc) + a synth music bed (audio-thread only, never per render-frame) ===== */
 const PENT=[440,523.25,587.33,659.25,783.99,880,1046.5,1174.66,1318.5];   // A-minor pentatonic (A C D E G…) — keeps SFX in-key with the bed
 const Snd = {
-  ctx:null, master:null, voices:[], vi:0, muted:false, adMuted:false, noise:null,
+  ctx:null, master:null, voices:[], vi:0, muted:false, adMuted:false, platformMuted:false, noise:null,   // platformMuted = CrazyGames SDK muteAudio setting; takes priority over the in-game toggle (policy)
   duck(b){ this.adMuted=b; if(this.master&&this.ctx){ try{ this.master.gain.setTargetAtTime(b?0.0001:0.9,this.ctx.currentTime,0.02); }catch(e){} } },  // mute audio during ads
   ensure(){
     if(!this.ctx){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
@@ -73,7 +73,7 @@ const Snd = {
       } }
     if(this.ctx?.state==="suspended") this.ctx.resume();
   },
-  play(f1,f2,dur,type,vol){ if(this.muted||this.adMuted)return; this.ensure(); if(!this.voices.length)return;
+  play(f1,f2,dur,type,vol){ if(this.muted||this.adMuted||this.platformMuted)return; this.ensure(); if(!this.voices.length)return;
     const v=this.voices[this.vi]; this.vi=(this.vi+1)%this.voices.length; const t=this.ctx.currentTime;
     v.o.type=type||"square";
     v.o.frequency.cancelScheduledValues(t); v.o.frequency.setValueAtTime(f1,t);
@@ -82,14 +82,14 @@ const Snd = {
     v.g.gain.exponentialRampToValueAtTime(vol||0.16,t+0.006);
     v.g.gain.exponentialRampToValueAtTime(0.0001,t+dur); },
   // a filtered noise burst (whoosh / impact texture) — short one-shot nodes on the audio thread, not the render loop
-  burstN(f1,f2,dur,vol,type){ if(this.muted||this.adMuted||!this.ctx||!this.noise)return; const t=this.ctx.currentTime;
+  burstN(f1,f2,dur,vol,type){ if(this.muted||this.adMuted||this.platformMuted||!this.ctx||!this.noise)return; const t=this.ctx.currentTime;
     const s=this.ctx.createBufferSource(); s.buffer=this.noise;
     const bp=this.ctx.createBiquadFilter(); bp.type=type||"bandpass"; bp.frequency.setValueAtTime(f1,t);
     bp.frequency.exponentialRampToValueAtTime(Math.max(40,f2),t+dur); bp.Q.value=0.8;
     const g=this.ctx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
     s.connect(bp); bp.connect(g); g.connect(this.master); s.start(t); s.stop(t+dur+0.03); },
   // a scheduled pitched one-shot at an ABSOLUTE time (for musical stings / the portal breakout) — audio-thread node, not per-frame
-  tone(f,time,dur,vol,type){ if(this.muted||this.adMuted||!this.ctx)return; const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+  tone(f,time,dur,vol,type){ if(this.muted||this.adMuted||this.platformMuted||!this.ctx)return; const o=this.ctx.createOscillator(), g=this.ctx.createGain();
     o.type=type||"triangle"; o.frequency.setValueAtTime(f,time);
     g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol||0.09,time+0.01); g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
     o.connect(g); g.connect(this.master); o.start(time); o.stop(time+dur+0.03); },
@@ -101,10 +101,10 @@ const Snd = {
   clean(n){ const f=PENT[Math.min(PENT.length-1,(n||1)-1+3)];           // skim chains WALK UP the A-minor scale → melodic combos
     this.play(f,f*1.35,0.10,"triangle",0.10); this.burstN(1500,4200,0.10,0.05,"highpass"); },  // + a passing whoosh as the pillar flies by
   die(){ this.play(200,42,0.34,"sawtooth",0.17); this.burstN(1900,120,0.30,0.10,"lowpass"); },  // downward glitch + noise impact
-  warp(){ if(this.muted||this.adMuted)return; this.ensure(); const t=this.ctx?this.ctx.currentTime:0;
+  warp(){ if(this.muted||this.adMuted||this.platformMuted)return; this.ensure(); const t=this.ctx?this.ctx.currentTime:0;
     this.play(170,440,0.16,"sawtooth",0.10); this.burstN(400,2800,0.16,0.10,"bandpass");        // ENTER — intake whoomp + rising whoosh
     this.tone(659.25,t+0.18,0.5,0.09); this.tone(987.77,t+0.25,0.45,0.08); this.tone(1318.5,t+0.32,0.55,0.09); },  // BREAKOUT — bright ascending triad (the unexpected help)
-  flow(){ if(this.muted||this.adMuted)return; this.ensure(); const t=this.ctx?this.ctx.currentTime:0;   // entering Flow — warm rising A-minor arpeggio
+  flow(){ if(this.muted||this.adMuted||this.platformMuted)return; this.ensure(); const t=this.ctx?this.ctx.currentTime:0;   // entering Flow — warm rising A-minor arpeggio
     this.tone(440,t,0.6,0.09); this.tone(523.25,t+0.07,0.6,0.09); this.tone(659.25,t+0.14,0.7,0.10); this.tone(880,t+0.22,0.8,0.10); }
 };
 
@@ -120,12 +120,12 @@ const Music = {
     this.bassLP=c.createBiquadFilter(); this.bassLP.type="lowpass"; this.bassLP.frequency.value=420; this.bassLP.Q.value=6; this.bassLP.connect(this.gain);
     this.next=c.currentTime+0.12; this.step=0; this.lead=0;
     this.timer=setInterval(()=>this.sched(),25); this.applyMute(); },
-  applyMute(){ if(!this.gain||!Snd.ctx) return; const tgt=(this.on&&!Snd.muted)?(this.flow?0.22:0.16):0.0001; this.gain.gain.setTargetAtTime(tgt,Snd.ctx.currentTime,0.1); },  // swell in Flow State
+  applyMute(){ if(!this.gain||!Snd.ctx) return; const tgt=(this.on&&!Snd.muted&&!Snd.platformMuted)?(this.flow?0.22:0.16):0.0001; this.gain.gain.setTargetAtTime(tgt,Snd.ctx.currentTime,0.1); },  // swell in Flow State
   sched(){ const c=Snd.ctx; if(!c) return; const sp16=(60/this.BPM)/4;
     const sp=(typeof mode!=="undefined"&&mode==="play")?(speed-SPEED0)/(SPEEDMX-SPEED0):0;   // tension: bass filter opens as you speed up
     this.bassLP.frequency.setTargetAtTime(this.flow?1150:380+Math.max(0,Math.min(1,sp))*560,c.currentTime,0.15);   // Flow State opens it wide
     while(this.next < c.currentTime+0.14){ this.note(this.step,this.next); this.next+=sp16; this.step=(this.step+1)%32; } },
-  note(s,t){ if(Snd.muted||Snd.adMuted) return;        // skip node creation when silenced (step still advances → stays in time)
+  note(s,t){ if(Snd.muted||Snd.adMuted||Snd.platformMuted) return;        // skip node creation when silenced (step still advances → stays in time)
     if(s%4===0) this.kick(t);                            // four-on-the-floor
     if(s%2===0) this.hat(t, s%4===2);                    // 8th-note hats; offbeat = open accent
     if(s%4===2) this.bass(M_BASS[((s-2)/4)%8],t);        // rolling offbeat bass — the techno pump
@@ -148,7 +148,8 @@ const Music = {
     o.connect(g); g.connect(this.gain); o.start(t); o.stop(t+0.24); }
 };
 document.getElementById("mute").addEventListener("click",e=>{
-  Snd.muted=!Snd.muted; e.currentTarget.textContent=Snd.muted?"🔇":"🔊"; Music.applyMute(); });   // one mute kills music + SFX
+  Snd.muted=!Snd.muted; updateMuteIcon(); Music.applyMute(); });   // one mute kills music + SFX
+function updateMuteIcon(){ document.getElementById("mute").textContent=(Snd.muted||Snd.platformMuted)?"🔇":"🔊"; }
 document.getElementById("fx").addEventListener("click",e=>{
   lowFx=!lowFx; e.currentTarget.textContent=lowFx?"✧":"✦"; persist(); });
 
@@ -1234,7 +1235,14 @@ function boot(){
   // synchronously; 700ms = SDK-blocked fallback. loadSave() runs here (not before) so a returning
   // logged-in player's synced Data Module save is what actually loads, not a stale local guest copy.
   let done=false; const ready=()=>{ if(done)return; done=true; loadSave();
-    document.getElementById("fx").textContent = lowFx?"✧":"✦"; Ads.loadingStop(); mode="ready"; };
+    document.getElementById("fx").textContent = lowFx?"✧":"✦";
+    // platform mute setting takes priority over the in-game toggle (SDK policy) — read it once SDK is
+    // up, then stay live via addSettingsChangeListener (platform can flip it any time during play)
+    try{ Snd.platformMuted=!!window.CrazyGames?.SDK?.game?.settings?.muteAudio; }catch(e){}
+    try{ window.CrazyGames?.SDK?.game?.addSettingsChangeListener?.(s=>{
+      Snd.platformMuted=!!s.muteAudio; updateMuteIcon(); Music.applyMute(); }); }catch(e){}
+    updateMuteIcon(); Music.applyMute();
+    Ads.loadingStop(); mode="ready"; };
   Ads.init(()=>{ if(!done){ Ads.loadingStart(); ready(); } }); setTimeout(ready,700);
   requestAnimationFrame(frame);
 }
