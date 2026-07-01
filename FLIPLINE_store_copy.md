@@ -9,12 +9,12 @@ Paste-ready copy for the developer-portal submission form. Tone: calm, premium, 
 FLIPLINE
 
 ## Tagline / short description (~150 chars)
-Flip gravity with one tap and thread the red. A fair, fast, hypnotic one-button runner — skim close, chase a clean line, find the long way home.
+Flip gravity with one tap and thread the red. A fair, fast, hypnotic one-button runner — find your rhythm and chase your best distance home.
 
 ## Long description
 FLIPLINE is a one-button gravity-flip runner. Tap, click, or press space and your traveler snaps between floor and ceiling — thread the red, and see how far you can go.
 
-It's built to be scrupulously fair: danger is **always red**, hitboxes are forgiving, and the difficulty ramps gently so every crash feels earned. The reward is in playing brave — skim an obstacle by a hair for a **Clean Pass** combo, chain skims to charge **Flow State**, and blaze a homeward trail for bonus distance.
+It's built to be scrupulously fair: danger is **always red**, hitboxes are forgiving, and the difficulty ramps gently so every crash feels earned, never cheap.
 
 Collect coins, earn **Magnet / Shield / 2×** power-orbs mid-run, and spend your haul on cosmetic shapes, trails, and auras. Underneath it all, a wordless story told only in light and color: a small traveler, a long way from home, crossing strange lands to get back.
 
@@ -23,7 +23,6 @@ One tap to understand. A long way to master.
 ## How to play / Controls
 - **Tap / Click / Space / ↑ / W** — flip gravity
 - Avoid the **red** obstacles
-- Skim them by a hair for a **Clean Pass** bonus and to charge Flow State
 - Grab coins and power-orbs; spend coins in the shop
 - Score = distance — beat your best
 
