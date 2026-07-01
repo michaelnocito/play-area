@@ -1,8 +1,22 @@
 # FLIPLINE — Dev Handoff / Resume Point
 
 **Repo:** `github.com/michaelnocito/flipline` (PRIVATE, branch `main`) · **Local:** `C:\Users\Mike\Projects\GAMES\flipline`
-**HEAD at handoff:** `e10fc83` · **Deliverable:** one file `index.html` (~1035 lines, vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
-**Read first:** `HANDOFF.md` (visual/level-design spec), `FLIPLINE_lore_bible.md` (wordless "Long Way Home" lore). Memory `project_flipline_state.md` auto-loads with full per-feature detail.
+**HEAD at handoff:** `ccf360d` (2026-07-01) · **Deliverable:** one file `index.html` (vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
+**Read first:** `HANDOFF.md` (visual/level-design spec), `FLIPLINE_lore_bible.md` (wordless "Long Way Home" lore), `FLIPLINE_store_copy.md` (submission copy — now accurate to v1). Memory `project_flipline_state.md` auto-loads with full per-feature detail.
+
+## 🎬 LAUNCH GATE STATUS (2026-07-01) — what's left before submitting
+1. ✅ Gameplay fully tuned + fairness-verified (`tools/sim.js`)
+2. ✅ Dead-screen layout bug fixed
+3. ✅ Gameplay clips recorded — desktop 1920×1080 + mobile 1440×810, ~19s each, verified smooth (0-1 dropped frames)
+4. ✅ Cover art done (`covers/`)
+5. ✅ Store copy accurate to the shipped build
+6. ✅ CrazyGames SDK v3 call names spot-checked against current docs (`game.gameplayStart/Stop`, `game.loadingStart/Stop`, `ad.requestAd`, `game.happytime` — all confirmed current, 2026-07-01)
+7. ⏳ **Mike:** create/log into CrazyGames developer account, create the game listing, upload the build
+8. ⏳ **Mike:** run the CrazyGames QA tool against the uploaded build, fix anything it flags
+9. ⏳ **Mike:** paste in `FLIPLINE_store_copy.md` content + upload cover art + attach the two gameplay clips
+10. ⏳ **Mike:** submit for review
+
+Everything code-side is done. Steps 7-10 need CrazyGames portal access I don't have — those are Mike's.
 
 ## 🚀 SHIP DECISION (2026-07-01): downline-only v1
 Reviewed the redesign: DOWNLINE (flip-runner + formations + buffs + revive + shop + audio + zones + CrazyGames ad hooks) is feature-complete and submission-ready. UPLINE (glide platformer) was only ever a feel-locked skeleton — floating ledges + coins, **zero obstacles/enemies/challenge**, no vault mechanic, no bloom-regrow layer, never playtested. Rather than gate launch on finishing an unproven mechanic, **shipped downline-only**: `SEG_SEQ=[0]` permanently, segment-switch code guarded off (`SEG_SEQ.length>1`), dev level-picker UI/code fully removed (`devRow`, `R_DEV`, `devSeg`, `DEV*` consts — was showing to real players on ready/dead screens, not just dev). Upline code (glide physics, `spawnPlatform`, palettes) left in place, unreachable — parked as a **post-launch content update**, to be redesigned with actual danger/vault/bloom before it ships. Verified: syntax clean, ran a full sim (start→crash→revive-offer) staying in segType 0 the whole time, ready-screen screenshot confirms no dev UI leaks to players.
@@ -70,10 +84,20 @@ Reviewed the redesign: DOWNLINE (flip-runner + formations + buffs + revive + sho
 `ca7c0ba` remove skim/HOMEWARD system entirely · `e3c6314` (skim gate 75% — pulled) · `a09f240` (every-dodge NICE — pulled) · `33dd875` (SKIM_FRAC 0.50 calibration — pulled) · `7cb7f3a` Flow State (Homeward) · `2837343` desktop window-fill fix + parked warps · `9a85064` obstacle tech-panel visual pass · `c1d5c5b` directional flip / scale-walk skims / portal breakout audio · `b198591` Magnet replaces Slow-mo · `6a5241c` procedural techno bed + richer SFX · `7771541` precision ad-revive · `c8212ae`+`39bf5df` A8 cover art + generator.
 
 ## Open items / next
-- **A8 submission assets (launch gate):** ✅ cover art done — `covers/flipline_cover_1920x1080.png`, `_800x1200.png`, `_icon_800x800.png` (regen via `covers/cover_gen.html`). ⏳ STILL NEEDS (Mike): **15–20s silent gameplay clip** (landscape, both desktop + mobile) + run **CrazyGames QA tool** against uploaded build → then **ship**.
-- **Mike's new feature** — to be described at the start of next chat.
-- **Warp code** — confirm dead and delete, or revive for the new feature.
-- **v1.1 backlog:** leaderboards, music variety, new portal.
+- **Launch gate:** see top of file — everything code-side done, remaining steps are Mike's (CrazyGames portal).
+- **Warp code** — confirm dead and delete, or revive for a future feature.
+- **v1.1 backlog:** finish upline (vault + bloom-regrow + actual danger, currently just a skeleton) as a post-launch content update, leaderboards, music variety, more cosmetics.
+
+## 🪙 Store & currency review (2026-07-01)
+Functionally tested live (purchase gate blocks unaffordable items, allows once affordable, re-equip doesn't double-charge, persists to localStorage, `nextUnlock()` carrot picks the correct cheapest item) — **no bugs found.**
+
+**Model:** cosmetic-only, 100% earnable free, zero pay-to-win — correct for CrazyGames policy. No real-money IAP wired (by design — CrazyGames titles monetize via ad impressions, not purchases; "encourages spending" here means encourages *ad-economy engagement*, which the game already does via watch-ad-to-double-coins, watch-ad-to-start-with-all-3-buffs, and the daily first-run gift).
+
+**Catalog:** 17 items across 3 categories (7 shapes, 4 trails, 6 auras), tiered 0/30/45/50/65/70/75/100/110/120/140/160/200 coins. **1,245 coins to own everything.** Earn rate is roughly 1 coin/14m of distance plus loose-coin pickups every 30-54m — a full run nets roughly 20-100+ coins depending on skill (matches sim survival distances). That works out to **~15-30 runs to 100% completion**, a healthy depth for a casual runner — not so shallow it's exhausted day one, not so deep it reads as a grind wall.
+
+**Recommendations (not blockers, worth a v1.1 pass):**
+1. Add 1-2 sub-30-cost items so a brand-new player's first purchase can land within their very first session — the psychological "first purchase" hook matters for retention and the cheapest item right now (30) is already reachable in ~1 decent run, but a ~15-cost item would guarantee it lands even for a rough first run.
+2. No coin sink exists once a player owns everything — fine for launch, but plan more cosmetic drops (or a leaderboard entry cost, or prestige variants) so completionists don't go idle on the currency.
 
 ## Key tunables (top of `<script>`)
 Movement/difficulty (**LOCKED**): `GRAV FLIPKICK SPEED0 SPEEDMX RAMP GAP0 GAPMIN HMIN/MAX WMIN/MAX PS`.
