@@ -220,7 +220,7 @@ const STOMP_BOUNCE=560;                 // hop imparted by a successful stomp (s
 const STOMP_TOL=9;                      // grace px for the "landed on the head" window
 const ENEMY_COIN=2;                     // coins for a clean stomp
 // Two-line flow: start DOWNLINE/mid(0) ⇄ UPLINE/upper(1). (Lower mine = PARKED; removed from rotation.)
-const SEG_SEQ=[1,0];
+const SEG_SEQ=[0];   // v1 CrazyGames ship: downline-only. Upline (glide/platforms) parked as a post-launch content update — see FLIPLINE_DEV_NOTES.md
 
 /* ===== Collectible tunables (coins + earned power-orbs) ===== */
 const COL_FROM=60;            // metres before any loot appears (gentle early game)
@@ -410,9 +410,6 @@ const R_RETRY={x:VW/2-72,y:VH/2+52,w:144,h:24};
 const R_DOUBLE={x:VW/2-94,y:VH/2+78,w:188,h:22};
 // in-run pause: corner toggle that maps to the same icon area people already use, just bigger so a deliberate tap is unambiguous
 const R_PAUSE={x:VW-44,y:VH-44,w:36,h:36};
-// dev menu — pick the starting line (downline/mid · upline/upper); top row, clear of other UI, on ready + dead
-const DEVW=104, DEVG=8, DEVY=5, DEVH=17, DEVX0=VW/2-(DEVW*2+DEVG)/2;
-const R_DEV=[{x:DEVX0,y:DEVY,w:DEVW,h:DEVH},{x:DEVX0+DEVW+DEVG,y:DEVY,w:DEVW,h:DEVH}];
 function inR(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
 function score(){ return dist; }
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
@@ -429,7 +426,6 @@ let paused=false, pausedAtMode="ready", doubledFlag=false;
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
 let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0, segStep=0, acclimT=0;   // 0 downline/mid / 1 upline/upper; segStep walks SEG_SEQ; acclimT=post-transition speed ease-in
 let onGround=true, gliding=false;   // upline: onGround gates launch (no double-glide); gliding = currently in a glide
-let devSeg=0;   // dev menu: which level a run starts in (0 tunnel/mid, 1 above/upper, 2 mine/lower)
 let bgPulse=0, landT=0;              // background reacts; landT drives the landing grin
 let coinPopT=0, coinPopV=0;          // coin-grab feedback: floating "+N" + counter pulse
 let lightR=LR_BASE, lightTarget=LR_BASE, beaconPulse=0;   // Long Way Home: emotional light + home-beacon
@@ -477,7 +473,6 @@ function reset(){
 function start(){ Snd.ensure();
   let gift=false; try{ const d=new Date().toDateString(); if(localStorage.getItem("flipline.day")!==d){ localStorage.setItem("flipline.day",d); gift=true; } }catch(e){}  // daily: first run of the day = all 3 free
   reset(); lightR=74;                                  // re-bloom from small
-  segType=devSeg; prevSegType=devSeg;                  // dev: start in the chosen level (no transition sweep)
   if(segType>=1){ py=BOTY-PS; vy=0; gdir=1; }          // above-ground / mine start grounded
   if(startAll||gift){ BT[0]=BT[1]=BT[2]=START_BUFF; }  // rewarded ad OR daily gift → start with ALL 3
   else if(pickBuff>=0){ BT[pickBuff]=START_BUFF; }     // everyday free pick-1
@@ -529,8 +524,6 @@ addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"|
     if(inR(p,R_END)){ reviveUsedAd=true; finalDeath(); return; }
     return; }
   if(mode==="play" && inR(p,R_PAUSE)){ togglePause(); return; }   // pause from in-run via corner tap
-  if(mode==="ready"||mode==="dead"){   // DEV: top-row pills launch straight into a chosen line (works from menu AND dead screen)
-    for(let i=0;i<2;i++) if(inR(p,R_DEV[i])){ devSeg=i; start(); return; } }
   if(mode==="ready"||mode==="dead"){
     if(inR(p,R_SHOPBTN)){ mode="shop"; shopCat=0; sel[0]=equipped; sel[1]=equippedTrail; sel[2]=equippedAura; return; }
     for(let i=0;i<3;i++) if(inR(p,R_BUFF[i])){ pickBuff=(pickBuff===i?-1:i); persist(); return; }   // toggle the free pick-1
@@ -561,7 +554,7 @@ addEventListener("keydown",e=>{ if(e.repeat) return;
     else if(e.key==="Escape") mode="ready";
     e.preventDefault(); return; }
   if([" ","ArrowUp","w","W"].includes(e.key)){ e.preventDefault(); tap(); }
-  if(e.key==="t" || e.key==="T"){ testMode=!testMode; console.log(`[TEST] Mode: ${testMode}, start dist: ${dist}`); if(testMode){ mode="ready"; devSeg=1; } } });
+  if(e.key==="t" || e.key==="T"){ testMode=!testMode; console.log(`[TEST] Mode: ${testMode}, start dist: ${dist}`); if(testMode){ mode="ready"; } } });
 function shopTap(p){
   for(let c=0;c<3;c++) if(inR(p,R_TAB[c])){ shopCat=c; return; }   // switch axis
   const c=shopCat, n=catList(c).length;
@@ -741,7 +734,7 @@ function update(dt){
 
   // Mode B: cross a SEG_LEN boundary → switch flip<->sky. Non-lethal: clear the field, settle to the floor,
   // run the colour-invert portal sweep. gdir reset to 1 so flip resumes clean; sky's down-gravity just lands you.
-  if(dist>=nextSeg && xfade<=0){
+  if(SEG_SEQ.length>1 && dist>=nextSeg && xfade<=0){
     nextSeg+=SEG_LEN; prevSegType=segType; segType=SEG_SEQ[segStep%SEG_SEQ.length]; segStep++; xfade=XFADE; acclimT=ACCLIM_DUR;
     for(const o of obs) o.on=false;                       // clear danger so the switch is always survivable
     for(const pl of plat) pl.on=false;                    // clear upline platforms
@@ -1124,7 +1117,7 @@ function draw(){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — thread the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
     if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
-    shopBtn(); drawBoostRow(); devRow();
+    shopBtn(); drawBoostRow();
   } else if(mode==="dead"){
     txt("CRASHED",VW/2,VH/2-32,30,"#ff5468",800);
     txt(score()+"m",VW/2,VH/2+4,18,"#e8ecf1",700);
@@ -1136,7 +1129,7 @@ function draw(){
     // optional rewarded-ad coin doubler — strategic ad: shown only when the run was meaningful (≥5◆) and never twice on the same run
     if(!doubledFlag && lastEarned>=5){ ctx.fillStyle="rgba(255,207,92,0.12)"; ctx.fillRect(R_DOUBLE.x,R_DOUBLE.y,R_DOUBLE.w,R_DOUBLE.h);
       txt("▶ watch ad → DOUBLE coins (+◆ "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); }
-    shopBtn(); drawBoostRow(); devRow();
+    shopBtn(); drawBoostRow();
     const nu=nextUnlock();   // dead-screen carrot: progress toward the cheapest unowned cosmetic
     if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,236,10,"#9bf0d0",700);
       const bw=150,bx=VW/2-bw/2,by=250,pr=Math.min(1,coins/nu.cost);
@@ -1145,14 +1138,6 @@ function draw(){
   }
 }
 
-function devRow(){   // top-row dev affordance: tap a pill to launch straight into that level (shown on ready + dead)
-  txt("DEV",36,DEVY+13,9,"#5f6b85",800);
-  const lab=["▼ DOWNLINE","▲ UPLINE"];
-  for(let i=0;i<2;i++){ const r=R_DEV[i], on=devSeg===i;
-    ctx.fillStyle=on?"rgba(94,242,194,0.18)":"rgba(255,255,255,0.06)"; ctx.fillRect(r.x,r.y,r.w,r.h);
-    if(on){ ctx.strokeStyle="#5ef2c2"; ctx.lineWidth=1; ctx.strokeRect(r.x+0.5,r.y+0.5,r.w-1,r.h-1); }
-    txt(lab[i],r.x+r.w/2,r.y+12,10,on?"#9bf0d0":"#9aa4b8",700); }
-}
 function shopBtn(){
   ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_SHOPBTN.x,R_SHOPBTN.y,R_SHOPBTN.w,R_SHOPBTN.h);
   txt("SHOP   ◆ "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);

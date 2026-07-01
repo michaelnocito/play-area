@@ -4,8 +4,11 @@
 **HEAD at handoff:** `e10fc83` · **Deliverable:** one file `index.html` (~1035 lines, vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
 **Read first:** `HANDOFF.md` (visual/level-design spec), `FLIPLINE_lore_bible.md` (wordless "Long Way Home" lore). Memory `project_flipline_state.md` auto-loads with full per-feature detail.
 
-## What it is NOW (REDESIGN in progress)
-**Light-bringer journey:** two-line flow (downline/upline) alternating every 250m. **DOWNLINE** = gravity-flip runner; **UPLINE** = platformer with a glide mechanic (1st tap launch, 2nd tap cancel-drop). Heading toward a discrete-level campaign (Level 1, 2… each a crafted stretch). One-button throughout, scrupulously fair, skill-rewarding.
+## 🚀 SHIP DECISION (2026-07-01): downline-only v1
+Reviewed the redesign: DOWNLINE (flip-runner + formations + buffs + revive + shop + audio + zones + CrazyGames ad hooks) is feature-complete and submission-ready. UPLINE (glide platformer) was only ever a feel-locked skeleton — floating ledges + coins, **zero obstacles/enemies/challenge**, no vault mechanic, no bloom-regrow layer, never playtested. Rather than gate launch on finishing an unproven mechanic, **shipped downline-only**: `SEG_SEQ=[0]` permanently, segment-switch code guarded off (`SEG_SEQ.length>1`), dev level-picker UI/code fully removed (`devRow`, `R_DEV`, `devSeg`, `DEV*` consts — was showing to real players on ready/dead screens, not just dev). Upline code (glide physics, `spawnPlatform`, palettes) left in place, unreachable — parked as a **post-launch content update**, to be redesigned with actual danger/vault/bloom before it ships. Verified: syntax clean, ran a full sim (start→crash→revive-offer) staying in segType 0 the whole time, ready-screen screenshot confirms no dev UI leaks to players.
+
+## What it is NOW (v1, shipping)
+**Downline flip-runner**, endless. Gravity-flip; thread red obstacles in pooled formations (solo/double/zig-zag/staircase/pinch/gauntlet); buffs (magnet/shield/2×); 3-tier revive w/ CrazyGames-compliant ad policy; cosmetics shop; procedural audio; cool→warm zone lore; home-beacon. One-button, scrupulously fair, skill-rewarding.
 
 ## 🔒 Two sacred pillars — DO NOT BREAK
 1. **Perf contract:** zero per-frame allocation (fixed pools), zero per-frame DOM writes (all UI on canvas), **NO** shadowBlur / gradients / canvas filters / per-frame clip (glow = oversized translucent fill; gradients baked once to offscreen then blitted), dt capped, single `requestAnimationFrame`. *(Audio scheduling is exempt — it runs on the audio thread, not the render loop.)*
