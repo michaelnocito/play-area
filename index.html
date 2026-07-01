@@ -41,7 +41,7 @@ const Ads = {
   loadingStop(){ try{ window.CrazyGames?.SDK?.game?.loadingStop?.(); }catch(e){} },
   gameplayStart(){ try{ window.CrazyGames?.SDK?.game?.gameplayStart?.(); }catch(e){} },
   gameplayStop(){ try{ window.CrazyGames?.SDK?.game?.gameplayStop?.(); }catch(e){} },
-  happytime(){ try{ window.CrazyGames?.SDK?.game?.happytime?.(); }catch(e){} },   // v3: positive-moment signal (new best / Flow ignite) — platform may add flourishes; no gameplay impact
+  happytime(){ try{ window.CrazyGames?.SDK?.game?.happytime?.(); }catch(e){} },   // v3: positive-moment signal (new personal best) — platform may add flourishes; no gameplay impact
   interstitial(){ try{ window.CrazyGames?.SDK?.ad?.requestAd?.("midgame",
       { adStarted(){ Snd.duck(true); }, adFinished(){ Snd.duck(false); }, adError(){ Snd.duck(false); } }); }catch(e){} },  // mute during ad (policy)
   rewarded(onReward,onSkip){            // opt-in rewarded ad; mutes audio during play (policy); graceful offline
