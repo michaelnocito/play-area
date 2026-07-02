@@ -116,6 +116,46 @@
 
   let best = parseInt(localStorage.getItem('rooftopSprintBest') || '0', 10) || 0;
 
+  // ---------- Pre-rendered art (built ONCE at boot; per-frame cost is a drawImage) ----------
+  function makeCanvas(w, h, fn) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    fn(c.getContext('2d')); return c;
+  }
+  const skyImg = makeCanvas(W, H, g => {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#131022'); gr.addColorStop(0.42, '#3a2150');
+    gr.addColorStop(0.72, '#7a3f52'); gr.addColorStop(1, '#c97b4a');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  });
+  const moonImg = makeCanvas(120, 120, g => {
+    for (let r = 54; r > 26; r -= 2) { g.globalAlpha = 0.028; g.fillStyle = '#ffe9c4'; g.beginPath(); g.arc(60, 60, r, 0, Math.PI*2); g.fill(); }
+    g.globalAlpha = 1; g.fillStyle = '#f5e7c8'; g.beginPath(); g.arc(60, 60, 24, 0, Math.PI*2); g.fill();
+    g.fillStyle = 'rgba(210,185,150,0.5)';
+    g.beginPath(); g.arc(52, 54, 5, 0, Math.PI*2); g.fill();
+    g.beginPath(); g.arc(66, 66, 3.4, 0, Math.PI*2); g.fill();
+    g.beginPath(); g.arc(63, 48, 2.6, 0, Math.PI*2); g.fill();
+  });
+  const glowImg = makeCanvas(48, 48, g => {
+    const gr = g.createRadialGradient(24, 24, 2, 24, 24, 24);
+    gr.addColorStop(0, 'rgba(255,190,110,0.5)'); gr.addColorStop(1, 'rgba(255,190,110,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 48, 48);
+  });
+  const cloudImg = makeCanvas(150, 40, g => {
+    g.fillStyle = 'rgba(235,210,205,0.045)';
+    for (let i = 0; i < 26; i++) { // many small overlapping puffs → soft mass, no bubble edges
+      const cx = 18 + (i*127.3)%116, cy = 16 + ((i*67.7)%14) + Math.sin(i)*3, r = 9 + (i*43)%8;
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
+    }
+  });
+  const vignImg = makeCanvas(W, H, g => {
+    const gr = g.createRadialGradient(W/2, H*0.45, H*0.42, W/2, H*0.55, H*0.85);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(8,5,16,0.42)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  });
+  // deterministic star field (twinkle is draw-side only)
+  const stars = Array.from({length: 36}, (_, i) => ({ x: (i*97.3)%W, y: ((i*61.7)%86)+4, tw: (i*37)%100 }));
+  let drawT = 0; // visual-only clock (advances every rendered frame, even on menus)
+
   // ---------- World state ----------
   let state = 'menu'; // menu | playing | dead
   let speed = 0, baseSpeed = 2.1;
@@ -145,6 +185,11 @@
   const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit)
   const MAX_FEATHERS = 14;
   const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0}));
+  const MAX_BIRDS = 5;
+  const birds = Array.from({length: MAX_BIRDS}, () => ({active:false,perched:true,x:0,y:0,vx:0,vy:0,flap:0}));
+  // cloak verlet chain (world-space points; index 0 anchors at the shoulders)
+  const cloak = Array.from({length: 6}, () => ({x:0,y:0}));
+  let emberT = 0;
 
   // ---------- Player ----------
   const player = {
@@ -179,6 +224,8 @@
     for(const f of featherList) f.active=false;
     for(const p of particles) p.active=false;
     for(const m of messages) m.active=false;
+    for(const b of birds) b.active=false;
+    for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
     player.onGround = true; player.jumpsLeft = player.maxJumps; player.dead = false; player.strikeFlash=0;
@@ -222,6 +269,10 @@
       const fy = y - 36 - Math.random()*30;
       const fslot = featherList.find(f => !f.active);
       if (fslot) { fslot.active=true; fslot.taken=false; fslot.x=fx; fslot.y=fy; fslot.bob=Math.random()*Math.PI*2; }
+    }
+    if (!first && Math.random() < 0.3) { // perched bird on the roof edge — flees as you close in
+      const bslot = birds.find(b => !b.active);
+      if (bslot) { bslot.active=true; bslot.perched=true; bslot.x=x1+8+Math.random()*(len-16); bslot.y=y; bslot.vx=0; bslot.vy=0; bslot.flap=Math.random()*6; }
     }
     nextSpawnX = x2;
   }
@@ -382,6 +433,33 @@
       if (dx < 16 && dy < 18) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); }
     }
 
+    // cloak: each point eases toward a spot behind/below the previous one; speed streams it back
+    const ax = player.x - 3, ay = player.y - player.h + 8;
+    cloak[0].x = ax; cloak[0].y = ay;
+    for (let i = 1; i < cloak.length; i++) {
+      const flut = Math.sin(player.runT*0.31 + i*1.2) * (player.onGround ? 1.3 : 2.4);
+      const tx = cloak[i-1].x - 4.4 - speed*1.05;
+      const ty = cloak[i-1].y + (player.onGround ? 2.6 : -1.2) + i*0.5 + flut;
+      cloak[i].x += (tx - cloak[i].x) * 0.42;
+      cloak[i].y += (ty - cloak[i].y) * 0.42;
+    }
+
+    for (const b of birds) {
+      if (!b.active) continue;
+      if (b.perched) {
+        if (b.x - player.x < 88) { b.perched = false; b.vx = 1.4 + Math.random()*0.8; b.vy = -1.9; } // flee!
+      } else {
+        b.x += b.vx + speed*0.3; b.y += b.vy; b.vy -= 0.015; b.flap += 0.45;
+        if (b.y < -30) b.active = false;
+      }
+      if (b.x < player.x - 260) b.active = false;
+    }
+
+    if (++emberT >= 9) { // ambient embers drifting up off the city
+      emberT = 0;
+      spawnParticle(player.x + Math.random()*W, GROUND_Y + 10 - Math.random()*90, -0.3 - Math.random()*0.4, -0.25 - Math.random()*0.3, 26, 'rgba(255,170,90,0.5)');
+    }
+
     for (const p of particles) { if (!p.active) continue; p.x+=p.vx; p.y+=p.vy; p.vy+=0.12; p.life--; if (p.life<=0) p.active=false; }
     for (const m of messages) { if (!m.active) continue; m.t--; if (m.t<=0) m.active=false; }
 
@@ -416,22 +494,69 @@
   }
 
   // ---------- Drawing ----------
+  function drawSkylineLayer(camX, par, spacing, hBase, hue, winAlpha, yBase) {
+    const parX = camX * par;
+    const first = Math.floor(parX / spacing) - 1;
+    for (let i = first; i < first + Math.ceil(W/spacing) + 2; i++) {
+      const bx = i*spacing - parX;
+      const bh = hBase + ((i*53 + spacing*7) % 64);
+      const bw = spacing - 7 - ((i*31) % 10);
+      const by = yBase - bh;
+      ctx.fillStyle = hue; ctx.fillRect(bx, by, bw, bh + 140);
+      // lit windows — deterministic per building, warm and sparse
+      ctx.fillStyle = 'rgba(255,186,100,' + winAlpha + ')';
+      for (let wy = 0; wy < Math.min(bh - 8, 52); wy += 11) {
+        for (let wx = 5; wx < bw - 5; wx += 9) {
+          if ((i*7 + wy*13 + wx*5) % 17 < 3) ctx.fillRect(bx + wx, by + 6 + wy, 3, 4);
+        }
+      }
+      if ((i % 4) === 1) { ctx.fillStyle = hue; ctx.fillRect(bx + bw - 8, by - 9, 5, 9); } // chimney
+    }
+  }
   function drawSkyline(camX) {
-    ctx.fillStyle = 'rgba(20,14,30,0.55)';
-    const parX = camX * 0.25;
-    for (let i = -1; i < 7; i++) { const bx=(i*72)-(parX%72), bh=32+((i*53)%64); ctx.fillRect(bx, GROUND_Y+22-bh, 46, bh+120); }
-    ctx.fillStyle = 'rgba(20,14,30,0.8)';
-    const parX2 = camX * 0.45;
-    for (let i = -1; i < 9; i++) { const bx=(i*56)-(parX2%56), bh=20+((i*37)%48); ctx.fillRect(bx, GROUND_Y+32-bh, 30, bh+120); }
+    drawSkylineLayer(camX, 0.18, 84, 40, 'rgba(26,17,40,0.85)', 0.12, GROUND_Y + 14);
+    drawSkylineLayer(camX, 0.38, 62, 26, 'rgba(17,11,28,0.95)', 0.20, GROUND_Y + 26);
   }
   function drawSegments(camX) {
     for (const s of segments) {
       if (!s.active) continue;
       const sx1=s.x1-camX, sx2=s.x2-camX;
       if (sx2 < -30 || sx1 > W+30) continue;
-      ctx.fillStyle = '#4a3450'; ctx.fillRect(sx1, s.y, sx2-sx1, H-s.y+30);
-      ctx.fillStyle = '#7a5a68'; ctx.fillRect(sx1, s.y, sx2-sx1, 5);
+      const wSeg = sx2 - sx1;
+      // building body below the roofline, with faint lit windows of its own
+      ctx.fillStyle = '#3d2b47'; ctx.fillRect(sx1, s.y, wSeg, H - s.y + 30);
+      ctx.fillStyle = 'rgba(255,186,100,0.14)';
+      for (let wy = 14; wy < H - s.y; wy += 15) {
+        for (let wx = 8; wx < wSeg - 8; wx += 13) {
+          if (((s.x1|0)*3 + wy*7 + wx*5) % 19 < 3) ctx.fillRect(sx1 + wx, s.y + wy, 4, 5);
+        }
+      }
+      // roof cap: highlight + shingle seams + under-shadow
+      ctx.fillStyle = '#8a6274'; ctx.fillRect(sx1, s.y, wSeg, 5);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      for (let tx = 10; tx < wSeg - 4; tx += 14) ctx.fillRect(sx1 + tx, s.y + 1, 1, 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx1, s.y + 5, wSeg, 3);
+      // gold edge trim (gap warning stays)
       ctx.fillStyle = '#c9913f'; ctx.fillRect(sx1, s.y, 4, 5); ctx.fillRect(sx2-4, s.y, 4, 5);
+      // lantern on some roofs (deterministic) — pole, flame, pooled warm glow
+      if (((s.x1 | 0) % 5) < 2 && wSeg > 70) {
+        const lx = sx1 + 14;
+        ctx.drawImage(glowImg, lx - 24, s.y - 40, 48, 48);
+        ctx.fillStyle = '#241a2e'; ctx.fillRect(lx - 1, s.y - 14, 2, 14);
+        ctx.fillStyle = '#ffbe6e'; ctx.fillRect(lx - 2.5, s.y - 19, 5, 6);
+      }
+    }
+  }
+  function drawBird(b, camX) {
+    const sx = b.x - camX; if (sx < -20 || sx > W + 20) return;
+    ctx.fillStyle = '#1c1626';
+    if (b.perched) {
+      ctx.fillRect(sx - 2, b.y - 6, 5, 4); ctx.fillRect(sx + 2, b.y - 8, 2, 2); // body + head
+    } else {
+      const w = Math.sin(b.flap) * 5;
+      ctx.fillRect(sx - 2, b.y - 4, 4, 3);
+      ctx.strokeStyle = '#1c1626'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx, b.y - 3); ctx.lineTo(sx - 5, b.y - 3 - w); ctx.moveTo(sx, b.y - 3); ctx.lineTo(sx + 5, b.y - 3 - w); ctx.stroke();
     }
   }
   function drawGuard(g, camX) {
@@ -443,10 +568,20 @@
       if (g.fly > 0) { ctx.globalAlpha = Math.max(1 - g.deathT/80, 0); ctx.rotate(g.deathT * g.spin); } // airborne corpse spins as it flies
       else { const t=Math.min(g.deathT/12,1); ctx.globalAlpha=1-t; ctx.rotate(t*1.3); ctx.translate(0,t*20); }
     }
+    const bob = g.alive ? Math.sin(g.x*0.4)*0.8 : 0;
+    ctx.save(); ctx.translate(0, bob); ctx.scale(g.patrolDir >= 0 ? 1 : -1, 1);
+    // pike held upright
+    ctx.fillStyle = '#5a4632'; ctx.fillRect(6,-44,2,40);
+    ctx.fillStyle = '#9aa0ad'; ctx.beginPath(); ctx.moveTo(7,-50); ctx.lineTo(10,-44); ctx.lineTo(4,-44); ctx.fill();
+    // tunic + belt + trim
     ctx.fillStyle = '#8b5a3c'; ctx.fillRect(-8,-26,16,19);
+    ctx.fillStyle = '#6e4530'; ctx.fillRect(-8,-26,16,4);
+    ctx.fillStyle = '#3a2c20'; ctx.fillRect(-8,-14,16,3);
     ctx.fillStyle = '#caa07a'; ctx.beginPath(); ctx.arc(0,-30,6,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#6b6b78'; ctx.fillRect(-7,-35,14,5);
+    // helmet with a nose guard
+    ctx.fillStyle = '#6b6b78'; ctx.fillRect(-7,-36,14,6); ctx.fillRect(-1,-33,2,5);
     ctx.fillStyle = '#4a3a2a'; ctx.fillRect(-6,-7,5,8); ctx.fillRect(1,-7,5,8);
+    ctx.restore();
     if (g.alerted && g.alive) { // marker color = current timing window: gold FAR → orange MID → white PERFECT
       const w = strikeWindows();
       const dxNow = g.x - (player.x + player.w/2);
@@ -470,16 +605,51 @@
   }
   function drawPlayer(camX) {
     const sx = player.x - camX, sy = player.y;
+    // cloak first (behind the body) — drawn in world space from the verlet chain
+    ctx.fillStyle = '#7a2f3a';
+    ctx.beginPath();
+    ctx.moveTo(cloak[0].x - camX, cloak[0].y - 5);
+    for (let i = 1; i < cloak.length; i++) ctx.lineTo(cloak[i].x - camX, cloak[i].y - 4 + i*0.8);
+    for (let i = cloak.length - 1; i >= 0; i--) ctx.lineTo(cloak[i].x - camX, cloak[i].y + 4 + (cloak.length-i)*0.7);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.moveTo(cloak[0].x - camX, cloak[0].y + 2);
+    for (let i = 1; i < cloak.length; i++) ctx.lineTo(cloak[i].x - camX, cloak[i].y + 2 + (cloak.length-i)*0.5);
+    ctx.lineTo(cloak[cloak.length-1].x - camX, cloak[cloak.length-1].y + 5);
+    ctx.closePath(); ctx.fill();
+
     ctx.save(); ctx.translate(sx, sy);
     if (player.dead) { ctx.rotate(0.6); ctx.translate(6,12); }
     const h = player.h;
-    ctx.fillStyle = '#7a2f3a';
-    ctx.beginPath(); ctx.moveTo(-4,-h+4); ctx.lineTo(-13-Math.sin(player.runT*0.3)*3,-h*0.4); ctx.lineTo(-3,-3); ctx.fill();
+    // ground shadow
+    if (player.onGround && !player.dead) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0, 1.5, 9, 2.2, 0, 0, Math.PI*2); ctx.fill(); }
+    // legs: two-joint run cycle (tucked in the air)
+    const ph = player.runT * 0.35;
+    ctx.strokeStyle = '#1a1922'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    for (const side of [0, Math.PI]) {
+      let footX, footY, kneeX, kneeY;
+      if (player.onGround) {
+        const s1 = Math.sin(ph + side), c1 = Math.cos(ph + side);
+        footX = s1 * 7; footY = -Math.max(0, c1) * 4;
+        kneeX = s1 * 3.6 + 1.5; kneeY = -5 - Math.max(0, c1) * 2;
+      } else {
+        footX = side === 0 ? 5 : -3; footY = side === 0 ? -4 : -2;
+        kneeX = side === 0 ? 4 : -1; kneeY = -6;
+      }
+      ctx.beginPath(); ctx.moveTo(0, -9); ctx.quadraticCurveTo(kneeX, kneeY, footX, footY); ctx.stroke();
+    }
+    // torso + hood
     ctx.fillStyle = '#23222b'; ctx.fillRect(-8,-h,16,h-8);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(-8,-h,4,h-8);
     ctx.fillStyle = '#1a1922';
     ctx.beginPath(); ctx.moveTo(-9,-h); ctx.quadraticCurveTo(0,-h-12,9,-h); ctx.quadraticCurveTo(6,-h+6,0,-h+7); ctx.quadraticCurveTo(-6,-h+6,-9,-h); ctx.fill();
-    const swing = player.onGround ? Math.sin(player.runT*0.35)*6 : 2;
-    ctx.fillStyle = '#1a1922'; ctx.fillRect(-6+swing*0.2,-8,5,8); ctx.fillRect(1-swing*0.2,-8,5,8);
+    // sash
+    ctx.fillStyle = '#c9913f'; ctx.fillRect(-8,-h+13,16,2.5);
+    // rear arm swings opposite the legs
+    ctx.strokeStyle = '#23222b'; ctx.lineWidth = 3.5;
+    const armSw = player.onGround ? Math.sin(ph + Math.PI) * 4.5 : 3;
+    ctx.beginPath(); ctx.moveTo(-3, -h+12); ctx.quadraticCurveTo(-5 + armSw*0.4, -h+17, -4 + armSw, -h+21); ctx.stroke();
     // Staff — always in hand, sweeps in a full arc on strike
     const sf = player.strikeFlash;
     const ang = sf > 0 ? (-1.5 + (8-sf)*0.32) : (-0.95 + Math.sin(player.runT*0.12)*0.05);
@@ -504,19 +674,36 @@
     ctx.globalAlpha = 1;
   }
   function draw() {
-    ctx.clearRect(0,0,W,H);
+    drawT++;
     const camX = player.x - 80;
+    ctx.drawImage(skyImg, 0, 0);
+    // stars twinkle in the upper sky
+    ctx.fillStyle = '#f5e7c8';
+    for (const st of stars) {
+      const a = 0.25 + 0.45 * (0.5 + 0.5*Math.sin(drawT*0.03 + st.tw));
+      ctx.globalAlpha = a * Math.max(0, 1 - st.y/95);
+      ctx.fillRect(st.x, st.y, 1.4, 1.4);
+    }
+    ctx.globalAlpha = 1;
+    ctx.drawImage(moonImg, W - 148 - (camX*0.02)%20, 8, 110, 110);
+    // clouds drift slowly, slight parallax
+    for (let i = 0; i < 3; i++) {
+      const cx = ((i*210 + 40 - drawT*0.08 - camX*0.05) % (W + 180)) - 140;
+      ctx.drawImage(cloudImg, cx < -140 ? cx + W + 180 : cx, 22 + i*17);
+    }
     let sx=0, sy=0;
     if (shake > 0) { sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; }
     ctx.save(); ctx.translate(sx, sy);
     drawSkyline(camX);
     drawSegments(camX);
+    for (const b of birds) drawBird(b, camX);
     for (const f of featherList) drawFeather(f, camX);
     for (const g of guards) drawGuard(g, camX);
     if (state !== 'menu') drawPlayer(camX);
     drawParticles(camX);
     drawMessages(camX);
     ctx.restore();
+    ctx.drawImage(vignImg, 0, 0);
   }
 
   // ---------- Fit canvas to viewport (letterboxed, integer-ish scale) ----------
