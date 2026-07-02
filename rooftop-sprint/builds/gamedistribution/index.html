@@ -167,7 +167,7 @@ window["GD_OPTIONS"] = {
   const MAX_SEGMENTS = 10;
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0}));
   const MAX_GUARDS = 10;
-  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0}));
+  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit)
   const MAX_FEATHERS = 14;
   const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0}));
 
@@ -183,10 +183,16 @@ window["GD_OPTIONS"] = {
   const JUMP_V = -7.2;
   const STRIKE_RANGE_Y = 30;
   const GUARD_HIT_DX = 15, GUARD_CLEAR_DY = 22; // feet must be this far above guard.y to jump clear
-  // Strike reach grows with run speed so the reaction window stays humanly possible (~300ms)
+  // Staff reach grows with run speed so the reaction window stays humanly possible (~300ms)
   // at any pace — at base range 36px and 4px/frame closing the window was only ~80ms.
-  function strikeRangeX() { return 36 + speed * 14; }
-  function alertRangeX() { return 60 + speed * 25; } // telegraph before the strike window opens
+  function strikeRangeX() { return 42 + speed * 14; }
+  function alertRangeX() { return 60 + speed * 25; } // marker heads-up before the windows open
+  // Timing windows (defined in TIME via closing speed, so they feel identical at any pace):
+  // PERFECT = last ~7 frames before contact, MID = ~9 frames before that, FAR = rest of the reach.
+  function strikeWindows() {
+    const closing = speed + 0.55;
+    return { perfect: GUARD_HIT_DX + closing * 7, mid: GUARD_HIT_DX + closing * 16 };
+  }
   let graceT = 0;        // brief invulnerability after a lunge-kill so chained guards can't cheap-kill
   let taughtGuard = false;
 
@@ -233,6 +239,7 @@ window["GD_OPTIONS"] = {
         gslot.active=true; gslot.alive=true; gslot.x=gx; gslot.y=y;
         gslot.patrolDir = Math.random()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
+        gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0;
       }
     }
     if (Math.random() < 0.5) {
@@ -283,9 +290,27 @@ window["GD_OPTIONS"] = {
       graceT = 12;
       nearest.alive = false; nearest.deathT = 1;
       feathers += 1;
-      spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
-      spawnMessage(nearest.x, nearest.y-40, 'STRUCK');
-      shake = 6;
+      // Timing tiers by how close you let them get (closer = riskier = bigger payoff)
+      const w = strikeWindows();
+      const tierDx = nearest.x - (trailFrom + player.w/2); // range at the moment of the press (pre-lunge)
+      if (tierDx <= w.perfect) {          // PERFECT — staff shot: guard rockets across the screen, dominoes others
+        nearest.fly = 2; nearest.vx = 16; nearest.vy = -1.2; nearest.spin = 0.5;
+        feathers += 1;
+        spawnBurst(nearest.x, nearest.y-16, 16, '#ffffff');
+        spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
+        spawnMessage(nearest.x, nearest.y-44, 'PERFECT', 40);
+        shake = 12;
+      } else if (tierDx <= w.mid) {       // MID — heavy blow: launched half a screen, tumbling
+        nearest.fly = 1; nearest.vx = 7; nearest.vy = -2.6; nearest.spin = 0.28;
+        spawnBurst(nearest.x, nearest.y-16, 12, '#f0a04a');
+        spawnMessage(nearest.x, nearest.y-42, 'HEAVY BLOW', 32);
+        shake = 9;
+      } else {                            // FAR — clean kill
+        nearest.fly = 0;
+        spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
+        spawnMessage(nearest.x, nearest.y-40, 'CLEAN');
+        shake = 6;
+      }
     }
   }
 
@@ -337,7 +362,27 @@ window["GD_OPTIONS"] = {
 
     for (const g of guards) {
       if (!g.active) continue;
-      if (!g.alive) { g.deathT += 1; continue; }
+      if (!g.alive) {
+        g.deathT += 1;
+        if (g.fly > 0) { // launched corpse: tumble (mid) or flat missile (perfect)
+          g.x += g.vx; g.y += g.vy;
+          g.vy += g.fly === 2 ? 0.08 : 0.3;
+          if (g.fly === 2) { // missile dominoes any guard it touches
+            for (const o of guards) {
+              if (!o.active || !o.alive || o === g) continue;
+              if (Math.abs(o.x - g.x) < 15 && Math.abs(o.y - g.y) < 24) {
+                o.alive = false; o.deathT = 1; o.fly = 1; o.vx = g.vx * 0.6; o.vy = -2.2; o.spin = 0.35;
+                feathers += 1;
+                spawnBurst(o.x, o.y-16, 12, '#ffffff');
+                spawnMessage(o.x, o.y-42, 'FELLED', 32);
+                shake = Math.max(shake, 8);
+              }
+            }
+          }
+          if (g.y > H + 50 || g.x > player.x + W + 80) g.active = false;
+        }
+        continue;
+      }
       g.x += g.patrolDir * 0.55;
       if (g.x < g.patrolMin || g.x > g.patrolMax) g.patrolDir *= -1;
 
@@ -419,15 +464,23 @@ window["GD_OPTIONS"] = {
     const sx = g.x - camX;
     if (sx < -30 || sx > W+30) return;
     ctx.save(); ctx.translate(sx, g.y);
-    if (!g.alive) { const t=Math.min(g.deathT/12,1); ctx.globalAlpha=1-t; ctx.rotate(t*1.3); ctx.translate(0,t*20); }
+    if (!g.alive) {
+      if (g.fly > 0) { ctx.globalAlpha = Math.max(1 - g.deathT/80, 0); ctx.rotate(g.deathT * g.spin); } // airborne corpse spins as it flies
+      else { const t=Math.min(g.deathT/12,1); ctx.globalAlpha=1-t; ctx.rotate(t*1.3); ctx.translate(0,t*20); }
+    }
     ctx.fillStyle = '#8b5a3c'; ctx.fillRect(-8,-26,16,19);
     ctx.fillStyle = '#caa07a'; ctx.beginPath(); ctx.arc(0,-30,6,0,Math.PI*2); ctx.fill();
     ctx.fillStyle = '#6b6b78'; ctx.fillRect(-7,-35,14,5);
     ctx.fillStyle = '#4a3a2a'; ctx.fillRect(-6,-7,5,8); ctx.fillRect(1,-7,5,8);
-    if (g.alerted && g.alive) { // in strike range: pulsing gold marker — "you can take this one NOW"
+    if (g.alerted && g.alive) { // marker color = current timing window: gold FAR → orange MID → white PERFECT
+      const w = strikeWindows();
+      const dxNow = g.x - (player.x + player.w/2);
+      const perfect = dxNow <= w.perfect, mid = !perfect && dxNow <= w.mid;
+      const r = perfect ? 6 : mid ? 5 : 4;
       const pulse = 3 + Math.sin(player.runT*0.4)*1.5;
-      ctx.fillStyle = '#e8c878';
-      ctx.beginPath(); ctx.moveTo(0,-46+pulse); ctx.lineTo(4,-42+pulse); ctx.lineTo(0,-38+pulse); ctx.lineTo(-4,-42+pulse); ctx.fill();
+      ctx.fillStyle = perfect ? '#ffffff' : mid ? '#f0a04a' : '#e8c878';
+      ctx.beginPath(); ctx.moveTo(0,-44-r+pulse); ctx.lineTo(r,-44+pulse); ctx.lineTo(0,-44+r+pulse); ctx.lineTo(-r,-44+pulse); ctx.fill();
+      if (perfect) { ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(0,-44+pulse,r+4,0,Math.PI*2); ctx.stroke(); }
     }
     ctx.restore();
   }
@@ -452,9 +505,17 @@ window["GD_OPTIONS"] = {
     ctx.beginPath(); ctx.moveTo(-9,-h); ctx.quadraticCurveTo(0,-h-12,9,-h); ctx.quadraticCurveTo(6,-h+6,0,-h+7); ctx.quadraticCurveTo(-6,-h+6,-9,-h); ctx.fill();
     const swing = player.onGround ? Math.sin(player.runT*0.35)*6 : 2;
     ctx.fillStyle = '#1a1922'; ctx.fillRect(-6+swing*0.2,-8,5,8); ctx.fillRect(1-swing*0.2,-8,5,8);
-    if (player.strikeFlash > 0) {
-      ctx.strokeStyle = 'rgba(232,200,120,'+(player.strikeFlash/8)+')'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(10,-h+6); ctx.lineTo(28,-h-6); ctx.stroke();
+    // Staff — always in hand, sweeps in a full arc on strike
+    const sf = player.strikeFlash;
+    const ang = sf > 0 ? (-1.5 + (8-sf)*0.32) : (-0.95 + Math.sin(player.runT*0.12)*0.05);
+    const len = sf > 0 ? 42 : 30;
+    ctx.save(); ctx.translate(5,-h+11); ctx.rotate(ang);
+    ctx.fillStyle = '#8a6a3f'; ctx.fillRect(0,-1.5,len,3);
+    ctx.fillStyle = '#e8c878'; ctx.fillRect(len-4,-2.5,4,5);
+    ctx.restore();
+    if (sf > 0) { // arc trail behind the sweep
+      ctx.strokeStyle = 'rgba(232,200,120,'+(sf/8*0.8)+')'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(5,-h+11,len-3,ang-0.7,ang+0.1); ctx.stroke();
     }
     ctx.restore();
   }
