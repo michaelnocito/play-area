@@ -22,7 +22,7 @@ const vm = require("vm");
 
 const INDEX = path.join(__dirname, "..", "index.html");
 const html = fs.readFileSync(INDEX, "utf8");
-const m = html.match(/<script>\n"use strict";([\s\S]*?)<\/script>/);
+const m = html.match(/<script>\r?\n"use strict";([\s\S]*?)<\/script>/);
 if (!m) throw new Error("Could not find the game <script> block in index.html");
 const gameSrc = m[1];
 
