@@ -12,10 +12,18 @@
 > It also flushed out two latent engine bugs, both fixed: (1) `groundYForPlayer` flickered
 > "airborne" for 1 frame at contiguous roof seams (cancelled slides), (2) `MAX_SEGMENTS 10` could
 > exhaust while `nextSpawnX` still advanced → invisible holes in the world (now 14 + spawn
-> returns false instead of skipping). **Next = BATCH 2 (full audio)** — procedural `Snd` pattern
-> from `../flipline/builds/gamemonetize/index.html`; game is currently silent, biggest gap.
-> Currency is named **"Light"** (Mike's call — never "feathers" player-facing; rename lands in
-> Batch 3). `builds/` derivatives are now STALE vs master — regenerate at Batch 6 (ship wave);
+> returns false instead of skipping).
+>
+> **🏮 RE-SCOPED 2026-07-02 (client intake, HEAD `385c9e0`): identity = THE LAMPLIGHTER.**
+> Weapon = lamp on a pole; enemies carry lamps; kills stream light into YOUR lamp (visible
+> brightening, `lampLight` run-state); windows rekindle in your wake. Audio = LIGHT-REACTIVE
+> SCORE (music layers keyed to `lampLight`, bass pulse clock-shared with the weapon's glow throb),
+> built on the small-speaker layer architecture in ROADMAP §7. Now SEVEN batches —
+> **Next = BATCH 2 (Lamplighter identity visuals + feathers→LIGHT rename)**, THEN audio (B3,
+> ~1.5 sessions) so the music has the light state to key off. 🔶 Permanent lamp progression
+> proposed in ROADMAP §4, awaiting Mike's call (would be +1 session in B5).
+> Currency is named **"Light"** (Mike's call — never "feathers" player-facing).
+> `builds/` derivatives are now STALE vs master — regenerate at Batch 7 (ship wave);
 > GM/GD keep GAMEID_PLACEHOLDER pending Mike's dashboard records.
 
 **What this is:** CrazyGames auto-runner, hooded-assassin rooftop theme. Two
