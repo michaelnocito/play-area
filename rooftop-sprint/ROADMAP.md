@@ -14,16 +14,12 @@ Status: `[ ]` todo · `[~]` partial · `[x]` done · 🔷 = Mike's direct design
 **Standard:** every verb has depth; the "one more run" pull comes from mastery + visible progress.
 
 - [x] Timing-strike windows w/ risk/reward tiers, domino kills, slow-mo payoff
-- [ ] 🔷 **REMOVE double jump** (Mike's call — no purpose in current design)
-  - Re-sim gap fairness after removal (bots currently sometimes save themselves with the 2nd jump);
-    retune `gap` max + step-up heights so all gaps are single-jump clearable at every speed
-  - Replace with **hold-to-jump-higher** (variable jump height) — standard runner practice, gives
-    the jump button its own skill axis without a second air-jump
-  - Update fall-death tip copy (currently teaches double-jump)
-- [ ] 🔷 **Slide mechanic via context-sensitive action button**: the STRIKE button doubles as SLIDE
-  when a low obstacle is near and no guard is in range (2-button philosophy preserved)
-  - Priority rule: guard in strike range → strike wins; else low obstacle ahead → slide
-  - Slide = brief hitbox shrink + dust particles + staff tucked
+- [x] 🔷 **REMOVE double jump** — replaced with **hold-to-jump-higher** (release cuts the rise at
+  `JUMP_CUT`); gap width now capped at `speed×26` frames of travel (re-simmed: elite bots, 0 gap
+  deaths <2500m); fall-death tip copy updated to teach the hold
+- [x] 🔷 **Slide mechanic via context-sensitive action button** — guard in reach wins the press,
+  else low hazard ahead → slide (32 frames, hitbox 28→14, dust, staff tucked, crouched pose);
+  trigger window `10+speed×12` sized so the slide always outlasts the hazard
 - [ ] Strike-verb extensions (LATER, same button): smash through weak railings/doors, deflect
   thrown objects back at rooftop archers
 
@@ -32,7 +28,10 @@ Status: `[ ]` todo · `[~]` partial · `[x]` done · 🔷 = Mike's direct design
 **Now:** gaps + patrolling guards + feathers; one biome, no structure.
 **Standard:** new element every ~30-45s of play; recognizable "chunks" so mastery grows.
 
-- [ ] 🔷 **Low obstacles to slide under**: clotheslines, low beams, hanging signs (pairs w/ slide)
+- [x] 🔷 **Low obstacles to slide under**: clotheslines, low beams, hanging signs — one occupant
+  per roof (guard OR hazard), contiguous roofs only (never right after a gap-jump arc), never on
+  consecutive roofs, and always beyond the last gap's jump-arc landing + reaction room; teach beat
+  w/ tutorial slow-time on the first one; a full 76px leap clears the whole band (expert alt)
 - [ ] Guard formations: pairs, back-to-back, one-on-a-ledge (feeds domino setups — place guards
   in lines so PERFECT shots have targets; the mechanic sells itself)
 - [ ] Rooftop chunk library: hand-authored segment patterns (staircase roofs, long gap + rope,
@@ -80,8 +79,8 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
 **Now:** 2 buttons (jump/strike), keyboard + touch zones. Solid foundation.
 **Standard:** device-adaptive prompts, zero input latency, no dead inputs.
 
-- [ ] Input buffering: jump pressed ≤100ms before landing fires on landing (standard runner QoL)
-- [ ] Coyote time (~80ms) off roof edges
+- [x] Input buffering: jump pressed ≤100ms (6 frames) before landing fires on landing
+- [x] Coyote time (~80ms / 5 frames) off roof edges
 - [ ] Show keyboard prompts on desktop / touch zones only on touch devices (currently both always)
 - [ ] Keys: verify no browser-reserved keys (Space scroll is prevented ✓); add W/Z alternates for
   AZERTY compliance (CG guideline)
@@ -91,8 +90,9 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
 **Now:** sqrt speed ramp; strike windows time-normalized (done); all-tier bot suite exists.
 **Standard:** deaths always feel earned; skill tiers separate cleanly (verified: 68s vs 38s).
 
-- [ ] Re-run the bot fairness suite after EVERY mechanics change (double-jump removal, slide) —
-  keep `rs_playtest.js` harness in repo under `tools/` instead of scratchpad
+- [x] Bot fairness suite lives in repo `tools/rs_playtest.js` (4 reaction tiers, death-cause
+  tracking, draw-path smoke, PASS/FAIL fairness bars) — re-running it after EVERY mechanics
+  change stays standing practice
 - [ ] Anti-streak guard on formation RNG (no 3 identical challenges in a row)
 - [ ] First 150m = guaranteed gentle intro chunk (teach jump → teach strike → first mixed)
 - [ ] Difficulty cap: speed plateaus at ~2500m so elite runs stay humanly possible
@@ -136,7 +136,7 @@ slow-mo. Strong.
 
 - [ ] Perf audit at RSCALE 4 on weak hardware (Mike's i5-8265U is the perfect test rig) — if the
   1920×1080 backing store strains it, cap RSCALE by a quick FPS probe in the first seconds
-- [ ] Move `rs_playtest.js` + a README into `tools/` (keep the chainable-Proxy ctx stub note)
+- [x] Move `rs_playtest.js` + a README into `tools/` (chainable-Proxy ctx stub note kept)
 - [ ] Lighthouse-style load check: single file, no external assets except SDK — keep it that way
 
 ## 11. Monetization & SDK ⚡
@@ -166,9 +166,11 @@ wired but unused.
 No early lower-quality ship to GM/GD. Build to CrazyGames grade, then submit the SAME build
 everywhere (CG + GameMonetize + GameDistribution + itch) in one wave. Large-chunk batches:
 
-**BATCH 1 — Feel & verbs:** double-jump OUT → hold-to-jump-higher; slide + low obstacles
-(clotheslines/beams/signs) via context action button; input buffering + coyote time; slide teach
-beat w/ tutorial slow-time; re-sim fairness (retune gaps for single-jump).
+**BATCH 1 — Feel & verbs: ✅ DONE 2026-07-02.** Double-jump OUT → hold-to-jump-higher; slide +
+low obstacles (clotheslines/beams/signs) via context action button; input buffering + coyote
+time; slide teach beat w/ tutorial slow-time; gaps retuned for single-jump and re-simmed green.
+Bonus: two latent engine bugs found by the suite and fixed (seam ground-flicker, segment-pool
+exhaustion punching holes in the world).
 
 **BATCH 2 — Audio (full):** procedural SFX set (jump/land/strike-by-tier/domino/Light
 sparkle/death/slide/bird), slow-mo low-pass sweep, ambient night bed, mute button + CG muteAudio

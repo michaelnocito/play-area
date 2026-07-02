@@ -1,15 +1,22 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-02):** Read `ROADMAP.md` FIRST — it is the dev-owned backlog and the
-> sequencing is locked: one quality bar, one submission wave to ALL portals (CG+GM+GD+itch), no
-> early low-quality ship. Next work = **BATCH 1 (Feel & verbs)**: double-jump OUT →
-> hold-to-jump-higher, slide + low obstacles on the context action button, input buffer + coyote,
-> re-sim fairness with `scratchpad rs_playtest.js`-style harness (chainable-Proxy ctx stub; move a
-> copy into `tools/`). Currency is named **"Light"** (Mike's call — never "feathers" player-facing).
-> Quality state: fixed-timestep, timing-strike w/ domino+slow-mo, tutorial slow-time, full
-> procedural art pass, native-res rendering, instant boot — all DONE (HEAD ~`0c2fc14`). Platform
-> builds under `builds/` regenerate via the make_rs_builds.py pattern (re-derive from master; GM/GD
-> have GAMEID_PLACEHOLDER pending Mike's dashboard records).
+> **⚡ RESUME HERE (2026-07-02, Batch 1 shipped):** Read `ROADMAP.md` FIRST — dev-owned backlog,
+> sequencing locked: one quality bar, ONE submission wave to ALL portals (CG+GM+GD+itch).
+> **BATCH 1 (Feel & verbs) is DONE and sim-verified:** double jump OUT → hold-to-jump-higher
+> (`JUMP_CUT` release trim), slide + low hazards (clothesline/beam/sign) on the context action
+> button (guard-in-reach wins the press), jump buffer 6f + coyote 5f, gaps capped at `speed×26`
+> for single-jump clearance, slide teach beat w/ tutorial slow-time, per-cause death copy.
+> Bot suite now lives in **`tools/rs_playtest.js`** (see `tools/README.md`) — run
+> `node tools/rs_playtest.js` after EVERY mechanics change; fairness bars green (elite bots:
+> 0 gap deaths, 0 low-hazard deaths <2500m; all deaths = guard timing, the designed skill test).
+> It also flushed out two latent engine bugs, both fixed: (1) `groundYForPlayer` flickered
+> "airborne" for 1 frame at contiguous roof seams (cancelled slides), (2) `MAX_SEGMENTS 10` could
+> exhaust while `nextSpawnX` still advanced → invisible holes in the world (now 14 + spawn
+> returns false instead of skipping). **Next = BATCH 2 (full audio)** — procedural `Snd` pattern
+> from `../flipline/builds/gamemonetize/index.html`; game is currently silent, biggest gap.
+> Currency is named **"Light"** (Mike's call — never "feathers" player-facing; rename lands in
+> Batch 3). `builds/` derivatives are now STALE vs master — regenerate at Batch 6 (ship wave);
+> GM/GD keep GAMEID_PLACEHOLDER pending Mike's dashboard records.
 
 **What this is:** CrazyGames auto-runner, hooded-assassin rooftop theme. Two
 mobile-friendly inputs only: **JUMP** (auto-scroll, time your jumps over

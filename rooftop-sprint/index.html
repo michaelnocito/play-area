@@ -79,7 +79,7 @@
   <div id="overlay">
     <h1>ROOFTOP SPRINT</h1>
     <p>The hooded blade runs the skyline on its own. Time your jumps over the gaps, and strike guards before they cut you down.</p>
-    <p><span class="key">SPACE / LEFT SIDE</span> jump &nbsp;&middot;&nbsp; <span class="key">X / RIGHT SIDE</span> strike</p>
+    <p><span class="key">SPACE / LEFT SIDE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X / RIGHT SIDE</span> strike / slide</p>
     <div id="scoreLine"></div>
     <div id="best"></div>
     <button id="startBtn">Begin the Run</button>
@@ -206,12 +206,14 @@
     for(const m of messages){ if(!m.active){ m.active=true;m.x=x;m.y=y;m.t=dur||26;m.t0=m.t;m.text=text; return; } }
   }
 
-  const MAX_SEGMENTS = 10;
+  const MAX_SEGMENTS = 14; // spawn window ÷ min roof length can hit ~11 live segments — 10 exhausted the pool and punched holes in the world
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0}));
   const MAX_GUARDS = 10;
   const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit)
   const MAX_FEATHERS = 14;
   const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0}));
+  const MAX_LOWOBS = 8; // low hazards: slide under the hanging band, or clear the whole thing with a full leap
+  const lowObs = Array.from({length: MAX_LOWOBS}, () => ({active:false,x:0,y:0,w:0,kind:0})); // kind: 0=clothesline 1=beam 2=sign
   const MAX_BIRDS = 5;
   const birds = Array.from({length: MAX_BIRDS}, () => ({active:false,perched:true,x:0,y:0,vx:0,vy:0,flap:0}));
   // cloak verlet chain (world-space points; index 0 anchors at the shoulders)
@@ -222,12 +224,19 @@
   const player = {
     x: 80, y: GROUND_Y, w: 18, h: 28,
     vy: 0, onGround: true,
-    jumpsLeft: 1, maxJumps: 2,
+    coyoteT: 0, jumpBufT: 0, jumpHeld: false,
+    sliding: false, slideT: 0,
     strikeFlash: 0,
     dead: false, runT: 0,
   };
   const GRAVITY = 0.34;
   const JUMP_V = -7.2;
+  const JUMP_CUT = -2.6;   // release early → rise is cut here: tap = short hop, hold = full leap
+  const COYOTE_FRAMES = 5; // ~80ms forgiveness after running off a roof edge
+  const BUFFER_FRAMES = 6; // ~100ms early jump press fires the instant you land
+  const SLIDE_FRAMES = 32;
+  const SLIDE_H = 14;      // sliding hitbox height (standing = player.h 28)
+  const LOWBAR_BOT = 17, LOWBAR_TOP = 46; // hazard band above the roof (slide fits under 17; a full 76px leap clears 46)
   const STRIKE_RANGE_Y = 30;
   const GUARD_HIT_DX = 15, GUARD_CLEAR_DY = 22; // feet must be this far above guard.y to jump clear
   // Staff reach grows with run speed so the reaction window stays humanly possible (~300ms)
@@ -241,23 +250,28 @@
     return { perfect: GUARD_HIT_DX + closing * 7, mid: GUARD_HIT_DX + closing * 16 };
   }
   let graceT = 0;        // brief invulnerability after a lunge-kill so chained guards can't cheap-kill
-  let taughtGuard = false, taughtGap = false;
+  let taughtGuard = false, taughtGap = false, taughtSlide = false;
+  let deathCause = '';   // 'gap' | 'guard' | 'low' — picks the death-screen tip (and feeds the bot harness)
   let tutSlowT = 0;      // real ms — tutorial slow-time so teach prompts can be read (see loop)
 
   let nextSpawnX = 0;
+  let lastRoofHadLow = false; // no low hazards on consecutive roofs — a slide ends with no time to start the next one
+  let lastGapEndX = 0;        // landing edge of the most recent gap — hazards must sit beyond any jump-arc landing
 
   function resetWorld() {
     for(const s of segments) s.active=false;
     for(const g of guards) g.active=false;
     for(const f of featherList) f.active=false;
+    for(const o of lowObs) o.active=false;
     for(const p of particles) p.active=false;
     for(const m of messages) m.active=false;
     for(const b of birds) b.active=false;
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
-    player.onGround = true; player.jumpsLeft = player.maxJumps; player.dead = false; player.strikeFlash=0;
-    nextSpawnX = 0;
+    player.onGround = true; player.coyoteT = 0; player.jumpBufT = 0; player.jumpHeld = false;
+    player.sliding = false; player.slideT = 0; player.dead = false; player.strikeFlash=0;
+    nextSpawnX = 0; lastRoofHadLow = false; lastGapEndX = 0;
     spawnSegment(true);
   }
 
@@ -268,7 +282,10 @@
       for(const s of segments){ if(s.active && s.x2===lastX2){ lastY = s.y; } }
     }
     const gapRoll = Math.random();
-    let gap = first ? 0 : (gapRoll < 0.32 ? 34 + Math.random()*26 + Math.min(distance/40, 26) : 0);
+    // Single-jump rule: a full-hold jump gives ~39 frames of air even onto a +20 step-up, so cap
+    // gap width at speed×26 frames of travel — late presses and step-ups still clear (re-simmed
+    // with tools/rs_playtest.js after the double-jump removal).
+    let gap = first ? 0 : (gapRoll < 0.32 ? Math.min(34 + Math.random()*26 + Math.min(distance/40, 26), speed * 26) : 0);
     let y = lastY;
     if (gap > 0) {
       const lvl = Math.random();
@@ -280,9 +297,15 @@
     const len = first ? 260 : 110 + Math.random()*130;
     const x2 = x1 + len;
     const slot = segments.find(s => !s.active);
-    if (slot) { slot.active=true; slot.x1=x1; slot.x2=x2; slot.y=y; }
+    if (!slot) return false; // pool exhausted — NEVER advance nextSpawnX past a roof that doesn't exist
+    slot.active=true; slot.x1=x1; slot.x2=x2; slot.y=y;
+    if (gap > 0) lastGapEndX = x1;
 
-    if (!first && distance > 140 && len > 90 && Math.random() < 0.5) {
+    // One occupant per roof — a guard OR a low hazard, never both (a guard in strike range would
+    // steal the context button right when the player needs it to slide).
+    const occRoll = Math.random();
+    let placedLow = false;
+    if (!first && distance > 140 && len > 90 && occRoll < 0.5) {
       const gx = x1 + len * (0.4 + Math.random()*0.35);
       const gslot = guards.find(g => !g.active);
       if (gslot) {
@@ -291,8 +314,22 @@
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
         gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0;
       }
+    } else if (!first && gap === 0 && !lastRoofHadLow && distance > 220 && len > 110 && occRoll < 0.8) {
+      // gap === 0: a hazard on the far side of a forced gap-jump would catch the player
+      // mid-arc where sliding is impossible — low hazards only appear on contiguous roofs
+      const oslot = lowObs.find(o => !o.active);
+      const ow = 24 + Math.random()*14;
+      const ox = x1 + len*(0.35 + Math.random()*0.3) - ow/2;
+      // A full-hold gap jump lands up to ~42 frames of travel past the gap edge (it can overfly
+      // a short roof entirely) — the bar needs to clear that arc plus reaction+slide room.
+      if (oslot && ox - lastGapEndX > 46 * (speed + 0.6)) {
+        oslot.active = true; oslot.kind = (Math.random()*3)|0;
+        oslot.w = ow; oslot.x = ox; oslot.y = y;
+        placedLow = true;
+      }
     }
-    if (Math.random() < 0.5) {
+    lastRoofHadLow = placedLow;
+    if (!placedLow && Math.random() < 0.5) { // no feathers on hazard roofs — a high feather would bait a jump into the band
       const fx = gap>0 ? lastX2+gap/2 : x1 + len*Math.random();
       const fy = y - 36 - Math.random()*30;
       const fslot = featherList.find(f => !f.active);
@@ -303,6 +340,7 @@
       if (bslot) { bslot.active=true; bslot.perched=true; bslot.x=x1+8+Math.random()*(len-16); bslot.y=y; bslot.vx=0; bslot.vy=0; bslot.flap=Math.random()*6; }
     }
     nextSpawnX = x2;
+    return true;
   }
 
   function segmentAt(x) {
@@ -310,21 +348,36 @@
     return null;
   }
   function groundYForPlayer() {
+    // Check every segment with strict bounds — segmentAt's ±6px tolerance could match the
+    // segment we just left and report "no ground" for one frame at a contiguous seam
+    // (harmless with double jump, but it cancelled slides mid-hazard).
     const cx = player.x + player.w/2;
-    const s = segmentAt(cx);
-    if (!s || cx < s.x1 || cx > s.x2) return null;
-    return s.y;
+    for (const s of segments) { if (s.active && cx >= s.x1 && cx <= s.x2) return s.y; }
+    return null;
   }
 
   // ---------- Input ----------
-  function tryJump() {
-    if (state !== 'playing') return;
-    if (player.jumpsLeft > 0) {
-      player.vy = JUMP_V; player.onGround = false; player.jumpsLeft--;
-      spawnBurst(player.x+player.w/2, player.y, 3, '#cfd6e6');
-    }
+  function doJump() {
+    player.vy = JUMP_V; player.onGround = false;
+    player.coyoteT = 0; player.jumpBufT = 0;
+    player.sliding = false; player.slideT = 0; // jump cancels a slide
+    spawnBurst(player.x+player.w/2, player.y, 3, '#cfd6e6');
   }
-  function tryStrike() {
+  function jumpPress() {
+    if (state !== 'playing') return;
+    player.jumpHeld = true;
+    if (player.onGround || player.coyoteT > 0) doJump();
+    else player.jumpBufT = BUFFER_FRAMES; // pressed just before landing → fires on touchdown
+  }
+  function jumpRelease() { player.jumpHeld = false; }
+  function startSlide() {
+    if (!player.onGround || player.sliding) return;
+    player.sliding = true; player.slideT = SLIDE_FRAMES;
+    spawnBurst(player.x+player.w/2, player.y, 4, '#9a8f80');
+  }
+  // Context action button (2-button philosophy): a guard in staff reach always wins the press;
+  // otherwise a low hazard coming up means slide; otherwise the staff just whiffs.
+  function tryAction() {
     if (state !== 'playing') return;
     let nearest = null, nearestDist = Infinity;
     for (const g of guards) {
@@ -333,6 +386,15 @@
       if (dx > -14 && dx < strikeRangeX() && Math.abs(dy) < STRIKE_RANGE_Y) {
         const d = Math.hypot(dx,dy);
         if (d < nearestDist) { nearestDist = d; nearest = g; }
+      }
+    }
+    if (!nearest) {
+      const px = player.x + player.w/2;
+      for (const o of lowObs) {
+        if (!o.active) continue;
+        // trigger window is capped so the 32-frame slide always outlasts the hazard:
+        // 32×speed ≥ trigger + w + player margin holds at every speed obstacles spawn at
+        if (o.x + o.w > px - 6 && o.x - px < 10 + speed*12) { startSlide(); return; }
       }
     }
     player.strikeFlash = 8;
@@ -371,18 +433,23 @@
   }
 
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); tryJump(); }
-    if (e.code === 'KeyX' || e.code === 'KeyF') { e.preventDefault(); tryStrike(); }
+    if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (!e.repeat) jumpPress(); }
+    if (e.code === 'KeyX' || e.code === 'KeyF') { e.preventDefault(); if (!e.repeat) tryAction(); }
     if (e.code === 'Enter' && state !== 'playing') { beginGame(); }
   });
-  btnJump.addEventListener('pointerdown', (e) => { e.preventDefault(); tryJump(); });
-  btnStrike.addEventListener('pointerdown', (e) => { e.preventDefault(); tryStrike(); });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') jumpRelease();
+  });
+  btnJump.addEventListener('pointerdown', (e) => { e.preventDefault(); jumpPress(); });
+  window.addEventListener('pointerup', () => jumpRelease());     // release anywhere ends the hold
+  window.addEventListener('pointercancel', () => jumpRelease());
+  btnStrike.addEventListener('pointerdown', (e) => { e.preventDefault(); tryAction(); });
   startBtn.addEventListener('click', () => beginGame());
   canvas.addEventListener('pointerdown', () => { if (state === 'dead') beginGame(); });
 
   function beginGame() {
     resetWorld();
-    while (nextSpawnX < W + 500) spawnSegment(false);
+    while (nextSpawnX < W + 500 && spawnSegment(false));
     state = 'playing';
     overlay.classList.add('hidden');
     CG.gameplayStart();
@@ -396,10 +463,11 @@
     distance += speed / 10;
     player.x += speed;
 
-    while (nextSpawnX < player.x + W + 260) spawnSegment(false);
+    while (nextSpawnX < player.x + W + 260 && spawnSegment(false)); // stops cleanly if the pool is momentarily full; retries next frame after culling
     for (const s of segments) if (s.active && s.x2 < player.x - 260) s.active = false;
     for (const g of guards) if (g.active && g.x < player.x - 260) g.active = false;
     for (const f of featherList) if (f.active && f.x < player.x - 260) f.active = false;
+    for (const o of lowObs) if (o.active && o.x < player.x - 260) o.active = false;
 
     // first-gap teach: spot the first upcoming gap early, slow time, show the prompt
     if (!taughtGap) {
@@ -409,23 +477,36 @@
         const next = segments.filter(s => s.active && s.x1 > cur.x2 - 6).sort((a,b)=>a.x1-b.x1)[0];
         if (next && next.x1 > cur.x2 + 4 && cur.x2 - cx < 170 && cur.x2 - cx > 0) {
           taughtGap = true;
-          spawnMessage(cur.x2 + 8, cur.y - 46, 'JUMP THE GAP', 150);
+          spawnMessage(cur.x2 + 8, cur.y - 46, 'HOLD JUMP TO CLEAR THE GAP', 150);
           tutSlowT = 2200;
         }
       }
     }
 
     const gY = groundYForPlayer();
+    if (!player.jumpHeld && player.vy < JUMP_CUT) player.vy = JUMP_CUT; // variable height: release cuts the rise
     player.vy += GRAVITY;
     player.y += player.vy;
     if (gY !== null && player.y >= gY && player.vy >= 0) {
       player.y = gY; player.vy = 0;
-      if (!player.onGround) spawnBurst(player.x+player.w/2, player.y, 2, '#cfd6e6');
-      player.onGround = true; player.jumpsLeft = player.maxJumps;
+      const justLanded = !player.onGround;
+      player.onGround = true; player.coyoteT = COYOTE_FRAMES;
+      if (justLanded) {
+        spawnBurst(player.x+player.w/2, player.y, 2, '#cfd6e6');
+        if (player.jumpBufT > 0) doJump(); // buffered press fires the moment we touch down
+      }
     } else {
       player.onGround = false;
+      if (player.coyoteT > 0) player.coyoteT--;
+      if (player.sliding) { player.sliding = false; player.slideT = 0; } // slid off the edge
     }
-    if (player.y > H + 60) { die(); return; }
+    if (player.jumpBufT > 0) player.jumpBufT--;
+    if (player.sliding) {
+      player.slideT--;
+      if (player.runT % 3 === 0) spawnParticle(player.x - 6, player.y - 2, -0.8 - speed*0.2, -0.4, 12, '#9a8f80');
+      if (player.slideT <= 0) player.sliding = false;
+    }
+    if (player.y > H + 60) { die('gap'); return; }
 
     player.runT += 1;
     if (player.strikeFlash > 0) player.strikeFlash--;
@@ -467,9 +548,25 @@
         tutSlowT = 2400; // give the player time to orient, read, and get ready
       }
       const dx = Math.abs(sdx);
-      if (graceT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die(); return; }
+      if (graceT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die('guard'); return; }
     }
     if (graceT > 0) graceT--;
+
+    // Low hazards: the danger is the hanging band [y-46, y-17] — slide fits under it,
+    // a full-hold leap from a neighboring roof sails clean over it.
+    const pxc = player.x + player.w/2;
+    for (const o of lowObs) {
+      if (!o.active) continue;
+      if (!taughtSlide && o.x - pxc > 0 && o.x - pxc < 150) { // first one ever: slow time, teach the button
+        taughtSlide = true;
+        spawnMessage(o.x + o.w/2, o.y - 58, 'TAP STRIKE TO SLIDE UNDER', 150);
+        tutSlowT = 2400;
+      }
+      if (pxc + 6 > o.x && pxc - 6 < o.x + o.w) {
+        const top = player.y - (player.sliding ? SLIDE_H : player.h);
+        if (top < o.y - LOWBAR_BOT && player.y > o.y - LOWBAR_TOP) { die('low'); return; }
+      }
+    }
 
     for (const f of featherList) {
       if (!f.active || f.taken) continue;
@@ -480,7 +577,7 @@
     }
 
     // cloak: each point eases toward a spot behind/below the previous one; speed streams it back
-    const ax = player.x - 3, ay = player.y - player.h + 8;
+    const ax = player.x - 3, ay = player.y - (player.sliding ? SLIDE_H + 2 : player.h) + 8;
     cloak[0].x = ax; cloak[0].y = ay;
     for (let i = 1; i < cloak.length; i++) {
       const flut = Math.sin(player.runT*0.31 + i*1.2) * (player.onGround ? 1.3 : 2.4);
@@ -515,7 +612,8 @@
     featherVal.textContent = feathers;
   }
 
-  function die() {
+  function die(cause) {
+    deathCause = cause;
     state = 'dead'; player.dead = true;
     spawnBurst(player.x+player.w/2, player.y-10, 14, '#a44');
     shake = 10;
@@ -528,10 +626,11 @@
     }
     scoreLine.textContent = `Distance ${Math.floor(distance)}m  ·  Feathers ${feathers}  ·  Score ${finalScore}`;
     bestEl.textContent = `Best score: ${best}`;
-    const fell = player.y > H;
-    document.querySelector('#overlay h1').textContent = fell ? 'THE ROOF RAN OUT' : 'CUT DOWN';
-    document.querySelectorAll('#overlay p')[0].textContent = fell
-      ? 'Mind the gaps — jump again mid-air to stretch the leap.'
+    document.querySelector('#overlay h1').textContent =
+      cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT' : 'CUT DOWN';
+    document.querySelectorAll('#overlay p')[0].textContent =
+      cause === 'gap' ? 'Mind the gaps — hold JUMP longer to leap higher and farther.'
+      : cause === 'low' ? 'Slide under low hazards — tap STRIKE when no guard is near.'
       : 'A blade found you first. Strike when the gold mark shows — or leap clear.';
     document.querySelectorAll('#overlay p')[1].style.display = 'none';
     startBtn.textContent = 'Run Again';
@@ -640,6 +739,38 @@
     }
     ctx.restore();
   }
+  function drawLowOb(o, camX) {
+    if (!o.active) return;
+    const sx = o.x - camX;
+    if (sx < -50 || sx > W + 50) return;
+    const gy = o.y, x2 = sx + o.w;
+    ctx.fillStyle = '#2a2333';
+    if (o.kind === 0) { // clothesline: poles, sagging rope, hung cloth filling the danger band
+      ctx.fillRect(sx - 5, gy - 46, 3, 46); ctx.fillRect(x2 + 2, gy - 46, 3, 46);
+      ctx.strokeStyle = '#3a3145'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx - 3, gy - 43); ctx.quadraticCurveTo(sx + o.w/2, gy - 37, x2 + 3, gy - 43); ctx.stroke();
+      const cols = ['#7a4a56', '#4a5a72', '#6e6440'];
+      for (let i = 0; i < 3; i++) {
+        const cx = sx + o.w * (0.18 + i*0.32);
+        ctx.fillStyle = cols[i];
+        ctx.fillRect(cx - 4, gy - 41 + (i===1?2:0), 9, 20);
+      }
+    } else if (o.kind === 1) { // low beam on posts, coil of rope dangling
+      ctx.fillRect(sx - 4, gy - 42, 4, 42); ctx.fillRect(x2, gy - 42, 4, 42);
+      ctx.fillStyle = '#5a4632'; ctx.fillRect(sx - 6, gy - 42, o.w + 12, 8);
+      ctx.fillStyle = '#3f3122'; ctx.fillRect(sx - 6, gy - 36, o.w + 12, 2);
+      ctx.strokeStyle = '#4a3826'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx + o.w*0.5, gy - 34); ctx.lineTo(sx + o.w*0.5, gy - 22); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sx + o.w*0.5, gy - 20, 3, 0, Math.PI*2); ctx.stroke();
+    } else { // hanging sign off an overhead arm
+      ctx.fillRect(sx - 5, gy - 48, 3, 48);
+      ctx.fillRect(sx - 5, gy - 48, o.w + 10, 3);
+      ctx.strokeStyle = '#3a3145'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx + o.w/2, gy - 45); ctx.lineTo(sx + o.w/2, gy - 39); ctx.stroke();
+      ctx.fillStyle = '#6e4530'; ctx.fillRect(sx + o.w/2 - 12, gy - 39, 24, 17);
+      ctx.fillStyle = '#e8c878'; ctx.fillRect(sx + o.w/2 - 8, gy - 34, 16, 2); ctx.fillRect(sx + o.w/2 - 8, gy - 30, 11, 2);
+    }
+  }
   function drawFeather(f, camX) {
     if (!f.active || f.taken) return;
     const sx = f.x - camX;
@@ -667,13 +798,16 @@
 
     ctx.save(); ctx.translate(sx, sy);
     if (player.dead) { ctx.rotate(0.6); ctx.translate(6,12); }
-    const h = player.h;
+    const h = player.sliding ? 16 : player.h; // crouched silhouette while sliding
     // ground shadow
     if (player.onGround && !player.dead) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0, 1.5, 9, 2.2, 0, 0, Math.PI*2); ctx.fill(); }
     // legs: two-joint run cycle (tucked in the air)
     const ph = player.runT * 0.35;
     ctx.strokeStyle = '#1a1922'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-    for (const side of [0, Math.PI]) {
+    if (player.sliding) { // legs stretched out front, low to the shingles
+      ctx.beginPath(); ctx.moveTo(0, -7); ctx.quadraticCurveTo(6, -4, 12, -2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -7); ctx.quadraticCurveTo(4, -2, 8, -1); ctx.stroke();
+    } else for (const side of [0, Math.PI]) {
       let footX, footY, kneeX, kneeY;
       if (player.onGround) {
         const s1 = Math.sin(ph + side), c1 = Math.cos(ph + side);
@@ -692,14 +826,16 @@
     ctx.beginPath(); ctx.moveTo(-9,-h); ctx.quadraticCurveTo(0,-h-12,9,-h); ctx.quadraticCurveTo(6,-h+6,0,-h+7); ctx.quadraticCurveTo(-6,-h+6,-9,-h); ctx.fill();
     // sash
     ctx.fillStyle = '#c9913f'; ctx.fillRect(-8,-h+13,16,2.5);
-    // rear arm swings opposite the legs
-    ctx.strokeStyle = '#23222b'; ctx.lineWidth = 3.5;
-    const armSw = player.onGround ? Math.sin(ph + Math.PI) * 4.5 : 3;
-    ctx.beginPath(); ctx.moveTo(-3, -h+12); ctx.quadraticCurveTo(-5 + armSw*0.4, -h+17, -4 + armSw, -h+21); ctx.stroke();
+    // rear arm swings opposite the legs (tucked out of sight during a slide)
+    if (!player.sliding) {
+      ctx.strokeStyle = '#23222b'; ctx.lineWidth = 3.5;
+      const armSw = player.onGround ? Math.sin(ph + Math.PI) * 4.5 : 3;
+      ctx.beginPath(); ctx.moveTo(-3, -h+12); ctx.quadraticCurveTo(-5 + armSw*0.4, -h+17, -4 + armSw, -h+21); ctx.stroke();
+    }
     // Staff — always in hand, sweeps in a full arc on strike
     const sf = player.strikeFlash;
-    const ang = sf > 0 ? (-1.5 + (8-sf)*0.32) : (-0.95 + Math.sin(player.runT*0.12)*0.05);
-    const len = sf > 0 ? 42 : 30;
+    const ang = sf > 0 ? (-1.5 + (8-sf)*0.32) : player.sliding ? 0.35 : (-0.95 + Math.sin(player.runT*0.12)*0.05);
+    const len = sf > 0 ? 42 : player.sliding ? 22 : 30; // staff tucked flat during a slide
     ctx.save(); ctx.translate(5,-h+11); ctx.rotate(ang);
     ctx.fillStyle = '#8a6a3f'; ctx.fillRect(0,-1.5,len,3);
     ctx.fillStyle = '#e8c878'; ctx.fillRect(len-4,-2.5,4,5);
@@ -743,6 +879,7 @@
     drawSkyline(camX);
     drawSegments(camX);
     for (const b of birds) drawBird(b, camX);
+    for (const o of lowObs) drawLowOb(o, camX);
     for (const f of featherList) drawFeather(f, camX);
     for (const g of guards) drawGuard(g, camX);
     if (state !== 'menu') drawPlayer(camX);
@@ -793,7 +930,7 @@
   // Start rendering IMMEDIATELY — never gate the game on the ad-SDK handshake (it can take
   // seconds off-platform and caused a visible background-only stall at boot).
   resetWorld();
-  while (nextSpawnX < W + 500) spawnSegment(false);
+  while (nextSpawnX < W + 500 && spawnSegment(false));
   bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
   requestAnimationFrame(loop);
   // SDK call order still matters: game.* calls only fire after init() resolves (sdkLive).
