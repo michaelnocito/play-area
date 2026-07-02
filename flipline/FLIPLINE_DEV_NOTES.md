@@ -1,22 +1,18 @@
 # FLIPLINE — Dev Handoff / Resume Point
 
 **Repo:** `github.com/michaelnocito/play-area` (PUBLIC monorepo, branch `main`) — Flipline lives in the `flipline/` subfolder · **Local:** `C:\Users\Mike\Projects\GAMES\play-area\flipline`
-**HEAD at handoff:** `a9222c8` (2026-07-01) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
+**HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
 **Read first:** this file + memory `project_flipline_state.md` (full per-feature + submission history). Also `HANDOFF.md`, `FLIPLINE_lore_bible.md`, `FLIPLINE_store_copy.md`.
 
-## 📦 PLATFORM SUBMISSION STATUS (2026-07-01)
+## 📦 PLATFORM SUBMISSION STATUS (2026-07-02)
 - **CrazyGames** — ❌ REJECTED (subjective "overall quality does not meet platform expectations"; not a bug — genre saturation + minimal visuals). Parked. Master `index.html` is this build.
 - **GameMonetize** — ✅ SUBMITTED, IN REVIEW. `builds/gamemonetize/` (gameId `i9wbwtje123k5itbsv3io3hz7yc7x85v`), SDK verified + sent to activation. Nothing pending.
-- **itch.io** — ⏳ build ready (`builds/flipline-itch.zip`), NOT yet uploaded. Instant/no-review when Mike uploads.
+- **itch.io** — ⏳ build re-zipped and ready (`builds/flipline-itch.zip`), NOT yet uploaded — Mike does the upload (see Task B below).
 
-## ⏳ TWO REMAINING TASKS (this handoff)
-**Task A — fold the canvas-scope tap fix into the master + itch builds (code, then commit/push).**
-The tap-to-flip handler listens on `window` and flips on ANY click (only exempting mute/fx buttons), calling `preventDefault()`. Harmless on CrazyGames/itch (no overlay buttons) but wrong in principle; already fixed in the GameMonetize build (`a9222c8`). Propagate for consistency:
-1. In master `index.html`, find the `addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; ...` line and change the guard to `if(e.target!==cv||needRotate)return;` (only the canvas flips; `cv` is the canvas, defined earlier). Keep the rest of the handler identical.
-2. Re-derive the itch build from the fixed master: `builds/itch/index.html` = master with the 2-line CrazyGames SDK `<script>` (the `<!-- ... -->` comment + `<script src="https://sdk.crazygames.com/...">`) removed from `<head>`. Nothing else differs.
-3. Re-zip: `builds/flipline-itch.zip` (just `index.html` at root; `builds/*.zip` is gitignored).
-4. Verify each build boots to `ready`, a canvas tap flips, a non-canvas element click does NOT flip, mute/fx still toggle (drive `update()`/click via preview_eval — preview tab may background-throttle rAF; set canvas dims directly if `innerWidth`=0). `node --check` the extracted `<script>`. Commit + push.
+## ✅ Task A — DONE (`0c70ed3`, 2026-07-02)
+Canvas-scope tap fix (only `e.target===cv` flips, was previously any non-mute/fx element) folded into master `index.html` and re-derived into `builds/itch/index.html` + re-zipped `builds/flipline-itch.zip`. Verified in preview: both builds boot to ready→play, a canvas tap flips `gdir`, a non-canvas click does not, mute button still toggles independently. `node --check` clean on both. Committed + pushed.
 
+## ⏳ ONE REMAINING TASK (this handoff)
 **Task B — Mike uploads the itch.io build (no code; hand him the steps).**
 File: `builds/flipline-itch.zip`. itch.io → Create new project → Kind: HTML → upload zip → check "This file will be played in the browser" → embed **960×540** + **Fullscreen button** + **Mobile friendly** → cover = `covers/flipline_cover_1920x1080.png` → Pricing: No payments (or donations) → Public. No review; live instantly.
 
