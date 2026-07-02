@@ -6,15 +6,20 @@
 
 ## 📦 PLATFORM SUBMISSION STATUS (2026-07-02)
 - **CrazyGames** — ❌ REJECTED (subjective "overall quality does not meet platform expectations"; not a bug — genre saturation + minimal visuals). Parked. Master `index.html` is this build.
-- **GameMonetize** — ✅ SUBMITTED, IN REVIEW. `builds/gamemonetize/` (gameId `i9wbwtje123k5itbsv3io3hz7yc7x85v`), SDK verified + sent to activation. Nothing pending.
-- **itch.io** — ⏳ build re-zipped and ready (`builds/flipline-itch.zip`), NOT yet uploaded — Mike does the upload (see Task B below).
+- **GameMonetize** — ✅ SUBMITTED, IN REVIEW. `builds/gamemonetize/` (gameId `i9wbwtje123k5itbsv3io3hz7yc7x85v`), SDK verified + sent to activation. **This is the only platform in play that pays revenue** (ad-impression share). Nothing pending — check back on approval status next session.
+- **itch.io** — ✅ **LIVE** at `mnocito.itch.io/flipline` (2026-07-02). Free / "No payments" — itch has no ad SDK, this listing earns $0 unless donations are enabled later. Value here is a stable no-review portfolio link, not revenue.
 
-## ✅ Task A — DONE (`0c70ed3`, 2026-07-02)
-Canvas-scope tap fix (only `e.target===cv` flips, was previously any non-mute/fx element) folded into master `index.html` and re-derived into `builds/itch/index.html` + re-zipped `builds/flipline-itch.zip`. Verified in preview: both builds boot to ready→play, a canvas tap flips `gdir`, a non-canvas click does not, mute button still toggles independently. `node --check` clean on both. Committed + pushed.
+## ✅ Task A + B — DONE (2026-07-02)
+Canvas-scope tap fix folded into master + itch builds (`0c70ed3`), verified in preview (canvas tap flips, non-canvas click doesn't, mute/fx unaffected), `node --check` clean. itch.io project created and published: cover (`covers/flipline_cover_1920x1080.png`) + 3 in-game screenshots (`_shots/screen_ready.png`, `screen_play.png`, `screen_shop.png` — pulled live via `canvas.toDataURL()` through preview_eval since no ffmpeg is installed to extract frames from the existing `.webm` clips) + embed 960×540/Fullscreen/Mobile-friendly + No payments + Public.
 
-## ⏳ ONE REMAINING TASK (this handoff)
-**Task B — Mike uploads the itch.io build (no code; hand him the steps).**
-File: `builds/flipline-itch.zip`. itch.io → Create new project → Kind: HTML → upload zip → check "This file will be played in the browser" → embed **960×540** + **Fullscreen button** + **Mobile friendly** → cover = `covers/flipline_cover_1920x1080.png` → Pricing: No payments (or donations) → Public. No review; live instantly.
+## ⏳ NEXT: monetization-platform roadmap
+itch is a portfolio/fallback, not revenue. GameMonetize (pending approval) is the only earner live so far. Other portals worth trying next, roughly in priority order:
+1. **GameDistribution** — needs their own SDK integration (similar shape to the GameMonetize adapter work) + a ~3-week QA/review cycle. Runs in parallel with GameMonetize once submitted — no reason to wait.
+2. **GamePix** — ad-revenue portal, lower bar than CrazyGames historically; SDK integration TBD, not yet researched in depth.
+3. **Newgrounds** — smaller audience, low friction, has its own ad/monetization program (Newgrounds Wallet + ad revenue share) — good low-effort parallel submission.
+4. **GameJolt** — similar profile to itch (community-first, optional monetization via GJ's own systems) — traction-focused more than revenue, but easy to add.
+- Explicitly **skip** Poki/Famobi — same curated-quality-bar rejection risk as CrazyGames, not worth the resubmission cycle without a real visual-identity upgrade.
+- **Gameplay trailer for itch/others (parked, low priority):** `.webm` clips exist (`_shots/desktop.webm`, `_shots/mobile.webm`) from the CrazyGames submission but itch wants a hosted YouTube/Vimeo link, not a file — upload to YouTube first if this becomes worth doing.
 
 ## Conventions (unchanged)
 Solo authorship — commit as `Michael Nocito <hello.michaelnocito@gmail.com>`, NO Co-Authored-By/AI trailer. Outside OneDrive. Commit + push after every change. `builds/*.zip`, `_shots/`, `.claude/` gitignored.
