@@ -90,12 +90,22 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
   — adapters already wired in all three platform builds
 - [ ] Persistence: extend the existing Save wrapper (localStorage + CG Data Module) to a save object
   (coins, owned, equipped) — version the key
-- [ ] 🔶 **PROPOSED (competitive research 2026-07-02, awaiting Mike's call): permanent progression**
-  — the clearest statistical gap between 8.9-rated CG hits (Count Masters 327k votes) and
-  merely-accepted games is coins buying LASTING power, not just cosmetics/consumables. Natural fit
-  here: spend Light on permanent lamp upgrades ("start brighter"): +1 starting music layer, wider
-  strike window tier, extra free revive, head-start distance. Visual = your lamp starts partly lit.
-  ~1 extra session if approved.
+- [ ] 🔷 **APPROVED (Mike, 2026-07-02): permanent progression** — deep-researched (design-science
+  brief in project chat; CG's own launch-metrics docs list "meaningful progression through
+  unlocks and upgrades" as a top retention lever). Why it works: loss-aversion buffering (every
+  death still banks progress), goal-gradient (next tier always in sight), competence path for
+  average players, achievement drip. **Guardrails (the documented failure mode is grind-past-the-
+  wall stat stacking):** upgrades compress the WARM-UP, never raise the ceiling; horizontal
+  options over vertical stats; hard caps. **Spec: 3 tracks × 4-5 tiers, ~×2 cost/tier, maxed in
+  2-4hrs of play, first purchase affordable by run 1-2:**
+  - **Morning Oil** (vertical, capped): start with the lamp partly lit — begin at the energy a
+    good run reaches by ~150m (incl. a starting music layer). Cap ≈ mid-run power, never beyond.
+  - **Lamp Arts** (horizontal): new behaviors per tier — Light-magnet radius → PERFECT kills
+    emit a stun flash → domino kills chain light farther.
+  - **Wick & Flint** (utility): head-start distance · one extra free revive · tally Light bonus.
+  - **Flow rule (Rogue Legacy GDC):** death → tally → one-tap spend → running again. No shop
+    agonizing between runs; upgrade buttons live ON the tally screen.
+  +1 session in Batch 5.
 
 ## 5. Controls & input feel
 
@@ -230,7 +240,8 @@ points counter.
 
 **BATCH 5 — Economy:** Light wallet + save versioning; cosmetic shop (cloaks/lamp skins/trails,
 live try-on); buff shop (consumables, pre-run pick); rewarded-ad hooks (revive, double-Light on
-tally); interstitial cooldown; 🔶 permanent lamp progression IF approved (see §4 — +1 session).
+tally); interstitial cooldown; 🔷 permanent lamp progression — APPROVED, spec in §4 (Morning
+Oil / Lamp Arts / Wick & Flint, tally-screen one-tap spend) — Batch 5 is 2 sessions.
 
 **BATCH 6 — Content & polish:** districts (named, banner/palette/hazard-mix/density every 250m);
 guard formations for domino setups; rooftop chunk library + anti-streak; guaranteed intro chunk;
