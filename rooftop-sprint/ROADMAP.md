@@ -11,15 +11,17 @@ Status: `[ ]` todo · `[~]` partial · `[x]` done · 🔷 = Mike's direct design
 ## 🏮 IDENTITY: THE LAMPLIGHTER (🔷 Mike's calls, client-intake 2026-07-02)
 
 The city's lights are going out; you are the Lamplighter, running the rooftops to take them back.
-- 🔷 **Weapon = a lamp on a pole** (replaces the plain staff render — same reach/hitbox/timing,
-  purely visual + naming).
-- 🔷 **Enemies carry lamps.** Kill one and its lamp-light streams into YOUR weapon, making it
-  visibly brighter — kills are literal power made visible. Weapon brightness = run-long escalation
-  display (resets on death; buff/upgrade hooks can seed it).
-- Rekindling: windows/lanterns flicker ON in your wake as weapon light grows — the city responds.
-- Kills the residual AC echo (hooded-assassin + rooftops) with an original fantasy that ties the
-  existing Light currency, lantern art, and score system into one story.
-- Copy/naming pass rides with this (death copy, menu line, store copy later).
+- [x] 🔷 **Weapon = a lamp on a pole** (replaced the staff render — same reach/hitbox/timing,
+  purely visual; glow radius + flame brightness driven by `lampLight`, steady throb clock ready
+  to share with the B3 bass pulse).
+- [x] 🔷 **Enemies carry lamps** (lamp-pole replaces the pike; lamp goes dark on death). Kill one
+  and 6 homing light-motes stream into YOUR weapon; each arrival feeds `lampLight` (0→1,
+  +0.12/kill, resets on death; buff/upgrade hooks can seed it).
+- [x] Rekindling: foreground-building windows behind the player light up more densely and burn
+  brighter as `lampLight` grows — the city responds in your wake.
+- [x] Copy pass: menu pitch, death titles/tips in Lamplighter voice (wardens, no
+  blade/stealth/AC echo); feathers → **Light** in HUD + tally; collectible = glowing mote.
+- Store copy rides with Batch 7 (post-rename, per §12).
 
 ---
 
@@ -79,9 +81,9 @@ The city's lights are going out; you are the Lamplighter, running the rooftops t
 **Standard:** one soft currency, cosmetic-first shop, buffs as consumables; no pay-to-win (portal
 monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
 
-- [ ] 🔷 **Currency = "LIGHT"** (Mike's call 2026-07-02 — he hates feathers as currency; AC-clone
-  fix too). Collectible becomes a glowing mote of Light; kills drop Light; HUD label "Light".
-  All feather naming/vars can stay internally, but zero player-facing "feather" text survives.
+- [x] 🔷 **Currency = "LIGHT"** (Mike's call 2026-07-02 — he hates feathers as currency; AC-clone
+  fix too). DONE in Batch 2: glowing-mote collectible art, HUD label "Light", tally line "Light";
+  zero player-facing "feather" text remains (internal var names kept). Kills already award Light.
 - [ ] 🔷 **Cosmetic shop**: cloak colors/patterns, staff skins (wood/jade/gold/moonlit), trail
   effects, strike-flash colors — visible in the character at all times, rarity tiers, live try-on
 - [ ] 🔷 **Buff shop (consumables, pre-run pick)**: head start (skip to 200m), starting shield
@@ -127,6 +129,10 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
   tracking, draw-path smoke, PASS/FAIL fairness bars) — re-running it after EVERY mechanics
   change stays standing practice
 - [ ] Anti-streak guard on formation RNG (no 3 identical challenges in a row)
+- [ ] **Suite fairness bar flakes (found 2026-07-02, pre-existing):** `rs_playtest.js` RNG is
+  unseeded — a rare elite gap death (~1 per 2-3 suite runs) shows up on the untouched Batch-1
+  build (`656facb`) too, so Batch 1's green was a lucky roll. Seed the RNG for reproducible
+  runs, then root-cause: unclearable gap edge case vs. bot-timing artifact
 - [ ] First 150m = guaranteed gentle intro chunk (teach jump → teach strike → first mixed)
 - [ ] Difficulty cap: speed plateaus at ~2500m so elite runs stay humanly possible
 

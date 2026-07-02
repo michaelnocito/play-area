@@ -74,11 +74,11 @@
   <canvas id="game" width="480" height="270"></canvas>
   <div id="hud">
     <div><div class="label">Distance</div><div class="value" id="distVal">0m</div></div>
-    <div style="text-align:right"><div class="label">Feathers</div><div class="value" id="featherVal">0</div></div>
+    <div style="text-align:right"><div class="label">Light</div><div class="value" id="featherVal">0</div></div>
   </div>
   <div id="overlay">
     <h1>ROOFTOP SPRINT</h1>
-    <p>The hooded blade runs the skyline on its own. Time your jumps over the gaps, and strike guards before they cut you down.</p>
+    <p>The city's lights are going out. You are the Lamplighter — run the rooftops, strike the wardens who hoard the light, and carry it home in your lamp.</p>
     <p><span class="key">SPACE / LEFT SIDE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X / RIGHT SIDE</span> strike / slide</p>
     <div id="scoreLine"></div>
     <div id="best"></div>
@@ -187,8 +187,12 @@
   let state = 'menu'; // menu | playing | dead
   let speed = 0, baseSpeed = 2.1;
   let distance = 0;
-  let feathers = 0;
+  let feathers = 0; // internal name kept; player-facing label is "Light"
   let shake = 0;
+  // Lamplighter run-state: 0→1, fed by lamp-light streamed from killed wardens.
+  // Drives the weapon glow radius + rekindled windows now; music layers key off it in Batch 3.
+  let lampLight = 0;
+  const LAMP_PER_KILL = 0.12;
 
   // ---------- Fixed-size pools (perf contract: no per-frame allocation) ----------
   const MAX_PARTICLES = 80;
@@ -214,6 +218,13 @@
   const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0}));
   const MAX_LOWOBS = 8; // low hazards: slide under the hanging band, or clear the whole thing with a full leap
   const lowObs = Array.from({length: MAX_LOWOBS}, () => ({active:false,x:0,y:0,w:0,kind:0})); // kind: 0=clothesline 1=beam 2=sign
+  // light-streams: motes that fly from a killed warden's lamp into the player's — arrival feeds lampLight
+  const MAX_STREAMS = 24;
+  const streams = Array.from({length: MAX_STREAMS}, () => ({active:false,x:0,y:0,vx:0,vy:0}));
+  function spawnStream(x,y,n){
+    let spawned = 0;
+    for(const s of streams){ if(!s.active){ s.active=true;s.x=x+(Math.random()-0.5)*8;s.y=y+(Math.random()-0.5)*10;s.vx=0;s.vy=-1-Math.random(); if(++spawned>=n) break; } }
+  }
   const MAX_BIRDS = 5;
   const birds = Array.from({length: MAX_BIRDS}, () => ({active:false,perched:true,x:0,y:0,vx:0,vy:0,flap:0}));
   // cloak verlet chain (world-space points; index 0 anchors at the shoulders)
@@ -266,6 +277,8 @@
     for(const p of particles) p.active=false;
     for(const m of messages) m.active=false;
     for(const b of birds) b.active=false;
+    for(const st of streams) st.active=false;
+    lampLight = 0; // the lamp starts cold every run (progression hooks may seed it later)
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
@@ -406,6 +419,7 @@
       graceT = 12;
       nearest.alive = false; nearest.deathT = 1;
       feathers += 1;
+      spawnStream(nearest.x, nearest.y - 40, 6); // the warden's lamp-light streams into yours
       // Timing tiers by how close you let them get (closer = riskier = bigger payoff)
       const w = strikeWindows();
       const tierDx = nearest.x - (trailFrom + player.w/2); // range at the moment of the press (pre-lunge)
@@ -524,6 +538,7 @@
               if (Math.abs(o.x - g.x) < 15 && Math.abs(o.y - g.y) < 24) {
                 o.alive = false; o.deathT = 1; o.fly = 1; o.vx = g.vx * 0.6; o.vy = -2.2; o.spin = 0.35;
                 feathers += 1;
+                spawnStream(o.x, o.y - 40, 6);
                 spawnBurst(o.x, o.y-16, 12, '#ffffff');
                 spawnMessage(o.x, o.y-42, 'FELLED', 32);
                 shake = Math.max(shake, 8);
@@ -598,6 +613,22 @@
       if (b.x < player.x - 260) b.active = false;
     }
 
+    // light-streams home toward the lamp head; each arrival feeds lampLight (kills = power made visible)
+    const lampX = player.x + 24, lampY = player.y - (player.sliding ? SLIDE_H : player.h) - 4;
+    for (const st of streams) {
+      if (!st.active) continue;
+      const dx = lampX - st.x, dy = lampY - st.y;
+      const d = Math.hypot(dx, dy) || 1;
+      st.vx += (dx/d) * 0.9; st.vy += (dy/d) * 0.9;
+      st.vx *= 0.86; st.vy *= 0.86;
+      st.x += st.vx + speed; st.y += st.vy;
+      if (d < 14) {
+        st.active = false;
+        lampLight = Math.min(1, lampLight + LAMP_PER_KILL / 6); // 6 motes per kill
+        spawnParticle(lampX, lampY, (Math.random()-0.5)*1.2, -0.8, 12, '#ffe9b0');
+      } else if (st.x < player.x - 200) st.active = false;
+    }
+
     if (++emberT >= 9) { // ambient embers drifting up off the city
       emberT = 0;
       spawnParticle(player.x + Math.random()*W, GROUND_Y + 10 - Math.random()*90, -0.3 - Math.random()*0.4, -0.25 - Math.random()*0.3, 26, 'rgba(255,170,90,0.5)');
@@ -624,14 +655,14 @@
       try { Save.get().setItem('rooftopSprintBest', String(best)); } catch(e){}
       CG.happytime();
     }
-    scoreLine.textContent = `Distance ${Math.floor(distance)}m  ·  Feathers ${feathers}  ·  Score ${finalScore}`;
+    scoreLine.textContent = `Distance ${Math.floor(distance)}m  ·  Light ${feathers}  ·  Score ${finalScore}`;
     bestEl.textContent = `Best score: ${best}`;
     document.querySelector('#overlay h1').textContent =
-      cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT' : 'CUT DOWN';
+      cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT' : 'YOUR LAMP WENT OUT';
     document.querySelectorAll('#overlay p')[0].textContent =
-      cause === 'gap' ? 'Mind the gaps — hold JUMP longer to leap higher and farther.'
-      : cause === 'low' ? 'Slide under low hazards — tap STRIKE when no guard is near.'
-      : 'A blade found you first. Strike when the gold mark shows — or leap clear.';
+      cause === 'gap' ? 'The dark streets swallowed you. Hold JUMP longer to leap higher and farther.'
+      : cause === 'low' ? 'Slide under low hazards — tap STRIKE when no warden is near.'
+      : 'A warden reached you first. Strike when the gold mark shows — or leap clear and keep your light.';
     document.querySelectorAll('#overlay p')[1].style.display = 'none';
     startBtn.textContent = 'Run Again';
     overlay.classList.remove('hidden');
@@ -670,10 +701,16 @@
       const wSeg = sx2 - sx1;
       // building body below the roofline, with faint lit windows of its own
       ctx.fillStyle = '#3d2b47'; ctx.fillRect(sx1, s.y, wSeg, H - s.y + 30);
-      ctx.fillStyle = 'rgba(255,186,100,0.14)';
+      // windows rekindle in the Lamplighter's wake: behind the player, more of them light
+      // up and burn brighter as lampLight grows — the city answers the claimed light
       for (let wy = 14; wy < H - s.y; wy += 15) {
         for (let wx = 8; wx < wSeg - 8; wx += 13) {
-          if (((s.x1|0)*3 + wy*7 + wx*5) % 19 < 3) ctx.fillRect(sx1 + wx, s.y + wy, 4, 5);
+          const wake = s.x1 + wx < player.x;
+          const lit = ((s.x1|0)*3 + wy*7 + wx*5) % 19 < (wake ? 3 + lampLight*5 : 3);
+          if (lit) {
+            ctx.fillStyle = 'rgba(255,186,100,' + (wake ? 0.14 + lampLight*0.4 : 0.14) + ')';
+            ctx.fillRect(sx1 + wx, s.y + wy, 4, 5);
+          }
         }
       }
       // roof cap: highlight + shingle seams + under-shadow
@@ -715,9 +752,15 @@
     }
     const bob = g.alive ? Math.sin(g.x*0.4)*0.8 : 0;
     ctx.save(); ctx.translate(0, bob); ctx.scale(g.patrolDir >= 0 ? 1 : -1, 1);
-    // pike held upright
+    // warden's lamp-pole — every enemy carries the light you're here to take back
     ctx.fillStyle = '#5a4632'; ctx.fillRect(6,-44,2,40);
-    ctx.fillStyle = '#9aa0ad'; ctx.beginPath(); ctx.moveTo(7,-50); ctx.lineTo(10,-44); ctx.lineTo(4,-44); ctx.fill();
+    ctx.fillStyle = '#3a3145'; ctx.fillRect(3,-52,8,9);          // lamp housing
+    if (g.alive) {
+      ctx.drawImage(glowImg, 7-14, -48-14, 28, 28);              // hoarded light
+      ctx.fillStyle = '#ffbe6e'; ctx.fillRect(5,-50,4,5);        // flame
+    } else {
+      ctx.fillStyle = '#241a2e'; ctx.fillRect(5,-50,4,5);        // lamp goes dark — its light is yours now
+    }
     // tunic + belt + trim
     ctx.fillStyle = '#8b5a3c'; ctx.fillRect(-8,-26,16,19);
     ctx.fillStyle = '#6e4530'; ctx.fillRect(-8,-26,16,4);
@@ -771,14 +814,22 @@
       ctx.fillStyle = '#e8c878'; ctx.fillRect(sx + o.w/2 - 8, gy - 34, 16, 2); ctx.fillRect(sx + o.w/2 - 8, gy - 30, 11, 2);
     }
   }
-  function drawFeather(f, camX) {
+  function drawFeather(f, camX) { // Light mote (internal name kept from the feather era)
     if (!f.active || f.taken) return;
     const sx = f.x - camX;
     if (sx < -20 || sx > W+20) return;
     const sy = f.y + Math.sin(f.bob)*4;
-    ctx.save(); ctx.translate(sx, sy); ctx.rotate(Math.sin(f.bob)*0.3);
-    ctx.fillStyle = '#e8c878'; ctx.beginPath(); ctx.ellipse(0,0,3,8,0.3,0,Math.PI*2); ctx.fill();
-    ctx.restore();
+    ctx.drawImage(glowImg, sx - 11, sy - 11, 22, 22);
+    ctx.fillStyle = '#ffe9b0';
+    ctx.beginPath(); ctx.arc(sx, sy, 2.4 + Math.sin(f.bob*2)*0.5, 0, Math.PI*2); ctx.fill();
+  }
+  function drawStreams(camX) {
+    for (const st of streams) {
+      if (!st.active) continue;
+      const sx = st.x - camX;
+      ctx.drawImage(glowImg, sx - 8, st.y - 8, 16, 16);
+      ctx.fillStyle = '#ffe9b0'; ctx.fillRect(sx - 1.5, st.y - 1.5, 3, 3);
+    }
   }
   function drawPlayer(camX) {
     const sx = player.x - camX, sy = player.y;
@@ -832,13 +883,22 @@
       const armSw = player.onGround ? Math.sin(ph + Math.PI) * 4.5 : 3;
       ctx.beginPath(); ctx.moveTo(-3, -h+12); ctx.quadraticCurveTo(-5 + armSw*0.4, -h+17, -4 + armSw, -h+21); ctx.stroke();
     }
-    // Staff — always in hand, sweeps in a full arc on strike
+    // Lamp on a pole — always in hand, sweeps in a full arc on strike.
+    // Same reach/hitbox/timing as the old staff render (strikeRangeX is unchanged); purely visual.
     const sf = player.strikeFlash;
     const ang = sf > 0 ? (-1.5 + (8-sf)*0.32) : player.sliding ? 0.35 : (-0.95 + Math.sin(player.runT*0.12)*0.05);
-    const len = sf > 0 ? 42 : player.sliding ? 22 : 30; // staff tucked flat during a slide
+    const len = sf > 0 ? 42 : player.sliding ? 22 : 30; // pole tucked flat during a slide
     ctx.save(); ctx.translate(5,-h+11); ctx.rotate(ang);
     ctx.fillStyle = '#8a6a3f'; ctx.fillRect(0,-1.5,len,3);
-    ctx.fillStyle = '#e8c878'; ctx.fillRect(len-4,-2.5,4,5);
+    // lamp head: glow radius throbs on a steady clock and grows with claimed light (lampLight 0→1)
+    const throb = 1 + Math.sin(drawT*0.12)*(0.06 + lampLight*0.1);
+    const gr = (14 + lampLight*30) * throb;
+    ctx.globalAlpha = 0.45 + lampLight*0.55;
+    ctx.drawImage(glowImg, len-2-gr/2, -gr/2, gr, gr);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#3a3145'; ctx.fillRect(len-5,-4.5,7,9);   // housing
+    ctx.fillStyle = lampLight > 0.01 ? '#ffd98c' : '#c9913f';
+    ctx.fillRect(len-3.5,-2.5,4,5);                            // flame brightens as light is claimed
     ctx.restore();
     if (sf > 0) { // arc trail behind the sweep
       ctx.strokeStyle = 'rgba(232,200,120,'+(sf/8*0.8)+')'; ctx.lineWidth = 3;
@@ -883,6 +943,7 @@
     for (const f of featherList) drawFeather(f, camX);
     for (const g of guards) drawGuard(g, camX);
     if (state !== 'menu') drawPlayer(camX);
+    drawStreams(camX);
     drawParticles(camX);
     drawMessages(camX);
     ctx.restore();

@@ -1,30 +1,26 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-02, Batch 1 shipped):** Read `ROADMAP.md` FIRST — dev-owned backlog,
-> sequencing locked: one quality bar, ONE submission wave to ALL portals (CG+GM+GD+itch).
-> **BATCH 1 (Feel & verbs) is DONE and sim-verified:** double jump OUT → hold-to-jump-higher
-> (`JUMP_CUT` release trim), slide + low hazards (clothesline/beam/sign) on the context action
-> button (guard-in-reach wins the press), jump buffer 6f + coyote 5f, gaps capped at `speed×26`
-> for single-jump clearance, slide teach beat w/ tutorial slow-time, per-cause death copy.
-> Bot suite now lives in **`tools/rs_playtest.js`** (see `tools/README.md`) — run
-> `node tools/rs_playtest.js` after EVERY mechanics change; fairness bars green (elite bots:
-> 0 gap deaths, 0 low-hazard deaths <2500m; all deaths = guard timing, the designed skill test).
-> It also flushed out two latent engine bugs, both fixed: (1) `groundYForPlayer` flickered
-> "airborne" for 1 frame at contiguous roof seams (cancelled slides), (2) `MAX_SEGMENTS 10` could
-> exhaust while `nextSpawnX` still advanced → invisible holes in the world (now 14 + spawn
-> returns false instead of skipping).
+> **⚡ RESUME HERE (2026-07-02, Batch 2 shipped): Next = BATCH 3 — audio (light-reactive score,
+> ~1.5 sessions).** Read `ROADMAP.md` FIRST — dev-owned backlog; §7 has the full speaker-scaling
+> layer architecture the music must be built on. Batches: B1 feel ✅ → B2 identity ✅ →
+> **B3 audio** → B4 score/tally → B5 economy + permanent progression (approved, spec §4,
+> 2 sessions) → B6 districts/content → B7 ship wave (regenerate stale `builds/` there; GM/GD
+> keep GAMEID_PLACEHOLDER pending Mike's dashboards).
 >
-> **🏮 RE-SCOPED 2026-07-02 (client intake, HEAD `385c9e0`): identity = THE LAMPLIGHTER.**
-> Weapon = lamp on a pole; enemies carry lamps; kills stream light into YOUR lamp (visible
-> brightening, `lampLight` run-state); windows rekindle in your wake. Audio = LIGHT-REACTIVE
-> SCORE (music layers keyed to `lampLight`, bass pulse clock-shared with the weapon's glow throb),
-> built on the small-speaker layer architecture in ROADMAP §7. Now SEVEN batches —
-> **Next = BATCH 2 (Lamplighter identity visuals + feathers→LIGHT rename)**, THEN audio (B3,
-> ~1.5 sessions) so the music has the light state to key off. 🔶 Permanent lamp progression
-> proposed in ROADMAP §4, awaiting Mike's call (would be +1 session in B5).
-> Currency is named **"Light"** (Mike's call — never "feathers" player-facing).
-> `builds/` derivatives are now STALE vs master — regenerate at Batch 7 (ship wave);
-> GM/GD keep GAMEID_PLACEHOLDER pending Mike's dashboard records.
+> **🏮 BATCH 2 (Lamplighter identity) DONE 2026-07-02:** weapon = lamp on a pole (same
+> reach/hitbox/timing — purely visual); guards carry lamp-poles (lamp goes dark on kill) and 6
+> homing light-motes stream from each kill into your lamp; **`lampLight` run-state 0→1**
+> (+0.12/kill, resets on death) drives weapon glow radius + flame brightness + a steady glow
+> throb (`drawT*0.12` — B3's bass pulse must share this clock) + windows rekindling behind the
+> player; feathers → **LIGHT** everywhere player-facing (HUD, tally, glowing-mote art; internal
+> `feather*` var names kept on purpose); menu/death copy in Lamplighter voice (wardens, no
+> blade/stealth). B3 hooks: key music layers off `lampLight`, light-stream chime on mote arrival.
+>
+> **Suite note (pre-existing, logged in ROADMAP §6):** `tools/rs_playtest.js` RNG is unseeded —
+> a rare elite gap death (~1 per 2-3 suite runs) reproduces on the untouched Batch-1 build
+> (`656facb`), so "expect identical numbers" was never true and Batch 1's green was a lucky
+> roll. Low-hazard bar stays 0; guard deaths dominate as designed. Seed + root-cause in §6.
+> Keep running the suite after every mechanics change; draw-path smoke (menu + playing) clean.
 
 **What this is:** CrazyGames auto-runner, hooded-assassin rooftop theme. Two
 mobile-friendly inputs only: **JUMP** (auto-scroll, time your jumps over
