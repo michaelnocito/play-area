@@ -39,7 +39,6 @@ window["GD_OPTIONS"] = {
   canvas#game {
     background: linear-gradient(#1a1330 0%, #3a2150 45%, #6b3a4a 75%, #c97b4a 100%);
     display: block;
-    image-rendering: pixelated;
   }
   #hud {
     position: absolute; top: 10px; left: 0; right: 0;
@@ -141,18 +140,25 @@ window["GD_OPTIONS"] = {
 
   let best = parseInt(localStorage.getItem('rooftopSprintBest') || '0', 10) || 0;
 
-  // ---------- Pre-rendered art (built ONCE at boot; per-frame cost is a drawImage) ----------
+  // ---------- Pre-rendered art (rebuilt when the render scale changes; per-frame cost is a drawImage) ----------
+  // RSCALE = canvas device pixels per logical unit. All game logic stays in 480×270 logical space;
+  // the canvas backing store renders at native resolution so vector art is crisp on any screen.
+  let RSCALE = 1;
   function makeCanvas(w, h, fn) {
-    const c = document.createElement('canvas'); c.width = w; c.height = h;
-    fn(c.getContext('2d')); return c;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(w * RSCALE); c.height = Math.ceil(h * RSCALE);
+    const g = c.getContext('2d'); g.setTransform(RSCALE, 0, 0, RSCALE, 0, 0);
+    fn(g); return c;
   }
-  const skyImg = makeCanvas(W, H, g => {
+  let skyImg, moonImg, glowImg, cloudImg, vignImg;
+  function buildSprites() {
+  skyImg = makeCanvas(W, H, g => {
     const gr = g.createLinearGradient(0, 0, 0, H);
     gr.addColorStop(0, '#131022'); gr.addColorStop(0.42, '#3a2150');
     gr.addColorStop(0.72, '#7a3f52'); gr.addColorStop(1, '#c97b4a');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
   });
-  const moonImg = makeCanvas(120, 120, g => {
+  moonImg = makeCanvas(120, 120, g => {
     for (let r = 54; r > 26; r -= 2) { g.globalAlpha = 0.028; g.fillStyle = '#ffe9c4'; g.beginPath(); g.arc(60, 60, r, 0, Math.PI*2); g.fill(); }
     g.globalAlpha = 1; g.fillStyle = '#f5e7c8'; g.beginPath(); g.arc(60, 60, 24, 0, Math.PI*2); g.fill();
     g.fillStyle = 'rgba(210,185,150,0.5)';
@@ -160,23 +166,24 @@ window["GD_OPTIONS"] = {
     g.beginPath(); g.arc(66, 66, 3.4, 0, Math.PI*2); g.fill();
     g.beginPath(); g.arc(63, 48, 2.6, 0, Math.PI*2); g.fill();
   });
-  const glowImg = makeCanvas(48, 48, g => {
+  glowImg = makeCanvas(48, 48, g => {
     const gr = g.createRadialGradient(24, 24, 2, 24, 24, 24);
     gr.addColorStop(0, 'rgba(255,190,110,0.5)'); gr.addColorStop(1, 'rgba(255,190,110,0)');
     g.fillStyle = gr; g.fillRect(0, 0, 48, 48);
   });
-  const cloudImg = makeCanvas(150, 40, g => {
+  cloudImg = makeCanvas(150, 40, g => {
     g.fillStyle = 'rgba(235,210,205,0.045)';
     for (let i = 0; i < 26; i++) { // many small overlapping puffs → soft mass, no bubble edges
       const cx = 18 + (i*127.3)%116, cy = 16 + ((i*67.7)%14) + Math.sin(i)*3, r = 9 + (i*43)%8;
       g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
     }
   });
-  const vignImg = makeCanvas(W, H, g => {
+  vignImg = makeCanvas(W, H, g => {
     const gr = g.createRadialGradient(W/2, H*0.45, H*0.42, W/2, H*0.55, H*0.85);
     gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(8,5,16,0.42)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
   });
+  } // end buildSprites
   // deterministic star field (twinkle is draw-side only)
   const stars = Array.from({length: 36}, (_, i) => ({ x: (i*97.3)%W, y: ((i*61.7)%86)+4, tw: (i*37)%100 }));
   let drawT = 0; // visual-only clock (advances every rendered frame, even on menus)
@@ -351,11 +358,13 @@ window["GD_OPTIONS"] = {
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
         spawnMessage(nearest.x, nearest.y-44, 'PERFECT', 40);
         shake = 12;
+        slowmoT = Math.max(slowmoT, 300); // brief dip so the launch reads
       } else if (tierDx <= w.mid) {       // MID — heavy blow: launched half a screen, tumbling
         nearest.fly = 1; nearest.vx = 7; nearest.vy = -2.6; nearest.spin = 0.28;
         spawnBurst(nearest.x, nearest.y-16, 12, '#f0a04a');
         spawnMessage(nearest.x, nearest.y-42, 'HEAVY BLOW', 32);
         shake = 9;
+        slowmoT = Math.max(slowmoT, 200);
       } else {                            // FAR — clean kill
         nearest.fly = 0;
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
@@ -427,6 +436,7 @@ window["GD_OPTIONS"] = {
                 spawnBurst(o.x, o.y-16, 12, '#ffffff');
                 spawnMessage(o.x, o.y-42, 'FELLED', 32);
                 shake = Math.max(shake, 8);
+                slowmoT = Math.max(slowmoT, SLOWMO_MS); // the money shot — let the domino land in slow motion
               }
             }
           }
@@ -701,7 +711,7 @@ window["GD_OPTIONS"] = {
   function draw() {
     drawT++;
     const camX = player.x - 80;
-    ctx.drawImage(skyImg, 0, 0);
+    ctx.drawImage(skyImg, 0, 0, W, H);
     // stars twinkle in the upper sky
     ctx.fillStyle = '#f5e7c8';
     for (const st of stars) {
@@ -714,7 +724,7 @@ window["GD_OPTIONS"] = {
     // clouds drift slowly, slight parallax
     for (let i = 0; i < 3; i++) {
       const cx = ((i*210 + 40 - drawT*0.08 - camX*0.05) % (W + 180)) - 140;
-      ctx.drawImage(cloudImg, cx < -140 ? cx + W + 180 : cx, 22 + i*17);
+      ctx.drawImage(cloudImg, cx < -140 ? cx + W + 180 : cx, 22 + i*17, 150, 40);
     }
     let sx=0, sy=0;
     if (shake > 0) { sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; }
@@ -728,41 +738,51 @@ window["GD_OPTIONS"] = {
     drawParticles(camX);
     drawMessages(camX);
     ctx.restore();
-    ctx.drawImage(vignImg, 0, 0);
+    ctx.drawImage(vignImg, 0, 0, W, H);
   }
 
-  // ---------- Fit canvas to viewport (letterboxed, integer-ish scale) ----------
+  // ---------- Fit canvas to viewport; backing store renders at native resolution ----------
   function fitCanvas() {
-    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
-    canvas.style.width = (W*scale) + 'px';
-    canvas.style.height = (H*scale) + 'px';
+    const cssScale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.width = (W*cssScale) + 'px';
+    canvas.style.height = (H*cssScale) + 'px';
+    const k = Math.max(1, Math.min(4, cssScale * (window.devicePixelRatio || 1)));
+    if (!skyImg || Math.abs(k - RSCALE) > 0.01) {
+      RSCALE = k;
+      canvas.width = Math.ceil(W*k); canvas.height = Math.ceil(H*k);
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      buildSprites(); // re-render the sprite sheet at the new density so nothing is upscaled
+    }
   }
   window.addEventListener('resize', fitCanvas);
   fitCanvas();
 
   // Fixed-timestep sim (60Hz) so physics are identical on 60/144/165Hz monitors.
+  // slowmoT (real ms) = cinematic slow-mo: time feeds the sim scaled down, easing back to 1×.
+  // Score is pure distance traveled (never wall-clock), so slow-mo can't cost the player anything.
   const STEP = 1000 / 60;
-  let lastT = 0, acc = 0;
+  const SLOWMO_MS = 620;
+  let lastT = 0, acc = 0, slowmoT = 0;
   function loop(now) {
     if (!lastT) lastT = now;
-    acc += Math.min(now - lastT, 100); // cap dt: background-tab return can't fast-forward the sim
+    const dt = Math.min(now - lastT, 100); // cap dt: background-tab return can't fast-forward the sim
     lastT = now;
+    const ts = slowmoT > 0 ? Math.max(0.26, 1 - (slowmoT / SLOWMO_MS) * 0.74) : 1;
+    slowmoT = Math.max(0, slowmoT - dt);
+    acc += dt * ts;
     while (acc >= STEP) { update(); acc -= STEP; }
     draw();
     requestAnimationFrame(loop);
   }
 
-  // SDK call order matters: init() must resolve before any game.* call, or the SDK drops it
-  // (an unpaired loadingStop skews the platform's measured load time — see Flipline's QA history).
-  CG.init(() => {
-    CG.loadingStart();
-    resetWorld();
-    while (nextSpawnX < W + 500) spawnSegment(false);
-    draw();
-    bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
-    CG.loadingStop();
-    requestAnimationFrame(loop);
-  });
+  // Start rendering IMMEDIATELY — never gate the game on the ad-SDK handshake (it can take
+  // seconds off-platform and caused a visible background-only stall at boot).
+  resetWorld();
+  while (nextSpawnX < W + 500) spawnSegment(false);
+  bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
+  requestAnimationFrame(loop);
+  // SDK call order still matters: game.* calls only fire after init() resolves (sdkLive).
+  CG.init(() => { CG.loadingStart(); CG.loadingStop(); });
 })();
 </script>
 </body>
