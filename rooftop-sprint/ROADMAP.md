@@ -63,8 +63,9 @@ Status: `[ ]` todo · `[~]` partial · `[x]` done · 🔷 = Mike's direct design
 **Standard:** one soft currency, cosmetic-first shop, buffs as consumables; no pay-to-win (portal
 monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
 
-- [ ] 🔷 **Currency**: feathers become the spendable currency (collected + kill drops).
-  Batch-3 rename applies here (feathers → sigils/marks, kills AC-clone read; pick at build time)
+- [ ] 🔷 **Currency = "LIGHT"** (Mike's call 2026-07-02 — he hates feathers as currency; AC-clone
+  fix too). Collectible becomes a glowing mote of Light; kills drop Light; HUD label "Light".
+  All feather naming/vars can stay internally, but zero player-facing "feather" text survives.
 - [ ] 🔷 **Cosmetic shop**: cloak colors/patterns, staff skins (wood/jade/gold/moonlit), trail
   effects, strike-flash colors — visible in the character at all times, rarity tiers, live try-on
 - [ ] 🔷 **Buff shop (consumables, pre-run pick)**: head start (skip to 200m), starting shield
@@ -160,18 +161,31 @@ wired but unused.
 
 ---
 
-## Sequencing
+## Sequencing — ONE quality bar, ONE submission wave (Mike's call 2026-07-02)
 
-**Sprint A (monetize-ready ⚡, GM/GD):** §7 SFX minimum → §9 onboarding trim + pause →
-§11 gameIds + interstitial cooldown → §12 assets → SUBMIT GM + GD + itch.
+No early lower-quality ship to GM/GD. Build to CrazyGames grade, then submit the SAME build
+everywhere (CG + GameMonetize + GameDistribution + itch) in one wave. Large-chunk batches:
 
-**Sprint B (the fun deepening):** §1 double-jump removal + hold-jump + slide → §2 low obstacles +
-guard formations → §3 points + tally screen → re-sim fairness.
+**BATCH 1 — Feel & verbs:** double-jump OUT → hold-to-jump-higher; slide + low obstacles
+(clotheslines/beams/signs) via context action button; input buffering + coyote time; slide teach
+beat w/ tutorial slow-time; re-sim fairness (retune gaps for single-jump).
 
-**Sprint C (retention/economy):** §4 currency + shops + rewarded hooks → §8 juice extras →
-§2 second zone.
+**BATCH 2 — Audio (full):** procedural SFX set (jump/land/strike-by-tier/domino/Light
+sparkle/death/slide/bird), slow-mo low-pass sweep, ambient night bed, mute button + CG muteAudio
+listener, ad-duck wiring.
 
-**Sprint D (CrazyGames submission):** §6 difficulty cap + intro chunk → §10 perf audit →
-§12 CG QA tool → SUBMIT CG.
+**BATCH 3 — Score & Light:** points system (CLEAN 100 / HEAVY 250 / PERFECT 500 / domino
+escalator), end-of-run tally screen w/ count-up + NEW BEST stinger, in-run point popups, HUD points
+counter, feathers → LIGHT rename everywhere (glowing mote art).
 
-Feather rename (AC-clone risk) lands at the START of Sprint B (touches copy, shop, tally naming).
+**BATCH 4 — Economy:** Light wallet + save versioning; cosmetic shop (cloaks/staffs/trails, live
+try-on); buff shop (consumables, pre-run pick); rewarded-ad hooks (revive, double-Light on tally);
+interstitial cooldown.
+
+**BATCH 5 — Content & polish:** guard formations for domino setups; rooftop chunk library +
+anti-streak; guaranteed intro chunk; difficulty cap; second zone (dawn palette); menu-world
+backdrop; pause; landing dust/speed lines; desktop-vs-touch prompts; AZERTY keys.
+
+**BATCH 6 — Ship wave:** perf audit on weak hardware (RSCALE cap probe); cover art + crop sets;
+gameplay clips; store copy (post-rename); real-device mobile pass; CG QA tool; gameIds into GM/GD
+builds; regenerate all builds; SUBMIT ALL PORTALS.

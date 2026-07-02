@@ -1,5 +1,16 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
+> **⚡ RESUME HERE (2026-07-02):** Read `ROADMAP.md` FIRST — it is the dev-owned backlog and the
+> sequencing is locked: one quality bar, one submission wave to ALL portals (CG+GM+GD+itch), no
+> early low-quality ship. Next work = **BATCH 1 (Feel & verbs)**: double-jump OUT →
+> hold-to-jump-higher, slide + low obstacles on the context action button, input buffer + coyote,
+> re-sim fairness with `scratchpad rs_playtest.js`-style harness (chainable-Proxy ctx stub; move a
+> copy into `tools/`). Currency is named **"Light"** (Mike's call — never "feathers" player-facing).
+> Quality state: fixed-timestep, timing-strike w/ domino+slow-mo, tutorial slow-time, full
+> procedural art pass, native-res rendering, instant boot — all DONE (HEAD ~`0c2fc14`). Platform
+> builds under `builds/` regenerate via the make_rs_builds.py pattern (re-derive from master; GM/GD
+> have GAMEID_PLACEHOLDER pending Mike's dashboard records).
+
 **What this is:** CrazyGames auto-runner, hooded-assassin rooftop theme. Two
 mobile-friendly inputs only: **JUMP** (auto-scroll, time your jumps over
 gaps) and **STRIKE** (tap to auto-target the nearest guard in range). Built
