@@ -41,3 +41,12 @@ build by copying `../index.html` and re-applying the SDK changes noted below.
 - **Submission:** developer.gamedistribution.com → add game → HTML5 build zip → fill checklist (icon/
   screenshots specced in-dashboard) → review, historically up to ~3 weeks. Payout: $50 accrual threshold,
   paid monthly once crossed. Not boutique-curated like CrazyGames — closer to a checklist gate.
+
+## gamejolt/
+- **What changed vs master:** identical to `itch/` — CrazyGames SDK `<script>` removed, nothing else.
+  GameJolt has NO ad-SDK: its ad revenue works at the platform level (sticker/charge system), not via
+  in-game ad-break calls, so a standalone build is the correct integration. localStorage saves.
+- (GameJolt's Game API exists for trophies/scoreboards/cloud saves — optional, not required to list or
+  earn; skipped for v1.)
+- **Upload:** `flipline-gamejolt.zip` (index.html at root). gamejolt.com → Add Game → HTML/browser build →
+  upload zip → set embed 960×540 → thumbnail/header from `../covers/` → publish.
