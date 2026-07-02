@@ -133,7 +133,6 @@ window["GD_OPTIONS"] = {
       onReward&&onReward();
     },
   };
-  let sdkReady = true;
   const Save = { get(){ return localStorage; } };   // no GD-specific save-sync API documented
   // Ad break: freeze the sim so nothing moves/dies under an ad overlay
   let adPaused = false;
@@ -160,9 +159,9 @@ window["GD_OPTIONS"] = {
   }
 
   const MAX_MESSAGES = 6;
-  const messages = Array.from({length: MAX_MESSAGES}, () => ({active:false,x:0,y:0,t:0,text:''}));
-  function spawnMessage(x,y,text){
-    for(const m of messages){ if(!m.active){ m.active=true;m.x=x;m.y=y;m.t=26;m.text=text; return; } }
+  const messages = Array.from({length: MAX_MESSAGES}, () => ({active:false,x:0,y:0,t:0,t0:26,text:''}));
+  function spawnMessage(x,y,text,dur){
+    for(const m of messages){ if(!m.active){ m.active=true;m.x=x;m.y=y;m.t=dur||26;m.t0=m.t;m.text=text; return; } }
   }
 
   const MAX_SEGMENTS = 10;
@@ -182,8 +181,14 @@ window["GD_OPTIONS"] = {
   };
   const GRAVITY = 0.34;
   const JUMP_V = -7.2;
-  const STRIKE_RANGE_X = 36, STRIKE_RANGE_Y = 30;
+  const STRIKE_RANGE_Y = 30;
   const GUARD_HIT_DX = 15, GUARD_CLEAR_DY = 22; // feet must be this far above guard.y to jump clear
+  // Strike reach grows with run speed so the reaction window stays humanly possible (~300ms)
+  // at any pace — at base range 36px and 4px/frame closing the window was only ~80ms.
+  function strikeRangeX() { return 36 + speed * 14; }
+  function alertRangeX() { return 60 + speed * 25; } // telegraph before the strike window opens
+  let graceT = 0;        // brief invulnerability after a lunge-kill so chained guards can't cheap-kill
+  let taughtGuard = false;
 
   let nextSpawnX = 0;
 
@@ -193,7 +198,7 @@ window["GD_OPTIONS"] = {
     for(const f of featherList) f.active=false;
     for(const p of particles) p.active=false;
     for(const m of messages) m.active=false;
-    distance = 0; feathers = 0; speed = baseSpeed; shake = 0;
+    distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
     player.onGround = true; player.jumpsLeft = player.maxJumps; player.dead = false; player.strikeFlash=0;
     nextSpawnX = 0;
@@ -264,13 +269,18 @@ window["GD_OPTIONS"] = {
     for (const g of guards) {
       if (!g.active || !g.alive) continue;
       const dx = g.x - (player.x + player.w/2), dy = g.y - player.y;
-      if (Math.abs(dx) < STRIKE_RANGE_X && Math.abs(dy) < STRIKE_RANGE_Y) {
+      if (dx > -14 && dx < strikeRangeX() && Math.abs(dy) < STRIKE_RANGE_Y) {
         const d = Math.hypot(dx,dy);
         if (d < nearestDist) { nearestDist = d; nearest = g; }
       }
     }
     player.strikeFlash = 8;
     if (nearest) {
+      // Lunge-dash: blink through the target — turns each kill into forward momentum
+      const trailFrom = player.x;
+      player.x = Math.max(player.x, nearest.x - player.w/2 + 8);
+      for (let tx = trailFrom; tx < player.x; tx += 9) spawnParticle(tx, player.y - 14, -0.5, 0, 10, '#e8c878');
+      graceT = 12;
       nearest.alive = false; nearest.deathT = 1;
       feathers += 1;
       spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
@@ -332,9 +342,14 @@ window["GD_OPTIONS"] = {
       if (g.x < g.patrolMin || g.x > g.patrolMax) g.patrolDir *= -1;
 
       const dx = Math.abs(g.x - (player.x + player.w/2));
-      g.alerted = dx < 60;
-      if (dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die(); return; }
+      g.alerted = dx < alertRangeX();
+      if (g.alerted && !taughtGuard && g.x > player.x) {
+        taughtGuard = true;
+        spawnMessage(g.x - 10, g.y - 58, 'STRIKE — OR LEAP OVER', 90);
+      }
+      if (graceT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die(); return; }
     }
+    if (graceT > 0) graceT--;
 
     for (const f of featherList) {
       if (!f.active || f.taken) continue;
@@ -439,7 +454,7 @@ window["GD_OPTIONS"] = {
   }
   function drawMessages(camX) {
     ctx.font = 'bold 10px Georgia'; ctx.textAlign = 'center';
-    for (const m of messages) { if (!m.active) continue; ctx.globalAlpha=Math.min(m.t/14,1); ctx.fillStyle='#e8c878'; ctx.fillText(m.text, m.x-camX, m.y-(26-m.t)); }
+    for (const m of messages) { if (!m.active) continue; ctx.globalAlpha=Math.min(m.t/14,1); ctx.fillStyle='#e8c878'; ctx.fillText(m.text, m.x-camX, m.y-Math.min(m.t0-m.t, 20)*0.5); }
     ctx.globalAlpha = 1;
   }
   function draw() {
@@ -467,14 +482,29 @@ window["GD_OPTIONS"] = {
   window.addEventListener('resize', fitCanvas);
   fitCanvas();
 
-  function loop() { update(); draw(); requestAnimationFrame(loop); }
+  // Fixed-timestep sim (60Hz) so physics are identical on 60/144/165Hz monitors.
+  const STEP = 1000 / 60;
+  let lastT = 0, acc = 0;
+  function loop(now) {
+    if (!lastT) lastT = now;
+    acc += Math.min(now - lastT, 100); // cap dt: background-tab return can't fast-forward the sim
+    lastT = now;
+    while (acc >= STEP) { update(); acc -= STEP; }
+    draw();
+    requestAnimationFrame(loop);
+  }
 
-  CG.loadingStart();
-  resetWorld();
-  while (nextSpawnX < W + 500) spawnSegment(false);
-  draw();
-  bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
-  CG.init(() => { sdkReady = true; CG.loadingStop(); loop(); });
+  // SDK call order matters: init() must resolve before any game.* call, or the SDK drops it
+  // (an unpaired loadingStop skews the platform's measured load time — see Flipline's QA history).
+  CG.init(() => {
+    CG.loadingStart();
+    resetWorld();
+    while (nextSpawnX < W + 500) spawnSegment(false);
+    draw();
+    bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
+    CG.loadingStop();
+    requestAnimationFrame(loop);
+  });
 })();
 </script>
 </body>
