@@ -540,7 +540,7 @@ function togglePause(){ if(paused){ paused=false; if(pausedAtMode==="play") Ads.
 window.__adPause  = function(){ adPaused=true;  try{ Snd.duck(true);  }catch(e){} };
 window.__adResume = function(){ adPaused=false; try{ Snd.duck(false); }catch(e){} };
 function tap(){ if(mode==="play"){ segType>=1?skyJump():flip(); } else if(mode==="ready") start(); }   // one button: flip (tunnel) OR jump (sky/mine); ready taps-to-start
-addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
+addEventListener("pointerdown",e=>{ if(e.target!==cv||needRotate)return; e.preventDefault(); const p=vpos(e);   // only the game canvas flips — never other elements (mute/fx buttons, or an embedding portal's own controls like GameMonetize's verify buttons)
   if(paused){ if(inR(p,R_PAUSE)) togglePause(); else if(pausedAtMode==="play") togglePause(); return; }   // any tap resumes from play-pause
   if(mode==="shop"){ shopTap(p); return; }
   if(mode==="reviving") return;                      // countdown is automatic — taps ignored
