@@ -6,18 +6,18 @@
 
 ## 📦 PLATFORM SUBMISSION STATUS (2026-07-02)
 - **CrazyGames** — ❌ REJECTED (subjective "overall quality does not meet platform expectations"; not a bug — genre saturation + minimal visuals). Parked. Master `index.html` is this build.
-- **GameMonetize** — ✅ SUBMITTED, IN REVIEW. `builds/gamemonetize/` (gameId `i9wbwtje123k5itbsv3io3hz7yc7x85v`), SDK verified + sent to activation. **This is the only platform in play that pays revenue** (ad-impression share). Nothing pending — check back on approval status next session.
+- **GameMonetize** — ✅ SUBMITTED, IN REVIEW. `builds/gamemonetize/` (gameId `i9wbwtje123k5itbsv3io3hz7yc7x85v`), SDK verified + sent to activation. Currently the only platform in play that pays revenue (ad-impression share). Nothing pending — check back on approval status next session.
+- **GameDistribution** — 🔧 BUILT, not yet submitted. `builds/gamedistribution/` — SDK adapter done (`gdsdk.showAd()` / `showAd('rewarded')` + `SDK_GAME_PAUSE`/`START`/`REWARDED_WATCH_COMPLETE` via `GD_OPTIONS.onEvent`), verified locally (SDK v1.43.58 loaded clean, `mode==="ready"`, zero console errors). **Still needs: real gameId** (swap `GAMEID_PLACEHOLDER` in `builds/gamedistribution/index.html` head — sign up at developer.gamedistribution.com → add game → copy gameId) **then submit** via dashboard checklist (icon/screenshots specced in-dashboard). Review historically ~3 weeks. Payout: $50 accrual threshold, paid monthly once crossed — not a guaranteed $50/mo. Checklist-gated, not boutique-curated like CrazyGames.
 - **itch.io** — ✅ **LIVE** at `mnocito.itch.io/flipline` (2026-07-02). Free / "No payments" — itch has no ad SDK, this listing earns $0 unless donations are enabled later. Value here is a stable no-review portfolio link, not revenue.
 
 ## ✅ Task A + B — DONE (2026-07-02)
 Canvas-scope tap fix folded into master + itch builds (`0c70ed3`), verified in preview (canvas tap flips, non-canvas click doesn't, mute/fx unaffected), `node --check` clean. itch.io project created and published: cover (`covers/flipline_cover_1920x1080.png`) + 3 in-game screenshots (`_shots/screen_ready.png`, `screen_play.png`, `screen_shop.png` — pulled live via `canvas.toDataURL()` through preview_eval since no ffmpeg is installed to extract frames from the existing `.webm` clips) + embed 960×540/Fullscreen/Mobile-friendly + No payments + Public.
 
 ## ⏳ NEXT: monetization-platform roadmap
-itch is a portfolio/fallback, not revenue. GameMonetize (pending approval) is the only earner live so far. Other portals worth trying next, roughly in priority order:
-1. **GameDistribution** — needs their own SDK integration (similar shape to the GameMonetize adapter work) + a ~3-week QA/review cycle. Runs in parallel with GameMonetize once submitted — no reason to wait.
-2. **GamePix** — ad-revenue portal, lower bar than CrazyGames historically; SDK integration TBD, not yet researched in depth.
-3. **Newgrounds** — smaller audience, low friction, has its own ad/monetization program (Newgrounds Wallet + ad revenue share) — good low-effort parallel submission.
-4. **GameJolt** — similar profile to itch (community-first, optional monetization via GJ's own systems) — traction-focused more than revenue, but easy to add.
+GameDistribution build is done and waiting on a real gameId + submission (see status above — that's the very next step). Researched (2026-07-02) before building: GameDistribution has the best-documented SDK and concrete payout terms of the untried options, so it went first; GamePix's SDK specifics were too thin in public docs to build blind (would need dashboard access first). Remaining portals worth trying next, roughly in priority order:
+1. **GamePix** — 45% rev share, ad-revenue portal, lower bar than CrazyGames historically; SDK integration TBD — pull the full API ref from the dashboard (`gpxprj.blob.core.windows.net/api/index.html`) before building, don't guess at method names again.
+2. **Newgrounds** — smaller audience, low friction, has its own ad/monetization program (Newgrounds Wallet + ad revenue share) — good low-effort parallel submission.
+3. **GameJolt** — similar profile to itch (community-first, optional monetization via GJ's own systems) — traction-focused more than revenue, but easy to add.
 - Explicitly **skip** Poki/Famobi — same curated-quality-bar rejection risk as CrazyGames, not worth the resubmission cycle without a real visual-identity upgrade.
 - **Gameplay trailer for itch/others (parked, low priority):** `.webm` clips exist (`_shots/desktop.webm`, `_shots/mobile.webm`) from the CrazyGames submission but itch wants a hosted YouTube/Vimeo link, not a file — upload to YouTube first if this becomes worth doing.
 

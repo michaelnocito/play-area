@@ -24,3 +24,20 @@ build by copying `../index.html` and re-applying the SDK changes noted below.
 - Saves fall back to `localStorage` (GM has no data-sync module).
 - **Verified locally:** boots to ready, plays clean, SDK loads, ad fallbacks correct, zero console errors.
   Only the real gameId is missing.
+
+## gamedistribution/
+- **What changed vs master:** (1) replaced the CrazyGames SDK `<script>` with the GameDistribution
+  `GD_OPTIONS` + loader (in `<head>`); (2) replaced the `Ads` object with a GameDistribution adapter.
+- ⚠️ **Before submitting: replace `GAMEID_PLACEHOLDER`** in the `<head>` `GD_OPTIONS.gameId` with the real
+  gameId from your GameDistribution dashboard (sign up at developer.gamedistribution.com → add game → copy
+  gameId).
+- Ad mapping: `interstitial()` → `gdsdk.showAd()` (fires on final death); `rewarded()` → `gdsdk.showAd('rewarded')`
+  then grants on `SDK_REWARDED_WATCH_COMPLETE`, with an 8s timeout fallback so a no-fill ad never dead-ends
+  the reward button. Audio mute is driven globally by `SDK_GAME_PAUSE`/`SDK_GAME_START` (required by GD,
+  wired in the loader's `onEvent`).
+- Saves fall back to `localStorage` (no GD-specific save-sync API documented).
+- **Verified locally:** boots to ready, plays clean, SDK loads, ad fallbacks correct, zero console errors.
+  Only the real gameId is missing.
+- **Submission:** developer.gamedistribution.com → add game → HTML5 build zip → fill checklist (icon/
+  screenshots specced in-dashboard) → review, historically up to ~3 weeks. Payout: $50 accrual threshold,
+  paid monthly once crossed. Not boutique-curated like CrazyGames — closer to a checklist gate.
