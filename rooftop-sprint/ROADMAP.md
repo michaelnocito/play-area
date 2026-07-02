@@ -8,6 +8,21 @@ Status: `[ ]` todo · `[~]` partial · `[x]` done · 🔷 = Mike's direct design
 
 ---
 
+## 🏮 IDENTITY: THE LAMPLIGHTER (🔷 Mike's calls, client-intake 2026-07-02)
+
+The city's lights are going out; you are the Lamplighter, running the rooftops to take them back.
+- 🔷 **Weapon = a lamp on a pole** (replaces the plain staff render — same reach/hitbox/timing,
+  purely visual + naming).
+- 🔷 **Enemies carry lamps.** Kill one and its lamp-light streams into YOUR weapon, making it
+  visibly brighter — kills are literal power made visible. Weapon brightness = run-long escalation
+  display (resets on death; buff/upgrade hooks can seed it).
+- Rekindling: windows/lanterns flicker ON in your wake as weapon light grows — the city responds.
+- Kills the residual AC echo (hooded-assassin + rooftops) with an original fantasy that ties the
+  existing Light currency, lantern art, and score system into one story.
+- Copy/naming pass rides with this (death copy, menu line, store copy later).
+
+---
+
 ## 1. Core loop & mechanics
 
 **Now:** run → jump gaps → timed strikes (CLEAN/HEAVY/PERFECT + domino) → die → retry.
@@ -38,7 +53,9 @@ Status: `[ ]` todo · `[~]` partial · `[x]` done · 🔷 = Mike's direct design
   lantern alley) mixed procedurally instead of pure RNG — the Flipline formation-sequencer pattern
 - [ ] A second visual zone (dawn palette swap ~500m) for long-run freshness — cheap w/ pre-rendered
   sprite rebuild
-- [ ] Milestone events every 250m: brief "district" banner + palette shift + guard density bump
+- [ ] 🔷 **Districts (client intake 2026-07-02): endless + named district every 250m** — banner,
+  palette shift, hazard-mix change, guard-density step; district names feed the Lamplighter lore
+  ("LANTERN ROW REKINDLED" on crossing). This is the packaged answer to CG's "needs content."
 
 ## 3. Scoring & end-of-run tally 🔷
 
@@ -73,6 +90,12 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
   — adapters already wired in all three platform builds
 - [ ] Persistence: extend the existing Save wrapper (localStorage + CG Data Module) to a save object
   (coins, owned, equipped) — version the key
+- [ ] 🔶 **PROPOSED (competitive research 2026-07-02, awaiting Mike's call): permanent progression**
+  — the clearest statistical gap between 8.9-rated CG hits (Count Masters 327k votes) and
+  merely-accepted games is coins buying LASTING power, not just cosmetics/consumables. Natural fit
+  here: spend Light on permanent lamp upgrades ("start brighter"): +1 starting music layer, wider
+  strike window tier, extra free revive, head-start distance. Visual = your lamp starts partly lit.
+  ~1 extra session if approved.
 
 ## 5. Controls & input feel
 
@@ -99,14 +122,30 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
 
 ## 7. Audio (BIGGEST GAP — nothing exists) ⚡
 
-**Standard:** procedural WebAudio (Flipline `Snd` pattern proven): zero assets, in-key SFX.
+**Standard:** procedural WebAudio, zero assets. 🔷 Direction (client intake 2026-07-02):
+**LIGHT-REACTIVE SCORE** — the music IS your lamp. Research-grounded speaker architecture (cited
+in project chat 2026-07-02: Audiokinetic/SOS/MDN):
 
-- [ ] ⚡ SFX: jump whoosh, land thud, strike swing, kill hit (pitch by tier: CLEAN low → PERFECT
-  bright), domino impact, feather sparkle, death, slide scrape, bird flutter
+**Speaker-scaling architecture (every sound):** phones are silent <~700Hz, laptops <~200-300Hz.
+So each SFX/music voice = parallel layers into one bus: transient click 2–5kHz (0–5ms attack,
+punch lives here) · mid body 200–500Hz · **harmonic bass** 150–500Hz (2nd–4th harmonics of the
+sub pitch — the brain reconstructs the missing fundamental; this IS the bass on small speakers) ·
+**true sub sine 40–90Hz as a parallel garnish** that only decent speakers/subwoofers reproduce
+(small drivers filter it out acoustically — one mix works everywhere). Avoid 4–5kHz buildup
+(handset resonance/fatigue). Envelopes via exponential ramps only (no gain jumps/clicks).
+
+- [ ] 🔷 **Light-reactive music:** minimal warm ember-groove base; each lamp claimed from an enemy
+  ADDS an instrument layer (shimmer → bells → pulse-bass → full); death drops back to embers.
+  🔷 **Bass pulse timed to the weapon's light pulse** — the lamp visually throbs on the beat and
+  the sub/harmonic-bass layer hits with it (audio and weapon glow share one clock).
+- [ ] ⚡ SFX set (layered per architecture): jump whoosh, land thud, strike swing, kill hit
+  (pitch by tier CLEAN low → PERFECT bright) + **light-stream chime** as the lamp feeds in,
+  domino impact (sub garnish moment), Light-mote sparkle, death (layers collapse), slide scrape,
+  bird flutter
 - [ ] Slow-mo audio: low-pass filter sweep during bullet-time (sells the effect hard, cheap)
-- [ ] Ambient bed: sparse night-city drone + distant wind, calm not busy
 - [ ] Mute button (platform guideline: CG `muteAudio` setting listener + in-game toggle)
 - [ ] ⚡ Ad-break ducking hooks already exist (`__adPause`) — wire `Snd.duck` when audio lands
+- [ ] QA: audition through a master high-pass swept at 800/400/200Hz + in mono (the phone test)
 
 ## 8. Visuals & juice
 
@@ -172,22 +211,33 @@ time; slide teach beat w/ tutorial slow-time; gaps retuned for single-jump and r
 Bonus: two latent engine bugs found by the suite and fixed (seam ground-flicker, segment-pool
 exhaustion punching holes in the world).
 
-**BATCH 2 — Audio (full):** procedural SFX set (jump/land/strike-by-tier/domino/Light
-sparkle/death/slide/bird), slow-mo low-pass sweep, ambient night bed, mute button + CG muteAudio
-listener, ad-duck wiring.
+Re-scoped at client intake 2026-07-02 (batch-per-session 🔷; audio is ~1.5 sessions):
 
-**BATCH 3 — Score & Light:** points system (CLEAN 100 / HEAVY 250 / PERFECT 500 / domino
-escalator), end-of-run tally screen w/ count-up + NEW BEST stinger, in-run point popups, HUD points
-counter, feathers → LIGHT rename everywhere (glowing mote art).
+**BATCH 2 — Lamplighter identity:** lamp-on-a-pole weapon render; enemy lamps; kill →
+light-stream into weapon + brightness escalation state (`lampLight` 0→1, drives glow radius +
+future music layers); rekindling windows in your wake; copy pass (death/menu lines); feathers →
+LIGHT rename + glowing-mote art. (Identity first so audio's light-reactive layers have the state
+to key off.)
 
-**BATCH 4 — Economy:** Light wallet + save versioning; cosmetic shop (cloaks/staffs/trails, live
-try-on); buff shop (consumables, pre-run pick); rewarded-ad hooks (revive, double-Light on tally);
-interstitial cooldown.
+**BATCH 3 — Audio (light-reactive score, ~1.5 sessions):** speaker-scaling layer architecture
+(see §7); ember-groove base + per-lamp instrument layers keyed to `lampLight`; bass pulse
+clock-shared with the weapon's visual throb; full SFX set; slow-mo low-pass; mute + CG muteAudio;
+ad-duck wiring; 800/400/200Hz high-pass + mono QA pass.
 
-**BATCH 5 — Content & polish:** guard formations for domino setups; rooftop chunk library +
-anti-streak; guaranteed intro chunk; difficulty cap; second zone (dawn palette); menu-world
-backdrop; pause; landing dust/speed lines; desktop-vs-touch prompts; AZERTY keys.
+**BATCH 4 — Score & tally:** points system (CLEAN 100 / HEAVY 250 / PERFECT 500 / domino
+escalator), end-of-run tally screen w/ count-up + NEW BEST stinger, in-run point popups, HUD
+points counter.
 
-**BATCH 6 — Ship wave:** perf audit on weak hardware (RSCALE cap probe); cover art + crop sets;
-gameplay clips; store copy (post-rename); real-device mobile pass; CG QA tool; gameIds into GM/GD
-builds; regenerate all builds; SUBMIT ALL PORTALS.
+**BATCH 5 — Economy:** Light wallet + save versioning; cosmetic shop (cloaks/lamp skins/trails,
+live try-on); buff shop (consumables, pre-run pick); rewarded-ad hooks (revive, double-Light on
+tally); interstitial cooldown; 🔶 permanent lamp progression IF approved (see §4 — +1 session).
+
+**BATCH 6 — Content & polish:** districts (named, banner/palette/hazard-mix/density every 250m);
+guard formations for domino setups; rooftop chunk library + anti-streak; guaranteed intro chunk;
+difficulty cap; menu-world backdrop; landing dust/speed lines; desktop-vs-touch prompts; AZERTY.
+
+**BATCH 7 — Ship wave:** perf audit on weak hardware (RSCALE cap probe); cover art + crop sets;
+gameplay clips; store copy (post-Lamplighter voice); real-device mobile pass; CG QA tool; gameIds
+into GM/GD builds; regenerate all builds; SUBMIT ALL PORTALS.
+
+**Acceptance per batch:** `tools/rs_playtest.js` suite green + batch checklist walked + pushed.
