@@ -11,9 +11,9 @@ window.SDK_OPTIONS = {
   onEvent: function(a){
     switch(a.name){
       case "SDK_READY": try{ if(typeof sdk!=="undefined" && sdk.showBanner) sdk.showBanner(); }catch(e){} break;   // preroll on ready (GM norm; guarantees "Verify Game" sees an ad call)
-      case "SDK_GAME_PAUSE": try{ Snd.duck(true); }catch(e){} break;    // ad started → mute all audio
-      case "SDK_GAME_START":                                             // ad finished → unmute + grant any pending rewarded reward
-        try{ Snd.duck(false); }catch(e){}
+      case "SDK_GAME_PAUSE": try{ window.__adPause ? window.__adPause() : Snd.duck(true); }catch(e){} break;    // ad started → freeze gameplay + mute
+      case "SDK_GAME_START":                                             // ad finished → resume gameplay + unmute + grant any pending rewarded reward
+        try{ window.__adResume ? window.__adResume() : Snd.duck(false); }catch(e){}
         try{ if(window.__gmPendingReward){ var cb=window.__gmPendingReward; window.__gmPendingReward=null; cb(); } }catch(e){}
         break;
     }
@@ -442,7 +442,7 @@ let mode="ready";            // ready | play | dead
 let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
 let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
 let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
-let paused=false, pausedAtMode="ready", doubledFlag=false;
+let paused=false, pausedAtMode="ready", doubledFlag=false, adPaused=false;   // adPaused = frozen by a GameMonetize ad break (separate from manual pause; can't be tap-dismissed)
 let fmId=0, fmStep=0, fmSide=0, fmLen=0, hardCount=0;
 let segType=0, prevSegType=0, nextSeg=SEG_LEN, xfade=0, segStep=0, acclimT=0;   // 0 downline/mid / 1 upline/upper; segStep walks SEG_SEQ; acclimT=post-transition speed ease-in
 let onGround=true, gliding=false;   // upline: onGround gates launch (no double-glide); gliding = currently in a glide
@@ -534,6 +534,11 @@ function finalDeath(){
 /* ===== Input ===== */
 function togglePause(){ if(paused){ paused=false; if(pausedAtMode==="play") Ads.gameplayStart(); }   // resume first — mode is still "play" while paused
   else if(mode==="play"){ paused=true; pausedAtMode="play"; Ads.gameplayStop(); } }
+// GameMonetize ad-break hooks — SDK_GAME_PAUSE/START (in the head loader's onEvent) call these to
+// actually FREEZE gameplay + mute while an ad plays, then resume. Distinct from manual pause so a stray
+// tap can't dismiss it and no "tap to resume" overlay shows under the ad.
+window.__adPause  = function(){ adPaused=true;  try{ Snd.duck(true);  }catch(e){} };
+window.__adResume = function(){ adPaused=false; try{ Snd.duck(false); }catch(e){} };
 function tap(){ if(mode==="play"){ segType>=1?skyJump():flip(); } else if(mode==="ready") start(); }   // one button: flip (tunnel) OR jump (sky/mine); ready taps-to-start
 addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; e.preventDefault(); const p=vpos(e);
   if(paused){ if(inR(p,R_PAUSE)) togglePause(); else if(pausedAtMode==="play") togglePause(); return; }   // any tap resumes from play-pause
@@ -732,7 +737,7 @@ function update(dt){
   if(warpFx>0){ warpFx-=dt; if(warpFx<0)warpFx=0; }
   if(xfade>0){ xfade-=dt; if(xfade<0)xfade=0; }   // mode-switch portal sweep
   if(acclimT>0){ acclimT-=dt; if(acclimT<0)acclimT=0; }   // post-transition speed ease-in
-  if(paused) return;   // manual pause / phone-call recovery — particles still animate above for life, gameplay frozen
+  if(paused||adPaused) return;   // manual pause / phone-call recovery / GameMonetize ad break — particles still animate above for life, gameplay frozen
   if(mode==="reviving"){ reviveT-=dt; lightR+=(LR_BASE-lightR)*Math.min(1,dt*6);   // bloom back over the "get ready" countdown
     if(reviveT<=0){ reviveT=0; mode="play"; } return; }
   if(mode!=="play") return;
