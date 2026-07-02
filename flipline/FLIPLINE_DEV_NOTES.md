@@ -1,25 +1,27 @@
 # FLIPLINE — Dev Handoff / Resume Point
 
-**Repo:** `github.com/michaelnocito/flipline` (PRIVATE, branch `main`) · **Local:** `C:\Users\Mike\Projects\GAMES\flipline`
-**HEAD at handoff:** `1e5789d` (2026-07-01) · **Deliverable:** one file `index.html` (vanilla JS + Canvas, no build, no deps, authored in a 480×270 logical space).
-**Read first:** `HANDOFF.md` (visual/level-design spec), `FLIPLINE_lore_bible.md` (wordless "Long Way Home" lore), `FLIPLINE_store_copy.md` (submission copy — now accurate to v1). Memory `project_flipline_state.md` auto-loads with full per-feature detail.
+**Repo:** `github.com/michaelnocito/play-area` (PUBLIC monorepo, branch `main`) — Flipline lives in the `flipline/` subfolder · **Local:** `C:\Users\Mike\Projects\GAMES\play-area\flipline`
+**HEAD at handoff:** `a9222c8` (2026-07-01) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
+**Read first:** this file + memory `project_flipline_state.md` (full per-feature + submission history). Also `HANDOFF.md`, `FLIPLINE_lore_bible.md`, `FLIPLINE_store_copy.md`.
 
-## 🎬 LAUNCH GATE STATUS (2026-07-01) — what's left before submitting
-1. ✅ Gameplay fully tuned + fairness-verified (`tools/sim.js`)
-2. ✅ Dead-screen layout bug fixed
-3. ✅ Gameplay clips recorded — desktop 1920×1080 + mobile 1440×810, ~19s each, verified smooth (0-1 dropped frames)
-4. ✅ Cover art done (`covers/`)
-5. ✅ Store copy accurate to the shipped build
-6. ✅ CrazyGames SDK v3 call names spot-checked against current docs (`game.gameplayStart/Stop`, `game.loadingStart/Stop`, `ad.requestAd`, `game.happytime` — all confirmed current, 2026-07-01)
-6b. ✅ Save data now goes through the SDK Data Module (cross-device sync + guest auto-migrate) instead of plain localStorage — was neither "yes" nor "no" on the submission form before this fix
-6c. ✅ Platform-level audio mute (`SDK.game.settings.muteAudio` + `addSettingsChangeListener`) — verified live, takes priority over the in-game toggle
-6d. ✅ Fixed a `loadingStart`/`loadingStop` pairing bug — real QA run measured 104.5s load time on a 0.1MB game; root cause was an unpaired loadingStop() when the 700ms local fallback won the init race. Mike: re-upload + re-run QA to confirm this drops to something sane (should be near-instant)
-7. ⏳ **Mike:** create/log into CrazyGames developer account, create the game listing, upload the build
-8. ⏳ **Mike:** run the CrazyGames QA tool against the uploaded build, fix anything it flags
-9. ⏳ **Mike:** paste in `FLIPLINE_store_copy.md` content + upload cover art + attach the two gameplay clips
-10. ⏳ **Mike:** submit for review
+## 📦 PLATFORM SUBMISSION STATUS (2026-07-01)
+- **CrazyGames** — ❌ REJECTED (subjective "overall quality does not meet platform expectations"; not a bug — genre saturation + minimal visuals). Parked. Master `index.html` is this build.
+- **GameMonetize** — ✅ SUBMITTED, IN REVIEW. `builds/gamemonetize/` (gameId `i9wbwtje123k5itbsv3io3hz7yc7x85v`), SDK verified + sent to activation. Nothing pending.
+- **itch.io** — ⏳ build ready (`builds/flipline-itch.zip`), NOT yet uploaded. Instant/no-review when Mike uploads.
 
-Everything code-side is done. Steps 7-10 need CrazyGames portal access I don't have — those are Mike's.
+## ⏳ TWO REMAINING TASKS (this handoff)
+**Task A — fold the canvas-scope tap fix into the master + itch builds (code, then commit/push).**
+The tap-to-flip handler listens on `window` and flips on ANY click (only exempting mute/fx buttons), calling `preventDefault()`. Harmless on CrazyGames/itch (no overlay buttons) but wrong in principle; already fixed in the GameMonetize build (`a9222c8`). Propagate for consistency:
+1. In master `index.html`, find the `addEventListener("pointerdown",e=>{ if(e.target.id==="mute"||e.target.id==="fx"||needRotate)return; ...` line and change the guard to `if(e.target!==cv||needRotate)return;` (only the canvas flips; `cv` is the canvas, defined earlier). Keep the rest of the handler identical.
+2. Re-derive the itch build from the fixed master: `builds/itch/index.html` = master with the 2-line CrazyGames SDK `<script>` (the `<!-- ... -->` comment + `<script src="https://sdk.crazygames.com/...">`) removed from `<head>`. Nothing else differs.
+3. Re-zip: `builds/flipline-itch.zip` (just `index.html` at root; `builds/*.zip` is gitignored).
+4. Verify each build boots to `ready`, a canvas tap flips, a non-canvas element click does NOT flip, mute/fx still toggle (drive `update()`/click via preview_eval — preview tab may background-throttle rAF; set canvas dims directly if `innerWidth`=0). `node --check` the extracted `<script>`. Commit + push.
+
+**Task B — Mike uploads the itch.io build (no code; hand him the steps).**
+File: `builds/flipline-itch.zip`. itch.io → Create new project → Kind: HTML → upload zip → check "This file will be played in the browser" → embed **960×540** + **Fullscreen button** + **Mobile friendly** → cover = `covers/flipline_cover_1920x1080.png` → Pricing: No payments (or donations) → Public. No review; live instantly.
+
+## Conventions (unchanged)
+Solo authorship — commit as `Michael Nocito <hello.michaelnocito@gmail.com>`, NO Co-Authored-By/AI trailer. Outside OneDrive. Commit + push after every change. `builds/*.zip`, `_shots/`, `.claude/` gitignored.
 
 ## 🚀 SHIP DECISION (2026-07-01): downline-only v1
 Reviewed the redesign: DOWNLINE (flip-runner + formations + buffs + revive + shop + audio + zones + CrazyGames ad hooks) is feature-complete and submission-ready. UPLINE (glide platformer) was only ever a feel-locked skeleton — floating ledges + coins, **zero obstacles/enemies/challenge**, no vault mechanic, no bloom-regrow layer, never playtested. Rather than gate launch on finishing an unproven mechanic, **shipped downline-only**: `SEG_SEQ=[0]` permanently, segment-switch code guarded off (`SEG_SEQ.length>1`), dev level-picker UI/code fully removed (`devRow`, `R_DEV`, `devSeg`, `DEV*` consts — was showing to real players on ready/dead screens, not just dev). Upline code (glide physics, `spawnPlatform`, palettes) left in place, unreachable — parked as a **post-launch content update**, to be redesigned with actual danger/vault/bloom before it ships. Verified: syntax clean, ran a full sim (start→crash→revive-offer) staying in segType 0 the whole time, ready-screen screenshot confirms no dev UI leaks to players.
