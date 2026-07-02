@@ -246,7 +246,8 @@ window["GD_OPTIONS"] = {
     return { perfect: GUARD_HIT_DX + closing * 7, mid: GUARD_HIT_DX + closing * 16 };
   }
   let graceT = 0;        // brief invulnerability after a lunge-kill so chained guards can't cheap-kill
-  let taughtGuard = false;
+  let taughtGuard = false, taughtGap = false;
+  let tutSlowT = 0;      // real ms — tutorial slow-time so teach prompts can be read (see loop)
 
   let nextSpawnX = 0;
 
@@ -405,6 +406,20 @@ window["GD_OPTIONS"] = {
     for (const g of guards) if (g.active && g.x < player.x - 260) g.active = false;
     for (const f of featherList) if (f.active && f.x < player.x - 260) f.active = false;
 
+    // first-gap teach: spot the first upcoming gap early, slow time, show the prompt
+    if (!taughtGap) {
+      const cx = player.x + player.w/2;
+      const cur = segmentAt(cx);
+      if (cur) {
+        const next = segments.filter(s => s.active && s.x1 > cur.x2 - 6).sort((a,b)=>a.x1-b.x1)[0];
+        if (next && next.x1 > cur.x2 + 4 && cur.x2 - cx < 170 && cur.x2 - cx > 0) {
+          taughtGap = true;
+          spawnMessage(cur.x2 + 8, cur.y - 46, 'JUMP THE GAP', 150);
+          tutSlowT = 2200;
+        }
+      }
+    }
+
     const gY = groundYForPlayer();
     player.vy += GRAVITY;
     player.y += player.vy;
@@ -451,9 +466,10 @@ window["GD_OPTIONS"] = {
       // the moment your strike can land, so the cue IS the attack window.
       const sdx = g.x - (player.x + player.w/2);
       g.alerted = sdx > -14 && sdx < strikeRangeX() && Math.abs(g.y - player.y) < STRIKE_RANGE_Y;
-      if (!taughtGuard && sdx > 0 && sdx < alertRangeX()) {
+      if (!taughtGuard && sdx > 0 && sdx < alertRangeX() + 60) {
         taughtGuard = true;
-        spawnMessage(g.x - 10, g.y - 58, 'STRIKE — OR LEAP OVER', 90);
+        spawnMessage(g.x - 10, g.y - 58, 'STRIKE — OR LEAP OVER', 150);
+        tutSlowT = 2400; // give the player time to orient, read, and get ready
       }
       const dx = Math.abs(sdx);
       if (graceT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die(); return; }
@@ -767,8 +783,12 @@ window["GD_OPTIONS"] = {
     if (!lastT) lastT = now;
     const dt = Math.min(now - lastT, 100); // cap dt: background-tab return can't fast-forward the sim
     lastT = now;
-    const ts = slowmoT > 0 ? Math.max(0.26, 1 - (slowmoT / SLOWMO_MS) * 0.74) : 1;
+    const tsImpact = slowmoT > 0 ? Math.max(0.26, 1 - (slowmoT / SLOWMO_MS) * 0.74) : 1;
+    // tutorial slow: steady 0.35× while the prompt is up, easing back over the last 400ms
+    const tsTut = tutSlowT > 400 ? 0.35 : tutSlowT > 0 ? 0.35 + 0.65 * (1 - tutSlowT/400) : 1;
+    const ts = Math.min(tsImpact, tsTut);
     slowmoT = Math.max(0, slowmoT - dt);
+    tutSlowT = Math.max(0, tutSlowT - dt);
     acc += dt * ts;
     while (acc >= STEP) { update(); acc -= STEP; }
     draw();
