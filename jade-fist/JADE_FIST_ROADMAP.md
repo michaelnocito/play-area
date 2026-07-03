@@ -30,13 +30,16 @@ One quality bar, one submission wave. Status as of JF-#026 (2026-07-03).
       (Tiger/Crane/Ox/Serpent/Dragon/Monkey); powers die with the run
 - [x] JF-#026 Hall of Legends (G2): local per-district top-5, tally rank line, menu top-3;
       CG.submitScore seam (CG boards are INVITE-ONLY — wire when invited)
+- [x] JF-#027 Cartoon art pass: chunky cel-outlined fighters, big heads + live faces,
+      squash, comic-font pop-in popups, star hits, brighter palette, sleepy moon
+- [x] JF-#028 Duck/jump dodge axis + spearman throws (high=duck/low=jump, telegraphed) +
+      difficulty bump; bot re-validated fair (11/12 wins, 0% unreactable)
 
 ## Left (in order)
-- [ ] **Mike playtest** — full campaign Courtyard→Rooftop→ending→LEGEND; notes feed JF-#027
-- [ ] **Bot fairness pass** — run index.html?bot=3, read the console verdict before tuning
-- [ ] **JF-#027 tuning pass** — first-guess values under review: Temple/Rooftop dBase 4/6,
-      boss hp 3/3/4/4, trial targets, omen numbers, comedy-send rate (0.18), yelp rate (0.12),
-      music intensity curve, dye prices (40/60/90/120), scroll strengths
+- [ ] **Mike re-playtest** — the harder build + new dodge axis + cartoon look; notes feed JF-#029
+- [ ] **JF-#029 tuning pass** — dBase 1/3/5/7/9, boss hp 3/4/5/5/6, throw aim durations,
+      dodge windows (jump 32 / duck 26), spear frequency, dye prices, scroll strengths,
+      music intensity curve, comedy-send/yelp rates
 - [ ] **Manual QA** (list in JADE_FIST_SUBMISSION.md): 144Hz speed, mobile portrait/landscape,
       adblock-on load, rewarded once-per-tally, CG preview-environment SDK check
 - [ ] **Submit to CrazyGames** — cover PNG from thumbnail.html, listing copy from
