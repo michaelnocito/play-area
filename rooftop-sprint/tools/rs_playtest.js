@@ -35,16 +35,16 @@ function noop() {}
 function makeCtx() { const prox = new Proxy(function(){}, { get: (t,p) => p==='canvas' ? null : prox, set: () => true, apply: () => prox }); return prox; }
 function el(id) {
   return {
-    id, textContent: '', style: {}, width: 480, height: 270,
+    id, textContent: '', innerHTML: '', style: {}, width: 480, height: 270,
     classList: { add: noop, remove: noop, contains: () => false },
-    addEventListener: noop, getContext: makeCtx, click: noop,
+    addEventListener: noop, getContext: makeCtx, click: noop, appendChild: noop,
   };
 }
 const els = {};
 const sandbox = {
   localStorage: { _d:{}, getItem(k){ return this._d[k] ?? null; }, setItem(k,v){ this._d[k]=v; }, removeItem(k){ delete this._d[k]; } },
   requestAnimationFrame: noop, // we drive update() directly
-  Math, parseInt, Infinity, console, setTimeout: noop,
+  Math, parseInt, Infinity, console, setTimeout: noop, clearTimeout: noop,
 };
 sandbox.window = sandbox;
 sandbox.document = {

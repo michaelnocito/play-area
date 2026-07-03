@@ -68,12 +68,21 @@
   #btnJump { border-right: 1px solid rgba(241,227,198,0.08); }
   .tbtn:active { background: rgba(232,200,120,0.08); }
   #muteBtn {
-    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    position: absolute; top: 44px; right: 12px;
     width: 36px; height: 26px; display: flex; align-items: center; justify-content: center;
     font-size: 14px; color: #f1e3c6; opacity: 0.55; cursor: pointer;
     background: rgba(8,6,14,0.4); border-radius: 5px; z-index: 5;
   }
   #muteBtn:active { opacity: 0.9; }
+  #tally { margin-top: 10px; font-size: 13px; min-width: 250px; }
+  #tally .trow { display: flex; justify-content: space-between; gap: 24px; padding: 1.5px 0; opacity: 0; }
+  #tally .trow.show { opacity: 1; transition: opacity 0.12s; }
+  #tally .trow .pts { color: #e8c878; font-weight: bold; }
+  #tally .trow.total { border-top: 1px solid rgba(232,200,120,0.35); margin-top: 5px; padding-top: 5px; font-size: 16px; }
+  #newBest { font-size: 14px; color: #ffe9b0; letter-spacing: 2px; margin-top: 6px; opacity: 0;
+    text-shadow: 0 0 12px rgba(255,233,176,0.8); }
+  #newBest.show { opacity: 1; transition: opacity 0.2s; }
+  #statsLine { font-size: 10px; opacity: 0.6; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -81,6 +90,7 @@
   <canvas id="game" width="480" height="270"></canvas>
   <div id="hud">
     <div><div class="label">Distance</div><div class="value" id="distVal">0m</div></div>
+    <div style="text-align:center"><div class="label">Points</div><div class="value" id="scoreVal">0</div></div>
     <div style="text-align:right"><div class="label">Light</div><div class="value" id="featherVal">0</div></div>
   </div>
   <div id="overlay">
@@ -88,6 +98,9 @@
     <p>The city's lights are going out. You are the Lamplighter — run the rooftops, strike the wardens who hoard the light, and carry it home in your lamp.</p>
     <p><span class="key">SPACE / LEFT SIDE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X / RIGHT SIDE</span> strike / slide</p>
     <div id="scoreLine"></div>
+    <div id="tally"></div>
+    <div id="newBest">&#10022; NEW BEST &#10022;</div>
+    <div id="statsLine"></div>
     <div id="best"></div>
     <button id="startBtn">Begin the Run</button>
   </div>
@@ -113,6 +126,10 @@
   const btnJump = document.getElementById('btnJump');
   const btnStrike = document.getElementById('btnStrike');
   const muteBtn = document.getElementById('muteBtn');
+  const scoreVal = document.getElementById('scoreVal');
+  const tallyEl = document.getElementById('tally');
+  const newBestEl = document.getElementById('newBest');
+  const statsLine = document.getElementById('statsLine');
 
   /* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
   // sdkLive = init() actually resolved (only true on the CrazyGames platform); every game/ad
@@ -162,7 +179,8 @@
     const noop = () => {};
     if (!AC) return { muted: true, resume: noop, tick: noop, setTs: noop, duck: noop, setMuted: noop,
       toggleMute(){ return true; }, qaHighpass: noop, jump: noop, land: noop, swing: noop, kill: noop,
-      chime: noop, domino: noop, sparkle: noop, death: noop, slide: noop, bird: noop };
+      chime: noop, domino: noop, sparkle: noop, death: noop, slide: noop, bird: noop,
+      uiTick: noop, newBest: noop };
     let ac = null, bus, qaHP, lpf, master, musicG, sfxG, padG, noiseBuf;
     let muted = false;
     try { muted = localStorage.getItem('rooftopSprintMuted') === '1'; } catch(e){}
@@ -282,6 +300,8 @@
         tone(sfxG, ac.currentTime, 'sine', PENT[Math.max(0, Math.min(i | 0, 5))], 0, 0.003, 0.045, 0.18);
       },
       domino() { if (!ok()) return; const t = ac.currentTime; bassHit(sfxG, t, 45, 1.0, 0.40); click(sfxG, t, 3000, 0.18, 0.05); tone(sfxG, t, 'triangle', 196, 90, 0.005, 0.13, 0.20); },
+      uiTick(i) { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sine', 880 + (i || 0) * 70, 0, 0.003, 0.05, 0.07); click(sfxG, t, 2800, 0.03, 0.02); },
+      newBest() { if (!ok()) return; const t = ac.currentTime; [523.25, 659.25, 784, 1046.5].forEach((f, i) => { tone(sfxG, t + i * 0.09, 'sine', f, 0, 0.004, 0.09, 0.30); }); bassHit(sfxG, t + 0.27, 65, 0.5, 0.30); },
       sparkle(){ if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sine', 1568, 0, 0.003, 0.05, 0.12); tone(sfxG, t + 0.05, 'sine', 2093, 0, 0.003, 0.045, 0.14); },
       death()  { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sawtooth', 220, 45, 0.01, 0.12, 0.70); noiseSweep(sfxG, t, 1800, 220, 1.2, 0.02, 0.10, 0.50); bassHit(sfxG, t + 0.05, 48, 0.6, 0.40); },
       slide()  { if (!ok()) return; noiseSweep(sfxG, ac.currentTime, 700, 380, 1.0, 0.03, 0.07, 0.30); },
@@ -352,6 +372,13 @@
   // Drives the weapon glow radius + rekindled windows now; music layers key off it in Batch 3.
   let lampLight = 0;
   const LAMP_PER_KILL = 0.12;
+  // Scoring (ROADMAP §3, Mike's spec): every action has a visible point value.
+  // Distance 10/m · CLEAN 100 · HEAVY 250 · PERFECT 500 · domino FELLED = 500 × chain position
+  // (2-chain = +1000, 3-chain = +1500 → +2500 cumulative...) · Light = flat 50 per pickup.
+  const PTS_CLEAN = 100, PTS_HEAVY = 250, PTS_PERFECT = 500, PTS_LIGHT = 50, PTS_PER_M = 10;
+  let killPts = 0, dominoBonus = 0;
+  let cleanK = 0, heavyK = 0, perfK = 0, dominoK = 0, bestChain = 0;
+  function runScore() { return Math.floor(distance) * PTS_PER_M + killPts + dominoBonus + feathers * PTS_LIGHT; }
 
   // ---------- Fixed-size pools (perf contract: no per-frame allocation) ----------
   const MAX_PARTICLES = 80;
@@ -440,6 +467,7 @@
     lampLight = 0; // the lamp starts cold every run (progression hooks may seed it later)
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
+    killPts = 0; dominoBonus = 0; cleanK = 0; heavyK = 0; perfK = 0; dominoK = 0; bestChain = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
     player.onGround = true; player.coyoteT = 0; player.jumpBufT = 0; player.jumpHeld = false;
     player.sliding = false; player.slideT = 0; player.dead = false; player.strikeFlash=0;
@@ -484,7 +512,7 @@
         gslot.active=true; gslot.alive=true; gslot.x=gx; gslot.y=y;
         gslot.patrolDir = Math.random()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
-        gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0;
+        gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; // stale chain on a reused slot would inflate the escalator
       }
     } else if (!first && gap === 0 && !lastRoofHadLow && distance > 220 && len > 110 && occRoll < 0.8) {
       // gap === 0: a hazard on the far side of a forced gap-jump would catch the player
@@ -587,24 +615,28 @@
       const tierDx = nearest.x - (trailFrom + player.w/2); // range at the moment of the press (pre-lunge)
       if (tierDx <= w.perfect) {          // PERFECT — staff shot: guard rockets across the screen, dominoes others
         nearest.fly = 2; nearest.vx = 16; nearest.vy = -1.2; nearest.spin = 0.5;
+        nearest.chain = 1; // domino chain starts here — each FELLED body escalates it
         feathers += 1;
+        killPts += PTS_PERFECT; perfK += 1;
         spawnBurst(nearest.x, nearest.y-16, 16, '#ffffff');
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
-        spawnMessage(nearest.x, nearest.y-44, 'PERFECT', 40);
+        spawnMessage(nearest.x, nearest.y-44, 'PERFECT +' + PTS_PERFECT, 40);
         Snd.kill(2);
         shake = 12;
         slowmoT = Math.max(slowmoT, 300); // brief dip so the launch reads
       } else if (tierDx <= w.mid) {       // MID — heavy blow: launched half a screen, tumbling
         nearest.fly = 1; nearest.vx = 7; nearest.vy = -2.6; nearest.spin = 0.28;
         spawnBurst(nearest.x, nearest.y-16, 12, '#f0a04a');
-        spawnMessage(nearest.x, nearest.y-42, 'HEAVY BLOW', 32);
+        killPts += PTS_HEAVY; heavyK += 1;
+        spawnMessage(nearest.x, nearest.y-42, 'HEAVY BLOW +' + PTS_HEAVY, 32);
         Snd.kill(1);
         shake = 9;
         slowmoT = Math.max(slowmoT, 200);
       } else {                            // FAR — clean kill
         nearest.fly = 0;
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
-        spawnMessage(nearest.x, nearest.y-40, 'CLEAN');
+        killPts += PTS_CLEAN; cleanK += 1;
+        spawnMessage(nearest.x, nearest.y-40, 'CLEAN +' + PTS_CLEAN);
         Snd.kill(0);
         shake = 6;
       }
@@ -631,6 +663,8 @@
   canvas.addEventListener('pointerdown', () => { if (state === 'dead') beginGame(); });
 
   function beginGame() {
+    clearTally();
+    tallyEl.innerHTML = ''; newBestEl.classList.remove('show'); statsLine.textContent = '';
     resetWorld();
     while (nextSpawnX < W + 500 && spawnSegment(false));
     state = 'playing';
@@ -708,9 +742,13 @@
               if (Math.abs(o.x - g.x) < 15 && Math.abs(o.y - g.y) < 24) {
                 o.alive = false; o.deathT = 1; o.fly = 1; o.vx = g.vx * 0.6; o.vy = -2.2; o.spin = 0.35;
                 feathers += 1;
+                g.chain = (g.chain || 1) + 1; // chain position 2, 3, ... — the jackpot escalator
+                const felledPts = 500 * g.chain;
+                dominoBonus += felledPts; dominoK += 1;
+                bestChain = Math.max(bestChain, g.chain);
                 spawnStream(o.x, o.y - 40, 6);
                 spawnBurst(o.x, o.y-16, 12, '#ffffff');
-                spawnMessage(o.x, o.y-42, 'FELLED', 32);
+                spawnMessage(o.x, o.y-42, 'FELLED +' + felledPts, 32);
                 Snd.domino(); // the sub-garnish moment
                 shake = Math.max(shake, 8);
                 slowmoT = Math.max(slowmoT, SLOWMO_MS); // the money shot — let the domino land in slow motion
@@ -759,7 +797,7 @@
       f.bob += 0.1;
       const dx = Math.abs(f.x - (player.x+player.w/2));
       const dy = Math.abs((f.y + Math.sin(f.bob)*4) - (player.y - 16));
-      if (dx < 16 && dy < 18) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); Snd.sparkle(); }
+      if (dx < 16 && dy < 18) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); spawnMessage(f.x, f.y-10, '+' + PTS_LIGHT, 20); Snd.sparkle(); }
     }
 
     // cloak: each point eases toward a spot behind/below the previous one; speed streams it back
@@ -812,7 +850,49 @@
     if (shake > 0) shake -= 0.5;
 
     distVal.textContent = Math.floor(distance) + 'm';
+    scoreVal.textContent = runScore();
     featherVal.textContent = feathers;
+  }
+
+  // End-of-run tally: line-item count-up (the retention beat) — rows reveal one by one with
+  // ticks, TOTAL counts up, NEW BEST stinger last. Timers cancelled if the player restarts early.
+  let tallyTimers = [];
+  function clearTally() { for (const t of tallyTimers) clearTimeout(t); tallyTimers = []; }
+  function showTally(finalScore, isBest) {
+    clearTally();
+    const rows = [
+      ['Distance ' + Math.floor(distance) + 'm', Math.floor(distance) * PTS_PER_M],
+      cleanK  ? ['Clean kills ×' + cleanK,  cleanK * PTS_CLEAN]   : null,
+      heavyK  ? ['Heavy blows ×' + heavyK,  heavyK * PTS_HEAVY]   : null,
+      perfK   ? ['Perfect ×' + perfK,       perfK * PTS_PERFECT]  : null,
+      dominoK ? ['Domino bonus ×' + dominoK, dominoBonus]         : null,
+      ['Light ×' + feathers, feathers * PTS_LIGHT],
+    ].filter(Boolean);
+    tallyEl.innerHTML = '';
+    newBestEl.classList.remove('show');
+    const els = rows.map(([label, pts]) => {
+      const d = document.createElement('div'); d.className = 'trow';
+      d.innerHTML = '<span>' + label + '</span><span class="pts">+' + pts + '</span>';
+      tallyEl.appendChild(d); return d;
+    });
+    const tot = document.createElement('div'); tot.className = 'trow total';
+    tot.innerHTML = '<span>TOTAL</span><span class="pts" id="totVal">0</span>';
+    tallyEl.appendChild(tot);
+    rows.forEach((r, i) => tallyTimers.push(setTimeout(() => { els[i].classList.add('show'); Snd.uiTick(i); }, 200 + i * 220)));
+    const totStart = 200 + rows.length * 220;
+    tallyTimers.push(setTimeout(() => {
+      tot.classList.add('show');
+      const STEPS = 14, totEl = document.getElementById('totVal');
+      for (let s = 1; s <= STEPS; s++) {
+        tallyTimers.push(setTimeout(() => {
+          totEl.textContent = Math.round(finalScore * s / STEPS);
+          Snd.uiTick(s);
+          if (s === STEPS && isBest) { newBestEl.classList.add('show'); Snd.newBest(); }
+        }, s * 55));
+      }
+    }, totStart));
+    statsLine.textContent = 'Kills ' + (cleanK + heavyK + perfK + dominoK) +
+      (bestChain > 1 ? ' · Best chain ' + bestChain : '');
   }
 
   function die(cause) {
@@ -822,13 +902,15 @@
     Snd.death(); // the claimed layers collapse back to embers (tick gates on state)
     shake = 10;
     CG.gameplayStop();
-    const finalScore = Math.floor(distance) + feathers*5;
-    if (finalScore > best) {
+    const finalScore = runScore();
+    const isBest = finalScore > best;
+    if (isBest) {
       best = finalScore;
       try { Save.get().setItem('rooftopSprintBest', String(best)); } catch(e){}
       CG.happytime();
     }
-    scoreLine.textContent = `Distance ${Math.floor(distance)}m  ·  Light ${feathers}  ·  Score ${finalScore}`;
+    scoreLine.textContent = '';
+    showTally(finalScore, isBest);
     bestEl.textContent = `Best score: ${best}`;
     document.querySelector('#overlay h1').textContent =
       cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT' : 'YOUR LAMP WENT OUT';

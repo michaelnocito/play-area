@@ -1,11 +1,23 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-02, Batch 3 shipped): Next = BATCH 4 — score/tally.** Read
-> `ROADMAP.md` FIRST (§3 has Mike's points spec: CLEAN 100 / HEAVY 250 / PERFECT 500 / domino
-> escalator + end-of-run count-up tally). Batches: B1 feel ✅ → B2 identity ✅ → B3 audio ✅ →
-> **B4 score/tally** → B5 economy + permanent progression (approved, spec §4, 2 sessions) →
-> B6 districts/content → B7 ship wave (regenerate stale `builds/` there; GM/GD keep
+> **⚡ RESUME HERE (2026-07-03, Batch 4 shipped): Next = BATCH 5 — economy + permanent
+> progression (2 sessions).** Read `ROADMAP.md` FIRST (§4 has the approved spec: Light wallet +
+> versioned save object, cosmetic shop, buff consumables, rewarded-ad hooks, interstitial
+> cooldown, Morning Oil / Lamp Arts / Wick & Flint progression w/ one-tap spend ON the tally
+> screen). Batches: B1 feel ✅ → B2 identity ✅ → B3 audio ✅ → B4 score/tally ✅ → **B5 economy**
+> → B6 districts/content → B7 ship wave (regenerate stale `builds/` there; GM/GD keep
 > GAMEID_PLACEHOLDER pending Mike's dashboards).
+>
+> **🏆 BATCH 4 (score & tally) DONE 2026-07-03:** points per §3 spec — CLEAN 100 / HEAVY 250 /
+> PERFECT 500 / domino FELLED = 500 × chain position (chain lives on the missile guard,
+> `g.chain`, reset on slot reuse) / distance 10/m / Light flat 50. `runScore()` = one source of
+> truth (HUD + death). HUD gained a top-center POINTS counter (mute button moved upper-right).
+> In-run popups: tier messages carry values, +50 on Light pickup. Death overlay now runs an
+> animated tally (`showTally`): rows reveal ~220ms apart w/ `Snd.uiTick`, TOTAL counts up in 14
+> steps, `Snd.newBest` stinger; `clearTally()` on restart. Best-score key unchanged — the ×10
+> scale means old bests fall on the first run, fine. **Harness note:** tally DOM needed
+> `appendChild`/`innerHTML` on element stubs + `clearTimeout` in the sandbox (added to
+> `tools/rs_playtest.js`); §6 unseeded-RNG gap flake showed once and re-ran clean twice.
 >
 > **🔊 BATCH 3 (light-reactive audio) DONE 2026-07-02:** procedural WebAudio `Snd` module, zero
 > assets. Every voice = §7 speaker-scaling layers (click 2–5kHz / mid / 2nd–4th-harmonic bass /

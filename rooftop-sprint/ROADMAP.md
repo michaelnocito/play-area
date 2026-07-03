@@ -64,16 +64,15 @@ The city's lights are going out; you are the Lamplighter, running the rooftops t
 **Now:** score = distance + feathers×5, shown only at death, formula invisible.
 **Standard:** every action has a visible point value; the tally screen is the retention beat.
 
-- [ ] 🔷 **Points system, tallied at end of run** (Mike's spec):
-  - CLEAN kill = 100 · HEAVY BLOW = 250 · PERFECT = 500 (set values, scaling with skill to perform)
-  - 🔷 **Domino = biggest boost**: each FELLED body = 500 × chain position (2-chain = +1000,
-    3-chain = +2500 cumulative...) — knocking over multiple enemies is the jackpot
-  - Distance = 10/m base so movement still matters
-  - Feathers = flat pickup value (also currency, see §4)
-- [ ] **End-of-run tally screen**: line-item count-up (Distance → Kills by tier → Domino bonus →
-  Feathers → TOTAL) with tick sounds and a NEW BEST stinger — the Rune Dash/arcade pattern
-- [ ] In-run floating point popups (+500 PERFECT) so values are learned during play
-- [ ] Per-run stats line (kills by tier, best chain) under the tally
+- [x] 🔷 **Points system (B4, 2026-07-02)**: CLEAN 100 · HEAVY 250 · PERFECT 500 · domino FELLED
+  = 500 × chain position (2-chain +1000, 3-chain +2500 cumulative — the jackpot) · distance 10/m
+  · Light = flat 50 (also currency, see §4). `runScore()` = single source of truth; per-tier
+  counters + bestChain tracked per run
+- [x] **End-of-run tally screen (B4)**: line-item reveal with uiTick sounds (Distance → kills by
+  tier → Domino bonus → Light), TOTAL count-up, NEW BEST stinger; timers cancelled on early restart
+- [x] In-run floating point popups (B4): tier messages now carry values (PERFECT +500,
+  FELLED +1500...), +50 on Light pickup
+- [x] Per-run stats line (B4): total kills + best chain under the tally
 
 ## 4. Economy: currency + shop 🔷
 
@@ -183,7 +182,8 @@ slow-mo. Strong.
 - [ ] ⚡ Trim menu overlay text to one line + control glyphs; move lore flavor to a subtitle
 - [ ] In-world teach beats: first gap shows JUMP prompt, first guard shows STRIKE (partial: guard
   teach exists), first low obstacle shows SLIDE
-- [ ] HUD: current run POINTS counter (top center) once §3 lands; feather count doubles as currency
+- [x] HUD: current run POINTS counter top center (B4); Light count doubles as currency (mute
+  button moved to upper-right below the Light counter)
 - [ ] Death → replay in ≤1 input (canvas tap ✓, add Space/Enter hint line)
 - [ ] Pause (P / tap HUD) with resume countdown — CG QA checks this
 
