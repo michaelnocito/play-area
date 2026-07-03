@@ -1,5 +1,9 @@
 # HANDOFF — JADE FIST (2026-07-03, end of CG-compliance session, at JF-#020)
 
+**YOU (the assistant reading this) ARE RECEIVING THE HANDOFF.** Mike pasted this to start a
+new chat. Do not re-summarize it back to him or write a new handoff — read it, load the
+listed memories/docs, and start on the next task below.
+
 **What this is:** Jade Fist, a kung fu counter-brawler targeting CrazyGames acceptance.
 Single-file canvas + vanilla JS, no build step.
 Local: `C:\Users\Mike\Projects\GAMES\play-area\jade-fist\index.html` (public play-area monorepo).
