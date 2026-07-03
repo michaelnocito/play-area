@@ -1,7 +1,25 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-03, B5.1 + B5-UX shipped): Next = B5 SESSION 2 — economy
-> finishers.**
+> **⚡ RESUME HERE (2026-07-03, RS-CAMPAIGN + RS-PROG shipped — the game now has an ENDING):
+> Next = B-VARIETY** (daily trial, district-gate boons w/ FLAME rank gate, Night Shift
+> modifiers, archer/feint-warden/brazier reads, whiff recovery, chunk library — the gap
+> report's ⑰⑱⑲㉕-㉙ items in `ROOFTOP_SPRINT_ROADMAP.md`, status block at top). Then B-ECON
+> (buff consumables, rewarded ads + adblock, cosmetic shop) → B7 ship wave.
+>
+> **🏰 RS-CAMPAIGN + RS-PROG (19 of the 30 gap-report items) DONE 2026-07-03:** 6 named
+> districts (rest→pressure→gate arcs, mood tints, banners), 3-hit Warden Captains at every
+> gate (stagger/break/fell, hp pips, skip = respawn ahead), THE GREAT BEACON ending (+100
+> first-clear, `save.campaignDone`) unlocking **Night Shift** endless; menu = lamp map w/
+> tap-to-checkpoint (`save.district`), 3-line first-boot story, death identity ("Felled in
+> LANTERN ROW"), next-gate HUD, speed plateau 6.6. Progression now changes play: Lamp Arts
+> T2 = PERFECT stun flash, T3 = wider domino chains; Wick T3 = Second Flame revive (once/run,
+> gap-safe); **Light Burst** auto-verb (lampLight ≥ 0.5 absorbs a guard/low death for half
+> the lamp; unlock = 2 districts relit OR EMBER rank); rank gates real (BEACON = early Night
+> Shift); per-tier shop descriptions. **§6 ROOT-CAUSED + FIXED:** seeded suite exposed it —
+> a full-hold jump overflies a min-length roof into a second gap at speed; `lastSegHadGap`
+> anti-streak = never two gapped segments in a row. Suite green on default + all previously
+> failing seeds; bots WIN the campaign ('beacon' in the death causes = a clear, not a bug).
+> Low-hazard check now respects graceT (bursts/revives carry through the band).
 >
 > **🎛 B5-UX (7-item CG-compliance pass) DONE 2026-07-03:** ① menu trimmed to one line + glyphs
 > ② device-adaptive prompts (`isTouch` pointer-coarse; touch zones hidden on desktop, controls

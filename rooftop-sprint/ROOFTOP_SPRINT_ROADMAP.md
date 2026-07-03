@@ -25,12 +25,25 @@ The city's lights are going out; you are the Lamplighter, running the rooftops t
 
 ---
 
-## 🕯 GAME_BIBLE GAP REPORT (2026-07-03) — 30 identified changes, NOT yet built
+## 🕯 GAME_BIBLE GAP REPORT (2026-07-03) — 30 changes; ✅ 19 BUILT same day (RS-CAMPAIGN + RS-PROG, HEAD `98dd8b3`)
 
-Critical test today FAILS on all five questions (4th-run reason = "score", nothing changes
-between runs, ranks = paint, no ending, pitch = a mechanic). Part 1 compliance is largely done
-post-B5-UX; the gap is Part 2. Numbered list mirrors the design chat 2026-07-03; 🔁 = already
-elsewhere in this roadmap, promoted/reframed here.
+**BUILT:** ①-⑩ campaign spine (6 districts w/ rest/pressure arcs + mood tints, 3-hit Warden
+Captains at every gate w/ skip-respawn, Great Beacon ending + first-clear bonus + Night Shift
+endless unlock, menu checkpoint map, death identity, speed plateau, district-1 gentle intro) ·
+⑪ stun flash + wider dominoes · ⑫ Light Burst (lamp ≥ half auto-absorbs a guard/low death for
+0.5 light; unlocked by 2 districts relit OR EMBER rank) · ⑬ rank gates (EMBER → Light Burst
+alt-path, BEACON → early Night Shift; FLAME reserved for the boon slot ⑰) · ⑭ Second Flame
+revive (once/run, any death; a gap death sets you down on the next roof) · ⑲(half) gap
+anti-streak — **this ROOT-CAUSED §6**: at speed, a full-hold jump overflies a min-length roof
+into a second gap; never two gapped segments in a row now · ⑳ gauntlet pairs · ㉖-㉙ story /
+map / goal-gradient / ending. Suite green on default + all previously-failing seeds; bots WIN
+the campaign (beacon deaths in the summary = clears).
+
+**STILL OPEN:** ⑮ buff consumables · ⑯ daily trial · ⑰ district-gate boons (FLAME gate) ·
+⑱ Night Shift modifiers · ⑲(half) chunk library · ㉑-㉕ new reads (archer / feint warden /
+braziers / per-enemy tells / whiff recovery) · ㉚ rewarded ads + adblock path · cosmetic shop.
+
+Original 30-item list (🔁 = was already elsewhere in this roadmap):
 
 **A. Something to beat (Law 1 — biggest gap):** ①campaign spine: run = journey to relight the
 Great Beacon ②🔁finite ~6-district sequence (banner/palette/hazards/density — upgrades §2
@@ -55,8 +68,8 @@ map (districts as lit/unlit lamps, next named) ㉘goal-gradient HUD/tally ("next
 **G. Compliance leftovers (Parts 1/4):** ㉚🔁rewarded ads w/ real value + adblock-safe path
 (revive at Captain, double-Light on tally; never gating).
 
-Suggested re-batching: B5.2 economy finishers (⑪⑭⑮㉚) → B6 becomes CAMPAIGN batch (①-⑩, ㉖-㉙,
-2 sessions) → B6.5 variety batch (⑯-㉕) → B7 ship wave. Await Mike's priority call.
+Re-batched after the same-day build: **NEXT = B-VARIETY (⑯⑰⑱㉑㉒㉓㉔㉕ + chunk library)** →
+**B-ECON (⑮㉚ + cosmetic shop)** → B7 ship wave.
 
 ## 1. Core loop & mechanics
 
