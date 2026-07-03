@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JADE FIST — cover generator (JF-#019)</title>
+<style>
+  body{background:#14181f;color:#e8dcc0;font-family:Georgia,serif;text-align:center;margin:0;padding:20px}
+  canvas{max-width:90vw;height:auto;border:1px solid #333}
+  button{font:bold 18px Georgia;background:#7ce8a8;border:0;padding:12px 28px;margin:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<p>CrazyGames cover, 2048×1152 (16:9). Click to download the PNG.</p>
+<canvas id="c" width="2048" height="1152"></canvas><br>
+<button id="dl">Download jade-fist-cover.png</button>
+<script>
+'use strict';
+const cx = document.getElementById('c').getContext('2d');
+const W = 2048, H = 1152;
+// sky
+const g = cx.createLinearGradient(0, 0, 0, H);
+g.addColorStop(0, '#0b1020'); g.addColorStop(0.7, '#131a26'); g.addColorStop(1, '#0e1218');
+cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+// moon
+cx.fillStyle = 'rgba(232,226,204,0.08)'; cx.beginPath(); cx.arc(1660, 220, 200, 0, 7); cx.fill();
+cx.fillStyle = '#e8e2cc'; cx.beginPath(); cx.arc(1660, 220, 110, 0, 7); cx.fill();
+// pagodas
+cx.fillStyle = 'rgba(8,11,17,0.9)';
+for (let i = 0; i < 4; i++){
+  const bx = 120 + i * 500, bw = 260, by = 620 - (i % 2) * 90;
+  cx.fillRect(bx, by, bw, 600);
+  for (let r = 0; r < 3; r++){
+    const rw = bw + 100 - r * 30, ry = by - r * 95;
+    cx.beginPath();
+    cx.moveTo(bx + bw/2 - rw/2 - 26, ry);
+    cx.quadraticCurveTo(bx + bw/2, ry - 76, bx + bw/2 + rw/2 + 26, ry);
+    cx.closePath(); cx.fill();
+  }
+}
+// lanterns
+for (let i = 0; i < 7; i++){
+  const lx = 150 + i * 300, ly = 300 + (i % 3) * 40;
+  cx.strokeStyle = 'rgba(120,100,80,0.5)'; cx.lineWidth = 4;
+  cx.beginPath(); cx.moveTo(lx, 0); cx.lineTo(lx, ly - 30); cx.stroke();
+  cx.fillStyle = 'rgba(240,150,90,0.18)'; cx.beginPath(); cx.arc(lx, ly, 60, 0, 7); cx.fill();
+  cx.fillStyle = 'rgba(240,150,90,0.9)'; cx.beginPath(); cx.ellipse(lx, ly, 22, 30, 0, 0, 7); cx.fill();
+}
+// petals
+cx.fillStyle = 'rgba(232,168,184,0.6)';
+for (let i = 0; i < 26; i++){
+  cx.save(); cx.translate((i * 379) % W, (i * 211) % H); cx.rotate(i);
+  cx.beginPath(); cx.ellipse(0, 0, 10, 5, 0, 0, 7); cx.fill(); cx.restore();
+}
+// ground
+cx.fillStyle = '#1a1f26'; cx.fillRect(0, 940, W, H - 940);
+// fighter (hero, big, mid-counter) + felled foe flying
+function fighter(x, y, face, col, sash, sz, punch, rot){
+  cx.save(); cx.translate(x, y); if (rot) cx.rotate(rot); cx.scale(face * sz, sz);
+  cx.strokeStyle = col; cx.fillStyle = col; cx.lineWidth = 5; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(0, -34); cx.lineTo(-14, 0); cx.moveTo(0, -34); cx.lineTo(16, -4); cx.stroke();
+  cx.beginPath(); cx.moveTo(-13, -34); cx.lineTo(13, -34); cx.lineTo(8, -70); cx.lineTo(-8, -70); cx.closePath(); cx.fill();
+  cx.strokeStyle = sash; cx.lineWidth = 4;
+  cx.beginPath(); cx.moveTo(-11, -46); cx.lineTo(11, -50); cx.stroke();
+  cx.fillStyle = col; cx.beginPath(); cx.arc(0, -82, 10, 0, 7); cx.fill();
+  cx.strokeStyle = sash; cx.lineWidth = 3;
+  cx.beginPath(); cx.moveTo(-8, -84); cx.quadraticCurveTo(-20, -81, -26, -78); cx.stroke();
+  cx.strokeStyle = col; cx.lineWidth = 5;
+  cx.beginPath(); cx.moveTo(-6, -64); cx.lineTo(-16, -52); cx.stroke();
+  const ext = punch > 0 ? 30 + punch * 3 : 14;
+  cx.beginPath(); cx.moveTo(6, -64); cx.lineTo(6 + ext, -60 - (punch > 0 ? 4 : -6)); cx.stroke();
+  if (punch > 8){
+    cx.fillStyle = 'rgba(232,220,192,0.9)';
+    cx.beginPath(); cx.arc(6 + ext + 6, -62, 12, 0, 7); cx.fill();
+  }
+  cx.restore();
+}
+fighter(760, 950, 1, '#e8dcc0', '#3fae7c', 5.4, 12, 0);
+fighter(1420, 800, -1, '#e8c76a', '#7a4040', 4.6, 0, 0.7);
+// counter aura
+cx.fillStyle = 'rgba(255,74,74,0.22)';
+cx.beginPath(); cx.arc(1420, 700, 190, 0, 7); cx.fill();
+// title
+cx.textAlign = 'center';
+cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 60, W, 240);
+cx.fillStyle = '#7ce8a8'; cx.font = 'bold 190px Georgia';
+cx.fillText('JADE FIST', W/2, 240);
+cx.fillStyle = '#e8dcc0'; cx.font = 'italic 54px Georgia';
+cx.fillText('counter. throw. reclaim the jade.', W/2, 340);
+document.getElementById('dl').onclick = () => {
+  const a = document.createElement('a');
+  a.download = 'jade-fist-cover.png';
+  a.href = document.getElementById('c').toDataURL('image/png');
+  a.click();
+};
+</script>
+</body>
+</html>

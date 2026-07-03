@@ -163,3 +163,8 @@ wind streaks, Legend jade motes. Drawn in drawWorld so they freeze with pause.
 **JF-#018 menu demo loop (Batch F)**: the two static instruction lines replaced by a looping
 240-frame visual demo (approach → red-flash windup w/ aura → counter throw w/ spin-out) using
 the real fighter() renderer at 0.72 scale, phase captions above. CG visual-first onboarding.
+
+**JF-#019 submission package (Batch G)**: `thumbnail.html` = self-contained 2048x1152 cover
+generator (night city + hero counter scene + title, one-click PNG download);
+`JADE_FIST_SUBMISSION.md` = listing copy, PEGI 12 rationale, Progress Save toggle reminder,
+tech checklist (all A-F items ticked), manual QA list (144Hz/mobile/adblock/campaign/CG preview).
