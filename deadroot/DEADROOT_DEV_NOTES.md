@@ -94,6 +94,12 @@ starter corpses weren't on wave 1's spawn side. Fixes:
   the last path it's denied ("KEEP A PATH OPEN"). Buds block tiles, burn like other
   towers, count for first-mutate onboarding.
 
+## DR-#007 — Wave 1-3 pacing ease (2026-07-03, Mike playtest)
+Opening was overwhelming before the player could build/acclimate. Wave 1: 6 scavs @1.4s
+→ 4 @3.0s (a readable trickle, still pressure). Wave 2: 9 @1.1 → 7 @1.8. Wave 3: 8 @1.0
+→ 8 @1.3, sweepers 5s → 6s apart. Waves 4+ untouched — the ramp starts once the player
+knows the loop.
+
 ## Backlog / next
 - DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
 - Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).
