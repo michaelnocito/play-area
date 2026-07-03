@@ -141,8 +141,36 @@ explosion), drench strips 15% armor.
 - BLIGHT cloud stores coat intensity in cl.coat field; cloud loop uses Math.max to not
   downgrade intensity from overlapping clouds.
 
+## DR-#010 — Category A: feel & juice (2026-07-03)
+
+### Hit-stop (freeze frame on big kills)
+Boss kill = 4-frame freeze; Butcher kill = 3 frames; THERMOBARIC explosion = 3 frames.
+Implemented in frame(): when hitStop>0, decrement and call draw() only — update() skipped.
+Simulation stays deterministic; no clock drift.
+
+### bigBurst (big-moment particles)
+New bigBurst(x,y,col,n): particles with speed 80–280 (vs 30–120 for burst), lifetime 0.7–1.2s,
+rendered at 7px squares (vs 3px). Alpha fades slower (×1.4 vs ×2.5). Used on Boss (32+18
+two-tone particles), Butcher (24), and THERMOBARIC (two bigBurst calls).
+
+### Wave-clear slow-mo
+After every wave repelled: slowMoT=0.45s, timeScale=0.15. acc increments at 15% speed for
+0.45 real seconds, then snaps back. Gives a breath/punctuation beat between waves. Does not
+affect perfNow (animations still run at normal speed).
+
+### Screen-edge red pulse
+edgePulseT=1.0 on every Hive hit; decays at 2.5/s in frame() (gone in ~0.4s). Rendered as
+a radial gradient from transparent center to rgba(210,40,40) at edges. Additionally: while
+mode is play/prep and HP < 30%, a persistent breathing pulse (sin wave, 0–0.18 alpha) keeps
+the edges red. Flash and persistent pulse take the max so they don't conflict.
+
+### Bass drone
+Persistent sawtooth OscillatorNode at 55Hz. Lazily created on first updateDrone() call once
+AudioContext is ready. Gain = 0 above 60% HP; rises linearly to 0.12 at 0 HP (setTargetAtTime
+with 0.8s time constant for smooth interpolation). Stops on gameOver/victory via stopDrone().
+Silent when muted (gain target = 0). Recreates itself on next run via lazy init.
+
 ## Backlog / next
-- Mike playtest pass: tier-2 cost tuning, daily mod balance, CORRODE trigger frequency.
-- Rewarded ad hook (e.g. revive Hive at 25% HP once/run, or double DNA on tally).
-- Category A: hit-stop/screen flash on big kills, layered audio polish.
-- Category C: rewarded ads, mobile QA on live URL, SDK verify before submission.
+- Mike playtest pass on DR-#010 juice: hit-stop timing feel, drone audibility, edge pulse intensity.
+- Category C (do before submission): rewarded ad SECOND WIND hook, SDK verify, mobile QA,
+  corpse rot/Sweeper sanitize first-time tooltip.
