@@ -194,6 +194,9 @@ const CG = {
   gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
   gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
   happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
+  // JF-#026: CG leaderboards are INVITE-ONLY (one board/game, weekly seasons).
+  // Local Hall of Legends ships now; when invited, wire the score submit here.
+  submitScore(s){},
   interstitial(){ try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {
     adStarted(){}, adFinished(){}, adError(){},
   }); }catch(e){} },
@@ -220,14 +223,15 @@ CG.init(() => { CG.loadingStart(); CG.loadingStop(); });
 const SAVE_KEY = 'jf_save_v1';
 let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
              kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0,
-             cos: { own: [1,0,0,0,0], wear: 0 } };
+             cos: { own: [1,0,0,0,0], wear: 0 }, hall: [[],[],[],[],[]] };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && s.up) save = {
     jade: s.jade | 0, up: Object.assign(save.up, s.up),
     kills: s.kills | 0, ach: s.ach || {}, day: s.day || '', streak: s.streak | 0,
     dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0,
-    cos: (s.cos && s.cos.own) ? { own: s.cos.own, wear: s.cos.wear | 0 } : save.cos
+    cos: (s.cos && s.cos.own) ? { own: s.cos.own, wear: s.cos.wear | 0 } : save.cos,
+    hall: Array.isArray(s.hall) && s.hall.length === 5 ? s.hall : save.hall
   };
 } catch (e) {}
 // JF-#023: cosmetic shop — robe dyes, a pure jade sink. Cosmetics only: no
@@ -498,6 +502,7 @@ let tallyDone = false;                // all tally lines revealed (drawn at leas
 let adT = 0, ranOnce = false, rewardUsed = false, adRect = null;
 const TOUCH = matchMedia('(pointer:coarse)').matches;
 let tallyStep = 0, tallyT = 0, newBest = false;
+let hallRank = 0;                     // JF-#026: rank earned by the last run (0 = none)
 let msg = null, msgT = 0;
 
 const P = { x: W/2, y: 420, face: 1, punchT: 0, punchSide: 1, stance: 0 };
@@ -816,6 +821,17 @@ function endRun(victory){
   if (victory && sel === save.dist && save.dist < DISTRICTS.length - 1){
     save.dist++;                               // the next district opens
     sel = save.dist;
+  }
+  // JF-#026: Hall of Legends — per-district top 5 (local; CG board when invited)
+  hallRank = 0;
+  if (!BOT){
+    const H = save.hall[fought];
+    H.push({ s: score, w: wave });
+    H.sort((a, b) => b.s - a.s);
+    if (H.length > 5) H.length = 5;
+    const r = H.findIndex(h => h.s === score && h.w === wave);
+    if (r >= 0) hallRank = r + 1;
+    CG.submitScore(score);
   }
   persist();                                   // every run banks progress
   // JF-#012: reclaiming the jade on the ROOFTOP plays the ending first
@@ -1452,6 +1468,19 @@ function draw(){
     cx.font = '14px Georgia'; cx.fillStyle = omenOn ? '#c8a8e8' : '#8a94a6';
     cx.fillText('boon: ' + OM.b, W - 24, 118);
     cx.fillText('curse: ' + OM.c, W - 24, 138);
+    // JF-#026: Hall of Legends — selected district's top 3 (right, under the omen)
+    {
+      const H = save.hall[sel];
+      if (H && H.length){
+        cx.textAlign = 'right'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
+        cx.fillText('HALL OF LEGENDS — ' + DISTRICTS[sel].name, W - 24, 172);
+        cx.font = '14px Georgia';
+        H.slice(0, 3).forEach((h, i) => {
+          cx.fillStyle = i === 0 ? '#e8c76a' : '#8a94a6';
+          cx.fillText('#' + (i + 1) + '  ' + h.s + '  · wave ' + h.w, W - 24, 192 + i * 18);
+        });
+      }
+    }
     cx.textAlign = 'center';
     // JF-#010: techniques known + the next one your belt will teach
     const known = TECH.filter(T => mb >= T.belt).map(T => T.name).join(' · ');
@@ -1476,6 +1505,8 @@ function draw(){
       lines.splice(1, 0, ['Next', DISTRICTS[fought + 1].name]);
     if (promoted >= 0) lines.splice(4, 0,
       ['Promoted', BELTS[promoted].name + ' BELT']);
+    if (hallRank) lines.splice(lines.length - 1, 0,
+      ['Hall of Legends', '#' + hallRank + ' · ' + DISTRICTS[fought].name]);   // JF-#026
     const shown = Math.min(lines.length, Math.floor(tallyT / 24));
     if (shown > tallyStep){ tallyStep = shown; Snd.tick(); if (shown === lines.length && newBest) Snd.best(); }
     cx.font = '20px Georgia';

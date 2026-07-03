@@ -23,7 +23,7 @@ $gmAdapter = @'
 let sdkLive = false;
 const CG = {
   init(cb){ sdkLive = !!window.sdk; cb && cb(); },
-  loadingStart(){}, loadingStop(){}, gameplayStart(){}, gameplayStop(){}, happytime(){},
+  loadingStart(){}, loadingStop(){}, gameplayStart(){}, gameplayStop(){}, happytime(){}, submitScore(s){},
   interstitial(){ try{ if (window.sdk && window.sdk.showBanner) window.sdk.showBanner(); }catch(e){} },
   rewarded(onReward){
     try{ if (window.sdk && window.sdk.showRewardedBanner){
@@ -55,7 +55,7 @@ $gdAdapter = @'
 let sdkLive = false;
 const CG = {
   init(cb){ sdkLive = !!window.gdsdk; cb && cb(); },
-  loadingStart(){}, loadingStop(){}, gameplayStart(){}, gameplayStop(){}, happytime(){},
+  loadingStart(){}, loadingStop(){}, gameplayStart(){}, gameplayStop(){}, happytime(){}, submitScore(s){},
   interstitial(){ try{ if (window.gdsdk && window.gdsdk.showAd) window.gdsdk.showAd().catch(function(){}); }catch(e){} },
   rewarded(onReward){
     try{ if (window.gdsdk && window.gdsdk.showAd){
