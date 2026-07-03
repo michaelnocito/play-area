@@ -116,8 +116,9 @@
   #mapLine .lamp.reach { color: #e8c878; opacity: 0.85; cursor: pointer; }
   #mapLine .lamp.sel { text-decoration: underline; text-underline-offset: 4px; }
   #mapNext { font-size: 10px; letter-spacing: 1px; opacity: 0.7; margin-top: 3px; }
-  #nightBtn.hiddenBtn { display: none; }
-  #nightBtn { background: #3a3145; color: #e8c878; margin-top: 8px; }
+  #nightBtn.hiddenBtn, #dailyBtn.hiddenBtn { display: none; }
+  #nightBtn, #dailyBtn { background: #3a3145; color: #e8c878; margin-top: 8px; }
+  #dailyBtn { margin-left: 8px; }
 </style>
 </head>
 <body>
@@ -144,6 +145,7 @@
     <div id="best"></div>
     <button id="startBtn">Begin the Run</button>
     <button id="nightBtn" class="hiddenBtn">Night Shift &mdash; Endless</button>
+    <button id="dailyBtn" class="hiddenBtn">Daily Trial</button>
   </div>
   <div id="muteBtn">&#128266;</div>
   <div id="pauseBtn">&#10074;&#10074;</div>
@@ -156,6 +158,18 @@
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
+  // All world randomness flows through rnd() so the Daily Trial can seed it (mulberry32);
+  // normal runs rebind it to Math.random. Audio noise keeps true randomness — its init timing
+  // (first user gesture) must never desync a seeded layout.
+  let rnd = Math.random;
+  function mulberry32(a) {
+    return function() {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
   const W = canvas.width, H = canvas.height;
   const GROUND_Y = H - 48;
 
@@ -485,9 +499,9 @@
     { name: 'THE HIGH TERRACES',   tint: 'rgba(90,150,230,0.08)',   guardP: 0.62, hazP: 0.85 },
     { name: 'BEACON RISE',         tint: 'rgba(255,100,90,0.09)',   guardP: 0.68, hazP: 0.88 },
   ];
-  function districtIdx(d) { // campaign clamps at the last; Night Shift cycles forever
+  function districtIdx(d) { // campaign clamps at the last; Night Shift / Daily cycle forever
     const i = Math.floor(d / DISTRICT_LEN);
-    return mode === 'endless' ? i % DISTRICTS.length : Math.min(DISTRICTS.length - 1, i);
+    return mode === 'campaign' ? Math.min(DISTRICTS.length - 1, i) : i % DISTRICTS.length;
   }
   let mode = 'campaign';   // campaign | endless (Night Shift, unlocked by finishing)
   let startDistrict = 0;   // checkpoint chosen on the menu (≤ save.district)
@@ -498,6 +512,32 @@
   function showBanner(text, frames) { bannerText = text; bannerT = frames; }
   const PTS_CAPTAIN = 1000;
   let captainK = 0;        // captains felled this run
+
+  // ---------- Run variety (Law 5: every run differs) ----------
+  // Boons: a 1-of-2 choice at each district gate (FLAME rank+). JUMP picks left, STRIKE right.
+  const BOONS = [
+    { n: 'GLEAMING MOTES', d: 'Light pickups count double',        k: 'motes2' },
+    { n: 'KINDLED LAMP',   d: 'Lamp +0.3 now (Light Burst fuel)',  k: 'kindle' },
+    { n: 'QUIET ROOFS',    d: 'Fewer wardens ahead',               k: 'quiet'  },
+    { n: 'LONG LOOK',      d: 'Strike marker shows farther out',   k: 'look'   },
+  ];
+  let boonA = 0, boonB = 1, boonFlags = {};
+  function applyBoon(i) {
+    const b = BOONS[i === 0 ? boonA : boonB];
+    boonFlags[b.k] = true;
+    if (b.k === 'kindle') lampLight = Math.min(1, lampLight + 0.3);
+    showBanner('BOON — ' + b.n, 120);
+    Snd.newBest();
+    state = 'playing';
+  }
+  // Night modifiers: rotate daily in Night Shift; the Daily Trial pins one to its seed.
+  const NIGHT_MODS = [
+    { n: 'DARK NIGHT',   d: 'the lamp burns down — keep striking' },
+    { n: 'DOUBLE WATCH', d: 'half again as many wardens' },
+    { n: 'BRIGHT MOTES', d: 'pickups are worth double' },
+    { n: 'LOW CEILING',  d: 'more hanging hazards' },
+  ];
+  let modIdx = -1; // -1 = no modifier (campaign)
 
   // Scoring (ROADMAP §3, Mike's spec): every action has a visible point value.
   // Distance 10/m · CLEAN 100 · HEAVY 250 · PERFECT 500 · domino FELLED = 500 × chain position
@@ -514,7 +554,7 @@
     for(const p of particles){ if(!p.active){ p.active=true;p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.color=color; return; } }
   }
   function spawnBurst(x,y,n,color){
-    for(let i=0;i<n;i++) spawnParticle(x,y,(Math.random()-0.5)*3.2,(Math.random()-1.2)*3.2,18+Math.random()*12,color);
+    for(let i=0;i<n;i++) spawnParticle(x,y,(rnd()-0.5)*3.2,(rnd()-1.2)*3.2,18+rnd()*12,color);
   }
 
   const MAX_MESSAGES = 6;
@@ -525,8 +565,17 @@
 
   const MAX_SEGMENTS = 14; // spawn window ÷ min roof length can hit ~11 live segments — 10 exhausted the pool and punched holes in the world
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0}));
-  const MAX_GUARDS = 10;
+  const MAX_GUARDS = 12;
   const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit)
+  // feint wardens block behind a raised shield (read: wait for the opening);
+  // archers hold far roofs and fire deflectable arrows (read: timed strike, or slide/leap)
+  // Shield up 60 / open 90 of a 150-frame cycle: in an auto-runner you can't stop and wait, so
+  // steel X = leap over him, gold diamond = strike. Both answers always live on the same button set.
+  function shieldUp(g) { return g.feint && (g.shT % 150) < 60; }
+  const MAX_ARROWS = 4;
+  const arrows = Array.from({length: MAX_ARROWS}, () => ({active:false,x:0,y:0,vx:0}));
+  const MAX_BRAZIERS = 6; // dark braziers: strike to rekindle — the strike verb used on the world
+  const braziers = Array.from({length: MAX_BRAZIERS}, () => ({active:false,lit:false,x:0,y:0}));
   const MAX_FEATHERS = 14;
   const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0}));
   const MAX_LOWOBS = 8; // low hazards: slide under the hanging band, or clear the whole thing with a full leap
@@ -536,7 +585,7 @@
   const streams = Array.from({length: MAX_STREAMS}, () => ({active:false,x:0,y:0,vx:0,vy:0}));
   function spawnStream(x,y,n){
     let spawned = 0;
-    for(const s of streams){ if(!s.active){ s.active=true;s.x=x+(Math.random()-0.5)*8;s.y=y+(Math.random()-0.5)*10;s.vx=0;s.vy=-1-Math.random(); if(++spawned>=n) break; } }
+    for(const s of streams){ if(!s.active){ s.active=true;s.x=x+(rnd()-0.5)*8;s.y=y+(rnd()-0.5)*10;s.vx=0;s.vy=-1-rnd(); if(++spawned>=n) break; } }
   }
   const MAX_BIRDS = 5;
   const birds = Array.from({length: MAX_BIRDS}, () => ({active:false,perched:true,x:0,y:0,vx:0,vy:0,flap:0}));
@@ -566,7 +615,7 @@
   // Staff reach grows with run speed so the reaction window stays humanly possible (~300ms)
   // at any pace — at base range 36px and 4px/frame closing the window was only ~80ms.
   function strikeRangeX() { return 42 + speed * 14; }
-  function alertRangeX() { return 60 + speed * 25; } // marker heads-up before the windows open
+  function alertRangeX() { return (60 + speed * 25) * (boonFlags.look ? 1.5 : 1); } // marker heads-up (LONG LOOK boon widens it)
   // Timing windows (defined in TIME via closing speed, so they feel identical at any pace):
   // PERFECT = last ~7 frames before contact, MID = ~9 frames before that, FAR = rest of the reach.
   function strikeWindows() {
@@ -574,6 +623,7 @@
     return { perfect: GUARD_HIT_DX + closing * 7, mid: GUARD_HIT_DX + closing * 16 };
   }
   let graceT = 0;        // brief invulnerability after a lunge-kill so chained guards can't cheap-kill
+  let strikeCd = 0;      // whiff recovery (Law 6): a swing into air costs a beat — spam can't win
   let taughtGuard = false, taughtGap = false, taughtSlide = false;
   let deathCause = '';   // 'gap' | 'guard' | 'low' — picks the death-screen tip (and feeds the bot harness)
   let tutSlowT = 0;      // real ms — tutorial slow-time so teach prompts can be read (see loop)
@@ -594,6 +644,9 @@
     for(const m of messages) m.active=false;
     for(const b of birds) b.active=false;
     for(const st of streams) st.active=false;
+    for(const a of arrows) a.active=false;
+    for(const bz of braziers) bz.active=false;
+    boonFlags = {}; strikeCd = 0;
     lampLight = 0; // the lamp starts cold every run (progression hooks may seed it later)
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
@@ -612,24 +665,24 @@
     if (!first) {
       for(const s of segments){ if(s.active && s.x2===lastX2){ lastY = s.y; } }
     }
-    const gapRoll = Math.random();
+    const gapRoll = rnd();
     // Single-jump rule: a full-hold jump gives ~39 frames of air even onto a +20 step-up, so cap
     // gap width at speed×26 frames of travel — late presses and step-ups still clear (re-simmed
     // with tools/rs_playtest.js after the double-jump removal).
     // Anti-streak (§6 root cause, seeded-suite repro 2026-07-03): never two gapped segments in a
     // row — at high speed a full-hold jump can overfly a minimum-length roof entirely and land in
     // a second gap with no time to press again. One roof of recovery between gaps, always.
-    let gap = first || lastSegHadGap ? 0 : (gapRoll < 0.32 ? Math.min(34 + Math.random()*26 + Math.min(distance/40, 26), speed * 26) : 0);
+    let gap = first || lastSegHadGap ? 0 : (gapRoll < 0.32 ? Math.min(34 + rnd()*26 + Math.min(distance/40, 26), speed * 26) : 0);
     lastSegHadGap = gap > 0;
     let y = lastY;
     if (gap > 0) {
-      const lvl = Math.random();
+      const lvl = rnd();
       if (lvl < 0.4) y = Math.max(GROUND_Y - 34, lastY - 20);
       else if (lvl < 0.7) y = Math.min(GROUND_Y, lastY + 20);
     }
     y = Math.max(GROUND_Y - 40, Math.min(GROUND_Y, y));
     const x1 = lastX2 + gap;
-    const len = first ? 260 : 110 + Math.random()*130;
+    const len = first ? 260 : 110 + rnd()*130;
     const x2 = x1 + len;
     const slot = segments.find(s => !s.active);
     if (!slot) return false; // pool exhausted — NEVER advance nextSpawnX past a roof that doesn't exist
@@ -644,8 +697,11 @@
     const dPos = ((dMid % DISTRICT_LEN) + DISTRICT_LEN) % DISTRICT_LEN;
     const restZone = dPos < (dI === 0 && mode === 'campaign' && distanceSeed < DISTRICT_LEN ? 150 : 40);
     const pressure = dPos > 110 && dPos < 190;
-    const guardP = DISTRICTS[dI].guardP * (pressure ? 1.5 : 1);
-    const hazP = DISTRICTS[dI].hazP;
+    let guardP = DISTRICTS[dI].guardP * (pressure ? 1.5 : 1);
+    let hazP = DISTRICTS[dI].hazP;
+    if (boonFlags.quiet) guardP *= 0.65;                    // QUIET ROOFS boon
+    if (modIdx === 1) guardP *= 1.4;                        // DOUBLE WATCH night
+    if (modIdx === 3) { hazP *= 1.3; guardP *= 0.85; }      // LOW CEILING night
 
     // Warden Captain at each district gate: placed on the roof that spans the boundary
     // (slides to the next roof if the boundary fell in a gap)
@@ -658,6 +714,7 @@
         cslot.patrolDir=-1; cslot.patrolMin=capX-1; cslot.patrolMax=capX+1;
         cslot.alerted=false; cslot.deathT=0; cslot.fly=0; cslot.vx=0; cslot.vy=0; cslot.spin=0; cslot.chain=0; cslot.stunT=0;
         cslot.cap=true; cslot.hp=3; cslot.capD=Math.round(nextCaptainD / DISTRICT_LEN) - 1;
+        cslot.feint=false; cslot.archer=false; cslot.shT=0; cslot.bowT=0;
         nextCaptainD += DISTRICT_LEN;
         placedCap = true;
       }
@@ -665,21 +722,28 @@
 
     // One occupant per roof — a guard OR a low hazard, never both (a guard in strike range would
     // steal the context button right when the player needs it to slide). Captains own their roof.
-    const occRoll = Math.random();
+    const occRoll = rnd();
     let placedLow = false;
     if (!first && !placedCap && !restZone && len > 90 && occRoll < guardP) {
-      const gx = x1 + len * (0.4 + Math.random()*0.35);
+      const gx = x1 + len * (0.4 + rnd()*0.35);
       const gslot = guards.find(g => !g.active);
       if (gslot) {
         gslot.active=true; gslot.alive=true; gslot.x=gx; gslot.y=y;
-        gslot.patrolDir = Math.random()<0.5?1:-1;
+        gslot.patrolDir = rnd()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
         gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1; gslot.stunT=0;
-        if (pressure && len > 150 && Math.random() < 0.5) { // gauntlet pair — feeds domino jackpots
+        // enemy variants (Law 7: new reads, same buttons) — feints from district 2, archers from 3
+        const vRoll = rnd();
+        gslot.feint = dI >= 1 && vRoll < 0.14;
+        gslot.archer = !gslot.feint && dI >= 2 && vRoll >= 0.14 && vRoll < 0.28;
+        gslot.shT = (rnd() * 150) | 0; gslot.bowT = 90;
+        if (gslot.archer) { gslot.patrolMin = gslot.patrolMax = gx; gslot.patrolDir = -1; } // archers hold their spot, facing you
+        if (!gslot.archer && !gslot.feint && pressure && len > 150 && rnd() < 0.5) { // gauntlet pair — feeds domino jackpots
           const g2 = guards.find(g => !g.active);
           if (g2) {
             Object.assign(g2, { active:true, alive:true, x:gx+34, y, patrolDir:gslot.patrolDir,
-              patrolMin:x1+16, patrolMax:x2-16, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0, cap:false, hp:1, stunT:0 });
+              patrolMin:x1+16, patrolMax:x2-16, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
+              cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0 });
           }
         }
       }
@@ -687,26 +751,36 @@
       // gap === 0: a hazard on the far side of a forced gap-jump would catch the player
       // mid-arc where sliding is impossible — low hazards only appear on contiguous roofs
       const oslot = lowObs.find(o => !o.active);
-      const ow = 24 + Math.random()*14;
-      const ox = x1 + len*(0.35 + Math.random()*0.3) - ow/2;
+      const ow = 24 + rnd()*14;
+      const ox = x1 + len*(0.35 + rnd()*0.3) - ow/2;
       // A full-hold gap jump lands up to ~42 frames of travel past the gap edge (it can overfly
       // a short roof entirely) — the bar needs to clear that arc plus reaction+slide room.
       if (oslot && ox - lastGapEndX > 46 * (speed + 0.6)) {
-        oslot.active = true; oslot.kind = (Math.random()*3)|0;
+        oslot.active = true; oslot.kind = (rnd()*3)|0;
         oslot.w = ow; oslot.x = ox; oslot.y = y;
         placedLow = true;
       }
     }
     lastRoofHadLow = placedLow;
-    if (!placedLow && Math.random() < 0.5) { // no feathers on hazard roofs — a high feather would bait a jump into the band
-      const fx = gap>0 ? lastX2+gap/2 : x1 + len*Math.random();
-      const fy = y - 36 - Math.random()*30;
+    if (!placedLow && rnd() < 0.5) { // no feathers on hazard roofs — a high feather would bait a jump into the band
+      const fx = gap>0 ? lastX2+gap/2 : x1 + len*rnd();
+      const fy = y - 36 - rnd()*30;
       const fslot = featherList.find(f => !f.active);
-      if (fslot) { fslot.active=true; fslot.taken=false; fslot.x=fx; fslot.y=fy; fslot.bob=Math.random()*Math.PI*2; }
+      if (fslot) { fslot.active=true; fslot.taken=false; fslot.x=fx; fslot.y=fy; fslot.bob=rnd()*Math.PI*2; }
     }
-    if (!first && Math.random() < 0.3) { // perched bird on the roof edge — flees as you close in
+    if (gap > 40 && rnd() < 0.4) { // mote arc over a wide gap — the jump line, drawn in light
+      for (let i = 0; i < 3; i++) {
+        const fs = featherList.find(f => !f.active);
+        if (fs) { fs.active=true; fs.taken=false; fs.x=lastX2 + gap*(0.25+i*0.25); fs.y=y - 52 + Math.abs(i-1)*10; fs.bob=i; }
+      }
+    }
+    if (!first && !placedCap && !placedLow && len > 100 && rnd() < 0.18) { // dark brazier to rekindle
+      const bz = braziers.find(b => !b.active);
+      if (bz) { bz.active=true; bz.lit=false; bz.x=x1 + len*(0.55 + rnd()*0.3); bz.y=y; }
+    }
+    if (!first && rnd() < 0.3) { // perched bird on the roof edge — flees as you close in
       const bslot = birds.find(b => !b.active);
-      if (bslot) { bslot.active=true; bslot.perched=true; bslot.x=x1+8+Math.random()*(len-16); bslot.y=y; bslot.vx=0; bslot.vy=0; bslot.flap=Math.random()*6; }
+      if (bslot) { bslot.active=true; bslot.perched=true; bslot.x=x1+8+rnd()*(len-16); bslot.y=y; bslot.vx=0; bslot.vy=0; bslot.flap=rnd()*6; }
     }
     nextSpawnX = x2;
     return true;
@@ -734,6 +808,7 @@
     Snd.jump();
   }
   function jumpPress() {
+    if (state === 'boon') { applyBoon(0); return; }
     if (state !== 'playing') return;
     player.jumpHeld = true;
     if (player.onGround || player.coyoteT > 0) doJump();
@@ -749,7 +824,16 @@
   // Context action button (2-button philosophy): a guard in staff reach always wins the press;
   // otherwise a low hazard coming up means slide; otherwise the staff just whiffs.
   function tryAction() {
+    if (state === 'boon') { applyBoon(1); return; }
     if (state !== 'playing') return;
+    if (strikeCd > 0) { // recovering from a whiff — no swing, but a slide is a duck, and ducking must never be locked out
+      const px = player.x + player.w/2;
+      for (const o of lowObs) {
+        if (!o.active) continue;
+        if (o.x + o.w > px - 6 && o.x - px < 10 + speed*12) { startSlide(); return; }
+      }
+      return;
+    }
     let nearest = null, nearestDist = Infinity;
     for (const g of guards) {
       if (!g.active || !g.alive) continue;
@@ -761,15 +845,56 @@
     }
     if (!nearest) {
       const px = player.x + player.w/2;
+      // deflect an incoming arrow — the same button, a precision read
+      for (const a of arrows) {
+        if (!a.active || a.vx > 0) continue;
+        const adx = a.x - px;
+        if (adx > -4 && adx < strikeRangeX() && Math.abs(a.y - (player.y - 18)) < 26) {
+          a.vx = Math.abs(a.vx) + 6; // sent back the way it came
+          player.strikeFlash = 8;
+          killPts += 250;
+          spawnMessage(a.x, a.y - 16, 'DEFLECTED +250', 30);
+          spawnBurst(a.x, a.y, 8, '#ffffff');
+          graceT = Math.max(graceT, 8); shake = 6;
+          Snd.kill(1);
+          return;
+        }
+      }
       for (const o of lowObs) {
         if (!o.active) continue;
         // trigger window is capped so the 32-frame slide always outlasts the hazard:
         // 32×speed ≥ trigger + w + player margin holds at every speed obstacles spawn at
         if (o.x + o.w > px - 6 && o.x - px < 10 + speed*12) { startSlide(); return; }
       }
+      let guardNear = false; // a brazier never steals the press when a warden is closing in
+      for (const g of guards) {
+        if (g.active && g.alive && g.x - px > -14 && g.x - px < alertRangeX()) { guardNear = true; break; }
+      }
+      for (const bz of braziers) { // rekindle a dark brazier — striking the world itself
+        if (guardNear || !bz.active || bz.lit) continue;
+        const bdx = bz.x - px;
+        if (bdx > -10 && bdx < strikeRangeX()) {
+          bz.lit = true;
+          player.strikeFlash = 8;
+          killPts += 50;
+          spawnStream(bz.x, bz.y - 20, 3);
+          spawnMessage(bz.x, bz.y - 40, 'REKINDLED +50', 26);
+          spawnBurst(bz.x, bz.y - 16, 8, '#ffbe6e');
+          Snd.sparkle(); Snd.swing();
+          return;
+        }
+      }
     }
     player.strikeFlash = 8;
     Snd.swing();
+    if (!nearest) { strikeCd = player.onGround ? 24 : 10; return; } // whiff recovery (a mid-air flail costs less)
+    if (nearest && !nearest.cap && shieldUp(nearest)) { // feint warden: the shield blocks everything — wait for the opening
+      strikeCd = 26;
+      spawnMessage(nearest.x, nearest.y - 48, 'BLOCKED', 24);
+      spawnBurst(nearest.x + 8, nearest.y - 22, 6, '#8fb4d8');
+      shake = 4;
+      return;
+    }
     if (nearest && nearest.cap) {
       // Warden Captain: three strikes — stagger, break, fell. No lunge-through; he holds his gate.
       graceT = 16;
@@ -793,6 +918,12 @@
         if (nearest.capD === DISTRICTS.length - 1) winAt = drawT + 80; // the beacon moment breathes, then the ending
       }
       CG.happytime();
+      // FLAME rank gates the boon choice at every gate (except the Beacon itself)
+      if (rankIdx(save.kills) >= 2 && winAt < 0) {
+        boonA = (rnd() * BOONS.length) | 0;
+        boonB = (boonA + 1 + ((rnd() * (BOONS.length - 1)) | 0)) % BOONS.length;
+        state = 'boon';
+      }
       return;
     }
     if (nearest) {
@@ -868,7 +999,7 @@
     if (e.code === 'KeyM' && !e.repeat) { Snd.resume(); Snd.toggleMute(); syncMuteBtn(); }
     if (e.code === 'KeyP' && !e.repeat) { togglePause(); }
     if ((state === 'dead' || state === 'won') && tallyDone && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) { buyTrack(+e.code.slice(-1) - 1); return; }
-    if (e.code === 'Enter' && state !== 'playing' && state !== 'paused' && state !== 'resuming') { beginGame(); }
+    if (e.code === 'Enter' && state !== 'playing' && state !== 'paused' && state !== 'resuming' && state !== 'boon') { beginGame(); }
   });
   window.addEventListener('keyup', (e) => {
     if (JUMP_KEYS.includes(e.code)) jumpRelease();
@@ -883,6 +1014,8 @@
   pauseBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); togglePause(); });
   startBtn.addEventListener('click', () => { mode = 'campaign'; beginGame(); });
   nightBtn.addEventListener('click', () => { mode = 'endless'; startDistrict = 0; beginGame(); });
+  const dailyBtn = document.getElementById('dailyBtn');
+  dailyBtn.addEventListener('click', () => { mode = 'daily'; startDistrict = 0; beginGame(); });
   canvas.addEventListener('pointerdown', () => {
     if (state === 'dead' || state === 'won') beginGame();
     else if (state === 'paused') resumeGame();
@@ -900,9 +1033,22 @@
     tallyEl.innerHTML = ''; newBestEl.classList.remove('show'); statsLine.textContent = '';
     walletLine.textContent = ''; walletLine.classList.remove('show');
     shopEl.innerHTML = ''; firstBuyEl.classList.remove('show');
+    // mode setup: Daily Trial = seeded layout + date-pinned modifier (everyone runs the same
+    // night); Night Shift = rotating daily modifier; campaign = clean
+    if (mode === 'daily') {
+      const ds = new Date();
+      const dayKey = ds.getFullYear() * 10000 + (ds.getMonth() + 1) * 100 + ds.getDate();
+      rnd = mulberry32(dayKey);
+      modIdx = dayKey % NIGHT_MODS.length;
+    } else {
+      rnd = Math.random;
+      modIdx = mode === 'endless' ? new Date().getDate() % NIGHT_MODS.length : -1;
+    }
     // campaign checkpoint (chosen on the menu map) + Wick & Flint head start — seed BEFORE the
-    // world spawns so district population and captain gates line up with the starting distance
-    distanceSeed = (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + Math.min(save.wick, 2) * 50; // wick T3 is the revive, not more meters
+    // world spawns so district population and captain gates line up with the starting distance.
+    // The Daily Trial ignores both: everyone runs the identical route.
+    distanceSeed = mode === 'daily' ? 0
+      : (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + Math.min(save.wick, 2) * 50; // wick T3 is the revive, not more meters
     resetWorld();
     distance = distanceSeed;
     curD = districtIdx(distance);
@@ -922,6 +1068,7 @@
     }
     while (nextSpawnX < W + 500 && spawnSegment(false));
     state = 'playing';
+    if (modIdx >= 0) showBanner((mode === 'daily' ? 'DAILY TRIAL — ' : 'NIGHT SHIFT — ') + NIGHT_MODS[modIdx].n, 180);
     if (dailyX2) spawnMessage(player.x + 200, 78, 'FIRST RUN TODAY — ALL LIGHT ×2', 200);
     overlay.classList.add('hidden');
     CG.gameplayStart();
@@ -1028,10 +1175,22 @@
       }
       if (g.stunT > 0) { // stunned wardens stand dazed — free pass or free kill
         g.stunT--;
-        if ((g.stunT & 7) === 0) spawnParticle(g.x, g.y - 40, (Math.random()-0.5)*0.8, -0.5, 10, '#ffffff');
+        if ((g.stunT & 7) === 0) spawnParticle(g.x, g.y - 40, (rnd()-0.5)*0.8, -0.5, 10, '#ffffff');
       } else {
         g.x += g.patrolDir * 0.55;
         if (g.x < g.patrolMin || g.x > g.patrolMax) g.patrolDir *= -1;
+      }
+      if (g.feint) g.shT++; // shield cycle: up 80 frames, open 70 — the read is patience
+      if (g.archer) { // archer: holds his roof, looses a deflectable arrow when you close in
+        const range = g.x - (player.x + player.w/2);
+        if (range > 50 && range < 300) {
+          g.bowT--;
+          if (g.bowT <= 0) {
+            const slot = arrows.find(a => !a.active);
+            if (slot) { slot.active = true; slot.x = g.x - 10; slot.y = g.y - 22; slot.vx = -(speed + 2.6); Snd.swing(); }
+            g.bowT = 150;
+          }
+        }
       }
 
       // No stealth here — guards never "see" you. The marker is player-facing: it lights up
@@ -1047,6 +1206,34 @@
       if (graceT <= 0 && g.stunT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die('guard'); return; }
     }
     if (graceT > 0) graceT--;
+    if (strikeCd > 0) strikeCd--;
+
+    // arrows: fly flat; slide under, leap over, or deflect with a timed strike
+    for (const a of arrows) {
+      if (!a.active) continue;
+      a.x += a.vx;
+      if (a.vx > 0) { // deflected — it kills what loosed it (or whoever's in the way)
+        for (const g of guards) {
+          if (!g.active || !g.alive || g.cap) continue;
+          if (Math.abs(g.x - a.x) < 10 && Math.abs(g.y - 22 - a.y) < 26) {
+            g.alive = false; g.deathT = 1; g.fly = 1; g.vx = 4; g.vy = -2.4; g.spin = 0.3;
+            feathers += 1; killPts += PTS_CLEAN; cleanK += 1;
+            spawnStream(g.x, g.y - 40, 6);
+            spawnBurst(g.x, g.y - 16, 10, '#e8c878');
+            spawnMessage(g.x, g.y - 40, 'RETURNED TO SENDER +' + PTS_CLEAN, 30);
+            Snd.kill(0);
+            a.active = false;
+            break;
+          }
+        }
+      } else if (graceT <= 0) {
+        const pdx = Math.abs(a.x - (player.x + player.w/2));
+        if (pdx < 7 && !player.sliding && Math.abs(a.y - (player.y - 18)) < 9) { die('arrow'); return; }
+      }
+      if (a.x < player.x - 220 || a.x > player.x + W + 120) a.active = false;
+    }
+    for (const bz of braziers) if (bz.active && bz.x < player.x - 260) bz.active = false;
+    if (modIdx === 0) lampLight = Math.max(0, lampLight - 0.0004); // DARK NIGHT: the lamp burns down
 
     // Low hazards: the danger is the hanging band [y-46, y-17] — slide fits under it,
     // a full-hold leap from a neighboring roof sails clean over it.
@@ -1070,7 +1257,12 @@
       f.bob += 0.1;
       const dx = Math.abs(f.x - (player.x+player.w/2));
       const dy = Math.abs((f.y + Math.sin(f.bob)*4) - (player.y - 16));
-      if (dx < 16 + magnetR && dy < 18 + magnetR) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); spawnMessage(f.x, f.y-10, '+' + PTS_LIGHT, 20); Snd.sparkle(); }
+      if (dx < 16 + magnetR && dy < 18 + magnetR) {
+        f.taken = true; f.active = false;
+        const gain = (boonFlags.motes2 || modIdx === 2) ? 2 : 1; // GLEAMING MOTES boon / BRIGHT MOTES night
+        feathers += gain;
+        spawnBurst(f.x, f.y, 6, '#f1e3c6'); spawnMessage(f.x, f.y-10, '+' + PTS_LIGHT * gain, 20); Snd.sparkle();
+      }
     }
 
     // cloak: each point eases toward a spot behind/below the previous one; speed streams it back
@@ -1087,7 +1279,7 @@
     for (const b of birds) {
       if (!b.active) continue;
       if (b.perched) {
-        if (b.x - player.x < 88) { b.perched = false; b.vx = 1.4 + Math.random()*0.8; b.vy = -1.9; Snd.bird(); } // flee!
+        if (b.x - player.x < 88) { b.perched = false; b.vx = 1.4 + rnd()*0.8; b.vy = -1.9; Snd.bird(); } // flee!
       } else {
         b.x += b.vx + speed*0.3; b.y += b.vy; b.vy -= 0.015; b.flap += 0.45;
         if (b.y < -30) b.active = false;
@@ -1108,13 +1300,13 @@
         st.active = false;
         lampLight = Math.min(1, lampLight + LAMP_PER_KILL / 6); // 6 motes per kill
         Snd.chime(Math.round(lampLight * 8)); // the lamp feeds in — pitch rises with the light
-        spawnParticle(lampX, lampY, (Math.random()-0.5)*1.2, -0.8, 12, '#ffe9b0');
+        spawnParticle(lampX, lampY, (rnd()-0.5)*1.2, -0.8, 12, '#ffe9b0');
       } else if (st.x < player.x - 200) st.active = false;
     }
 
     if (++emberT >= 9) { // ambient embers drifting up off the city
       emberT = 0;
-      spawnParticle(player.x + Math.random()*W, GROUND_Y + 10 - Math.random()*90, -0.3 - Math.random()*0.4, -0.25 - Math.random()*0.3, 26, 'rgba(255,170,90,0.5)');
+      spawnParticle(player.x + rnd()*W, GROUND_Y + 10 - rnd()*90, -0.3 - rnd()*0.4, -0.25 - rnd()*0.3, 26, 'rgba(255,170,90,0.5)');
     }
 
     for (const p of particles) { if (!p.active) continue; p.x+=p.vx; p.y+=p.vy; p.vy+=0.12; p.life--; if (p.life<=0) p.active=false; }
@@ -1174,8 +1366,9 @@
       ? 'THE GREAT BEACON BURNS · start: ' + DISTRICTS[startDistrict].name
       : 'next: ' + DISTRICTS[save.district].name + (startDistrict !== save.district ? ' · start: ' + DISTRICTS[startDistrict].name : '');
     mapLine.appendChild(n);
-    // Night Shift opens by finishing the campaign — or at BEACON rank (Law 3: ranks gate things)
+    // Rank gates (Law 3): EMBER opens the Daily Trial; BEACON (or a campaign clear) opens Night Shift
     nightBtn.classList.toggle('hiddenBtn', !(save.campaignDone || rankIdx(save.kills) >= 3));
+    dailyBtn.classList.toggle('hiddenBtn', rankIdx(save.kills) < 1);
   }
   // One-tap spend on the tally screen (Rogue Legacy flow rule: death → tally → tap → running again)
   function buyTrack(i) {
@@ -1337,13 +1530,23 @@
     scoreLine.textContent = '';
     showTally(finalScore, isBest, lightEarned);
     bestEl.textContent = `Best score: ${best}`;
+    // daily trial keeps its own ladder — one seeded route per day
+    if (mode === 'daily') {
+      const dk = new Date().toDateString();
+      if (save.dailyDate !== dk) { save.dailyDate = dk; save.dailyBest = 0; }
+      if (finalScore > (save.dailyBest || 0)) { save.dailyBest = finalScore; scoreLine.textContent = '☀ DAILY BEST'; }
+      else scoreLine.textContent = 'Daily best: ' + save.dailyBest;
+      saveNow();
+    }
     document.querySelector('#overlay h1').textContent =
-      cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT' : 'YOUR LAMP WENT OUT';
+      cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT'
+      : cause === 'arrow' ? 'SHOT DOWN' : 'YOUR LAMP WENT OUT';
     // death identity (Law 2): where you fell is part of the story
     document.querySelectorAll('#overlay p')[0].textContent =
       'Felled in ' + DISTRICTS[curD].name + '. ' +
       (cause === 'gap' ? 'The dark streets swallowed you. Hold JUMP longer to leap higher and farther.'
       : cause === 'low' ? 'Slide under low hazards — tap STRIKE when no warden is near.'
+      : cause === 'arrow' ? 'An archer found you. Deflect the arrow with a timed STRIKE — or slide beneath it.'
       : 'A warden reached you first. Strike when the gold mark shows — or leap clear and keep your light.');
     // replay in ≤1 input, and say so (CG §9)
     const p1 = document.querySelectorAll('#overlay p')[1];
@@ -1462,7 +1665,23 @@
       ctx.fillStyle = '#ffe9b0';
       for (let i = 0; i < g.hp; i++) { ctx.beginPath(); ctx.arc(-8 + i*8, -60, 2.4, 0, Math.PI*2); ctx.fill(); }
     }
-    if (g.alerted && g.alive) { // marker color = current timing window: gold FAR → orange MID → white PERFECT
+    if (g.archer && g.alive) { // bow + red glint just before the arrow looses (the tell)
+      ctx.strokeStyle = '#4a3826'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(g.patrolDir >= 0 ? 10 : -10, -22, 7, -1.2, 1.2); ctx.stroke();
+      if (g.bowT < 28) { ctx.fillStyle = '#ff5a4a'; ctx.beginPath(); ctx.arc(0, -46, 2.2 + (28 - g.bowT) * 0.06, 0, Math.PI*2); ctx.fill(); }
+    }
+    if (g.feint && g.alive && shieldUp(g)) { // raised shield plank — steel-blue = not now
+      ctx.fillStyle = '#8fb4d8';
+      ctx.fillRect(g.patrolDir >= 0 ? -13 : 10, -30, 3, 18);
+    }
+    if (g.alerted && g.alive && !g.cap && shieldUp(g)) { // feint marker: steel X, never gold
+      ctx.strokeStyle = '#8fb4d8'; ctx.lineWidth = 2;
+      const pu = 3 + Math.sin(player.runT*0.4)*1.5;
+      ctx.beginPath();
+      ctx.moveTo(-4, -48+pu); ctx.lineTo(4, -40+pu);
+      ctx.moveTo(4, -48+pu); ctx.lineTo(-4, -40+pu);
+      ctx.stroke();
+    } else if (g.alerted && g.alive) { // marker color = current timing window: gold FAR → orange MID → white PERFECT
       const w = strikeWindows();
       const dxNow = g.x - (player.x + player.w/2);
       const perfect = dxNow <= w.perfect, mid = !perfect && dxNow <= w.mid;
@@ -1627,10 +1846,31 @@
       ctx.drawImage(cloudImg, cx < -140 ? cx + W + 180 : cx, 22 + i*17, 150, 40);
     }
     let sx=0, sy=0;
-    if (shake > 0) { sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; }
+    if (shake > 0) { sx=(rnd()-0.5)*shake; sy=(rnd()-0.5)*shake; }
     ctx.save(); ctx.translate(sx, sy);
     drawSkyline(camX);
     drawSegments(camX);
+    for (const bz of braziers) { // dark braziers wait for the Lamplighter; lit ones burn
+      if (!bz.active) continue;
+      const bx = bz.x - camX;
+      if (bx < -20 || bx > W + 20) continue;
+      ctx.fillStyle = '#2a2333';
+      ctx.fillRect(bx - 1.5, bz.y - 12, 3, 12);
+      ctx.beginPath(); ctx.arc(bx, bz.y - 13, 5, Math.PI, 0); ctx.fill();
+      if (bz.lit) {
+        ctx.drawImage(glowImg, bx - 16, bz.y - 30, 32, 32);
+        ctx.fillStyle = '#ffbe6e'; ctx.fillRect(bx - 2, bz.y - 19, 4, 6);
+      } else {
+        ctx.fillStyle = 'rgba(241,227,198,0.25)'; ctx.fillRect(bx - 1, bz.y - 17, 2, 3); // cold wisp
+      }
+    }
+    for (const a of arrows) {
+      if (!a.active) continue;
+      const ax = a.x - camX;
+      ctx.strokeStyle = '#d8cdb0'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(ax, a.y); ctx.lineTo(ax + (a.vx > 0 ? -9 : 9), a.y); ctx.stroke();
+      ctx.fillStyle = '#f1e3c6'; ctx.fillRect(ax - 1.5, a.y - 1.5, 3, 3);
+    }
     for (const b of birds) drawBird(b, camX);
     for (const o of lowObs) drawLowOb(o, camX);
     for (const f of featherList) drawFeather(f, camX);
@@ -1652,6 +1892,19 @@
       ctx.shadowColor = 'rgba(255,190,110,0.8)'; ctx.shadowBlur = 14;
       ctx.fillText(bannerText, W/2, 62);
       ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    }
+    if (state === 'boon') { // 1-of-2 boon choice at the gate — JUMP left, STRIKE right
+      ctx.fillStyle = 'rgba(8,6,14,0.62)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#ffe9b0';
+      ctx.font = 'bold 15px Georgia'; ctx.fillText('CHOOSE A BOON', W/2, 74);
+      const opts = [[boonA, W*0.27, isTouch ? 'LEFT' : 'JUMP'], [boonB, W*0.73, isTouch ? 'RIGHT' : 'STRIKE']];
+      for (const [bi, cx, key] of opts) {
+        ctx.fillStyle = 'rgba(232,200,120,0.12)'; ctx.fillRect(cx - 92, 96, 184, 66);
+        ctx.strokeStyle = 'rgba(232,200,120,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(cx - 92, 96, 184, 66);
+        ctx.fillStyle = '#e8c878'; ctx.font = 'bold 11px Georgia'; ctx.fillText('[' + key + ']  ' + BOONS[bi].n, cx, 118);
+        ctx.fillStyle = '#f1e3c6'; ctx.font = '10px Georgia'; ctx.globalAlpha = 0.85;
+        ctx.fillText(BOONS[bi].d, cx, 140); ctx.globalAlpha = 1;
+      }
     }
     if (state === 'paused' || state === 'resuming') { // pause veil + countdown
       ctx.fillStyle = 'rgba(8,6,14,0.55)'; ctx.fillRect(0, 0, W, H);

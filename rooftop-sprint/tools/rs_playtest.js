@@ -26,7 +26,7 @@ const HOOK = `
   window.__g = {
     get state(){ return state; }, set state(v){ state = v; },
     get player(){ return player; }, get segments(){ return segments; }, get guards(){ return guards; },
-    get lowObs(){ return lowObs; }, get feathers(){ return feathers; },
+    get lowObs(){ return lowObs; }, get feathers(){ return feathers; }, get arrows(){ return arrows; },
     get distance(){ return distance; }, get speed(){ return speed; }, get deathCause(){ return deathCause; },
     update, draw, beginGame, jumpPress, jumpRelease, tryAction, segmentAt,
   };
@@ -86,6 +86,7 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
   const speedSamples = [];
 
   for (let f = 0; f < maxFrames; f++) {
+    if (g.state === 'boon') { g.tryAction(); g.draw(); continue; } // pick the right-hand boon and move on
     if (g.state !== 'playing') break;
     const px = p.x + p.w / 2;
     const spd = g.speed;
@@ -99,11 +100,16 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
       if (!next || next.x1 > seg.x2 + 2) gapAhead = seg.x2 - px;
       else if (next && next.y < seg.y - 8) gapAhead = seg.x2 - px; // step up also needs a jump
     }
-    let guardAhead = null;
+    let guardAhead = null, feintBlock = null;
     for (const gu of g.guards) {
       if (!gu.active || !gu.alive) continue;
       const dx = gu.x - px;
-      if (dx > -10 && dx < lookahead && (guardAhead === null || dx < guardAhead)) guardAhead = dx;
+      if (dx <= -10 || dx >= lookahead) continue;
+      if (gu.feint && (gu.shT % 150) < 60) { // shielded feint: the read is LEAP, not press
+        if (feintBlock === null || dx < feintBlock) feintBlock = dx;
+        continue;
+      }
+      if (guardAhead === null || dx < guardAhead) guardAhead = dx;
     }
     let obAhead = null;
     for (const o of g.lowObs) {
@@ -111,21 +117,46 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
       const dx = o.x - px;
       if (dx > -o.w && dx < lookahead && (obAhead === null || dx < obAhead)) obAhead = dx;
     }
+    let arrowAhead = null; // incoming archer arrows — deflect with a fast press
+    for (const a of g.arrows) {
+      if (!a.active || a.vx > 0) continue;
+      const dx = a.x - px;
+      if (dx > 0 && dx < 150 && (arrowAhead === null || dx < arrowAhead)) arrowAhead = dx;
+    }
 
     // ---- decide (with reaction delay) ----
     // jump timing anticipates the edge; reaction tier shifts how late the press lands
     if (gapAhead !== null && gapAhead < spd * (4 + reactionFrames) + 2 && pendingJump < 0 && p.onGround)
       pendingJump = f + reactionFrames;
+    if (feintBlock !== null && feintBlock < spd * (12 + reactionFrames) && pendingJump < 0 && p.onGround)
+      pendingJump = f + reactionFrames; // leap the shielded feint like a hazard (needs a full-arc lead, not a last-instant hop)
     if (guardAhead !== null && guardAhead < 36 + spd * 14 && pendingAction < 0)
       pendingAction = f + reactionFrames;
     // slide press: anticipated like gaps (obstacles are visible far ahead — reaction delay
     // models surprise, not a planned slide), lands inside the game's window (10 + speed*12)
     if (obAhead !== null && obAhead < 6 + spd * (10 + reactionFrames) && pendingAction < 0 && !p.sliding)
       pendingAction = f + reactionFrames;
+    if (arrowAhead !== null && arrowAhead < 30 + spd * 10 && pendingAction < 0)
+      pendingAction = f + Math.min(reactionFrames, 4); // reflex read — capped, even slow players flinch fast
 
     if (pendingJump >= 0 && f >= pendingJump) { g.jumpPress(); jumps++; pendingJump = -1; releaseAt = f + 20; } // full hold
     if (releaseAt >= 0 && f >= releaseAt) { g.jumpRelease(); releaseAt = -1; }
-    if (pendingAction >= 0 && f >= pendingAction) { g.tryAction(); actions++; pendingAction = -1; }
+    if (pendingAction >= 0 && f >= pendingAction) {
+      // whiff recovery punishes flails, so the bot only swings when something is really in reach
+      // (a strikeable guard, a deflectable arrow, or a hazard inside the slide window)
+      const reach = 42 + spd * 14;
+      let go = obAhead !== null && obAhead < 10 + spd * 12;
+      if (!go) for (const gu of g.guards) {
+        if (!gu.active || !gu.alive) continue;
+        const dx = gu.x - px, dy = Math.abs(gu.y - p.y);
+        if (dx > -14 && dx < reach && dy < 30 && !(gu.feint && (gu.shT % 150) < 60)) { go = true; break; }
+      }
+      if (!go) for (const a of g.arrows) {
+        if (a.active && a.vx < 0 && Math.abs(a.x - px) < reach && Math.abs(a.y - (p.y - 18)) < 26) { go = true; break; }
+      }
+      if (go) { g.tryAction(); actions++; pendingAction = -1; }
+      else if (f > pendingAction + 30) pendingAction = -1; // stale intent — drop it
+    }
 
     if (p.sliding && !wasSliding) slides++;
     wasSliding = p.sliding;
@@ -133,6 +164,12 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
 
     g.update();
     g.draw(); // ctx is a swallow-everything proxy, but this still smoke-tests the draw path for runtime errors
+    if (process.env.RS_DEBUG && g.state !== 'playing' && g.state !== 'boon') {
+      // death forensics: what was around the player when it ended
+      const near = g.guards.filter(x => x.active && Math.abs(x.x - p.x) < 120)
+        .map(x => ({ dx: (x.x - p.x) | 0, alive: x.alive, kind: x.cap ? 'cap' : x.feint ? 'feint' : x.archer ? 'archer' : 'guard', shT: x.shT, stunT: x.stunT }));
+      console.error('DEBUG death', g.deathCause, 'dist', g.distance | 0, 'py', p.y | 0, 'onG', p.onGround, 'near', JSON.stringify(near));
+    }
   }
   return {
     reactionFrames, dist: Math.floor(g.distance), feathers: g.feathers,
