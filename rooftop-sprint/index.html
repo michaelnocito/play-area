@@ -110,13 +110,21 @@
   #firstBuy { font-size: 10px; color: #ffe9b0; margin-top: 5px; opacity: 0; }
   #firstBuy.show { opacity: 0.9; animation: shopPulse 0.9s infinite; }
   #metaLine { font-size: 11px; opacity: 0.75; margin-top: 8px; color: #ffe9b0; }
+  #mapLine { margin-top: 10px; font-size: 15px; letter-spacing: 6px; }
+  #mapLine .lamp { cursor: default; opacity: 0.3; }
+  #mapLine .lamp.lit { color: #ffe9b0; opacity: 1; cursor: pointer; text-shadow: 0 0 8px rgba(255,233,176,0.7); }
+  #mapLine .lamp.reach { color: #e8c878; opacity: 0.85; cursor: pointer; }
+  #mapLine .lamp.sel { text-decoration: underline; text-underline-offset: 4px; }
+  #mapNext { font-size: 10px; letter-spacing: 1px; opacity: 0.7; margin-top: 3px; }
+  #nightBtn.hiddenBtn { display: none; }
+  #nightBtn { background: #3a3145; color: #e8c878; margin-top: 8px; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="game" width="480" height="270"></canvas>
   <div id="hud">
-    <div><div class="label">Distance</div><div class="value" id="distVal">0m</div></div>
+    <div><div class="label">Distance</div><div class="value" id="distVal">0m</div><div class="label" id="nextDist"></div></div>
     <div style="text-align:center"><div class="label">Points</div><div class="value" id="scoreVal">0</div></div>
     <div style="text-align:right"><div class="label">Light</div><div class="value" id="featherVal">0</div></div>
   </div>
@@ -131,9 +139,11 @@
     <div id="walletLine"></div>
     <div id="shop"></div>
     <div id="firstBuy">&#9670; your first training is affordable</div>
+    <div id="mapLine"></div>
     <div id="metaLine"></div>
     <div id="best"></div>
     <button id="startBtn">Begin the Run</button>
+    <button id="nightBtn" class="hiddenBtn">Night Shift &mdash; Endless</button>
   </div>
   <div id="muteBtn">&#128266;</div>
   <div id="pauseBtn">&#10074;&#10074;</div>
@@ -167,6 +177,9 @@
   const shopEl = document.getElementById('shop');
   const firstBuyEl = document.getElementById('firstBuy');
   const metaLine = document.getElementById('metaLine');
+  const mapLine = document.getElementById('mapLine');
+  const nightBtn = document.getElementById('nightBtn');
+  const nextDist = document.getElementById('nextDist');
 
   /* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
   // sdkLive = init() actually resolved (only true on the CrazyGames platform); every game/ad
@@ -209,7 +222,7 @@
      Guardrails (§4): upgrades compress the warm-up, never raise the ceiling; ×2 cost/tier;
      first purchase affordable in 1-2 runs; one-tap spend ON the tally screen. */
   const SAVE_KEY = 'rooftopSprintSave_v1';
-  let save = { light: 0, oil: 0, arts: 0, wick: 0, kills: 0, lastDay: '', streak: 0, miles: {} };
+  let save = { light: 0, oil: 0, arts: 0, wick: 0, kills: 0, lastDay: '', streak: 0, miles: {}, district: 0, campaignDone: false, seenStory: false };
   try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && typeof s === 'object') save = Object.assign(save, s); } catch(e){}
   function saveNow() {
     let str = '';
@@ -453,6 +466,32 @@
   // Drives the weapon glow radius + rekindled windows now; music layers key off it in Batch 3.
   let lampLight = 0;
   const LAMP_PER_KILL = 0.12;
+  // ---------- Campaign (GAME_BIBLE Law 1: something to beat) ----------
+  // The run is a journey: six named districts, a Warden Captain at each gate, the Great
+  // Beacon at the end. Endless ("Night Shift") is a post-game unlock, not the core game.
+  const DISTRICT_LEN = 250; // meters per district
+  const DISTRICTS = [
+    { name: 'THE OLD QUARTER',     tint: null,                      guardP: 0.38, hazP: 0.72 },
+    { name: 'LANTERN ROW',         tint: 'rgba(255,150,70,0.06)',   guardP: 0.46, hazP: 0.76 },
+    { name: 'THE MARKET SHAMBLES', tint: 'rgba(90,180,130,0.07)',   guardP: 0.52, hazP: 0.80 },
+    { name: 'TEMPLE STEPS',        tint: 'rgba(140,100,220,0.08)',  guardP: 0.56, hazP: 0.82 },
+    { name: 'THE HIGH TERRACES',   tint: 'rgba(90,150,230,0.08)',   guardP: 0.62, hazP: 0.85 },
+    { name: 'BEACON RISE',         tint: 'rgba(255,100,90,0.09)',   guardP: 0.68, hazP: 0.88 },
+  ];
+  function districtIdx(d) { // campaign clamps at the last; Night Shift cycles forever
+    const i = Math.floor(d / DISTRICT_LEN);
+    return mode === 'endless' ? i % DISTRICTS.length : Math.min(DISTRICTS.length - 1, i);
+  }
+  let mode = 'campaign';   // campaign | endless (Night Shift, unlocked by finishing)
+  let startDistrict = 0;   // checkpoint chosen on the menu (≤ save.district)
+  let distanceSeed = 0;    // distance at run start (checkpoint + Wick & Flint)
+  let curD = 0;            // district the player is in right now
+  let nextCaptainD = DISTRICT_LEN; // distance of the next district gate
+  let bannerText = '', bannerT = 0;
+  function showBanner(text, frames) { bannerText = text; bannerT = frames; }
+  const PTS_CAPTAIN = 1000;
+  let captainK = 0;        // captains felled this run
+
   // Scoring (ROADMAP §3, Mike's spec): every action has a visible point value.
   // Distance 10/m · CLEAN 100 · HEAVY 250 · PERFECT 500 · domino FELLED = 500 × chain position
   // (2-chain = +1000, 3-chain = +1500 → +2500 cumulative...) · Light = flat 50 per pickup.
@@ -535,6 +574,8 @@
   let nextSpawnX = 0;
   let lastRoofHadLow = false; // no low hazards on consecutive roofs — a slide ends with no time to start the next one
   let lastGapEndX = 0;        // landing edge of the most recent gap — hazards must sit beyond any jump-arc landing
+  let winAt = -1;             // beacon lit → short breath → ending screen
+  function distAtX(x) { return distanceSeed + (x - 80) / 10; } // world-x → run distance (m)
 
   function resetWorld() {
     for(const s of segments) s.active=false;
@@ -549,6 +590,7 @@
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
     killPts = 0; dominoBonus = 0; cleanK = 0; heavyK = 0; perfK = 0; dominoK = 0; bestChain = 0;
+    captainK = 0; bannerT = 0; curD = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
     player.onGround = true; player.coyoteT = 0; player.jumpBufT = 0; player.jumpHeld = false;
     player.sliding = false; player.slideT = 0; player.dead = false; player.strikeFlash=0;
@@ -582,20 +624,54 @@
     slot.active=true; slot.x1=x1; slot.x2=x2; slot.y=y;
     if (gap > 0) lastGapEndX = x1;
 
+    // District-driven population (Laws 2/6: rest → pressure → gate, not a monotone stream).
+    // rest = relief stretch after every gate (long gentle intro in district 1);
+    // pressure = mid-district gauntlet (denser guards, pairs on long roofs).
+    const dMid = distAtX(x1 + len / 2);
+    const dI = districtIdx(Math.max(0, dMid));
+    const dPos = ((dMid % DISTRICT_LEN) + DISTRICT_LEN) % DISTRICT_LEN;
+    const restZone = dPos < (dI === 0 && mode === 'campaign' && distanceSeed < DISTRICT_LEN ? 150 : 40);
+    const pressure = dPos > 110 && dPos < 190;
+    const guardP = DISTRICTS[dI].guardP * (pressure ? 1.5 : 1);
+    const hazP = DISTRICTS[dI].hazP;
+
+    // Warden Captain at each district gate: placed on the roof that spans the boundary
+    // (slides to the next roof if the boundary fell in a gap)
+    let placedCap = false;
+    if (!first && distAtX(x2 - 30) >= nextCaptainD) {
+      const capX = Math.min(x2 - 30, Math.max(x1 + 40, 80 + (nextCaptainD - distanceSeed) * 10));
+      const cslot = guards.find(g => !g.active);
+      if (cslot && capX <= x2 - 30) {
+        cslot.active=true; cslot.alive=true; cslot.x=capX; cslot.y=y;
+        cslot.patrolDir=-1; cslot.patrolMin=capX-1; cslot.patrolMax=capX+1;
+        cslot.alerted=false; cslot.deathT=0; cslot.fly=0; cslot.vx=0; cslot.vy=0; cslot.spin=0; cslot.chain=0;
+        cslot.cap=true; cslot.hp=3; cslot.capD=Math.round(nextCaptainD / DISTRICT_LEN) - 1;
+        nextCaptainD += DISTRICT_LEN;
+        placedCap = true;
+      }
+    }
+
     // One occupant per roof — a guard OR a low hazard, never both (a guard in strike range would
-    // steal the context button right when the player needs it to slide).
+    // steal the context button right when the player needs it to slide). Captains own their roof.
     const occRoll = Math.random();
     let placedLow = false;
-    if (!first && distance > 140 && len > 90 && occRoll < 0.5) {
+    if (!first && !placedCap && !restZone && len > 90 && occRoll < guardP) {
       const gx = x1 + len * (0.4 + Math.random()*0.35);
       const gslot = guards.find(g => !g.active);
       if (gslot) {
         gslot.active=true; gslot.alive=true; gslot.x=gx; gslot.y=y;
         gslot.patrolDir = Math.random()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
-        gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; // stale chain on a reused slot would inflate the escalator
+        gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1;
+        if (pressure && len > 150 && Math.random() < 0.5) { // gauntlet pair — feeds domino jackpots
+          const g2 = guards.find(g => !g.active);
+          if (g2) {
+            Object.assign(g2, { active:true, alive:true, x:gx+34, y, patrolDir:gslot.patrolDir,
+              patrolMin:x1+16, patrolMax:x2-16, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0, cap:false, hp:1 });
+          }
+        }
       }
-    } else if (!first && gap === 0 && !lastRoofHadLow && distance > 220 && len > 110 && occRoll < 0.8) {
+    } else if (!first && !placedCap && !restZone && gap === 0 && !lastRoofHadLow && len > 110 && occRoll < hazP) {
       // gap === 0: a hazard on the far side of a forced gap-jump would catch the player
       // mid-arc where sliding is impossible — low hazards only appear on contiguous roofs
       const oslot = lowObs.find(o => !o.active);
@@ -682,6 +758,31 @@
     }
     player.strikeFlash = 8;
     Snd.swing();
+    if (nearest && nearest.cap) {
+      // Warden Captain: three strikes — stagger, break, fell. No lunge-through; he holds his gate.
+      graceT = 16;
+      nearest.hp--;
+      if (nearest.hp > 0) {
+        nearest.x += 30 + speed * 6; // driven back toward the gate
+        spawnBurst(nearest.x, nearest.y-18, 10, '#f0a04a');
+        spawnMessage(nearest.x, nearest.y-56, nearest.hp === 2 ? 'STAGGERED' : 'GUARD BROKEN', 28);
+        Snd.kill(1); shake = 8; slowmoT = Math.max(slowmoT, 160);
+        return;
+      }
+      nearest.alive = false; nearest.deathT = 1; nearest.fly = 1; nearest.vx = 9; nearest.vy = -3; nearest.spin = 0.3;
+      killPts += PTS_CAPTAIN; captainK += 1; feathers += 3;
+      spawnStream(nearest.x, nearest.y - 44, 12);
+      spawnBurst(nearest.x, nearest.y-18, 18, '#ffffff');
+      spawnMessage(nearest.x, nearest.y-56, 'CAPTAIN FELLED +' + PTS_CAPTAIN, 40);
+      Snd.kill(2); Snd.domino(); shake = 13; slowmoT = Math.max(slowmoT, 500);
+      showBanner(DISTRICTS[nearest.capD % DISTRICTS.length].name + ' RELIT', 150);
+      if (mode === 'campaign') {
+        if (nearest.capD + 1 > save.district) { save.district = Math.min(DISTRICTS.length - 1, nearest.capD + 1); saveNow(); }
+        if (nearest.capD === DISTRICTS.length - 1) winAt = drawT + 80; // the beacon moment breathes, then the ending
+      }
+      CG.happytime();
+      return;
+    }
     if (nearest) {
       // Lunge-dash: blink through the target — turns each kill into forward momentum
       const trailFrom = player.x;
@@ -739,13 +840,13 @@
       e.preventDefault();
       if (e.repeat) return;
       // death → replay in ≤1 input: Space restarts (small delay so a held jump can't skip the tally)
-      if (e.code === 'Space' && state === 'dead' && drawT - deathAtT > 45) { beginGame(); return; }
+      if (e.code === 'Space' && (state === 'dead' || state === 'won') && drawT - deathAtT > 45) { beginGame(); return; }
       jumpPress();
     }
     if (e.code === 'KeyX' || e.code === 'KeyF') { e.preventDefault(); if (!e.repeat) tryAction(); }
     if (e.code === 'KeyM' && !e.repeat) { Snd.resume(); Snd.toggleMute(); syncMuteBtn(); }
     if (e.code === 'KeyP' && !e.repeat) { togglePause(); }
-    if (state === 'dead' && tallyDone && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) { buyTrack(+e.code.slice(-1) - 1); return; }
+    if ((state === 'dead' || state === 'won') && tallyDone && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) { buyTrack(+e.code.slice(-1) - 1); return; }
     if (e.code === 'Enter' && state !== 'playing' && state !== 'paused' && state !== 'resuming') { beginGame(); }
   });
   window.addEventListener('keyup', (e) => {
@@ -759,9 +860,10 @@
   muteBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); Snd.resume(); Snd.toggleMute(); syncMuteBtn(); });
   syncMuteBtn();
   pauseBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); togglePause(); });
-  startBtn.addEventListener('click', () => beginGame());
+  startBtn.addEventListener('click', () => { mode = 'campaign'; beginGame(); });
+  nightBtn.addEventListener('click', () => { mode = 'endless'; startDistrict = 0; beginGame(); });
   canvas.addEventListener('pointerdown', () => {
-    if (state === 'dead') beginGame();
+    if (state === 'dead' || state === 'won') beginGame();
     else if (state === 'paused') resumeGame();
   });
   // device-adaptive: hide touch zones on desktop, show touch wording on touch devices
@@ -777,10 +879,17 @@
     tallyEl.innerHTML = ''; newBestEl.classList.remove('show'); statsLine.textContent = '';
     walletLine.textContent = ''; walletLine.classList.remove('show');
     shopEl.innerHTML = ''; firstBuyEl.classList.remove('show');
+    // campaign checkpoint (chosen on the menu map) + Wick & Flint head start — seed BEFORE the
+    // world spawns so district population and captain gates line up with the starting distance
+    distanceSeed = (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + save.wick * 50;
     resetWorld();
+    distance = distanceSeed;
+    curD = districtIdx(distance);
+    nextCaptainD = (Math.floor(distance / DISTRICT_LEN) + 1) * DISTRICT_LEN;
+    winAt = -1;
+    if (!save.seenStory) { save.seenStory = true; saveNow(); }
     // permanent progression seeds (warm-up compression only — the ceiling is untouched):
     lampLight = Math.min(0.36, save.oil * 0.12);          // Morning Oil: lamp starts partly lit (music layers follow)
-    distance = save.wick * 50;                            // Wick & Flint: skip the boring open
     runRankShown = rankIdx(save.kills); mileLight = 0;
     // daily return bonus: first run each day = ×2 Light; consecutive days build a streak
     const today = new Date().toDateString();
@@ -801,13 +910,24 @@
   function update() {
     if (state !== 'playing') return;
 
-    speed = baseSpeed + Math.sqrt(distance) * 0.09;
+    speed = Math.min(baseSpeed + Math.sqrt(distance) * 0.09, 6.6); // plateau (~2500m) — elite runs stay humanly possible
     distance += speed / 10;
     player.x += speed;
 
+    // district crossing: banner + the world's mood shifts (Law 2: named milestones)
+    const dNow = districtIdx(distance);
+    if (dNow !== curD) { curD = dNow; showBanner(DISTRICTS[curD].name, 140); Snd.sparkle(); }
+    if (winAt > 0 && drawT >= winAt && state === 'playing') { win(); return; }
+
     while (nextSpawnX < player.x + W + 260 && spawnSegment(false)); // stops cleanly if the pool is momentarily full; retries next frame after culling
     for (const s of segments) if (s.active && s.x2 < player.x - 260) s.active = false;
-    for (const g of guards) if (g.active && g.x < player.x - 260) g.active = false;
+    for (const g of guards) {
+      if (g.active && g.x < player.x - 260) {
+        g.active = false;
+        // a skipped (jumped-over) Captain isn't a softlock: the wardens send another shortly
+        if (g.cap && g.alive) nextCaptainD = distance + 60;
+      }
+    }
     for (const f of featherList) if (f.active && f.x < player.x - 260) f.active = false;
     for (const o of lowObs) if (o.active && o.x < player.x - 260) o.active = false;
 
@@ -991,6 +1111,9 @@
     }
 
     distVal.textContent = Math.floor(distance) + 'm';
+    nextDist.textContent = (mode === 'campaign' && curD === DISTRICTS.length - 1)
+      ? 'BEACON ' + Math.max(0, Math.ceil(nextCaptainD - distance)) + 'm'
+      : 'gate ' + Math.max(0, Math.ceil(nextCaptainD - distance)) + 'm';
     scoreVal.textContent = runScore();
     featherVal.textContent = feathers;
   }
@@ -1003,6 +1126,27 @@
   function updateMenuMeta() {
     metaLine.textContent = '◆ Light ' + save.light + ' · ' + RANKS[rankIdx(save.kills)].name +
       (save.streak > 1 ? ' · day ' + save.streak : '');
+  }
+  // Campaign map (Law 8: where you're going is always visible): six lamps, lit as districts
+  // are relit; tap a reached lamp to start the next run from that checkpoint
+  function renderMap() {
+    mapLine.innerHTML = '';
+    startDistrict = Math.min(startDistrict, save.district);
+    DISTRICTS.forEach((d, i) => {
+      const s = document.createElement('span');
+      const lit = i < save.district, reach = i <= save.district;
+      s.className = 'lamp' + (lit ? ' lit' : reach ? ' reach' : '') + (i === startDistrict ? ' sel' : '');
+      s.textContent = lit ? '◆' : '◇';
+      s.title = d.name;
+      if (reach) s.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); startDistrict = i; renderMap(); });
+      mapLine.appendChild(s);
+    });
+    const n = document.createElement('div'); n.id = 'mapNext';
+    n.textContent = save.campaignDone
+      ? 'THE GREAT BEACON BURNS · start: ' + DISTRICTS[startDistrict].name
+      : 'next: ' + DISTRICTS[save.district].name + (startDistrict !== save.district ? ' · start: ' + DISTRICTS[startDistrict].name : '');
+    mapLine.appendChild(n);
+    nightBtn.classList.toggle('hiddenBtn', !save.campaignDone);
   }
   // One-tap spend on the tally screen (Rogue Legacy flow rule: death → tally → tap → running again)
   function buyTrack(i) {
@@ -1038,6 +1182,7 @@
       cleanK  ? ['Clean kills ×' + cleanK,  cleanK * PTS_CLEAN]   : null,
       heavyK  ? ['Heavy blows ×' + heavyK,  heavyK * PTS_HEAVY]   : null,
       perfK   ? ['Perfect ×' + perfK,       perfK * PTS_PERFECT]  : null,
+      captainK? ['Captains felled ×' + captainK, captainK * PTS_CAPTAIN] : null,
       dominoK ? ['Domino bonus ×' + dominoK, dominoBonus]         : null,
       ['Light ×' + feathers, feathers * PTS_LIGHT],
     ].filter(Boolean);
@@ -1077,8 +1222,42 @@
         }
       }, STEPS * 55 + 150));
     }, totStart));
-    statsLine.textContent = 'Kills ' + (cleanK + heavyK + perfK + dominoK) +
-      (bestChain > 1 ? ' · Best chain ' + bestChain : '');
+    const lifeKills = save.kills, rI = rankIdx(lifeKills);
+    statsLine.textContent = 'Kills ' + (cleanK + heavyK + perfK + dominoK + captainK) +
+      (bestChain > 1 ? ' · Best chain ' + bestChain : '') +
+      (rI < RANKS.length - 1 ? ' · ' + (RANKS[rI + 1].at - lifeKills) + ' wardens to ' + RANKS[rI + 1].name : '');
+  }
+
+  // The ending (Law 1/10): the campaign is beatable, and beating it means something
+  function win() {
+    deathCause = 'beacon';
+    state = 'won'; deathAtT = drawT;
+    CG.gameplayStop();
+    const firstClear = !save.campaignDone;
+    save.campaignDone = true;
+    const finalScore = runScore();
+    const isBest = finalScore > best;
+    if (isBest) {
+      best = finalScore;
+      try { Save.get().setItem('rooftopSprintBest', String(best)); } catch(e){}
+    }
+    const lightEarned = feathers * (dailyX2 ? 2 : 1) + mileLight + (firstClear ? 100 : 0);
+    save.light += lightEarned;
+    save.kills += cleanK + heavyK + perfK + dominoK + captainK;
+    saveNow();
+    updateMenuMeta(); renderMap();
+    document.querySelector('#overlay h1').textContent = 'THE GREAT BEACON BURNS AGAIN';
+    const ps = document.querySelectorAll('#overlay p');
+    ps[0].textContent = firstClear
+      ? 'Six districts glow behind you. The wardens scatter into the dark they made. The city keeps its light — and its Lamplighter. NIGHT SHIFT is open: run as long as the night lasts.'
+      : 'The Beacon takes your flame again. The city sleeps safe another night.';
+    ps[1].innerHTML = isTouch ? 'tap anywhere to run again' : '<span class="key">SPACE</span> / <span class="key">ENTER</span> / tap — run again';
+    ps[1].style.display = '';
+    scoreLine.textContent = '';
+    showTally(finalScore, isBest, lightEarned);
+    startBtn.textContent = 'Run Again';
+    overlay.classList.remove('hidden');
+    Snd.newBest();
   }
 
   function die(cause) {
@@ -1098,7 +1277,7 @@
     // bank the run: Light collected (×2 on the first run of the day) + bounties + lifetime kills
     const lightEarned = feathers * (dailyX2 ? 2 : 1) + mileLight;
     save.light += lightEarned;
-    save.kills += cleanK + heavyK + perfK + dominoK;
+    save.kills += cleanK + heavyK + perfK + dominoK + captainK;
     saveNow();
     updateMenuMeta();
     scoreLine.textContent = '';
@@ -1106,10 +1285,12 @@
     bestEl.textContent = `Best score: ${best}`;
     document.querySelector('#overlay h1').textContent =
       cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT' : 'YOUR LAMP WENT OUT';
+    // death identity (Law 2): where you fell is part of the story
     document.querySelectorAll('#overlay p')[0].textContent =
-      cause === 'gap' ? 'The dark streets swallowed you. Hold JUMP longer to leap higher and farther.'
+      'Felled in ' + DISTRICTS[curD].name + '. ' +
+      (cause === 'gap' ? 'The dark streets swallowed you. Hold JUMP longer to leap higher and farther.'
       : cause === 'low' ? 'Slide under low hazards — tap STRIKE when no warden is near.'
-      : 'A warden reached you first. Strike when the gold mark shows — or leap clear and keep your light.';
+      : 'A warden reached you first. Strike when the gold mark shows — or leap clear and keep your light.');
     // replay in ≤1 input, and say so (CG §9)
     const p1 = document.querySelectorAll('#overlay p')[1];
     p1.innerHTML = isTouch ? 'tap anywhere to run again' : '<span class="key">SPACE</span> / <span class="key">ENTER</span> / tap — run again';
@@ -1203,6 +1384,7 @@
     }
     const bob = g.alive ? Math.sin(g.x*0.4)*0.8 : 0;
     ctx.save(); ctx.translate(0, bob); ctx.scale(g.patrolDir >= 0 ? 1 : -1, 1);
+    if (g.cap) ctx.scale(1.28, 1.28); // Warden Captain: bigger silhouette, red plume, hp pips
     // warden's lamp-pole — every enemy carries the light you're here to take back
     ctx.fillStyle = '#5a4632'; ctx.fillRect(6,-44,2,40);
     ctx.fillStyle = '#3a3145'; ctx.fillRect(3,-52,8,9);          // lamp housing
@@ -1219,8 +1401,13 @@
     ctx.fillStyle = '#caa07a'; ctx.beginPath(); ctx.arc(0,-30,6,0,Math.PI*2); ctx.fill();
     // helmet with a nose guard
     ctx.fillStyle = '#6b6b78'; ctx.fillRect(-7,-36,14,6); ctx.fillRect(-1,-33,2,5);
+    if (g.cap) { ctx.fillStyle = '#e84a4a'; ctx.fillRect(-2,-42,4,7); } // captain's plume
     ctx.fillStyle = '#4a3a2a'; ctx.fillRect(-6,-7,5,8); ctx.fillRect(1,-7,5,8);
     ctx.restore();
+    if (g.cap && g.alive) { // hp pips — the three-strike read is always legible
+      ctx.fillStyle = '#ffe9b0';
+      for (let i = 0; i < g.hp; i++) { ctx.beginPath(); ctx.arc(-8 + i*8, -60, 2.4, 0, Math.PI*2); ctx.fill(); }
+    }
     if (g.alerted && g.alive) { // marker color = current timing window: gold FAR → orange MID → white PERFECT
       const w = strikeWindows();
       const dxNow = g.x - (player.x + player.w/2);
@@ -1399,7 +1586,19 @@
     drawParticles(camX);
     drawMessages(camX);
     ctx.restore();
+    // district mood tint (cheap palette shift; sky sprite stays shared)
+    const tint = DISTRICTS[curD].tint;
+    if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); }
     ctx.drawImage(vignImg, 0, 0, W, H);
+    if (bannerT > 0) { // district / relit banner
+      bannerT--;
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = Math.min(1, bannerT / 30, (150 - bannerT) / 12 + 0.2);
+      ctx.font = 'bold 17px Georgia'; ctx.fillStyle = '#ffe9b0';
+      ctx.shadowColor = 'rgba(255,190,110,0.8)'; ctx.shadowBlur = 14;
+      ctx.fillText(bannerText, W/2, 62);
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    }
     if (state === 'paused' || state === 'resuming') { // pause veil + countdown
       ctx.fillStyle = 'rgba(8,6,14,0.55)'; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#e8c878'; ctx.textAlign = 'center';
@@ -1465,6 +1664,11 @@
   bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
   runRankShown = rankIdx(save.kills);
   updateMenuMeta();
+  renderMap();
+  // fantasy frame (Law 10): three lines on first boot, one line after
+  document.querySelectorAll('#overlay p')[0].innerHTML = save.seenStory
+    ? 'Run the rooftops. Take back the light.'
+    : 'The wardens snuffed every lamp and hoard the light.<br>You carry the last living flame.<br>Relight six districts. Reach the Great Beacon.';
   requestAnimationFrame(loop);
   // SDK call order still matters: game.* calls only fire after init() resolves (sdkLive).
   CG.init(() => {
