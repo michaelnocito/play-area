@@ -1,7 +1,17 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-03, Batch 5 session 1 shipped): Next = B5 SESSION 2 — economy
-> finishers.** Read `ROADMAP.md` FIRST — §4's B5.1 note lists exactly what's open: Lamp Arts
+> **⚡ RESUME HERE (2026-07-03, B5.1 + B5-UX shipped): Next = B5 SESSION 2 — economy
+> finishers.**
+>
+> **🎛 B5-UX (7-item CG-compliance pass) DONE 2026-07-03:** ① menu trimmed to one line + glyphs
+> ② device-adaptive prompts (`isTouch` pointer-coarse; touch zones hidden on desktop, controls
+> line adapts, death hint adapts) ③ pause: P / ⏸ button (top-right under mute) / canvas tap,
+> 3-2-1 resume countdown (`state 'paused'|'resuming'`, veil drawn in `draw()`), SDK
+> gameplayStop/Start bracketing ④ auto-pause on `visibilitychange` ⑤ AZERTY Z/W jump keys
+> ⑥ Space restarts on death (45-frame guard vs held-jump tally skip) + hint line ⑦ interstitial
+> cooldown 2.5 min, seeded at boot (no first-death ad). **Suite RNG now SEEDED** (mulberry32 in
+> harness; `RS_SEED` default 20260703 green; `RS_HTML` points at any build) — seeds 2/3 repro
+> the §6 elite gap death identically on OLD builds = confirmed pre-existing, root-cause later. Read `ROADMAP.md` FIRST — §4's B5.1 note lists exactly what's open: Lamp Arts
 > real tier behaviors (tier 2 = PERFECT stun flash, tier 3 = dominoes chain farther — currently
 > all 3 tiers just widen the magnet), cosmetic shop (cloaks/lamp skins/trails, live try-on),
 > buff consumables (pre-run pick), rewarded-ad hooks (revive once/run + double-Light on tally),

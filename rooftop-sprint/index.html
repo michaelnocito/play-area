@@ -74,6 +74,13 @@
     background: rgba(8,6,14,0.4); border-radius: 5px; z-index: 5;
   }
   #muteBtn:active { opacity: 0.9; }
+  #pauseBtn {
+    position: absolute; top: 76px; right: 12px;
+    width: 36px; height: 26px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #f1e3c6; opacity: 0.55; cursor: pointer;
+    background: rgba(8,6,14,0.4); border-radius: 5px; z-index: 5;
+  }
+  #pauseBtn:active { opacity: 0.9; }
   #tally { margin-top: 10px; font-size: 13px; min-width: 250px; }
   #tally .trow { display: flex; justify-content: space-between; gap: 24px; padding: 1.5px 0; opacity: 0; }
   #tally .trow.show { opacity: 1; transition: opacity 0.12s; }
@@ -115,8 +122,8 @@
   </div>
   <div id="overlay">
     <h1>ROOFTOP SPRINT</h1>
-    <p>The city's lights are going out. You are the Lamplighter — run the rooftops, strike the wardens who hoard the light, and carry it home in your lamp.</p>
-    <p><span class="key">SPACE / LEFT SIDE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X / RIGHT SIDE</span> strike / slide</p>
+    <p>Run the rooftops. Take back the light.</p>
+    <p id="controlsLine"><span class="key">SPACE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X</span> strike / slide</p>
     <div id="scoreLine"></div>
     <div id="tally"></div>
     <div id="newBest">&#10022; NEW BEST &#10022;</div>
@@ -129,6 +136,7 @@
     <button id="startBtn">Begin the Run</button>
   </div>
   <div id="muteBtn">&#128266;</div>
+  <div id="pauseBtn">&#10074;&#10074;</div>
   <div id="touchControls">
     <div class="tbtn" id="btnJump">JUMP</div>
     <div class="tbtn" id="btnStrike">STRIKE</div>
@@ -154,6 +162,7 @@
   const tallyEl = document.getElementById('tally');
   const newBestEl = document.getElementById('newBest');
   const statsLine = document.getElementById('statsLine');
+  const pauseBtn = document.getElementById('pauseBtn');
   const walletLine = document.getElementById('walletLine');
   const shopEl = document.getElementById('shop');
   const firstBuyEl = document.getElementById('firstBuy');
@@ -232,6 +241,8 @@
   let mileLight = 0;      // bounty Light earned this run
   let runRankShown = 0;   // rank at last check — promotion banner fires when it rises
   let dailyX2 = false;    // first run of the day = ×2 Light
+  const AD_COOLDOWN_MS = 150000; // interstitial min-interval (CG policy: not every death)
+  let lastAdT = Date.now(); // seeded at boot — no ad on the first death of a session
 
   /* ===== Procedural audio (Batch 3) — light-reactive score + layered SFX =====
      Speaker-scaling architecture (ROADMAP §7): every voice = parallel layers into one bus —
@@ -429,8 +440,11 @@
   const stars = Array.from({length: 36}, (_, i) => ({ x: (i*97.3)%W, y: ((i*61.7)%86)+4, tw: (i*37)%100 }));
   let drawT = 0; // visual-only clock (advances every rendered frame, even on menus)
 
+  // Device-adaptive prompts (CG §9: touch zones only on touch devices, key hints only on desktop)
+  const isTouch = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
+
   // ---------- World state ----------
-  let state = 'menu'; // menu | playing | dead
+  let state = 'menu'; // menu | playing | paused | resuming | dead
   let speed = 0, baseSpeed = 2.1;
   let distance = 0;
   let feathers = 0; // internal name kept; player-facing label is "Light"
@@ -710,15 +724,32 @@
     }
   }
 
+  // Pause (CG QA checks this): P or ⏸ pauses; resume runs a 3-2-1 countdown so re-entry is fair.
+  // Auto-pauses when the tab is hidden. SDK gameplayStart/Stop bracket the pause per CG guidelines.
+  let resumeMs = 0, deathAtT = 0;
+  function pauseGame() { if (state !== 'playing') return; state = 'paused'; CG.gameplayStop(); }
+  function resumeGame() { if (state !== 'paused') return; state = 'resuming'; resumeMs = 2400; }
+  function togglePause() { if (state === 'playing') pauseGame(); else if (state === 'paused') resumeGame(); }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+
+  // Jump keys include Z/W for AZERTY keyboards (CG guideline)
+  const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyZ', 'KeyW'];
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (!e.repeat) jumpPress(); }
+    if (JUMP_KEYS.includes(e.code)) {
+      e.preventDefault();
+      if (e.repeat) return;
+      // death → replay in ≤1 input: Space restarts (small delay so a held jump can't skip the tally)
+      if (e.code === 'Space' && state === 'dead' && drawT - deathAtT > 45) { beginGame(); return; }
+      jumpPress();
+    }
     if (e.code === 'KeyX' || e.code === 'KeyF') { e.preventDefault(); if (!e.repeat) tryAction(); }
     if (e.code === 'KeyM' && !e.repeat) { Snd.resume(); Snd.toggleMute(); syncMuteBtn(); }
+    if (e.code === 'KeyP' && !e.repeat) { togglePause(); }
     if (state === 'dead' && tallyDone && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) { buyTrack(+e.code.slice(-1) - 1); return; }
-    if (e.code === 'Enter' && state !== 'playing') { beginGame(); }
+    if (e.code === 'Enter' && state !== 'playing' && state !== 'paused' && state !== 'resuming') { beginGame(); }
   });
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'Space' || e.code === 'ArrowUp') jumpRelease();
+    if (JUMP_KEYS.includes(e.code)) jumpRelease();
   });
   btnJump.addEventListener('pointerdown', (e) => { e.preventDefault(); jumpPress(); });
   window.addEventListener('pointerup', () => jumpRelease());     // release anywhere ends the hold
@@ -727,8 +758,19 @@
   function syncMuteBtn() { muteBtn.textContent = Snd.muted ? '\u{1F507}' : '\u{1F50A}'; }
   muteBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); Snd.resume(); Snd.toggleMute(); syncMuteBtn(); });
   syncMuteBtn();
+  pauseBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); togglePause(); });
   startBtn.addEventListener('click', () => beginGame());
-  canvas.addEventListener('pointerdown', () => { if (state === 'dead') beginGame(); });
+  canvas.addEventListener('pointerdown', () => {
+    if (state === 'dead') beginGame();
+    else if (state === 'paused') resumeGame();
+  });
+  // device-adaptive: hide touch zones on desktop, show touch wording on touch devices
+  const touchControls = document.getElementById('touchControls');
+  if (!isTouch) touchControls.style.display = 'none';
+  else {
+    const cl = document.getElementById('controlsLine');
+    if (cl) cl.innerHTML = '<span class="key">LEFT</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">RIGHT</span> strike / slide';
+  }
 
   function beginGame() {
     clearTally();
@@ -1041,7 +1083,7 @@
 
   function die(cause) {
     deathCause = cause;
-    state = 'dead'; player.dead = true;
+    state = 'dead'; player.dead = true; deathAtT = drawT;
     spawnBurst(player.x+player.w/2, player.y-10, 14, '#a44');
     Snd.death(); // the claimed layers collapse back to embers (tick gates on state)
     shake = 10;
@@ -1068,10 +1110,14 @@
       cause === 'gap' ? 'The dark streets swallowed you. Hold JUMP longer to leap higher and farther.'
       : cause === 'low' ? 'Slide under low hazards — tap STRIKE when no warden is near.'
       : 'A warden reached you first. Strike when the gold mark shows — or leap clear and keep your light.';
-    document.querySelectorAll('#overlay p')[1].style.display = 'none';
+    // replay in ≤1 input, and say so (CG §9)
+    const p1 = document.querySelectorAll('#overlay p')[1];
+    p1.innerHTML = isTouch ? 'tap anywhere to run again' : '<span class="key">SPACE</span> / <span class="key">ENTER</span> / tap — run again';
+    p1.style.display = '';
     startBtn.textContent = 'Run Again';
     overlay.classList.remove('hidden');
-    CG.interstitial();
+    // interstitial cooldown (CG ad policy): at most one every 2.5 min, never on the first death
+    if (Date.now() - lastAdT > AD_COOLDOWN_MS) { lastAdT = Date.now(); CG.interstitial(); }
   }
 
   // ---------- Drawing ----------
@@ -1354,6 +1400,19 @@
     drawMessages(camX);
     ctx.restore();
     ctx.drawImage(vignImg, 0, 0, W, H);
+    if (state === 'paused' || state === 'resuming') { // pause veil + countdown
+      ctx.fillStyle = 'rgba(8,6,14,0.55)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#e8c878'; ctx.textAlign = 'center';
+      if (state === 'paused') {
+        ctx.font = 'bold 20px Georgia'; ctx.fillText('PAUSED', W/2, H/2 - 4);
+        ctx.font = '10px Georgia'; ctx.globalAlpha = 0.8;
+        ctx.fillText(isTouch ? 'tap to resume' : 'P or tap to resume', W/2, H/2 + 16);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.font = 'bold 34px Georgia';
+        ctx.fillText(String(Math.max(1, Math.ceil(resumeMs / 800))), W/2, H/2 + 10);
+      }
+    }
   }
 
   // ---------- Fit canvas to viewport; backing store renders at native resolution ----------
@@ -1389,6 +1448,10 @@
     slowmoT = Math.max(0, slowmoT - dt);
     tutSlowT = Math.max(0, tutSlowT - dt);
     Snd.setTs(ts); // slow-mo darkens the whole mix through a low-pass sweep
+    if (state === 'resuming') { // 3-2-1 re-entry after a pause
+      resumeMs -= dt;
+      if (resumeMs <= 0) { state = 'playing'; CG.gameplayStart(); }
+    }
     acc += dt * ts;
     while (acc >= STEP) { update(); acc -= STEP; }
     draw();

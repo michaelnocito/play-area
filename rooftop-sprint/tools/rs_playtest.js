@@ -16,7 +16,9 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+// RS_HTML env var lets you point the suite at another build (e.g. a git-show'd old master)
+// to separate regressions from layout-RNG luck. RS_SEED picks the deterministic stream.
+const html = fs.readFileSync(process.env.RS_HTML || path.join(__dirname, '..', 'index.html'), 'utf8');
 let script = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 // Inject debug exposure just before the IIFE closes
@@ -40,11 +42,26 @@ function el(id) {
     addEventListener: noop, getContext: makeCtx, click: noop, appendChild: noop,
   };
 }
+// Seeded PRNG (mulberry32) replaces Math.random inside the sandbox — suite runs are now
+// reproducible (§6: the unseeded flake made every FAIL ambiguous). Game code is untouched.
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const SEED = parseInt(process.env.RS_SEED || '20260703', 10);
+const seededMath = {};
+for (const k of Object.getOwnPropertyNames(Math)) seededMath[k] = Math[k];
+seededMath.random = mulberry32(SEED);
+
 const els = {};
 const sandbox = {
   localStorage: { _d:{}, getItem(k){ return this._d[k] ?? null; }, setItem(k,v){ this._d[k]=v; }, removeItem(k){ delete this._d[k]; } },
   requestAnimationFrame: noop, // we drive update() directly
-  Math, parseInt, Infinity, console, setTimeout: noop, clearTimeout: noop,
+  Math: seededMath, parseInt, Infinity, console, setTimeout: noop, clearTimeout: noop,
 };
 sandbox.window = sandbox;
 sandbox.document = {

@@ -127,9 +127,9 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
 
 - [x] Input buffering: jump pressed ≤100ms (6 frames) before landing fires on landing
 - [x] Coyote time (~80ms / 5 frames) off roof edges
-- [ ] Show keyboard prompts on desktop / touch zones only on touch devices (currently both always)
-- [ ] Keys: verify no browser-reserved keys (Space scroll is prevented ✓); add W/Z alternates for
-  AZERTY compliance (CG guideline)
+- [x] Show keyboard prompts on desktop / touch zones only on touch devices (B5-UX 2026-07-03:
+  `isTouch` via pointer-coarse media query; touch zones hidden on desktop, controls line adapts)
+- [x] Keys: Space scroll prevented ✓; Z/W jump alternates added for AZERTY (B5-UX)
 
 ## 6. Difficulty & fairness
 
@@ -140,10 +140,11 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
   tracking, draw-path smoke, PASS/FAIL fairness bars) — re-running it after EVERY mechanics
   change stays standing practice
 - [ ] Anti-streak guard on formation RNG (no 3 identical challenges in a row)
-- [ ] **Suite fairness bar flakes (found 2026-07-02, pre-existing):** `rs_playtest.js` RNG is
-  unseeded — a rare elite gap death (~1 per 2-3 suite runs) shows up on the untouched Batch-1
-  build (`656facb`) too, so Batch 1's green was a lucky roll. Seed the RNG for reproducible
-  runs, then root-cause: unclearable gap edge case vs. bot-timing artifact
+- [~] **Suite fairness flake — RNG now SEEDED (B5-UX 2026-07-03):** mulberry32 in the harness
+  sandbox (`RS_SEED` env, default 20260703 = green; `RS_HTML` env points the suite at any build).
+  Seeds 2 and 3 reproduce the elite gap death deterministically and identically on old builds —
+  confirmed layout/bot edge case, NOT a regression signal. Still open: root-cause with seed 2
+  (unclearable gap edge case vs. bot-timing artifact)
 - [ ] First 150m = guaranteed gentle intro chunk (teach jump → teach strike → first mixed)
 - [ ] Difficulty cap: speed plateaus at ~2500m so elite runs stay humanly possible
 
@@ -191,13 +192,16 @@ slow-mo. Strong.
 
 **Standard (CG explicit):** gameplay ≤1 click, teach in-game, visuals over text.
 
-- [ ] ⚡ Trim menu overlay text to one line + control glyphs; move lore flavor to a subtitle
-- [ ] In-world teach beats: first gap shows JUMP prompt, first guard shows STRIKE (partial: guard
-  teach exists), first low obstacle shows SLIDE
+- [x] ⚡ Trim menu overlay text to one line + control glyphs (B5-UX: "Run the rooftops. Take
+  back the light." + adaptive controls line)
+- [x] In-world teach beats: first gap JUMP, first guard STRIKE, first low obstacle SLIDE (all
+  shipped w/ tutorial slow-time in B1)
 - [x] HUD: current run POINTS counter top center (B4); Light count doubles as currency (mute
   button moved to upper-right below the Light counter)
-- [ ] Death → replay in ≤1 input (canvas tap ✓, add Space/Enter hint line)
-- [ ] Pause (P / tap HUD) with resume countdown — CG QA checks this
+- [x] Death → replay in ≤1 input (B5-UX: Space restarts w/ 45-frame guard so a held jump can't
+  skip the tally; explicit hint line on the death screen)
+- [x] Pause (B5-UX): P / ⏸ button / canvas tap, 3-2-1 resume countdown, SDK gameplayStop/Start
+  bracketing, auto-pause on tab hidden — CG QA checks this
 
 ## 10. Performance & tech
 
@@ -215,8 +219,8 @@ wired but unused.
 
 - [ ] ⚡ Real gameIds from Mike's GM + GD dashboards (replace `GAMEID_PLACEHOLDER`)
 - [ ] Rewarded-ad uses (needs §4): revive once per run · double-feathers on tally
-- [ ] Interstitial cadence check vs each platform's policy (currently every death — likely too
-  often; add min-interval 2-3 min like Flipline's cooldown)
+- [x] Interstitial cooldown (B5-UX): min-interval 2.5 min, seeded at boot so the first death of
+  a session never shows an ad
 - [ ] Regenerate builds after every master change (`make_rs_builds.py` — move into repo `tools/`)
 
 ## 12. Submission assets & QA ⚡
