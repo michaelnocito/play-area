@@ -263,8 +263,15 @@ function spawnEnemy(type){
   const e = CFG.enemies[type];
   // random edge tile that has a path
   let c,r,tries=0;
+  // spawn sides open up as the campaign escalates: wave 1 right only,
+  // waves 2-4 right+left, all four sides once THE PURGE begins (0=top 1=bottom 2=left 3=right)
+  let sides = [0,1,2,3];
+  if(!endless){
+    if(waveIdx===0) sides = [3];
+    else if(waveIdx<4) sides = [2,3];
+  }
   do{
-    const side = Math.floor(Math.random()*4);
+    const side = sides[Math.floor(Math.random()*sides.length)];
     if(side===0){ c=Math.floor(Math.random()*CFG.cols); r=0; }
     else if(side===1){ c=Math.floor(Math.random()*CFG.cols); r=CFG.rows-1; }
     else if(side===2){ c=0; r=Math.floor(Math.random()*CFG.rows); }
@@ -358,8 +365,9 @@ function queueWave(){
   SFX.wave();
   // drama: name the moments
   if(!endless){
-    if(waveIdx===0) showBanner("THE SCOUTS","they come to probe the dark");
-    else if(waveIdx===4) showBanner("THE PURGE BEGINS","heavy squads. hold the line");
+    if(waveIdx===0) showBanner("THE SCOUTS","they probe from the east");
+    else if(waveIdx===1) showBanner("THEY FLANK","now from the west too");
+    else if(waveIdx===4) showBanner("THE PURGE BEGINS","heavy squads, from every direction");
     else if(waveIdx===7) showBanner("THE BUTCHER","he burned a hundred hives");
     else if(waveIdx===8) showBanner("THE EXTERMINATION","everything they have left");
     else if(waveIdx===11){ showBanner("THE PURIFIER","kill it and the surface is yours"); tone(80,60,1.2,"sawtooth",0.2); tone(80,60,1.2,"sawtooth",0.2,1.3); }

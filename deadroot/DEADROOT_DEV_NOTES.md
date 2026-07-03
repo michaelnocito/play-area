@@ -59,6 +59,12 @@ compliance). Mike picked B. Three changes:
    Purifier siren; goal-gradient tease in prep ("2 waves to THE BUTCHER").
 End-screen layout compacted to fit 9 meta rows (shared endLayout() for draw + hit).
 
+## DR-#003 — Spawn-side onboarding (2026-07-03, Mike playtest feedback)
+Wave 1 spawns from the RIGHT only (player learns the loop facing one front). Waves 2-4
+add the LEFT ("THEY FLANK" banner). All four sides open at THE PURGE (wave 5, banner
+sub says "from every direction"). Endless keeps all sides. Banners tell the player each
+escalation (bible law #9: every mechanic has a visible tell).
+
 ## Backlog / next
 - DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
 - Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).
