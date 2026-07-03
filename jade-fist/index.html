@@ -244,7 +244,7 @@ const UPS = [
   { k: 'wind',  name: 'SECOND WIND', max: 1, cost: () => 60,           desc: 'rise once per fight' }
 ];
 
-const S_MENU = 0, S_PLAY = 1, S_DEAD = 2, S_STORY = 3, S_END = 4;
+const S_MENU = 0, S_PLAY = 1, S_DEAD = 2, S_STORY = 3, S_END = 4, S_PAUSE = 5;   // JF-#014
 let state = save.intro ? S_MENU : S_STORY;   // JF-#012: first launch opens on the tale
 let t = 0;                       // global frame clock
 let shake = 0, hitStop = 0, slowMo = 0;
@@ -598,9 +598,15 @@ function endRun(victory){
   if (victory) Snd.best(); else Snd.ko();
 }
 
+// JF-#014: pause (P key / auto on tab blur). SDK gameplayStart/Stop bracket
+// the pause per CG guidelines; any input resumes.
+function pauseGame(){ if (state !== S_PLAY) return; state = S_PAUSE; CG.gameplayStop(); }
+function resumeGame(){ if (state !== S_PAUSE) return; state = S_PLAY; CG.gameplayStart(); }
+
 // ----------------------------------------------------------------- input ----
 function press(dir){
   Snd.unlock();
+  if (state === S_PAUSE){ resumeGame(); return; }
   if (state === S_STORY){ save.intro = 1; persist(); state = S_MENU; Snd.tick(); return; }
   if (state === S_END){ state = S_DEAD; Snd.tick(); return; }   // ending → tally
   if (state === S_MENU){ startRun(); return; }
@@ -622,6 +628,7 @@ function buyUp(i){
 addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
+  if (e.code === 'KeyP'){ state === S_PAUSE ? resumeGame() : pauseGame(); return; }   // JF-#014
   if (e.code === 'KeyO' && state === S_MENU){ omenOn = !omenOn; Snd.tick(); return; }
   if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyDone){
     buyUp(+e.code.slice(5) - 1); return;
@@ -706,6 +713,7 @@ function startRun(){
 
 // ---------------------------------------------------------------- update ----
 function update(){
+  if (state === S_PAUSE) return;   // JF-#014: world fully frozen
   t++;
   if (shake > 0) shake *= 0.85;
   if (hurtFlash > 0) hurtFlash--;
@@ -1204,6 +1212,15 @@ function draw(){
   // mute button
   cx.fillStyle = 'rgba(232,220,192,0.6)'; cx.font = '20px Georgia'; cx.textAlign = 'right';
   cx.fillText(Snd.muted ? '🔇' : '🔊', W - 18, 34);
+  // JF-#014: pause overlay on top of the frozen world
+  if (state === S_PAUSE){
+    cx.fillStyle = 'rgba(10,13,18,0.72)'; cx.fillRect(0, 0, W, H);
+    cx.textAlign = 'center';
+    cx.fillStyle = '#e8c76a'; cx.font = 'bold 42px Georgia';
+    cx.fillText('PAUSED', W/2, H/2 - 10);
+    cx.fillStyle = '#e8dcc0'; cx.font = '19px Georgia';
+    cx.fillText(TOUCH ? 'Tap to resume' : 'P or any key to resume', W/2, H/2 + 34);
+  }
 }
 
 // ------------------------------------------------------------------ loop ----
@@ -1217,7 +1234,10 @@ function loop(ts){
   draw();
 }
 requestAnimationFrame(loop);
-document.addEventListener('visibilitychange', () => { last = 0; acc = 0; });
+document.addEventListener('visibilitychange', () => {
+  last = 0; acc = 0;
+  if (document.hidden) pauseGame();   // JF-#014: CG requires auto-pause on blur
+});
 </script>
 </body>
 </html>

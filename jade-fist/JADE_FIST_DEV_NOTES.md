@@ -141,3 +141,8 @@ every 5 waves +1 hp, never `won`).
 `CG.init()` at boot with loadingStart/Stop bracketing the handshake (single-file game, nothing
 else to load); `gameplayStart()` in startRun, `gameplayStop()` in endRun, `happytime()` on
 victory. Parse-checked only — Batch B (pause + auto-pause on blur) is next.
+
+**JF-#014 pause (Batch B)**: S_PAUSE state — P toggles, tab blur auto-pauses
+(visibilitychange), any key/tap resumes; update() early-returns so the world is fully
+frozen; dark overlay w/ PAUSED + resume hint drawn over the frozen frame; CG
+gameplayStop/Start bracket the pause per CG guidelines. No Escape binding (CG rule).
