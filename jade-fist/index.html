@@ -215,15 +215,42 @@ CG.init(() => { CG.loadingStart(); CG.loadingStop(); });
 // never raise the skill ceiling; ~×2 cost per tier; first buy within 1-2 runs.
 const SAVE_KEY = 'jf_save_v1';
 let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
-             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0 };
+             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0,
+             cos: { own: [1,0,0,0,0], wear: 0 } };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && s.up) save = {
     jade: s.jade | 0, up: Object.assign(save.up, s.up),
     kills: s.kills | 0, ach: s.ach || {}, day: s.day || '', streak: s.streak | 0,
-    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0
+    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0,
+    cos: (s.cos && s.cos.own) ? { own: s.cos.own, wear: s.cos.wear | 0 } : save.cos
   };
 } catch (e) {}
+// JF-#023: cosmetic shop — robe dyes, a pure jade sink. Cosmetics only: no
+// stats, so the shop can never bend balance. Hues stay far from enemy greys
+// and telegraph reds so readability holds.
+const STYLES = [
+  { name: 'TRAVELER',     col: '#e8dcc0', cost: 0   },
+  { name: 'MOON WHITE',   col: '#f8f2e0', cost: 40  },
+  { name: 'JADE ROBE',    col: '#aee8c6', cost: 60  },
+  { name: 'GOLD SILK',    col: '#e8cf88', cost: 90  },
+  { name: 'NIGHT ORCHID', col: '#c8aee6', cost: 120 }
+];
+let styleSel = save.cos.wear;      // wardrobe cursor (menu)
+function wearCol(){ return STYLES[save.cos.wear].col; }
+function styleNext(){
+  styleSel = (styleSel + 1) % STYLES.length;
+  if (save.cos.own[styleSel]){ save.cos.wear = styleSel; persist(); }
+  Snd.tick();
+}
+function styleBuy(){
+  if (save.cos.own[styleSel]) return;
+  const c = STYLES[styleSel].cost;
+  if (save.jade < c){ Snd.tick(); return; }
+  save.jade -= c; save.cos.own[styleSel] = 1; save.cos.wear = styleSel; persist();
+  Snd.best();
+}
+let styleRect = null, styleBuyRect = null;   // menu hitboxes (rebuilt each draw)
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
 // JF-#022: bot fairness suite — open index.html?bot=3 (&react=12) and a bot with
 // a fixed human reaction time (frames, 12 ≈ 200ms) plays N runs in each of the
@@ -788,6 +815,9 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
   if (e.code === 'KeyP'){ state === S_PAUSE ? resumeGame() : pauseGame(); return; }   // JF-#014
   if (e.code === 'KeyO' && state === S_MENU){ omenOn = !omenOn; Snd.tick(); return; }
+  // JF-#023: wardrobe — C browses styles, B buys the one under the cursor
+  if (e.code === 'KeyC' && state === S_MENU){ styleNext(); return; }
+  if (e.code === 'KeyB' && state === S_MENU){ styleBuy(); return; }
   if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyDone){
     buyUp(+e.code.slice(5) - 1); return;
   }
@@ -809,6 +839,11 @@ cv.addEventListener('pointerdown', e => {
   if (x > W - 60 && y < 50){ Snd.toggleMute(); return; }   // mute button hitbox
   // JF-#011: omen toggle hitbox (top-right offer card)
   if (state === S_MENU && x > W - 260 && y > 80 && y < 148){ omenOn = !omenOn; Snd.tick(); return; }
+  // JF-#023: wardrobe hitboxes — tap the block to browse, tap BUY to purchase
+  if (state === S_MENU && styleBuyRect && x >= styleBuyRect.x && x <= styleBuyRect.x + styleBuyRect.w &&
+      y >= styleBuyRect.y && y <= styleBuyRect.y + styleBuyRect.h){ styleBuy(); return; }
+  if (state === S_MENU && styleRect && x >= styleRect.x && x <= styleRect.x + styleRect.w &&
+      y >= styleRect.y && y <= styleRect.y + styleRect.h){ styleNext(); return; }
   // JF-#009: menu district arrows (◀ ▶ flank the district name)
   if (state === S_MENU && save.dist > 0 && y > 355 && y < 395){
     if (x > W/2 - 220 && x < W/2 - 130){ sel = (sel + save.dist) % (save.dist + 1); Snd.tick(); return; }
@@ -1185,7 +1220,7 @@ function draw(){
   }
 
   // player
-  const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : '#e8dcc0';
+  const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : wearCol();   // JF-#023
   fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col, punch: P.punchT });
 
   // particles
@@ -1276,7 +1311,7 @@ function draw(){
         ppunch = Math.max(0, 12 - ft);
         cap = 'COUNTER — throw them into the rest'; capCol = '#e8c76a';
       } else { ex2 = -999; cap = 'they come at you — strike toward them'; }
-      fighter(W/2 - 40, gy, 1, { col: '#e8dcc0', sash: '#3fae7c', punch: ppunch, size: 0.72 });
+      fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72 });   // JF-#023
       if (ex2 > -200 && ex2 < W + 200)
         fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
       cx.fillStyle = capCol; cx.font = '19px Georgia'; cx.textAlign = 'center';
@@ -1312,6 +1347,26 @@ function draw(){
       cx.fillStyle = save.tdone[i] ? '#7ce8a8' : '#8a94a6';
       cx.fillText((save.tdone[i] ? '✓ ' : '· ') + TRIALS[ti].name + '  +15◆', 24, 118 + i * 20);
     });
+    // JF-#023: wardrobe (left, under the trials)
+    {
+      const S = STYLES[styleSel], owned = !!save.cos.own[styleSel];
+      styleRect = { x: 16, y: 184, w: 240, h: 58 };
+      cx.textAlign = 'left'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
+      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 24, 200);
+      cx.fillStyle = S.col; cx.font = 'bold 14px Georgia';
+      cx.fillText(S.name + (save.cos.wear === styleSel ? '  — worn' : owned ? '  — owned' : ''), 24, 220);
+      styleBuyRect = null;
+      if (!owned){
+        const can = save.jade >= S.cost;
+        styleBuyRect = { x: 24, y: 226, w: 130, h: 20 };
+        cx.fillStyle = can ? 'rgba(124,232,168,0.22)' : 'rgba(140,148,166,0.12)';
+        cx.fillRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
+        cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
+        cx.strokeRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
+        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = '13px Georgia';
+        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, 32, 240);
+      }
+    }
     const OM = todayOmen();
     cx.textAlign = 'right'; cx.font = 'bold 15px Georgia';
     cx.fillStyle = omenOn ? '#c8a8e8' : '#c8bfa8';
