@@ -225,6 +225,74 @@ try {
   };
 } catch (e) {}
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+// JF-#022: bot fairness suite — open index.html?bot=3 (&react=12) and a bot with
+// a fixed human reaction time (frames, 12 ≈ 200ms) plays N runs in each of the
+// four campaign districts, classifying every hit it takes: PINCER (opposite-side
+// threat overlapped), FAST (telegraph shorter than the reaction time), or clean.
+// Results go to the console as a per-run table + aggregate verdict. Bot mode
+// never touches the real save or best score.
+const BOTQ = new URLSearchParams(location.search);
+const BOT = BOTQ.has('bot')
+  ? { runs: Math.max(1, +BOTQ.get('bot') || 3), react: +BOTQ.get('react') || 12,
+      run: 0, stats: [], cur: null, done: false }
+  : null;
+if (BOT){ save.dist = 4; save.intro = 1; persist = () => {}; }
+function botThink(){
+  // counter first: the ripest windup that has been visible >= reaction frames
+  let tgt = null, ripest = -1;
+  for (const e of enemies){
+    if (e.st !== E_WINDUP || e.stT < BOT.react) continue;
+    const range = Math.max(e.reach, PR) + 18;
+    if (Math.abs(e.x - P.x) > range) continue;
+    const r = e.stT / e.windup;
+    if (r > ripest){ ripest = r; tgt = e; }
+  }
+  if (tgt){ strike(Math.sign(tgt.x - P.x) || 1); return; }
+  // otherwise thin the crowd at a human-ish cadence
+  if (t % 10 === 0){
+    const e = nearestInReach(0);
+    if (e && e.st !== E_WINDUP) strike(Math.sign(e.x - P.x) || 1);
+  }
+}
+function botHit(e){
+  if (!BOT.cur) return;
+  const pincer = enemies.some(o => o !== e && (o.st === E_WINDUP || o.st === E_STRIKE) &&
+    Math.sign(o.x - P.x) !== Math.sign(e.x - P.x));
+  BOT.cur.hits.push({ wave, type: e.type, windup: Math.round(e.windup0 || e.windup),
+    pincer, fast: (e.windup0 || e.windup) < BOT.react });
+}
+function botFrame(){
+  if (BOT.done) return;
+  if (state === S_STORY || state === S_MENU){
+    sel = Math.min(3, Math.floor(BOT.run / BOT.runs));
+    BOT.cur = { hits: [] };
+    startRun();
+    return;
+  }
+  if (state === S_PLAY){ botThink(); return; }
+  if (state === S_DEAD && tallyT > 100){
+    BOT.run++;
+    if (BOT.run >= BOT.runs * 4){
+      BOT.done = true;
+      console.table(BOT.stats);
+      const all = BOT.stats.flatMap(s => s.hitList);
+      const agg = {
+        runs: BOT.stats.length,
+        avgWave: +(BOT.stats.reduce((n, s) => n + s.wave, 0) / BOT.stats.length).toFixed(1),
+        wins: BOT.stats.filter(s => s.won).length,
+        hitsPerRun: +(all.length / BOT.stats.length).toFixed(1),
+        pctPincer: all.length ? Math.round(100 * all.filter(h => h.pincer).length / all.length) : 0,
+        pctFast: all.length ? Math.round(100 * all.filter(h => h.fast).length / all.length) : 0
+      };
+      console.log('JADE FIST FAIRNESS VERDICT', agg);
+      console.log(agg.pctFast > 15 ? '⚠ >15% of hits came from telegraphs shorter than the reaction time — unreactable, tune windups up.'
+        : agg.pctPincer > 35 ? '⚠ >35% of hits were pincers — fairness guard may lift too early.'
+        : '✓ fair: most damage was reactable and single-sided.');
+      return;
+    }
+    state = S_MENU;   // next run
+  }
+}
 // belts = lifetime-kill milestones (CG "achievable objectives"); sash shows your rank
 const BELTS = [
   { name: 'WHITE',  need: 0,   col: '#e8e8e8' },
@@ -658,8 +726,16 @@ function endRun(victory){
   if (victory) CG.happytime();
   ranOnce = true; rewardUsed = false;   // JF-#016: fresh DOUBLE JADE offer each tally
   walletShown = save.jade;   // wallet animates up from pre-run balance as jade banks
-  newBest = score > best;
+  newBest = !BOT && score > best;
   if (newBest){ best = score; localStorage.setItem('jf_best', best); }
+  // JF-#022: bank the run's fairness numbers
+  if (BOT && BOT.cur) BOT.stats.push({
+    district: DISTRICTS[fought].name, wave, won: victory, kills, counters,
+    hits: BOT.cur.hits.length,
+    pincer: BOT.cur.hits.filter(h => h.pincer).length,
+    fast: BOT.cur.hits.filter(h => h.fast).length,
+    hitList: BOT.cur.hits
+  });
   jadeRun = Math.round(jadeRun * omen.jadeScale);   // omen boon (JF-#011)
   if (dailyBonus) jadeRun *= 2;                // return bonus pays out at the tally
   save.jade += jadeRun;
@@ -802,6 +878,7 @@ function startRun(){
 function update(){
   if (state === S_PAUSE) return;   // JF-#014: world fully frozen
   t++;
+  if (BOT) botFrame();             // JF-#022: the bot drives every state
   if (shake > 0) shake *= 0.85;
   if (hurtFlash > 0) hurtFlash--;
   if (msgT > 0) msgT--;
@@ -878,7 +955,10 @@ function update(){
         // later, leaving a last-instant counter window on the falling strike
         if (!e.didHit && e.stT >= (hasTech(1) ? 3 : 0)){
           e.didHit = true;
-          if (Math.abs(e.x - P.x) < REACH + 12) hurtPlayer();
+          if (Math.abs(e.x - P.x) < REACH + 12){
+            if (BOT) botHit(e);   // JF-#022: classify the hit before it lands
+            hurtPlayer();
+          }
         }
         if (e.stT >= 10){ e.st = E_RECOVER; e.stT = 0; }
         break;
@@ -1375,6 +1455,12 @@ function draw(){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia';
       cx.fillText('— continue —', W/2, 430);
     }
+  }
+  // JF-#022: bot banner so a fairness pass is never mistaken for play
+  if (BOT){
+    cx.fillStyle = '#c8a8e8'; cx.font = 'bold 14px Georgia'; cx.textAlign = 'left';
+    cx.fillText(BOT.done ? 'FAIRNESS SUITE DONE — see console' :
+      'BOT ' + (BOT.run + 1) + '/' + (BOT.runs * 4) + ' · react ' + BOT.react + 'f', 20, H - 14);
   }
   // mute button
   cx.fillStyle = 'rgba(232,220,192,0.6)'; cx.font = '20px Georgia'; cx.textAlign = 'right';
