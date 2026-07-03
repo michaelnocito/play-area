@@ -70,6 +70,19 @@ Fast-forward button bottom-right (›1x / »2x). Doubles the fixed-timestep upda
 frame so simulation stays deterministic (render fps unchanged). Resets to 1x on every
 new run. Standard TD quality-of-life.
 
+## DR-#005 — Mobile readability: big icons over text (2026-07-03, Mike feedback)
+Researched mobile TD conventions (Bloons/Kingdom Rush): radial icon buttons, cost badges,
+icon+number HUDs, almost no words. Applied:
+- Mutate menu → 4 radial ICON buttons (40px-radius circles orbiting the corpse, N/E/S/W),
+  each showing the tower's actual art + a pictogram tell (shot dots / roots / puffs /
+  link sparks) + ◈cost badge. Affordable = green ring, not = dimmed. Range rings preview
+  around the corpse while the menu is open. Field dims behind the menu. Zero desc text.
+- HUD 56→72px: biomass droplet icon + 30px number (no "BIOMASS" label), hive icon + fat
+  HP bar, big wave fraction "3/12", ◆DNA, 56px pause/mute touch targets.
+- Ability buttons 48→68px, speed button 48→68px, SEND button 240×58 with countdown,
+  popups 14→18px, onboarding cut to just "TAP A CORPSE ▼", goal tease now "2 ➜ THE
+  BUTCHER". Boon cards 290×150 with bigger type. Meta rows widened/bumped.
+
 ## Backlog / next
 - DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
 - Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).
