@@ -127,13 +127,13 @@ const Snd = (() => {
 // never raise the skill ceiling; ~×2 cost per tier; first buy within 1-2 runs.
 const SAVE_KEY = 'jf_save_v1';
 let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
-             kills: 0, ach: {}, day: '', streak: 0, dist: 0 };
+             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0] };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && s.up) save = {
     jade: s.jade | 0, up: Object.assign(save.up, s.up),
     kills: s.kills | 0, ach: s.ach || {}, day: s.day || '', streak: s.streak | 0,
-    dist: s.dist | 0
+    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0]
   };
 } catch (e) {}
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
@@ -157,6 +157,40 @@ const TECH = [
   { belt: 4, name: 'PALM WAVE',    desc: '3 perfect counters in a row fell BOTH sides' }
 ];
 function hasTech(i){ return beltOf(save.kills + kills) >= TECH[i].belt; }
+// JF-#011: daily trials — three rotating objectives, 15◆ each, once per day.
+// Rotation is date-seeded so every player sees the same trio on the same day.
+const TRIALS = [
+  { k: 'vip',     name: 'Counter 5 vipers',           n: 5 },
+  { k: 'perf',    name: 'Land 4 perfect counters',    n: 4 },
+  { k: 'sweep',   name: 'Sweep 3 crowds',             n: 3 },
+  { k: 'nohit',   name: 'Clear a wave untouched',     n: 1 },
+  { k: 'heavy',   name: 'Punish 6 recovering foes',   n: 6 },
+  { k: 'stumble', name: 'Cause 4 stumbles',           n: 4 }
+];
+const dayNum = () => Math.floor(Date.now() / 86400000);
+function todayTrio(){ const d = dayNum(); return [d % 6, (d + 2) % 6, (d + 4) % 6]; }
+let trialCt = {};
+function bumpTrial(k, amt){
+  trialCt[k] = (trialCt[k] || 0) + (amt || 1);
+  const trio = todayTrio();
+  for (let i = 0; i < 3; i++){
+    const T = TRIALS[trio[i]];
+    if (T.k === k && !save.tdone[i] && trialCt[k] >= T.n){
+      save.tdone[i] = 1; jadeRun += 15; persist();
+      popup(W/2, 250, 'TRIAL: ' + T.name.toUpperCase() + '  +15◆', '#7ce8a8', true);
+      Snd.best();
+    }
+  }
+}
+// JF-#011: the daily OMEN — a paired boon and curse you may accept before a run
+const OMENS = [
+  { b: '+1 heart',              c: 'telegraphs 20% faster', heart: 1, windScale: 0.8 },
+  { b: 'jade ×1.5',             c: 'one fewer heart',       heart: -1, jadeScale: 1.5 },
+  { b: 'wider perfect window',  c: 'enemies 15% faster',    perfTh: 0.55, spdScale: 1.15 }
+];
+let omenOn = false;
+let omen = { heart: 0, windScale: 1, jadeScale: 1, perfTh: 0.66, spdScale: 1 };
+const todayOmen = () => OMENS[dayNum() % OMENS.length];
 // one-time jade bounties = session goals beyond score
 const ACH = [
   { k: 'counter', name: 'First Counter',       jade: 10 },
@@ -261,8 +295,8 @@ function spawnEnemy(forceSide){
   enemies.push({
     x: W/2 + side * (W/2 + 40 + Math.random() * 70), side: -side,   // walks toward center
     st: E_WALK, stT: 0, type,
-    speed: type === T_FAST ? base * 1.5 : type === T_BRUTE ? base * 0.7 : base,
-    windup: type === T_FAST ? Math.max(16, wind * 0.6) : type === T_BRUTE ? wind * 1.3 : wind,
+    speed: (type === T_FAST ? base * 1.5 : type === T_BRUTE ? base * 0.7 : base) * omen.spdScale,
+    windup: (type === T_FAST ? Math.max(16, wind * 0.6) : type === T_BRUTE ? wind * 1.3 : wind) * omen.windScale,
     reach: type === T_SPEAR ? REACH + 70 : REACH,
     // JF-#007: vipers can guard too (diff>5); combo 8+ = the crowd wises up (+20% guard)
     // JF-#009: TEMPLE district = every hand is guarded (+18%)
@@ -298,6 +332,7 @@ function spawnBoss(hp){
 function beginWave(n){
   wave = n; wavePhase = 0;
   const D = DISTRICTS[sel];
+  hitsWave = 0;                       // untouched-wave trial tracking (JF-#011)
   const bossWave = wave % WAVES_PER_DISTRICT === 0;
   if (bossWave){
     toSpawn = 0;
@@ -322,7 +357,9 @@ function onWaveClear(){
     banner('WAVE ' + wave + ' CLEARED', '#7ce8a8', 100);
     restT = 140; Snd.tick();
   }
+  if (hitsWave === 0) bumpTrial('nohit');
 }
+let hitsWave = 0;
 
 const REACH = 92;   // strike range from player center
 function nearestInReach(dir){
@@ -377,7 +414,9 @@ function strike(dir){
   if (e.st === E_WINDUP || ironCatch){          // ---- COUNTER ----
     // JF-#007: final-third ("NOW" bright flash) = PERFECT counter
     // JF-#010: an IRON CATCH always counts as perfect
-    const perfect = ironCatch || e.stT / e.windup > 0.66;
+    const perfect = ironCatch || e.stT / e.windup > omen.perfTh;
+    if (e.type === T_FAST) bumpTrial('vip');
+    if (perfect) bumpTrial('perf');
     counters++; jadeRun += perfect ? 5 : 3;
     award('counter');
     if (e.type === T_BRUTE) award('monk');
@@ -408,6 +447,7 @@ function strike(dir){
     if (felled >= 2){
       score += 500; jadeRun += 2;
       popup(W/2, 220, 'SWEEP +500', '#e8c76a', true);
+      bumpTrial('sweep');
     }
     // JF-#010: PALM WAVE — 3 consecutive perfects release a wave that fells both sides
     if (perfect && hasTech(2)){
@@ -454,6 +494,7 @@ function strike(dir){
     const pts = 250 * Math.min(combo, 5);
     score += pts; kills++; jadeRun++;
     popup(e.x, e.y - 80, 'HEAVY +' + pts, '#e8c76a');
+    bumpTrial('heavy');
     Snd.hit(combo + 3); hitStop = 5; shake = 6;
     burst(e.x, e.y - 45, '#e8c76a', 14, 4);
   } else {                                       // ---- CLEAN STRIKE ----
@@ -481,7 +522,7 @@ function strike(dir){
 }
 
 function hurtPlayer(){
-  hearts--; hurtFlash = 18; combo = 0; perfChain = 0;
+  hearts--; hurtFlash = 18; combo = 0; perfChain = 0; hitsWave++;
   shake = 12; Snd.hurt();
   burst(P.x, P.y - 50, '#e86a6a', 16, 4);
   if (hearts <= 0){
@@ -502,6 +543,7 @@ function endRun(victory){
   walletShown = save.jade;   // wallet animates up from pre-run balance as jade banks
   newBest = score > best;
   if (newBest){ best = score; localStorage.setItem('jf_best', best); }
+  jadeRun = Math.round(jadeRun * omen.jadeScale);   // omen boon (JF-#011)
   if (dailyBonus) jadeRun *= 2;                // return bonus pays out at the tally
   save.jade += jadeRun;
   save.kills += kills;                         // lifetime kills drive belt rank
@@ -535,6 +577,7 @@ function buyUp(i){
 addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
+  if (e.code === 'KeyO' && state === S_MENU){ omenOn = !omenOn; Snd.tick(); return; }
   if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyDone){
     buyUp(+e.code.slice(5) - 1); return;
   }
@@ -553,6 +596,8 @@ cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / scale, y = (e.clientY - r.top) / scale;
   if (x > W - 60 && y < 50){ Snd.toggleMute(); return; }   // mute button hitbox
+  // JF-#011: omen toggle hitbox (top-right offer card)
+  if (state === S_MENU && x > W - 260 && y > 80 && y < 148){ omenOn = !omenOn; Snd.tick(); return; }
   // JF-#009: menu district arrows (◀ ▶ flank the district name)
   if (state === S_MENU && save.dist > 0 && y > 355 && y < 395){
     if (x > W/2 - 220 && x < W/2 - 130){ sel = (sel + save.dist) % (save.dist + 1); Snd.tick(); return; }
@@ -580,6 +625,15 @@ function startRun(){
   waveT = 0;
   INTRO = Math.max(300, 900 - belt * 120);
   promoted = -1;
+  // JF-#011: trial-day rollover + run counters + omen application
+  const today0 = new Date().toDateString();
+  if (save.tday !== today0){ save.tday = today0; save.tdone = [0,0,0]; persist(); }
+  trialCt = {};
+  const O = todayOmen();
+  omen = omenOn
+    ? { heart: O.heart || 0, windScale: O.windScale || 1, jadeScale: O.jadeScale || 1,
+        perfTh: O.perfTh || 0.66, spdScale: O.spdScale || 1 }
+    : { heart: 0, windScale: 1, jadeScale: 1, perfTh: 0.66, spdScale: 1 };
   // return bonus: first fight of a new day = double jade (streak tracked)
   const today = new Date().toDateString();
   dailyBonus = save.day !== today;
@@ -588,7 +642,8 @@ function startRun(){
     save.streak = save.day === yest.toDateString() ? save.streak + 1 : 1;
     save.day = today; persist();
   }
-  hearts = 3 + save.up.body; hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false;
+  hearts = Math.max(1, 3 + save.up.body + omen.heart); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false;
+  if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
   enemies.length = 0; popups.length = 0; parts.length = 0;
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   dBase = DISTRICTS[sel].dBase;
@@ -694,6 +749,7 @@ function update(){
             if (Math.abs(o.x - e.x) < 34){
               o.st = E_STAGGER; o.stT = 0; o.vx = e.vx * 0.8; o.guard = 0;
               score += 100; popup(o.x, o.y - 80, 'STUMBLE +100', '#c8bfa8');
+              bumpTrial('stumble');
               burst(o.x, o.y - 45, '#c8bfa8', 6, 2);
               e.chained = true;
               break;
@@ -835,7 +891,7 @@ function draw(){
     let punch = 0, rot = e.rot || 0;
     const size = e.type === T_BOSS ? 1.6 : e.type === T_BRUTE ? 1.28 : e.type === T_FAST ? 0.88 : e.type === T_SPEAR ? 1.08 : 1;
     if (e.st === E_WINDUP){
-      const late = e.stT / e.windup > 0.66;          // final third: solid bright = NOW
+      const late = e.stT / e.windup > omen.perfTh;   // final third: solid bright = NOW
       const flash = late || Math.sin(e.stT * 0.6) > 0;
       col = flash ? (late ? '#ff4a4a' : '#e85a5a') : '#b06a6a';   // RED telegraph = counter window
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
@@ -908,7 +964,7 @@ function draw(){
       cx.fillRect(W/2 - bw/2, 80, bw, 4);
     }
     // hearts
-    const maxH = 3 + save.up.body;
+    const maxH = Math.max(1, 3 + save.up.body + omen.heart);
     cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
     cx.fillText('♥ '.repeat(Math.max(0, hearts)) + '♡ '.repeat(Math.max(0, maxH - hearts)), 20, 40);
     if (windAvail){ cx.fillStyle = '#7ce8a8'; cx.font = '15px Georgia'; cx.fillText('second wind ready', 20, 62); }
@@ -957,6 +1013,22 @@ function draw(){
     cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
       (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
       (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 482);
+    // JF-#011: today's trials (left) and the omen offer (right)
+    cx.textAlign = 'left'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
+    cx.fillText("TODAY'S TRIALS", 24, 96);
+    cx.font = '14px Georgia';
+    todayTrio().forEach((ti, i) => {
+      cx.fillStyle = save.tdone[i] ? '#7ce8a8' : '#8a94a6';
+      cx.fillText((save.tdone[i] ? '✓ ' : '· ') + TRIALS[ti].name + '  +15◆', 24, 118 + i * 20);
+    });
+    const OM = todayOmen();
+    cx.textAlign = 'right'; cx.font = 'bold 15px Georgia';
+    cx.fillStyle = omenOn ? '#c8a8e8' : '#c8bfa8';
+    cx.fillText("TODAY'S OMEN  " + (omenOn ? '— ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 24, 96);
+    cx.font = '14px Georgia'; cx.fillStyle = omenOn ? '#c8a8e8' : '#8a94a6';
+    cx.fillText('boon: ' + OM.b, W - 24, 118);
+    cx.fillText('curse: ' + OM.c, W - 24, 138);
+    cx.textAlign = 'center';
     // JF-#010: techniques known + the next one your belt will teach
     const known = TECH.filter(T => mb >= T.belt).map(T => T.name).join(' · ');
     const next = TECH.find(T => mb < T.belt);
