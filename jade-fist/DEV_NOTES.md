@@ -108,3 +108,30 @@ first buy in 1-2 runs; Rogue Legacy one-tap-spend-on-tally flow):
 6. **Guarded vipers** (diff>5): bracer guard no longer initiate-only.
 7. **Adaptive guards**: while combo ≥8, new spawns get +20% guard chance (cap 0.6) and a
    one-time "THE CROWD WISES UP" banner — pushes flow players from strike-spam to counters.
+
+## JF-#008…#012 — the DESIGN restructure (game had no shape: endless screen, fake progression)
+Gap report verdict (2026-07-03): no levels, no ending, stat-only upgrades, cosmetic belts,
+treadmill difficulty, identical runs, no fantasy. Five batches:
+
+**JF-#008 waves+bosses**: quota waves w/ rest beats (`beginWave/onWaveClear`), difficulty from
+wave number; every 5th wave = boss (T_BOSS): counters are the ONLY damage, each drops a phase
+(faster windup + 2 adds), hp pips; strikes = SHRUGGED OFF; "Felled on WAVE N" tally identity.
+
+**JF-#009 districts**: DISTRICTS table = Courtyard / Market(crowd: fast spawns, duo-heavy) /
+Temple(guard-heavy +18%) / Rooftop(spear-heavy), each w/ own palette (sky/ground/lantern hue/
+skyline), dBase 0/2/4/6, named boss (Iron Master/Butcher/Abbot/Jade Thief, hp 3/3/4/4).
+Boss fell = DISTRICT CLEARED victory tally + next district unlocks (save.dist). Menu selector
+(◀ ▶ arrows or taps, Space fights).
+
+**JF-#010 techniques**: belts teach play — YELLOW=DRAGON SWEEP (perfect throws vx15/pierce 260),
+GREEN=IRON CATCH (counter an unlanded strike; 3-frame hit grace; counts perfect),
+BLUE=PALM WAVE (3 consecutive perfects = both-side 260px fell; HUD pips). Live unlock banner.
+
+**JF-#011 trials+omen**: 6-trial pool, date-seeded trio daily, 15◆ each once/day (save.tday/
+tdone); menu checklist. Daily OMEN boon/curse pair (3-pool: +1♥/faster telegraphs, jade×1.5/
+−1♥, wider perfect/faster enemies), toggle O key or tap card; applied via `omen` modifiers.
+
+**JF-#012 story+ending+LEGEND**: first-launch 3-line tale (save.intro), veteran run-start shows
+district line instead of controls lesson, ROOFTOP victory = S_END ending screen ("THE JADE IS
+RECLAIMED") then tally; save.dist→4 unlocks LEGEND district (dBase 7, endless, boss returns
+every 5 waves +1 hp, never `won`).

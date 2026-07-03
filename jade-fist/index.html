@@ -127,13 +127,13 @@ const Snd = (() => {
 // never raise the skill ceiling; ~×2 cost per tier; first buy within 1-2 runs.
 const SAVE_KEY = 'jf_save_v1';
 let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
-             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0] };
+             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0 };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && s.up) save = {
     jade: s.jade | 0, up: Object.assign(save.up, s.up),
     kills: s.kills | 0, ach: s.ach || {}, day: s.day || '', streak: s.streak | 0,
-    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0]
+    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0
   };
 } catch (e) {}
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
@@ -214,8 +214,8 @@ const UPS = [
   { k: 'wind',  name: 'SECOND WIND', max: 1, cost: () => 60,           desc: 'rise once per fight' }
 ];
 
-const S_MENU = 0, S_PLAY = 1, S_DEAD = 2;
-let state = S_MENU;
+const S_MENU = 0, S_PLAY = 1, S_DEAD = 2, S_STORY = 3, S_END = 4;
+let state = save.intro ? S_MENU : S_STORY;   // JF-#012: first launch opens on the tale
 let t = 0;                       // global frame clock
 let shake = 0, hitStop = 0, slowMo = 0;
 let score = 0, best = +(localStorage.getItem('jf_best') || 0);
@@ -243,7 +243,11 @@ const DISTRICTS = [
     sky: ['#0c1410','#14231a','#0c1410'], ground: '#16211a', lant: [140,230,160], pag: 3 },
   { name: 'ROOFTOP', line: 'The thief waits above.', boss: 'THE JADE THIEF',
     dBase: 6, quirk: 'spear', bossHp: 4,
-    sky: ['#141020','#221a33','#120e1c'], ground: '#1d1826', lant: [190,150,240], pag: 5 }
+    sky: ['#141020','#221a33','#120e1c'], ground: '#1d1826', lant: [190,150,240], pag: 5 },
+  // JF-#012: LEGEND — the endless retelling, unlocked by reclaiming the jade
+  { name: 'LEGEND', line: 'The tale retold, without end.', boss: 'THE IRON MASTER',
+    dBase: 7, quirk: '', bossHp: 5, legend: true,
+    sky: ['#100c18','#1c1426','#0e0a14'], ground: '#1c1620', lant: [232,199,106], pag: 5 }
 ];
 let sel = 0;                          // selected district (menu)
 let fought = 0;                       // district of the current/last run (tally-safe)
@@ -350,8 +354,13 @@ function onWaveClear(){
   const D = DISTRICTS[sel];
   const bossWave = wave % WAVES_PER_DISTRICT === 0;
   if (bossWave){
-    jadeRun += 25; won = true;
-    banner(D.boss + ' FALLS  ·  +25◆', '#7ce8a8', 190);
+    jadeRun += 25;
+    if (D.legend){       // JF-#012: LEGEND never ends — the master returns, stronger
+      banner('THE TALE CONTINUES  ·  +25◆', '#e8c76a', 190);
+    } else {
+      won = true;
+      banner(D.boss + ' FALLS  ·  +25◆', '#7ce8a8', 190);
+    }
     restT = 210; slowMo = Math.max(slowMo, 30); Snd.best();
   } else {
     banner('WAVE ' + wave + ' CLEARED', '#7ce8a8', 100);
@@ -552,12 +561,16 @@ function endRun(victory){
     sel = save.dist;
   }
   persist();                                   // every run banks progress
+  // JF-#012: reclaiming the jade on the ROOFTOP plays the ending first
+  if (victory && fought === 3) state = S_END;
   if (victory) Snd.best(); else Snd.ko();
 }
 
 // ----------------------------------------------------------------- input ----
 function press(dir){
   Snd.unlock();
+  if (state === S_STORY){ save.intro = 1; persist(); state = S_MENU; Snd.tick(); return; }
+  if (state === S_END){ state = S_DEAD; Snd.tick(); return; }   // ending → tally
   if (state === S_MENU){ startRun(); return; }
   if (state === S_DEAD){
     if (!tallyDone) tallyT = 24 * 7;   // first tap: reveal full tally instantly
@@ -648,8 +661,12 @@ function startRun(){
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   dBase = DISTRICTS[sel].dBase;
   beginWave(1);
-  msg = (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
-        ' the RED flash to counter.'; msgT = 240;
+  // JF-#012: veterans get the district's line instead of the controls lesson
+  msg = save.kills > 50
+    ? DISTRICTS[sel].name + ' — ' + DISTRICTS[sel].line
+    : (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
+      ' the RED flash to counter.';
+  msgT = 240;
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS — DOUBLE JADE' +
     (save.streak > 1 ? '  ·  DAY ' + save.streak : ''), '#7ce8a8', true);
 }
@@ -1107,6 +1124,48 @@ function draw(){
       }
       cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia'; cx.textAlign = 'center';
       cx.fillText((newBest ? '' : 'BEST ' + best + '   ·   ') + (TOUCH ? 'tap the top half to rise again' : '1-4 to train  ·  arrows to rise again'), W/2, 522);
+    }
+  }
+  else if (state === S_STORY){
+    // JF-#012: the opening tale — three lines, then the courtyard
+    cx.fillStyle = 'rgba(8,10,14,0.82)'; cx.fillRect(0, 0, W, H);
+    cx.textAlign = 'center';
+    cx.fillStyle = '#7ce8a8'; cx.font = 'bold 40px Georgia';
+    cx.fillText('JADE FIST', W/2, 150);
+    const SL = [
+      "Your master's jade — the heart of the school — was stolen in the night.",
+      'Four districts stand between you and the thief.',
+      'Take it back. One counter at a time.'
+    ];
+    cx.font = '20px Georgia';
+    SL.forEach((s, i) => {
+      cx.globalAlpha = Math.min(1, Math.max(0, (t - 40 - i * 55) / 40));
+      cx.fillStyle = i === 2 ? '#e8c76a' : '#e8dcc0';
+      cx.fillText(s, W/2, 240 + i * 44);
+    });
+    cx.globalAlpha = 1;
+    if (t > 220 && (t / 30 | 0) % 2 === 0){
+      cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia';
+      cx.fillText(TOUCH ? '— tap to begin —' : '— press any key —', W/2, 430);
+    }
+  } else if (state === S_END){
+    // JF-#012: the ending — the jade reclaimed
+    cx.fillStyle = 'rgba(8,10,14,0.82)'; cx.fillRect(0, 0, W, H);
+    cx.textAlign = 'center';
+    const gl = 0.7 + 0.3 * Math.sin(t * 0.06);
+    cx.fillStyle = `rgba(124,232,168,${gl * 0.25})`;
+    cx.beginPath(); cx.arc(W/2, 190, 70, 0, 7); cx.fill();
+    cx.fillStyle = '#7ce8a8'; cx.font = 'bold 54px Georgia';
+    cx.fillText('◆', W/2, 210);
+    cx.fillStyle = '#e8c76a'; cx.font = 'bold 38px Georgia';
+    cx.fillText('THE JADE IS RECLAIMED', W/2, 290);
+    cx.fillStyle = '#e8dcc0'; cx.font = '19px Georgia';
+    cx.fillText('The thief is felled. The school stands. Your name is spoken in four districts.', W/2, 334);
+    cx.fillStyle = '#c8a8e8';
+    cx.fillText('LEGEND unlocked — the tale retold, without end.', W/2, 366);
+    if ((t / 30 | 0) % 2 === 0){
+      cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia';
+      cx.fillText('— continue —', W/2, 430);
     }
   }
   // mute button
