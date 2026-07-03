@@ -150,3 +150,8 @@ gameplayStop/Start bracket the pause per CG guidelines. No Escape binding (CG ru
 **JF-#015 dpi-crisp canvas (Batch C)**: backing store = 960x540 x scale x devicePixelRatio,
 base setTransform maps logical coords to physical pixels; CSS size unchanged so pointer math
 untouched. Crisp on hi-dpi per CG requirement.
+
+**JF-#016 monetization hooks (Batch D)**: midgame interstitial between runs (never before the
+first run, 3-min cooldown); rewarded DOUBLE JADE offer on the tally (gold button right of the
+upgrade grid, R key or tap, once per run, +jadeRun banked again on adFinished; offline fallback
+grants immediately). happytime() on district victories was JF-#013.

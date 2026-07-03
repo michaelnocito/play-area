@@ -303,6 +303,9 @@ let INTRO = 900;                      // alternating-spawn learning window (shri
 let PR = 92, CW = 150;                // player reach / combo window (upgraded at startRun)
 let btnRects = [];                    // tally upgrade-button hitboxes (rebuilt each draw)
 let tallyDone = false;                // all tally lines revealed (drawn at least once)
+// JF-#016: ad state — interstitial between runs on a 3-min cooldown (CG guidance),
+// rewarded DOUBLE JADE offer once per tally
+let adT = 0, ranOnce = false, rewardUsed = false, adRect = null;
 const TOUCH = matchMedia('(pointer:coarse)').matches;
 let tallyStep = 0, tallyT = 0, newBest = false;
 let msg = null, msgT = 0;
@@ -587,6 +590,7 @@ function endRun(victory){
   state = S_DEAD; tallyStep = 0; tallyT = 0; tallyDone = false;
   CG.gameplayStop();    // JF-#013
   if (victory) CG.happytime();
+  ranOnce = true; rewardUsed = false;   // JF-#016: fresh DOUBLE JADE offer each tally
   walletShown = save.jade;   // wallet animates up from pre-run balance as jade banks
   newBest = score > best;
   if (newBest){ best = score; localStorage.setItem('jf_best', best); }
@@ -623,6 +627,12 @@ function press(dir){
   }
   strike(dir);
 }
+// JF-#016: rewarded ad = bank the run's jade twice (once per tally)
+function doubleJade(){
+  if (rewardUsed || jadeRun <= 0) return;
+  rewardUsed = true;
+  CG.rewarded(() => { save.jade += jadeRun; persist(); Snd.best(); });
+}
 function buyUp(i){
   const u = UPS[i], tier = save.up[u.k];
   if (tier >= u.max) return;
@@ -639,6 +649,7 @@ addEventListener('keydown', e => {
   if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyDone){
     buyUp(+e.code.slice(5) - 1); return;
   }
+  if (e.code === 'KeyR' && state === S_DEAD && tallyDone){ doubleJade(); return; }   // JF-#016
   // JF-#009: on the menu, ◀ ▶ browse unlocked districts; Space/Enter fights
   if (state === S_MENU && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'KeyQ')){
     sel = (sel + save.dist) % (save.dist + 1); Snd.tick(); return;
@@ -662,6 +673,8 @@ cv.addEventListener('pointerdown', e => {
     if (x > W/2 + 130 && x < W/2 + 220){ sel = (sel + 1) % (save.dist + 1); Snd.tick(); return; }
   }
   if (state === S_DEAD && tallyDone){
+    if (adRect && x >= adRect.x && x <= adRect.x + adRect.w &&
+        y >= adRect.y && y <= adRect.y + adRect.h){ doubleJade(); return; }   // JF-#016
     for (const b of btnRects){
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){ buyUp(b.i); return; }
     }
@@ -672,6 +685,8 @@ cv.addEventListener('pointerdown', e => {
 
 function startRun(){
   state = S_PLAY;
+  // JF-#016: midgame ad between runs, never before the first, 3-min cooldown
+  if (ranOnce && Date.now() - adT > 180000){ adT = Date.now(); CG.interstitial(); }
   CG.gameplayStart();   // JF-#013: SDK brackets every run
   score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
   jadeRun = 0;
@@ -1168,6 +1183,20 @@ function draw(){
         cx.fillText((i + 1) + '. ' + u.name + ' ' + '●'.repeat(tier) + '○'.repeat(u.max - tier), bx + 10, by + 18);
         cx.font = '13px Georgia';
         cx.fillText(u.desc + (maxed ? '  · MAX' : '  · ◆ ' + cost), bx + 10, by + 35);
+      }
+      // JF-#016: rewarded DOUBLE JADE offer, right of the upgrade grid
+      adRect = null;
+      if (!rewardUsed && jadeRun > 0){
+        const ax = 724, ay = 398, aw = 216, ah = 44;
+        adRect = { x: ax, y: ay, w: aw, h: ah };
+        const glow = (t / 22 | 0) % 2 === 0;
+        cx.fillStyle = 'rgba(232,199,106,0.16)'; cx.fillRect(ax, ay, aw, ah);
+        cx.strokeStyle = glow ? '#ffe9a8' : '#e8c76a'; cx.lineWidth = glow ? 3 : 1.5;
+        cx.strokeRect(ax, ay, aw, ah);
+        cx.fillStyle = '#e8c76a'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
+        cx.fillText('▶ DOUBLE JADE  +' + jadeRun + '◆', ax + 10, ay + 18);
+        cx.font = '13px Georgia'; cx.fillStyle = '#c8bfa8';
+        cx.fillText(TOUCH ? 'watch an ad · tap here' : 'watch an ad · press R', ax + 10, ay + 35);
       }
       cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia'; cx.textAlign = 'center';
       cx.fillText((newBest ? '' : 'BEST ' + best + '   ·   ') + (TOUCH ? 'tap the top half to rise again' : '1-4 to train  ·  arrows to rise again'), W/2, 522);
