@@ -66,3 +66,19 @@ first buy in 1-2 runs; Rogue Legacy one-tap-spend-on-tally flow):
 - **SECOND WIND** (1 tier, 60◆): rise once per fight at 1♥ (slow-mo + burst moment).
 - Tally = shop: 2×2 upgrade grid on the death screen, tap or keys 1-4, pips show tiers;
   restart dead-zone below y370 so shop taps never restart. Menu shows jade + training count.
+
+## JF-#005 progression pass (7 items, CG-research-grounded)
+1. **Belt ranks**: lifetime kills → WHITE→…→BLACK (BELTS table); live promotion banner
+   mid-run; belt line in tally; **player's sash renders in belt color** (visible rank).
+2. **Goal-gradient nudges**: cheapest affordable upgrade pulses on the tally; menu shows
+   "N foes to NEXT belt"; first-training callout when nothing owned but affordable.
+3. **First-buy onboarding**: blinking "you can afford your first training" over the grid.
+4. **Daily return bonus**: first fight each day = ×2 jade (banner at run start + tally
+   note); consecutive-day streak tracked and shown on menu ("day N").
+5. **Jade bounty milestones** (one-time, saved): First Counter 10◆, Five-Fold Chain 15◆,
+   Iron Monk Felled 15◆, Spear Turned Aside 15◆, Endure 90s 20◆ — center banner + chime.
+6. **Warm-up compression by belt**: run starts `belt×200` frames into the ramp and the
+   alternating-spawn learning window shrinks (900→300) — skips the boring open, ceiling
+   untouched (the documented guardrail).
+7. **Wallet count-up on tally** + `tallyDone` flag now gates shop input (fixes variable
+   line-count reveal when a promotion line is present).

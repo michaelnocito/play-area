@@ -126,12 +126,43 @@ const Snd = (() => {
 // Design rule (Rooftop §4 research): upgrades compress the warm-up / add options,
 // never raise the skill ceiling; ~×2 cost per tier; first buy within 1-2 runs.
 const SAVE_KEY = 'jf_save_v1';
-let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 } };
+let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
+             kills: 0, ach: {}, day: '', streak: 0 };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-  if (s && s.up) save = { jade: s.jade | 0, up: Object.assign(save.up, s.up) };
+  if (s && s.up) save = {
+    jade: s.jade | 0, up: Object.assign(save.up, s.up),
+    kills: s.kills | 0, ach: s.ach || {}, day: s.day || '', streak: s.streak | 0
+  };
 } catch (e) {}
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+// belts = lifetime-kill milestones (CG "achievable objectives"); sash shows your rank
+const BELTS = [
+  { name: 'WHITE',  need: 0,   col: '#e8e8e8' },
+  { name: 'YELLOW', need: 25,  col: '#e8d05a' },
+  { name: 'ORANGE', need: 75,  col: '#e89a4a' },
+  { name: 'GREEN',  need: 150, col: '#3fae7c' },
+  { name: 'BLUE',   need: 300, col: '#4a8ae8' },
+  { name: 'BROWN',  need: 500, col: '#a8794a' },
+  { name: 'BLACK',  need: 800, col: '#3a3f48' }
+];
+function beltOf(k){ let b = 0; BELTS.forEach((B, i) => { if (k >= B.need) b = i; }); return b; }
+// one-time jade bounties = session goals beyond score
+const ACH = [
+  { k: 'counter', name: 'First Counter',       jade: 10 },
+  { k: 'chain5',  name: 'Five-Fold Chain',     jade: 15 },
+  { k: 'monk',    name: 'Iron Monk Felled',    jade: 15 },
+  { k: 'spear',   name: 'Spear Turned Aside',  jade: 15 },
+  { k: 'endure',  name: 'Endure 90 Seconds',   jade: 20 }
+];
+function award(key){
+  if (save.ach[key]) return;
+  save.ach[key] = 1;
+  const a = ACH.find(a => a.k === key);
+  save.jade += a.jade; persist();
+  popup(W/2, 150, a.name.toUpperCase() + '  +' + a.jade + '◆', '#7ce8a8', true);
+  Snd.best();
+}
 const UPS = [
   { k: 'body',  name: 'IRON BODY',   max: 2, cost: t => 20 * (1 << t), desc: '+1 heart' },
   { k: 'palm',  name: 'JADE PALM',   max: 3, cost: t => 12 * (1 << t), desc: 'longer reach' },
@@ -152,8 +183,13 @@ let waveT = 0, spawnT = 60, difficulty = 0;
 let bufDir = 0, bufT = 0;        // input buffer across hit-stop
 let lastSpawnSide = 1;
 let jadeRun = 0, windAvail = false;   // jade earned this run; Second Wind charge
+let dailyBonus = false;               // first fight of the day = double jade
+let promoted = -1;                    // belt reached mid-run (-1 = none)
+let walletShown = 0;                  // animated wallet display on tally
+let INTRO = 900;                      // alternating-spawn learning window (shrinks w/ belt)
 let PR = 92, CW = 150;                // player reach / combo window (upgraded at startRun)
 let btnRects = [];                    // tally upgrade-button hitboxes (rebuilt each draw)
+let tallyDone = false;                // all tally lines revealed (drawn at least once)
 const TOUCH = matchMedia('(pointer:coarse)').matches;
 let tallyStep = 0, tallyT = 0, newBest = false;
 let msg = null, msgT = 0;
@@ -169,7 +205,7 @@ const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROW
 const T_NORM = 0, T_FAST = 1, T_BRUTE = 2, T_SPEAR = 3;
 function spawnEnemy(forceSide){
   // first ~15s: strictly alternate sides so the player is never pincered while learning
-  const side = forceSide || (waveT < 900 ? -lastSpawnSide : (Math.random() < 0.5 ? -1 : 1));
+  const side = forceSide || (waveT < INTRO ? -lastSpawnSide : (Math.random() < 0.5 ? -1 : 1));
   lastSpawnSide = side;
   let type = T_NORM;
   const r = Math.random();
@@ -224,6 +260,9 @@ function strike(dir){
 
   if (e.st === E_WINDUP){                       // ---- COUNTER ----
     counters++; jadeRun += 3;
+    award('counter');
+    if (e.type === T_BRUTE) award('monk');
+    if (e.type === T_SPEAR) award('spear');
     e.st = E_THROWN; e.stT = 0;
     e.vx = dir * 9; e.vy = -7;
     combo++; comboT = CW;
@@ -275,6 +314,14 @@ function strike(dir){
     burst(e.x, e.y - 45, '#d8d0c0', 10, 3);
   }
   if (combo > bestCombo) bestCombo = combo;
+  if (combo >= 5) award('chain5');
+  // live belt promotion: banner the moment lifetime kills cross a threshold
+  const nb = beltOf(save.kills + kills);
+  if (nb > beltOf(save.kills) && nb > promoted){
+    promoted = nb;
+    popup(W/2, 190, BELTS[nb].name + ' BELT', BELTS[nb].col === '#3a3f48' ? '#e8dcc0' : BELTS[nb].col, true);
+    Snd.best(); shake = 6;
+  }
 }
 
 function hurtPlayer(){
@@ -289,10 +336,14 @@ function hurtPlayer(){
       Snd.counter();
       return;
     }
-    state = S_DEAD; tallyStep = 0; tallyT = 0;
+    state = S_DEAD; tallyStep = 0; tallyT = 0; tallyDone = false;
+    walletShown = save.jade;   // wallet animates up from pre-run balance as jade banks
     newBest = score > best;
     if (newBest){ best = score; localStorage.setItem('jf_best', best); }
-    save.jade += jadeRun; persist();             // every death still banks progress
+    if (dailyBonus) jadeRun *= 2;                // return bonus pays out at the tally
+    save.jade += jadeRun;
+    save.kills += kills;                         // lifetime kills drive belt rank
+    persist();                                   // every death still banks progress
     Snd.ko();
   }
 }
@@ -302,8 +353,8 @@ function press(dir){
   Snd.unlock();
   if (state === S_MENU){ startRun(); return; }
   if (state === S_DEAD){
-    if (tallyT < 24 * 5) tallyT = 24 * 5;      // first tap: reveal full tally instantly
-    else if (tallyT > 24 * 5 + 10) startRun(); // next tap: restart (small guard vs double-tap)
+    if (!tallyDone) tallyT = 24 * 7;   // first tap: reveal full tally instantly
+    else startRun();                   // next tap: restart (tallyDone flips on next draw)
     return;
   }
   strike(dir);
@@ -319,7 +370,7 @@ function buyUp(i){
 addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
-  if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyT >= 24 * 5){
+  if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyDone){
     buyUp(+e.code.slice(5) - 1); return;
   }
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.code === 'KeyQ') press(-1);
@@ -330,7 +381,7 @@ cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / scale, y = (e.clientY - r.top) / scale;
   if (x > W - 60 && y < 50){ Snd.toggleMute(); return; }   // mute button hitbox
-  if (state === S_DEAD && tallyT >= 24 * 5){
+  if (state === S_DEAD && tallyDone){
     for (const b of btnRects){
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){ buyUp(b.i); return; }
     }
@@ -346,10 +397,25 @@ function startRun(){
   PR = REACH + save.up.palm * 8;
   CW = 150 + save.up.focus * 40;
   windAvail = save.up.wind > 0;
-  hearts = 3 + save.up.body; hurtFlash = 0; difficulty = 0; waveT = 0; spawnT = 50;
+  // warm-up compression: higher belts skip the too-easy opening ramp, never the ceiling
+  const belt = beltOf(save.kills);
+  waveT = Math.min(belt, 6) * 200;
+  INTRO = Math.max(300, 900 - belt * 120);
+  promoted = -1;
+  // return bonus: first fight of a new day = double jade (streak tracked)
+  const today = new Date().toDateString();
+  dailyBonus = save.day !== today;
+  if (dailyBonus){
+    const yest = new Date(); yest.setDate(yest.getDate() - 1);
+    save.streak = save.day === yest.toDateString() ? save.streak + 1 : 1;
+    save.day = today; persist();
+  }
+  hearts = 3 + save.up.body; hurtFlash = 0; difficulty = 0; spawnT = 50;
   enemies.length = 0; popups.length = 0; parts.length = 0;
   msg = (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
         ' the RED flash to counter.'; msgT = 240;
+  if (dailyBonus) popup(W/2, 160, 'RETURN BONUS — DOUBLE JADE' +
+    (save.streak > 1 ? '  ·  DAY ' + save.streak : ''), '#7ce8a8', true);
 }
 
 // ---------------------------------------------------------------- update ----
@@ -376,6 +442,7 @@ function update(){
 
   // difficulty + spawning
   waveT += dt;
+  if (waveT >= 5400) award('endure');
   difficulty = Math.min(12, waveT / 480);
   spawnT -= dt;
   if (spawnT <= 0){
@@ -565,7 +632,7 @@ function draw(){
 
   // player
   const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : '#e8dcc0';
-  fighter(P.x, P.y, P.face, { col: pcol, sash: '#3fae7c', punch: P.punchT });
+  fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col, punch: P.punchT });
 
   // particles
   for (const p of parts){
@@ -624,10 +691,15 @@ function draw(){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 22px Georgia';
       cx.fillText('— press any side to fight —', W/2, 400);
     }
-    cx.fillStyle = '#8a94a6'; cx.font = '16px Georgia';
+    const mb = beltOf(save.kills);
+    cx.fillStyle = BELTS[mb].col === '#3a3f48' ? '#e8dcc0' : BELTS[mb].col;
+    cx.font = 'bold 18px Georgia';
+    cx.fillText(BELTS[mb].name + ' BELT' + (save.streak > 1 ? '   ·   day ' + save.streak : ''), W/2, 436);
+    cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia';
     const trained = UPS.reduce((n, u) => n + save.up[u.k], 0);
     cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
-      (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : ''), W/2, 440);
+      (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
+      (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 462);
   } else if (state === S_DEAD){
     cx.fillStyle = 'rgba(8,10,14,0.7)'; cx.fillRect(0, 0, W, H);
     cx.fillStyle = '#e86a6a'; cx.font = 'bold 44px Georgia'; cx.textAlign = 'center';
@@ -637,9 +709,11 @@ function draw(){
       ['Foes dropped', kills + ''],
       ['Counters', counters + ''],
       ['Best combo', '×' + bestCombo],
-      ['Jade earned', '◆ ' + jadeRun],
+      ['Jade earned', '◆ ' + jadeRun + (dailyBonus ? '  (×2 return bonus)' : '')],
       ['SCORE', score + '']
     ];
+    if (promoted >= 0) lines.splice(3, 0,
+      ['Promoted', BELTS[promoted].name + ' BELT']);
     const shown = Math.min(lines.length, Math.floor(tallyT / 24));
     if (shown > tallyStep){ tallyStep = shown; Snd.tick(); if (shown === lines.length && newBest) Snd.best(); }
     cx.font = '20px Georgia';
@@ -650,14 +724,31 @@ function draw(){
       cx.textAlign = 'left';  cx.fillText(lines[i][1], W/2 + 20, y);
     }
     btnRects = [];
-    if (shown === lines.length){
+    tallyDone = shown === lines.length;
+    if (tallyDone){
       if (newBest){
         cx.fillStyle = '#e8c76a'; cx.font = 'bold 22px Georgia'; cx.textAlign = 'center';
         cx.fillText('NEW BEST', W/2, 348);
       }
       // one-tap upgrade spend, right on the tally (Rogue Legacy flow)
+      walletShown += (save.jade - walletShown) * 0.12;   // count-up: watch the jade bank
+      if (Math.abs(save.jade - walletShown) < 0.6) walletShown = save.jade;
       cx.textAlign = 'center'; cx.fillStyle = '#7ce8a8'; cx.font = 'bold 19px Georgia';
-      cx.fillText('JADE  ◆ ' + save.jade + '   — train:', W/2, 382);
+      cx.fillText('JADE  ◆ ' + Math.round(walletShown) + '   — train:', W/2, 382);
+      // goal-gradient: pulse the cheapest upgrade you can afford right now
+      let pulseI = -1, pc = 1e9;
+      for (let i = 0; i < UPS.length; i++){
+        const tier = save.up[UPS[i].k];
+        if (tier < UPS[i].max){
+          const c = UPS[i].cost(tier);
+          if (c <= save.jade && c < pc){ pc = c; pulseI = i; }
+        }
+      }
+      const nothingOwned = UPS.every(u => save.up[u.k] === 0);
+      if (nothingOwned && pulseI >= 0 && (t / 25 | 0) % 2 === 0){
+        cx.fillStyle = '#7ce8a8'; cx.font = 'bold 16px Georgia';
+        cx.fillText('▼ you can afford your first training ▼', W/2, 394);
+      }
       const bw2 = 218, bh = 44, gap = 10;   // 2×2 upgrade grid
       for (let i = 0; i < UPS.length; i++){
         const u = UPS[i], tier = save.up[u.k], maxed = tier >= u.max;
@@ -667,7 +758,9 @@ function draw(){
         btnRects.push({ x: bx, y: by, w: bw2, h: bh, i });
         cx.fillStyle = maxed ? 'rgba(124,232,168,0.10)' : can ? 'rgba(124,232,168,0.22)' : 'rgba(140,148,166,0.10)';
         cx.fillRect(bx, by, bw2, bh);
-        cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
+        const isPulse = i === pulseI && (t / 20 | 0) % 2 === 0;
+        cx.strokeStyle = can ? (isPulse ? '#b8ffd8' : '#7ce8a8') : 'rgba(140,148,166,0.4)';
+        cx.lineWidth = isPulse ? 3 : 1.5;
         cx.strokeRect(bx, by, bw2, bh);
         cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
         cx.fillText((i + 1) + '. ' + u.name + ' ' + '●'.repeat(tier) + '○'.repeat(u.max - tier), bx + 10, by + 18);
