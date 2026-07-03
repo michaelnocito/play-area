@@ -79,6 +79,42 @@ const Snd = (() => {
     const g = ac.createGain(); env(g, t0, 0.003, peak, dur);
     s.connect(f); f.connect(g); g.connect(master); s.start(t0);
   }
+  // JF-#021: reactive music — an A-pentatonic pluck bed over a two-voice drone.
+  // One knob (intensity 0..1) drives tempo, note density, register, and drone
+  // swell; a boss on screen adds a low taiko pulse. Runs off the same master
+  // gain so mute covers it; intensity 0 = silence (pause/blur fade out).
+  let mGain = null, droneGain = null, mNext = 0, mBeat = 0;
+  const PENT = [220, 261.6, 293.7, 329.6, 392, 440, 523.3, 587.3, 659.3];
+  function mEnsure(){
+    if (mGain) return;
+    mGain = ac.createGain(); mGain.gain.value = 0; mGain.connect(master);
+    droneGain = ac.createGain(); droneGain.gain.value = 0; droneGain.connect(mGain);
+    const d1 = ac.createOscillator(); d1.type = 'sine'; d1.frequency.value = 55;
+    const d2 = ac.createOscillator(); d2.type = 'triangle'; d2.frequency.value = 110.4;
+    d1.connect(droneGain); d2.connect(droneGain); d1.start(); d2.start();
+    mNext = ac.currentTime + 0.1;
+  }
+  function pluck(freq, when, vel){
+    const o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+    o.type = 'triangle'; o.frequency.value = freq;
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(freq * 4, when);
+    f.frequency.exponentialRampToValueAtTime(freq * 1.5, when + 0.3);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(vel, when + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.55);
+    o.connect(f); f.connect(g); g.connect(mGain);
+    o.start(when); o.stop(when + 0.6);
+  }
+  function thump(when){
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(70, when);
+    o.frequency.exponentialRampToValueAtTime(42, when + 0.18);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(0.9, when + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.28);
+    o.connect(g); g.connect(mGain); o.start(when); o.stop(when + 0.3);
+  }
   return {
     get muted(){ return muted; },
     toggleMute(){
@@ -86,6 +122,22 @@ const Snd = (() => {
       if (master) master.gain.value = muted ? 0 : 0.8;
     },
     unlock(){ ensure(); },
+    music(intensity, boss){
+      if (!ac) return;              // no context until the first user gesture
+      mEnsure();
+      mGain.gain.setTargetAtTime(intensity * 0.14, ac.currentTime, 0.6);
+      droneGain.gain.setTargetAtTime(intensity * 0.5, ac.currentTime, 1.4);
+      const spb = 60 / (64 + intensity * 76);        // eighth-note interval
+      while (mNext < ac.currentTime + 0.2){
+        mBeat++;
+        if (intensity > 0.02 && Math.random() < intensity * 0.85){
+          const span = 3 + Math.round(intensity * (PENT.length - 3));
+          pluck(PENT[(Math.random() * span) | 0], mNext, 0.4 + Math.random() * 0.3);
+        }
+        if (boss && mBeat % 4 === 0) thump(mNext);
+        mNext += spb;
+      }
+    },
     whoosh(){ ensure(); noise(0.09, 0.25, 2200); },
     hit(combo){
       ensure();
@@ -1346,6 +1398,14 @@ function loop(ts){
   if (!last) last = ts;
   acc += Math.min(ts - last, 100); last = ts;
   while (acc >= STEP){ update(); acc -= STEP; }
+  // JF-#021: one intensity knob feeds the music every frame
+  const bossUp = enemies.some(e => e.type === T_BOSS && e.st !== E_DOWN && e.st !== E_THROWN);
+  const inten =
+    state === S_PLAY ? Math.min(1, 0.32 + difficulty * 0.045 + Math.min(combo, 8) * 0.025 + (bossUp ? 0.18 : 0)) :
+    state === S_MENU || state === S_STORY ? 0.15 :
+    state === S_DEAD ? (won ? 0.3 : 0.1) :
+    state === S_END ? 0.35 : 0;      // S_PAUSE fades to silence
+  Snd.music(document.hidden ? 0 : inten, bossUp && state === S_PLAY);
   draw();
 }
 requestAnimationFrame(loop);
