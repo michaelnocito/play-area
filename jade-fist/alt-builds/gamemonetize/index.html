@@ -1,12 +1,15 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>JADE FIST</title>
-<!-- SDK:HEAD:BEGIN (JF-#024: make-alt-builds.ps1 swaps this block per platform) -->
-<!-- JF-#013: CrazyGames SDK v3 (verify against current docs before submitting) -->
-<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+<!-- SDK:HEAD:BEGIN -->
+<!-- JF-#024: GameMonetize SDK - fill gameId + verify docs before submitting -->
+<script>window.SDK_OPTIONS = { gameId: "GM_GAME_ID_HERE", onEvent: function(a){
+  if (a.name === "SDK_REWARDED_WATCH_COMPLETE" && window.__gmReward){ var f = window.__gmReward; window.__gmReward = null; f(); }
+}};</script>
+<script src="https://api.gamemonetize.com/sdk.js"></script>
 <!-- SDK:HEAD:END -->
 <style>
   html,body{margin:0;padding:0;background:#0a0d12;height:100%;overflow:hidden;touch-action:none;
@@ -20,7 +23,7 @@
 <script>
 'use strict';
 // ============================================================================
-// JADE FIST — kung fu counter-brawler prototype (JF-#001)
+// JADE FIST â€” kung fu counter-brawler prototype (JF-#001)
 // Single file, canvas + vanilla JS, procedural art + WebAudio. No assets.
 // Verbs: STRIKE (tap toward an enemy) / COUNTER (strike during their red
 // telegraph flash -> throw, knocks down neighbors) / combo chain multiplier.
@@ -31,7 +34,7 @@ const cv = document.getElementById('c'), cx = cv.getContext('2d');
 let scale = 1;
 // JF-#015: back the canvas at devicePixelRatio so it stays crisp on hi-dpi
 // displays (CG requirement). All game code keeps drawing in 960x540 logical
-// coords — the base transform maps them to physical pixels.
+// coords â€” the base transform maps them to physical pixels.
 function fit(){
   const ww = innerWidth, wh = innerHeight;
   const dpr = window.devicePixelRatio || 1;
@@ -81,7 +84,7 @@ const Snd = (() => {
     const g = ac.createGain(); env(g, t0, 0.003, peak, dur);
     s.connect(f); f.connect(g); g.connect(master); s.start(t0);
   }
-  // JF-#021: reactive music — an A-pentatonic pluck bed over a two-voice drone.
+  // JF-#021: reactive music â€” an A-pentatonic pluck bed over a two-voice drone.
   // One knob (intensity 0..1) drives tempo, note density, register, and drone
   // swell; a boss on screen adds a low taiko pulse. Runs off the same master
   // gain so mute covers it; intensity 0 = silence (pause/blur fade out).
@@ -181,42 +184,30 @@ const Snd = (() => {
   };
 })();
 
-// SDK:ADAPTER:BEGIN (JF-#024: make-alt-builds.ps1 swaps this block per platform)
-// -------------------------------------------------- CrazyGames SDK (JF-#013) --
-// Adapter copied from rooftop-sprint: graceful no-op offline. sdkLive = init()
-// actually resolved (only true on the CG platform); every game/ad call is gated
-// on it — calling the SDK pre-init or off-platform just logs errors and is dropped.
+// SDK:ADAPTER:BEGIN
+// ------------------------------------------ GameMonetize adapter (JF-#024) --
+// Same CG facade the game calls everywhere; graceful no-op off-platform.
 let sdkLive = false;
 const CG = {
-  init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>{ sdkLive = true; cb&&cb(); }).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
-  loadingStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStart(); }catch(e){} },
-  loadingStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStop(); }catch(e){} },
-  gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
-  gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
-  happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
-  interstitial(){ try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {
-    adStarted(){}, adFinished(){}, adError(){},
-  }); }catch(e){} },
+  init(cb){ sdkLive = !!window.sdk; cb && cb(); },
+  loadingStart(){}, loadingStop(){}, gameplayStart(){}, gameplayStop(){}, happytime(){},
+  interstitial(){ try{ if (window.sdk && window.sdk.showBanner) window.sdk.showBanner(); }catch(e){} },
   rewarded(onReward){
-    try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
-      window.CrazyGames.SDK.ad.requestAd("rewarded", {
-        adStarted(){}, adFinished(){ onReward&&onReward(); }, adError(){ onReward&&onReward(); },
-      }); return;
+    try{ if (window.sdk && window.sdk.showRewardedBanner){
+      window.__gmReward = onReward; window.sdk.showRewardedBanner(); return;
     } }catch(e){}
-    onReward&&onReward();
+    onReward && onReward();
   },
 };
-// Single-file game: everything is already parsed by init time, so loading
-// start/stop bracket only the SDK handshake itself.
-CG.init(() => { CG.loadingStart(); CG.loadingStop(); });
+CG.init(() => {});
 // SDK:ADAPTER:END
 
 // ----------------------------------------------------------------- state ----
 // ------------------------------------------------------- progression save ---
 // localStorage save = free cloud sync on CrazyGames (Automatic Progress Save
 // backs up localStorage for HTML5 games; Data Module syncs for logged-in users).
-// Design rule (Rooftop §4 research): upgrades compress the warm-up / add options,
-// never raise the skill ceiling; ~×2 cost per tier; first buy within 1-2 runs.
+// Design rule (Rooftop Â§4 research): upgrades compress the warm-up / add options,
+// never raise the skill ceiling; ~Ã—2 cost per tier; first buy within 1-2 runs.
 const SAVE_KEY = 'jf_save_v1';
 let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
              kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0,
@@ -230,7 +221,7 @@ try {
     cos: (s.cos && s.cos.own) ? { own: s.cos.own, wear: s.cos.wear | 0 } : save.cos
   };
 } catch (e) {}
-// JF-#023: cosmetic shop — robe dyes, a pure jade sink. Cosmetics only: no
+// JF-#023: cosmetic shop â€” robe dyes, a pure jade sink. Cosmetics only: no
 // stats, so the shop can never bend balance. Hues stay far from enemy greys
 // and telegraph reds so readability holds.
 const STYLES = [
@@ -256,8 +247,8 @@ function styleBuy(){
 }
 let styleRect = null, styleBuyRect = null;   // menu hitboxes (rebuilt each draw)
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
-// JF-#022: bot fairness suite — open index.html?bot=3 (&react=12) and a bot with
-// a fixed human reaction time (frames, 12 ≈ 200ms) plays N runs in each of the
+// JF-#022: bot fairness suite â€” open index.html?bot=3 (&react=12) and a bot with
+// a fixed human reaction time (frames, 12 â‰ˆ 200ms) plays N runs in each of the
 // four campaign districts, classifying every hit it takes: PINCER (opposite-side
 // threat overlapped), FAST (telegraph shorter than the reaction time), or clean.
 // Results go to the console as a per-run table + aggregate verdict. Bot mode
@@ -316,9 +307,9 @@ function botFrame(){
         pctFast: all.length ? Math.round(100 * all.filter(h => h.fast).length / all.length) : 0
       };
       console.log('JADE FIST FAIRNESS VERDICT', agg);
-      console.log(agg.pctFast > 15 ? '⚠ >15% of hits came from telegraphs shorter than the reaction time — unreactable, tune windups up.'
-        : agg.pctPincer > 35 ? '⚠ >35% of hits were pincers — fairness guard may lift too early.'
-        : '✓ fair: most damage was reactable and single-sided.');
+      console.log(agg.pctFast > 15 ? 'âš  >15% of hits came from telegraphs shorter than the reaction time â€” unreactable, tune windups up.'
+        : agg.pctPincer > 35 ? 'âš  >35% of hits were pincers â€” fairness guard may lift too early.'
+        : 'âœ“ fair: most damage was reactable and single-sided.');
       return;
     }
     state = S_MENU;   // next run
@@ -335,7 +326,7 @@ const BELTS = [
   { name: 'BLACK',  need: 800, col: '#3a3f48' }
 ];
 function beltOf(k){ let b = 0; BELTS.forEach((B, i) => { if (k >= B.need) b = i; }); return b; }
-// JF-#010: techniques — belt promotions teach new play, not just a sash color.
+// JF-#010: techniques â€” belt promotions teach new play, not just a sash color.
 // All three live inside the two verbs: better throws, a later counter window,
 // and a chain reward for perfect timing.
 const TECH = [
@@ -344,7 +335,7 @@ const TECH = [
   { belt: 4, name: 'PALM WAVE',    desc: '3 perfect counters in a row fell BOTH sides' }
 ];
 function hasTech(i){ return beltOf(save.kills + kills) >= TECH[i].belt; }
-// JF-#011: daily trials — three rotating objectives, 15◆ each, once per day.
+// JF-#011: daily trials â€” three rotating objectives, 15â—† each, once per day.
 // Rotation is date-seeded so every player sees the same trio on the same day.
 const TRIALS = [
   { k: 'vip',     name: 'Counter 5 vipers',           n: 5 },
@@ -364,15 +355,15 @@ function bumpTrial(k, amt){
     const T = TRIALS[trio[i]];
     if (T.k === k && !save.tdone[i] && trialCt[k] >= T.n){
       save.tdone[i] = 1; jadeRun += 15; persist();
-      popup(W/2, 250, 'TRIAL: ' + T.name.toUpperCase() + '  +15◆', '#7ce8a8', true);
+      popup(W/2, 250, 'TRIAL: ' + T.name.toUpperCase() + '  +15â—†', '#7ce8a8', true);
       Snd.best();
     }
   }
 }
-// JF-#011: the daily OMEN — a paired boon and curse you may accept before a run
+// JF-#011: the daily OMEN â€” a paired boon and curse you may accept before a run
 const OMENS = [
   { b: '+1 heart',              c: 'telegraphs 20% faster', heart: 1, windScale: 0.8 },
-  { b: 'jade ×1.5',             c: 'one fewer heart',       heart: -1, jadeScale: 1.5 },
+  { b: 'jade Ã—1.5',             c: 'one fewer heart',       heart: -1, jadeScale: 1.5 },
   { b: 'wider perfect window',  c: 'enemies 15% faster',    perfTh: 0.55, spdScale: 1.15 }
 ];
 let omenOn = false;
@@ -391,7 +382,7 @@ function award(key){
   save.ach[key] = 1;
   const a = ACH.find(a => a.k === key);
   save.jade += a.jade; persist();
-  popup(W/2, 150, a.name.toUpperCase() + '  +' + a.jade + '◆', '#7ce8a8', true);
+  popup(W/2, 150, a.name.toUpperCase() + '  +' + a.jade + 'â—†', '#7ce8a8', true);
   Snd.best();
 }
 const UPS = [
@@ -411,12 +402,12 @@ let kills = 0, counters = 0, bestCombo = 0;
 let hearts = 3, hurtFlash = 0;
 let popups = [], parts = [], enemies = [];
 let waveT = 0, spawnT = 60, difficulty = 0;
-// JF-#008: wave machine — quota waves with rest beats; every 5th wave = boss
+// JF-#008: wave machine â€” quota waves with rest beats; every 5th wave = boss
 const WAVES_PER_DISTRICT = 5;
 let wave = 1, wavePhase = 0, restT = 0, toSpawn = 0;   // phase 0=fight 1=rest
 let dBase = 0;                        // district base difficulty (district table)
 let won = false;                      // district boss felled this run
-// JF-#009: districts are levels — each with its own fight, palette, and boss.
+// JF-#009: districts are levels â€” each with its own fight, palette, and boss.
 // Beat a district's master to unlock the next.
 const DISTRICTS = [
   { name: 'COURTYARD', line: 'Where the jade was taken.', boss: 'THE IRON MASTER',
@@ -431,7 +422,7 @@ const DISTRICTS = [
   { name: 'ROOFTOP', line: 'The thief waits above.', boss: 'THE JADE THIEF',
     dBase: 6, quirk: 'spear', bossHp: 4,
     sky: ['#141020','#221a33','#120e1c'], ground: '#1d1826', lant: [190,150,240], pag: 5 },
-  // JF-#012: LEGEND — the endless retelling, unlocked by reclaiming the jade
+  // JF-#012: LEGEND â€” the endless retelling, unlocked by reclaiming the jade
   { name: 'LEGEND', line: 'The tale retold, without end.', boss: 'THE IRON MASTER',
     dBase: 7, quirk: '', bossHp: 5, legend: true,
     sky: ['#100c18','#1c1426','#0e0a14'], ground: '#1c1620', lant: [232,199,106], pag: 5 }
@@ -454,7 +445,7 @@ let INTRO = 900;                      // alternating-spawn learning window (shri
 let PR = 92, CW = 150;                // player reach / combo window (upgraded at startRun)
 let btnRects = [];                    // tally upgrade-button hitboxes (rebuilt each draw)
 let tallyDone = false;                // all tally lines revealed (drawn at least once)
-// JF-#016: ad state — interstitial between runs on a 3-min cooldown (CG guidance),
+// JF-#016: ad state â€” interstitial between runs on a 3-min cooldown (CG guidance),
 // rewarded DOUBLE JADE offer once per tally
 let adT = 0, ranOnce = false, rewardUsed = false, adRect = null;
 const TOUCH = matchMedia('(pointer:coarse)').matches;
@@ -467,14 +458,14 @@ const P = { x: W/2, y: 420, face: 1, punchT: 0, punchSide: 1, stance: 0 };
 // Enemy lifecycle: walk in -> windup (RED TELEGRAPH = counter window) ->
 // strike (hits you if still standing there) -> recover -> walk again.
 const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5, E_STAGGER = 6, E_FEINT = 7;
-// types: 0 initiate · 1 viper (fast, short telegraph) · 2 iron monk (brute — strikes
-// only SHOVE him, counter to fell) · 3 spearman (attacks from long range — counter at range)
+// types: 0 initiate Â· 1 viper (fast, short telegraph) Â· 2 iron monk (brute â€” strikes
+// only SHOVE him, counter to fell) Â· 3 spearman (attacks from long range â€” counter at range)
 const T_NORM = 0, T_FAST = 1, T_BRUTE = 2, T_SPEAR = 3, T_BOSS = 4;
 function spawnEnemy(forceSide){
   // first ~15s: strictly alternate sides so the player is never pincered while learning
   const side = forceSide || (waveT < INTRO ? -lastSpawnSide : (Math.random() < 0.5 ? -1 : 1));
   lastSpawnSide = side;
-  // JF-#009: district quirks skew the enemy mix — each district is its own fight
+  // JF-#009: district quirks skew the enemy mix â€” each district is its own fight
   const q = DISTRICTS[sel].quirk;
   let type = T_NORM;
   const r = Math.random();
@@ -497,7 +488,7 @@ function spawnEnemy(forceSide){
     guard: ((type === T_NORM || (type === T_FAST && difficulty > 5)) &&
       Math.random() < Math.min(0.15 + difficulty * 0.04 + (combo >= 8 ? 0.2 : 0) +
         (q === 'guard' ? 0.18 : 0), 0.65)) ? 1 : 0,
-    // JF-#007: some vipers open with a FEINT — pale flash, no audio, hops back out of reach
+    // JF-#007: some vipers open with a FEINT â€” pale flash, no audio, hops back out of reach
     feint: type === T_FAST && difficulty > 4 && Math.random() < 0.35,
     vx: 0, vy: 0, y: 420, rot: 0
   });
@@ -509,7 +500,7 @@ function spawnEnemy(forceSide){
   }
 }
 
-// JF-#008: boss — the Master. Counters are the ONLY damage; each counter taken
+// JF-#008: boss â€” the Master. Counters are the ONLY damage; each counter taken
 // drops a phase: faster telegraphs + he calls two students to the fight.
 function spawnBoss(hp){
   const side = Math.random() < 0.5 ? -1 : 1;
@@ -545,11 +536,11 @@ function onWaveClear(){
   const bossWave = wave % WAVES_PER_DISTRICT === 0;
   if (bossWave){
     jadeRun += 25;
-    if (D.legend){       // JF-#012: LEGEND never ends — the master returns, stronger
-      banner('THE TALE CONTINUES  ·  +25◆', '#e8c76a', 190);
+    if (D.legend){       // JF-#012: LEGEND never ends â€” the master returns, stronger
+      banner('THE TALE CONTINUES  Â·  +25â—†', '#e8c76a', 190);
     } else {
       won = true;
-      banner(D.boss + ' FALLS  ·  +25◆', '#7ce8a8', 190);
+      banner(D.boss + ' FALLS  Â·  +25â—†', '#7ce8a8', 190);
     }
     restT = 210; slowMo = Math.max(slowMo, 30); Snd.best();
   } else {
@@ -585,11 +576,11 @@ function burst(x, y, col, n, pow){
   }
 }
 
-// JF-#020: a touch of absurdity — occasional comedy send on perfect counters,
+// JF-#020: a touch of absurdity â€” occasional comedy send on perfect counters,
 // wall bonks, and the odd felled-foe yelp. Rare on purpose: seasoning, not a tone change.
 const SENDS = ['SEE YOU NEXT SPRING', "HE'LL WALK THAT OFF", 'STRAIGHT TO THE HEALER',
                'OVER THE NOODLE CART', 'TELL THE OTHERS'];
-const YELPS = ['my sandals…', 'not the face', 'I quit', 'who hired him?', 'ow.'];
+const YELPS = ['my sandalsâ€¦', 'not the face', 'I quit', 'who hired him?', 'ow.'];
 function yelp(x, y){
   if (Math.random() < 0.12) popup(x, y, YELPS[(Math.random() * YELPS.length) | 0], '#c8bfa8');
 }
@@ -603,7 +594,7 @@ function strike(dir){
   const e = nearestInReach(dir);
   if (!e){ Snd.whoosh(); whiffT = 14; return; }   // JF-#006: whiff = brief recovery (no free spam)
 
-  // JF-#010: IRON CATCH — with the technique, an unlanded strike can still be countered
+  // JF-#010: IRON CATCH â€” with the technique, an unlanded strike can still be countered
   const ironCatch = e.st === E_STRIKE && !e.didHit && hasTech(1);
   if ((e.st === E_WINDUP || ironCatch) && e.type === T_BOSS && e.hp > 1){   // ---- BOSS PHASE ----
     // JF-#008: counters are the only damage; each one staggers him a phase
@@ -630,10 +621,10 @@ function strike(dir){
     if (e.type === T_BRUTE) award('monk');
     if (e.type === T_SPEAR) award('spear');
     e.st = E_THROWN; e.stT = 0;
-    // JF-#010: DRAGON SWEEP — perfect throws fly farther and pierce deeper
+    // JF-#010: DRAGON SWEEP â€” perfect throws fly farther and pierce deeper
     const sweep = hasTech(0);
     e.vx = dir * (perfect ? (sweep ? 15 : 12) : 9); e.vy = perfect ? -8 : -7;
-    // JF-#020: ~1 in 6 perfect counters is a comedy send — twice the arc, wild spin
+    // JF-#020: ~1 in 6 perfect counters is a comedy send â€” twice the arc, wild spin
     if (perfect && e.type !== T_BOSS && Math.random() < 0.18){
       e.vx *= 1.7; e.vy = -11; e.bigSend = true;
       popup(e.x, e.y - 130, SENDS[(Math.random() * SENDS.length) | 0], '#e8c76a', true);
@@ -645,7 +636,7 @@ function strike(dir){
     popup(e.x, e.y - 90, (ironCatch ? 'IRON CATCH +' : perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8', true);
     Snd.counter(); hitStop = 7; shake = perfect ? 13 : 10; slowMo = 26;
     burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', perfect ? 30 : 22, perfect ? 6 : 5);
-    // thrown body knocks down neighbors in its path (more mid-flight — see E_THROWN)
+    // thrown body knocks down neighbors in its path (more mid-flight â€” see E_THROWN)
     let felled = 0;
     for (const o of enemies){
       if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
@@ -656,13 +647,13 @@ function strike(dir){
         burst(o.x, o.y - 40, '#e8c76a', 10, 3);
       }
     }
-    // JF-#007: SWEEP — one throw felling 2+ pays a bonus
+    // JF-#007: SWEEP â€” one throw felling 2+ pays a bonus
     if (felled >= 2){
       score += 500; jadeRun += 2;
       popup(W/2, 220, 'SWEEP +500', '#e8c76a', true);
       bumpTrial('sweep');
     }
-    // JF-#010: PALM WAVE — 3 consecutive perfects release a wave that fells both sides
+    // JF-#010: PALM WAVE â€” 3 consecutive perfects release a wave that fells both sides
     if (perfect && hasTech(2)){
       perfChain++;
       if (perfChain >= 3){
@@ -694,7 +685,7 @@ function strike(dir){
   } else if (e.type === T_BRUTE){                // ---- SHOVE (brute won't fall) ----
     e.st = E_STAGGER; e.stT = 0; e.vx = dir * 6;
     score += 50;
-    // JF-#007: each shove ENRAGES him — next windup 15% faster (floor 55% of base)
+    // JF-#007: each shove ENRAGES him â€” next windup 15% faster (floor 55% of base)
     e.rage = (e.rage || 0) + 1;
     e.windup = Math.max(e.windup * 0.85, e.windup0 * 0.55);
     popup(e.x, e.y - 80, e.rage === 2 ? 'ENRAGED' : 'SHOVED +50', e.rage === 2 ? '#e86a6a' : '#c8bfa8');
@@ -716,7 +707,7 @@ function strike(dir){
     combo++; comboT = CW;
     const pts = 100 * Math.min(combo, 5);
     score += pts; kills++; jadeRun++;
-    popup(e.x, e.y - 80, (combo > 1 ? '×' + Math.min(combo,5) + ' ' : '') + '+' + pts, '#e8dcc0');
+    popup(e.x, e.y - 80, (combo > 1 ? 'Ã—' + Math.min(combo,5) + ' ' : '') + '+' + pts, '#e8dcc0');
     Snd.hit(combo); hitStop = 3; shake = 4;
     burst(e.x, e.y - 45, '#d8d0c0', 10, 3);
   }
@@ -750,7 +741,7 @@ function hurtPlayer(){
   }
 }
 
-// JF-#009: one exit for both endings — felled, or district cleared
+// JF-#009: one exit for both endings â€” felled, or district cleared
 function endRun(victory){
   state = S_DEAD; tallyStep = 0; tallyT = 0; tallyDone = false;
   CG.gameplayStop();    // JF-#013
@@ -791,7 +782,7 @@ function press(dir){
   Snd.unlock();
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state === S_STORY){ save.intro = 1; persist(); state = S_MENU; Snd.tick(); return; }
-  if (state === S_END){ state = S_DEAD; Snd.tick(); return; }   // ending → tally
+  if (state === S_END){ state = S_DEAD; Snd.tick(); return; }   // ending â†’ tally
   if (state === S_MENU){ startRun(); return; }
   if (state === S_DEAD){
     if (!tallyDone) tallyT = 24 * 7;   // first tap: reveal full tally instantly
@@ -819,14 +810,14 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
   if (e.code === 'KeyP'){ state === S_PAUSE ? resumeGame() : pauseGame(); return; }   // JF-#014
   if (e.code === 'KeyO' && state === S_MENU){ omenOn = !omenOn; Snd.tick(); return; }
-  // JF-#023: wardrobe — C browses styles, B buys the one under the cursor
+  // JF-#023: wardrobe â€” C browses styles, B buys the one under the cursor
   if (e.code === 'KeyC' && state === S_MENU){ styleNext(); return; }
   if (e.code === 'KeyB' && state === S_MENU){ styleBuy(); return; }
   if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyDone){
     buyUp(+e.code.slice(5) - 1); return;
   }
   if (e.code === 'KeyR' && state === S_DEAD && tallyDone){ doubleJade(); return; }   // JF-#016
-  // JF-#009: on the menu, ◀ ▶ browse unlocked districts; Space/Enter fights
+  // JF-#009: on the menu, â—€ â–¶ browse unlocked districts; Space/Enter fights
   if (state === S_MENU && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'KeyQ')){
     sel = (sel + save.dist) % (save.dist + 1); Snd.tick(); return;
   }
@@ -843,12 +834,12 @@ cv.addEventListener('pointerdown', e => {
   if (x > W - 60 && y < 50){ Snd.toggleMute(); return; }   // mute button hitbox
   // JF-#011: omen toggle hitbox (top-right offer card)
   if (state === S_MENU && x > W - 260 && y > 80 && y < 148){ omenOn = !omenOn; Snd.tick(); return; }
-  // JF-#023: wardrobe hitboxes — tap the block to browse, tap BUY to purchase
+  // JF-#023: wardrobe hitboxes â€” tap the block to browse, tap BUY to purchase
   if (state === S_MENU && styleBuyRect && x >= styleBuyRect.x && x <= styleBuyRect.x + styleBuyRect.w &&
       y >= styleBuyRect.y && y <= styleBuyRect.y + styleBuyRect.h){ styleBuy(); return; }
   if (state === S_MENU && styleRect && x >= styleRect.x && x <= styleRect.x + styleRect.w &&
       y >= styleRect.y && y <= styleRect.y + styleRect.h){ styleNext(); return; }
-  // JF-#009: menu district arrows (◀ ▶ flank the district name)
+  // JF-#009: menu district arrows (â—€ â–¶ flank the district name)
   if (state === S_MENU && save.dist > 0 && y > 355 && y < 395){
     if (x > W/2 - 220 && x < W/2 - 130){ sel = (sel + save.dist) % (save.dist + 1); Snd.tick(); return; }
     if (x > W/2 + 130 && x < W/2 + 220){ sel = (sel + 1) % (save.dist + 1); Snd.tick(); return; }
@@ -859,7 +850,7 @@ cv.addEventListener('pointerdown', e => {
     for (const b of btnRects){
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){ buyUp(b.i); return; }
     }
-    if (y > 370) return;    // dead zone around the shop — no accidental restarts
+    if (y > 370) return;    // dead zone around the shop â€” no accidental restarts
   }
   press(x < W/2 ? -1 : 1);
 });
@@ -872,7 +863,7 @@ function startRun(){
   score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
   jadeRun = 0;
   PR = REACH + save.up.palm * 8;
-  CW = 120 + save.up.focus * 40;   // JF-#006: tighter base window (was 150) — FOCUS earns its cost
+  CW = 120 + save.up.focus * 40;   // JF-#006: tighter base window (was 150) â€” FOCUS earns its cost
   windAvail = save.up.wind > 0;
   // warm-up compression: higher belts start hotter via the belt term in the
   // difficulty formula; the alternating-spawn learning window still shrinks
@@ -905,12 +896,12 @@ function startRun(){
   beginWave(1);
   // JF-#012: veterans get the district's line instead of the controls lesson
   msg = save.kills > 50
-    ? DISTRICTS[sel].name + ' — ' + DISTRICTS[sel].line
+    ? DISTRICTS[sel].name + ' â€” ' + DISTRICTS[sel].line
     : (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
       ' the RED flash to counter.';
   msgT = 240;
-  if (dailyBonus) popup(W/2, 160, 'RETURN BONUS — DOUBLE JADE' +
-    (save.streak > 1 ? '  ·  DAY ' + save.streak : ''), '#7ce8a8', true);
+  if (dailyBonus) popup(W/2, 160, 'RETURN BONUS â€” DOUBLE JADE' +
+    (save.streak > 1 ? '  Â·  DAY ' + save.streak : ''), '#7ce8a8', true);
 }
 
 // ---------------------------------------------------------------- update ----
@@ -939,14 +930,14 @@ function update(){
 
   if (comboT > 0){ comboT -= dt; if (comboT <= 0) combo = 0; }
 
-  // JF-#008: wave machine — difficulty comes from wave number, not a treadmill
+  // JF-#008: wave machine â€” difficulty comes from wave number, not a treadmill
   waveT += dt;
   if (waveT >= 5400) award('endure');
   difficulty = Math.min(12, dBase + (wave - 1) * 1.1 + Math.min(beltOf(save.kills), 6) * 0.3);
   if (wavePhase === 1){                                // rest beat between waves
     restT -= dt;
     if (restT <= 0){
-      if (won) endRun(true);                           // district cleared — run ends in victory
+      if (won) endRun(true);                           // district cleared â€” run ends in victory
       else beginWave(wave + 1);
     }
   } else {
@@ -970,8 +961,8 @@ function update(){
       case E_WALK: {
         const d = Math.abs(e.x - P.x);
         // fairness guard: never open a windup while the OTHER side is already
-        // threatening — hold just outside reach instead of pincering.
-        // JF-#006: guard lifts past difficulty 6 — late game allows true pincers.
+        // threatening â€” hold just outside reach instead of pincering.
+        // JF-#006: guard lifts past difficulty 6 â€” late game allows true pincers.
         const otherThreat = e.type !== T_BOSS && difficulty <= 6 && enemies.some(o => o !== e &&
           (o.st === E_WINDUP || o.st === E_STRIKE) &&
           Math.sign(o.x - P.x) !== Math.sign(e.x - P.x));
@@ -990,7 +981,7 @@ function update(){
         }
         break;
       case E_STRIKE:
-        // JF-#010: IRON CATCH grace — with the technique, the blow lands 3 frames
+        // JF-#010: IRON CATCH grace â€” with the technique, the blow lands 3 frames
         // later, leaving a last-instant counter window on the falling strike
         if (!e.didHit && e.stT >= (hasTech(1) ? 3 : 0)){
           e.didHit = true;
@@ -1036,7 +1027,7 @@ function update(){
           popup(e.x < W/2 ? 40 : W - 40, e.y - 90, 'BONK', '#c8bfa8', true);
           Snd.block(); shake = Math.max(shake, 6);
         }
-        // JF-#007: an airborne thrown body is a projectile — fells anyone it passes through
+        // JF-#007: an airborne thrown body is a projectile â€” fells anyone it passes through
         if (e.st === E_THROWN && e.y < 440){
           for (const o of enemies){
             if (o === e || o.st === E_DOWN || o.st === E_THROWN || o.type === T_BOSS) continue;
@@ -1107,7 +1098,7 @@ function fighter(x, y, face, opts){
 }
 
 function drawWorld(){
-  // JF-#009: each district paints its own night — sky, skyline density, lantern hue
+  // JF-#009: each district paints its own night â€” sky, skyline density, lantern hue
   const D = DISTRICTS[sel];
   const g = cx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, D.sky[0]); g.addColorStop(0.7, D.sky[1]); g.addColorStop(1, D.sky[2]);
@@ -1146,7 +1137,7 @@ function drawWorld(){
   cx.fillStyle = D.ground; cx.fillRect(0, 428, W, H - 428);
   cx.strokeStyle = 'rgba(232,220,192,0.12)'; cx.lineWidth = 2;
   cx.beginPath(); cx.moveTo(0, 428); cx.lineTo(W, 428); cx.stroke();
-  // JF-#017: district ambience — deterministic drift from t, no particle state
+  // JF-#017: district ambience â€” deterministic drift from t, no particle state
   if (sel === 0){                       // COURTYARD: falling blossom petals
     cx.fillStyle = 'rgba(232,168,184,0.55)';
     for (let i = 0; i < 12; i++){
@@ -1203,7 +1194,7 @@ function draw(){
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
       cx.beginPath(); cx.arc(e.x, e.y - 55, ((late ? 50 : 40) + Math.sin(e.stT*0.5)*5) * size, 0, 7); cx.fill();
     } else if (e.st === E_FEINT){
-      // feint tell: PALE flash, no red, no audio — only real telegraphs go red
+      // feint tell: PALE flash, no red, no audio â€” only real telegraphs go red
       col = Math.sin(e.stT * 0.8) > 0 ? '#c8a8a0' : '#b8c8d8';
     } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; }
     else if (e.st === E_RECOVER){ col = '#5e6878'; rot += 0.12 * Math.sign(e.x - P.x); }  // slumped = punishable
@@ -1264,7 +1255,7 @@ function draw(){
     cx.fillStyle = '#e8dcc0';
     if (combo > 1){
       cx.fillStyle = '#7ce8a8'; cx.font = 'bold 20px Georgia';
-      cx.fillText('×' + Math.min(combo, 5) + ' COMBO', W/2, 72);
+      cx.fillText('Ã—' + Math.min(combo, 5) + ' COMBO', W/2, 72);
       const bw = 120 * (comboT / CW);                // visible combo-decay bar
       cx.fillStyle = 'rgba(124,232,168,0.6)';
       cx.fillRect(W/2 - bw/2, 80, bw, 4);
@@ -1272,9 +1263,9 @@ function draw(){
     // hearts
     const maxH = Math.max(1, 3 + save.up.body + omen.heart);
     cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
-    cx.fillText('♥ '.repeat(Math.max(0, hearts)) + '♡ '.repeat(Math.max(0, maxH - hearts)), 20, 40);
+    cx.fillText('â™¥ '.repeat(Math.max(0, hearts)) + 'â™¡ '.repeat(Math.max(0, maxH - hearts)), 20, 40);
     if (windAvail){ cx.fillStyle = '#7ce8a8'; cx.font = '15px Georgia'; cx.fillText('second wind ready', 20, 62); }
-    // JF-#010: palm-wave fuel — one gold pip per consecutive perfect
+    // JF-#010: palm-wave fuel â€” one gold pip per consecutive perfect
     if (hasTech(2)){
       for (let i = 0; i < 3; i++){
         cx.fillStyle = i < perfChain ? '#e8c76a' : 'rgba(140,148,166,0.3)';
@@ -1282,7 +1273,7 @@ function draw(){
       }
     }
     cx.fillStyle = '#7ce8a8'; cx.font = '17px Georgia';
-    cx.fillText('◆ ' + jadeRun, 20, windAvail ? 84 : 62);
+    cx.fillText('â—† ' + jadeRun, 20, windAvail ? 84 : 62);
     if (msgT > 0){
       cx.globalAlpha = Math.min(1, msgT / 40);
       cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia'; cx.textAlign = 'center';
@@ -1293,15 +1284,15 @@ function draw(){
     cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 0, W, H);
     cx.fillStyle = '#7ce8a8'; cx.font = 'bold 64px Georgia'; cx.textAlign = 'center';
     cx.fillText('JADE FIST', W/2, 200);
-    // JF-#018: visual onboarding — a looping counter demo instead of two text lines
-    // (CG: teach visually, minimal text). 240-frame script: approach → red flash →
-    // counter throw → reset. Captions change per phase.
+    // JF-#018: visual onboarding â€” a looping counter demo instead of two text lines
+    // (CG: teach visually, minimal text). 240-frame script: approach â†’ red flash â†’
+    // counter throw â†’ reset. Captions change per phase.
     {
       const dT = t % 240, gy = 312;
       let ex2 = 0, ecol = '#8a94a6', erot = 0, ppunch = 0, cap, capCol = '#e8dcc0';
       if (dT < 80){                                   // approach from the right
         ex2 = W/2 + 220 - dT * 1.6;
-        cap = 'they come at you — strike toward them';
+        cap = 'they come at you â€” strike toward them';
       } else if (dT < 140){                           // windup: the red flash
         ex2 = W/2 + 92;
         const late = (dT - 80) / 60 > 0.66;
@@ -1313,8 +1304,8 @@ function draw(){
         const ft = dT - 140;
         ex2 = W/2 + 92 + ft * 6; erot = ft * 0.12; ecol = '#e8c76a';
         ppunch = Math.max(0, 12 - ft);
-        cap = 'COUNTER — throw them into the rest'; capCol = '#e8c76a';
-      } else { ex2 = -999; cap = 'they come at you — strike toward them'; }
+        cap = 'COUNTER â€” throw them into the rest'; capCol = '#e8c76a';
+      } else { ex2 = -999; cap = 'they come at you â€” strike toward them'; }
       fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72 });   // JF-#023
       if (ex2 > -200 && ex2 < W + 200)
         fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
@@ -1322,34 +1313,34 @@ function draw(){
       cx.fillText(cap, W/2, 236);
     }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap the LEFT or RIGHT half of the screen' : '◀ ▶  arrows  ·  A / D  ·  Space = strike where you face', W/2, 332);
-    // JF-#009: district selector — the campaign map in one line
+    cx.fillText(TOUCH ? 'tap the LEFT or RIGHT half of the screen' : 'â—€ â–¶  arrows  Â·  A / D  Â·  Space = strike where you face', W/2, 332);
+    // JF-#009: district selector â€” the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';
-    cx.fillText((save.dist > 0 ? '◀   ' : '') + MD.name + '  ' + (sel + 1) + '/' + DISTRICTS.length +
-      (save.dist > 0 ? '   ▶' : ''), W/2, 378);
+    cx.fillText((save.dist > 0 ? 'â—€   ' : '') + MD.name + '  ' + (sel + 1) + '/' + DISTRICTS.length +
+      (save.dist > 0 ? '   â–¶' : ''), W/2, 378);
     cx.font = 'italic 16px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText(MD.line + '   ·   ' + (sel < save.dist ? 'CLEARED' : sel === 3 && save.dist === 3 ? 'the last district' : 'boss: ' + MD.boss), W/2, 400);
+    cx.fillText(MD.line + '   Â·   ' + (sel < save.dist ? 'CLEARED' : sel === 3 && save.dist === 3 ? 'the last district' : 'boss: ' + MD.boss), W/2, 400);
     if ((t / 30 | 0) % 2 === 0){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia';
-      cx.fillText(TOUCH ? '— tap to fight —' : '— Space to fight —', W/2, 426);
+      cx.fillText(TOUCH ? 'â€” tap to fight â€”' : 'â€” Space to fight â€”', W/2, 426);
     }
     const mb = beltOf(save.kills);
     cx.fillStyle = BELTS[mb].col === '#3a3f48' ? '#e8dcc0' : BELTS[mb].col;
     cx.font = 'bold 18px Georgia';
-    cx.fillText(BELTS[mb].name + ' BELT' + (save.streak > 1 ? '   ·   day ' + save.streak : ''), W/2, 458);
+    cx.fillText(BELTS[mb].name + ' BELT' + (save.streak > 1 ? '   Â·   day ' + save.streak : ''), W/2, 458);
     cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia';
     const trained = UPS.reduce((n, u) => n + save.up[u.k], 0);
-    cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
-      (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
-      (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 482);
+    cx.fillText((best > 0 ? 'BEST ' + best + '   Â·   ' : '') + 'â—† ' + save.jade +
+      (trained ? '   Â·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
+      (mb < BELTS.length - 1 ? '   Â·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 482);
     // JF-#011: today's trials (left) and the omen offer (right)
     cx.textAlign = 'left'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
     cx.fillText("TODAY'S TRIALS", 24, 96);
     cx.font = '14px Georgia';
     todayTrio().forEach((ti, i) => {
       cx.fillStyle = save.tdone[i] ? '#7ce8a8' : '#8a94a6';
-      cx.fillText((save.tdone[i] ? '✓ ' : '· ') + TRIALS[ti].name + '  +15◆', 24, 118 + i * 20);
+      cx.fillText((save.tdone[i] ? 'âœ“ ' : 'Â· ') + TRIALS[ti].name + '  +15â—†', 24, 118 + i * 20);
     });
     // JF-#023: wardrobe (left, under the trials)
     {
@@ -1358,7 +1349,7 @@ function draw(){
       cx.textAlign = 'left'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
       cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 24, 200);
       cx.fillStyle = S.col; cx.font = 'bold 14px Georgia';
-      cx.fillText(S.name + (save.cos.wear === styleSel ? '  — worn' : owned ? '  — owned' : ''), 24, 220);
+      cx.fillText(S.name + (save.cos.wear === styleSel ? '  â€” worn' : owned ? '  â€” owned' : ''), 24, 220);
       styleBuyRect = null;
       if (!owned){
         const can = save.jade >= S.cost;
@@ -1368,22 +1359,22 @@ function draw(){
         cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
         cx.strokeRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
         cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = '13px Georgia';
-        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, 32, 240);
+        cx.fillText((TOUCH ? 'BUY' : 'B â€” buy') + '  â—† ' + S.cost, 32, 240);
       }
     }
     const OM = todayOmen();
     cx.textAlign = 'right'; cx.font = 'bold 15px Georgia';
     cx.fillStyle = omenOn ? '#c8a8e8' : '#c8bfa8';
-    cx.fillText("TODAY'S OMEN  " + (omenOn ? '— ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 24, 96);
+    cx.fillText("TODAY'S OMEN  " + (omenOn ? 'â€” ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 24, 96);
     cx.font = '14px Georgia'; cx.fillStyle = omenOn ? '#c8a8e8' : '#8a94a6';
     cx.fillText('boon: ' + OM.b, W - 24, 118);
     cx.fillText('curse: ' + OM.c, W - 24, 138);
     cx.textAlign = 'center';
     // JF-#010: techniques known + the next one your belt will teach
-    const known = TECH.filter(T => mb >= T.belt).map(T => T.name).join(' · ');
+    const known = TECH.filter(T => mb >= T.belt).map(T => T.name).join(' Â· ');
     const next = TECH.find(T => mb < T.belt);
     cx.fillStyle = '#7a8494'; cx.font = '14px Georgia';
-    cx.fillText((known ? 'techniques: ' + known + (next ? '   ·   ' : '') : '') +
+    cx.fillText((known ? 'techniques: ' + known + (next ? '   Â·   ' : '') : '') +
       (next ? BELTS[next.belt].name + ' belt teaches ' + next.name : ''), W/2, 504);
   } else if (state === S_DEAD){
     cx.fillStyle = 'rgba(8,10,14,0.7)'; cx.fillRect(0, 0, W, H);
@@ -1391,11 +1382,11 @@ function draw(){
     cx.fillText(won ? 'DISTRICT CLEARED' : 'FELLED', W/2, 150);
     // line-item tally reveal
     const lines = [
-      won ? ['Cleared', DISTRICTS[fought].name] : ['Felled on', 'WAVE ' + wave + '  ·  ' + DISTRICTS[fought].name],
+      won ? ['Cleared', DISTRICTS[fought].name] : ['Felled on', 'WAVE ' + wave + '  Â·  ' + DISTRICTS[fought].name],
       ['Foes dropped', kills + ''],
       ['Counters', counters + ''],
-      ['Best combo', '×' + bestCombo],
-      ['Jade earned', '◆ ' + jadeRun + (dailyBonus ? '  (×2 return bonus)' : '')],
+      ['Best combo', 'Ã—' + bestCombo],
+      ['Jade earned', 'â—† ' + jadeRun + (dailyBonus ? '  (Ã—2 return bonus)' : '')],
       ['SCORE', score + '']
     ];
     if (won && fought < DISTRICTS.length - 1)
@@ -1422,7 +1413,7 @@ function draw(){
       walletShown += (save.jade - walletShown) * 0.12;   // count-up: watch the jade bank
       if (Math.abs(save.jade - walletShown) < 0.6) walletShown = save.jade;
       cx.textAlign = 'center'; cx.fillStyle = '#7ce8a8'; cx.font = 'bold 19px Georgia';
-      cx.fillText('JADE  ◆ ' + Math.round(walletShown) + '   — train:', W/2, 382);
+      cx.fillText('JADE  â—† ' + Math.round(walletShown) + '   â€” train:', W/2, 382);
       // goal-gradient: pulse the cheapest upgrade you can afford right now
       let pulseI = -1, pc = 1e9;
       for (let i = 0; i < UPS.length; i++){
@@ -1435,9 +1426,9 @@ function draw(){
       const nothingOwned = UPS.every(u => save.up[u.k] === 0);
       if (nothingOwned && pulseI >= 0 && (t / 25 | 0) % 2 === 0){
         cx.fillStyle = '#7ce8a8'; cx.font = 'bold 16px Georgia';
-        cx.fillText('▼ you can afford your first training ▼', W/2, 394);
+        cx.fillText('â–¼ you can afford your first training â–¼', W/2, 394);
       }
-      const bw2 = 218, bh = 44, gap = 10;   // 2×2 upgrade grid
+      const bw2 = 218, bh = 44, gap = 10;   // 2Ã—2 upgrade grid
       for (let i = 0; i < UPS.length; i++){
         const u = UPS[i], tier = save.up[u.k], maxed = tier >= u.max;
         const cost = maxed ? 0 : u.cost(tier);
@@ -1451,9 +1442,9 @@ function draw(){
         cx.lineWidth = isPulse ? 3 : 1.5;
         cx.strokeRect(bx, by, bw2, bh);
         cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
-        cx.fillText((i + 1) + '. ' + u.name + ' ' + '●'.repeat(tier) + '○'.repeat(u.max - tier), bx + 10, by + 18);
+        cx.fillText((i + 1) + '. ' + u.name + ' ' + 'â—'.repeat(tier) + 'â—‹'.repeat(u.max - tier), bx + 10, by + 18);
         cx.font = '13px Georgia';
-        cx.fillText(u.desc + (maxed ? '  · MAX' : '  · ◆ ' + cost), bx + 10, by + 35);
+        cx.fillText(u.desc + (maxed ? '  Â· MAX' : '  Â· â—† ' + cost), bx + 10, by + 35);
       }
       // JF-#016: rewarded DOUBLE JADE offer, right of the upgrade grid
       adRect = null;
@@ -1465,22 +1456,22 @@ function draw(){
         cx.strokeStyle = glow ? '#ffe9a8' : '#e8c76a'; cx.lineWidth = glow ? 3 : 1.5;
         cx.strokeRect(ax, ay, aw, ah);
         cx.fillStyle = '#e8c76a'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
-        cx.fillText('▶ DOUBLE JADE  +' + jadeRun + '◆', ax + 10, ay + 18);
+        cx.fillText('â–¶ DOUBLE JADE  +' + jadeRun + 'â—†', ax + 10, ay + 18);
         cx.font = '13px Georgia'; cx.fillStyle = '#c8bfa8';
-        cx.fillText(TOUCH ? 'watch an ad · tap here' : 'watch an ad · press R', ax + 10, ay + 35);
+        cx.fillText(TOUCH ? 'watch an ad Â· tap here' : 'watch an ad Â· press R', ax + 10, ay + 35);
       }
       cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia'; cx.textAlign = 'center';
-      cx.fillText((newBest ? '' : 'BEST ' + best + '   ·   ') + (TOUCH ? 'tap the top half to rise again' : '1-4 to train  ·  arrows to rise again'), W/2, 522);
+      cx.fillText((newBest ? '' : 'BEST ' + best + '   Â·   ') + (TOUCH ? 'tap the top half to rise again' : '1-4 to train  Â·  arrows to rise again'), W/2, 522);
     }
   }
   else if (state === S_STORY){
-    // JF-#012: the opening tale — three lines, then the courtyard
+    // JF-#012: the opening tale â€” three lines, then the courtyard
     cx.fillStyle = 'rgba(8,10,14,0.82)'; cx.fillRect(0, 0, W, H);
     cx.textAlign = 'center';
     cx.fillStyle = '#7ce8a8'; cx.font = 'bold 40px Georgia';
     cx.fillText('JADE FIST', W/2, 150);
     const SL = [
-      "Your master's jade — the heart of the school — was stolen in the night.",
+      "Your master's jade â€” the heart of the school â€” was stolen in the night.",
       'Four districts stand between you and the thief.',
       'Take it back. One counter at a time.'
     ];
@@ -1493,37 +1484,37 @@ function draw(){
     cx.globalAlpha = 1;
     if (t > 220 && (t / 30 | 0) % 2 === 0){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia';
-      cx.fillText(TOUCH ? '— tap to begin —' : '— press any key —', W/2, 430);
+      cx.fillText(TOUCH ? 'â€” tap to begin â€”' : 'â€” press any key â€”', W/2, 430);
     }
   } else if (state === S_END){
-    // JF-#012: the ending — the jade reclaimed
+    // JF-#012: the ending â€” the jade reclaimed
     cx.fillStyle = 'rgba(8,10,14,0.82)'; cx.fillRect(0, 0, W, H);
     cx.textAlign = 'center';
     const gl = 0.7 + 0.3 * Math.sin(t * 0.06);
     cx.fillStyle = `rgba(124,232,168,${gl * 0.25})`;
     cx.beginPath(); cx.arc(W/2, 190, 70, 0, 7); cx.fill();
     cx.fillStyle = '#7ce8a8'; cx.font = 'bold 54px Georgia';
-    cx.fillText('◆', W/2, 210);
+    cx.fillText('â—†', W/2, 210);
     cx.fillStyle = '#e8c76a'; cx.font = 'bold 38px Georgia';
     cx.fillText('THE JADE IS RECLAIMED', W/2, 290);
     cx.fillStyle = '#e8dcc0'; cx.font = '19px Georgia';
     cx.fillText('The thief is felled. The school stands. Your name is spoken in four districts.', W/2, 334);
     cx.fillStyle = '#c8a8e8';
-    cx.fillText('LEGEND unlocked — the tale retold, without end.', W/2, 366);
+    cx.fillText('LEGEND unlocked â€” the tale retold, without end.', W/2, 366);
     if ((t / 30 | 0) % 2 === 0){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia';
-      cx.fillText('— continue —', W/2, 430);
+      cx.fillText('â€” continue â€”', W/2, 430);
     }
   }
   // JF-#022: bot banner so a fairness pass is never mistaken for play
   if (BOT){
     cx.fillStyle = '#c8a8e8'; cx.font = 'bold 14px Georgia'; cx.textAlign = 'left';
-    cx.fillText(BOT.done ? 'FAIRNESS SUITE DONE — see console' :
-      'BOT ' + (BOT.run + 1) + '/' + (BOT.runs * 4) + ' · react ' + BOT.react + 'f', 20, H - 14);
+    cx.fillText(BOT.done ? 'FAIRNESS SUITE DONE â€” see console' :
+      'BOT ' + (BOT.run + 1) + '/' + (BOT.runs * 4) + ' Â· react ' + BOT.react + 'f', 20, H - 14);
   }
   // mute button
   cx.fillStyle = 'rgba(232,220,192,0.6)'; cx.font = '20px Georgia'; cx.textAlign = 'right';
-  cx.fillText(Snd.muted ? '🔇' : '🔊', W - 18, 34);
+  cx.fillText(Snd.muted ? 'ðŸ”‡' : 'ðŸ”Š', W - 18, 34);
   // JF-#014: pause overlay on top of the frozen world
   if (state === S_PAUSE){
     cx.fillStyle = 'rgba(10,13,18,0.72)'; cx.fillRect(0, 0, W, H);
@@ -1561,3 +1552,4 @@ document.addEventListener('visibilitychange', () => {
 </script>
 </body>
 </html>
+
