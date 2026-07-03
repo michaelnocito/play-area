@@ -67,6 +67,13 @@
   }
   #btnJump { border-right: 1px solid rgba(241,227,198,0.08); }
   .tbtn:active { background: rgba(232,200,120,0.08); }
+  #muteBtn {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    width: 36px; height: 26px; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: #f1e3c6; opacity: 0.55; cursor: pointer;
+    background: rgba(8,6,14,0.4); border-radius: 5px; z-index: 5;
+  }
+  #muteBtn:active { opacity: 0.9; }
 </style>
 </head>
 <body>
@@ -84,6 +91,7 @@
     <div id="best"></div>
     <button id="startBtn">Begin the Run</button>
   </div>
+  <div id="muteBtn">&#128266;</div>
   <div id="touchControls">
     <div class="tbtn" id="btnJump">JUMP</div>
     <div class="tbtn" id="btnStrike">STRIKE</div>
@@ -104,6 +112,7 @@
   const bestEl = document.getElementById('best');
   const btnJump = document.getElementById('btnJump');
   const btnStrike = document.getElementById('btnStrike');
+  const muteBtn = document.getElementById('muteBtn');
 
   /* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
   // sdkLive = init() actually resolved (only true on the CrazyGames platform); every game/ad
@@ -116,12 +125,17 @@
     gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
     gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
     happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
-    interstitial(){ try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {}); }catch(e){} },
+    interstitial(){ try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {
+      adStarted(){ try{ Snd.duck(true); }catch(e){} },
+      adFinished(){ try{ Snd.duck(false); }catch(e){} },
+      adError(){ try{ Snd.duck(false); }catch(e){} },
+    }); }catch(e){} },
     rewarded(onReward){
       try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
         window.CrazyGames.SDK.ad.requestAd("rewarded", {
-          adFinished(){ onReward&&onReward(); },
-          adError(){ onReward&&onReward(); },
+          adStarted(){ try{ Snd.duck(true); }catch(e){} },
+          adFinished(){ try{ Snd.duck(false); }catch(e){} onReward&&onReward(); },
+          adError(){ try{ Snd.duck(false); }catch(e){} onReward&&onReward(); },
         }); return;
       } }catch(e){}
       onReward&&onReward();
@@ -134,6 +148,151 @@
   };
 
   let best = parseInt(localStorage.getItem('rooftopSprintBest') || '0', 10) || 0;
+
+  /* ===== Procedural audio (Batch 3) — light-reactive score + layered SFX =====
+     Speaker-scaling architecture (ROADMAP §7): every voice = parallel layers into one bus —
+     transient click 2–5kHz (0–5ms attack) · mid body 200–500Hz · harmonic bass 150–500Hz
+     (2nd–4th harmonics of the sub pitch — small speakers reconstruct the missing fundamental)
+     · true sub sine 40–90Hz as a garnish only decent speakers reproduce. Exponential ramps
+     only; the 4–5kHz handset-fatigue band is avoided. All voices are mono → mono-safe by
+     construction (the phone test). Fully inert when AudioContext is absent (headless harness),
+     and the context only spins up on the first user gesture (autoplay policy). */
+  const Snd = (() => {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const noop = () => {};
+    if (!AC) return { muted: true, resume: noop, tick: noop, setTs: noop, duck: noop, setMuted: noop,
+      toggleMute(){ return true; }, qaHighpass: noop, jump: noop, land: noop, swing: noop, kill: noop,
+      chime: noop, domino: noop, sparkle: noop, death: noop, slide: noop, bird: noop };
+    let ac = null, bus, qaHP, lpf, master, musicG, sfxG, padG, noiseBuf;
+    let muted = false;
+    try { muted = localStorage.getItem('rooftopSprintMuted') === '1'; } catch(e){}
+    let ducked = false;
+    function applyGain() {
+      if (!ac) return;
+      master.gain.setTargetAtTime(muted ? 0.0001 : ducked ? 0.02 : 0.8, ac.currentTime, 0.05);
+    }
+    function init() {
+      if (ac) return;
+      ac = new AC();
+      // master chain: (music+sfx) bus → QA high-pass (10Hz = off) → slow-mo low-pass → master gain
+      master = ac.createGain(); master.gain.value = muted ? 0.0001 : 0.8;
+      lpf = ac.createBiquadFilter(); lpf.type = 'lowpass'; lpf.frequency.value = 18000;
+      qaHP = ac.createBiquadFilter(); qaHP.type = 'highpass'; qaHP.frequency.value = 10;
+      bus = ac.createGain();
+      musicG = ac.createGain(); musicG.gain.value = 0.5;
+      sfxG = ac.createGain(); sfxG.gain.value = 0.9;
+      musicG.connect(bus); sfxG.connect(bus);
+      bus.connect(qaHP); qaHP.connect(lpf); lpf.connect(master); master.connect(ac.destination);
+      const len = ac.sampleRate * 0.5, nb = ac.createBuffer(1, len, ac.sampleRate), d = nb.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      noiseBuf = nb;
+      // ember pad: detuned warm drones through a dark low-pass — the floor the whole score sits on
+      padG = ac.createGain(); padG.gain.value = 0.0001; padG.connect(musicG);
+      const padLP = ac.createBiquadFilter(); padLP.type = 'lowpass'; padLP.frequency.value = 320; padLP.connect(padG);
+      for (const [f, det] of [[110, 0], [110, 5], [164.8, -4]]) {
+        const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = det;
+        const og = ac.createGain(); og.gain.value = 0.33; o.connect(og); og.connect(padLP); o.start();
+      }
+    }
+    function envG(t, a, peak, d) { // exponential-ramp envelope (never a gain jump — no clicks)
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + a);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+      return g;
+    }
+    function tone(dest, t, type, f0, f1, a, peak, d) {
+      const o = ac.createOscillator(); o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + a + d);
+      const g = envG(t, a, peak, d); o.connect(g); g.connect(dest);
+      o.start(t); o.stop(t + a + d + 0.06);
+    }
+    function click(dest, t, f, peak, d) { // transient layer 2–5kHz, ~3ms attack — the punch on phones
+      const s = ac.createBufferSource(); s.buffer = noiseBuf;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 1.4;
+      const g = envG(t, 0.003, peak, d); s.connect(bp); bp.connect(g); g.connect(dest);
+      s.start(t); s.stop(t + d + 0.05);
+    }
+    function noiseSweep(dest, t, f0, f1, q, a, peak, d) {
+      const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, t); bp.frequency.exponentialRampToValueAtTime(f1, t + a + d);
+      const g = envG(t, a, peak, d); s.connect(bp); bp.connect(g); g.connect(dest);
+      s.start(t); s.stop(t + a + d + 0.05);
+    }
+    function bassHit(dest, t, subF, strength, d) { // harmonic bass + true-sub garnish + tiny click
+      tone(dest, t, 'sine', subF * 2, 0, 0.006, 0.50 * strength, d);       // 2nd harmonic IS the bass on small speakers
+      tone(dest, t, 'sine', subF * 3, 0, 0.006, 0.26 * strength, d * 0.8);
+      tone(dest, t, 'sine', subF * 4, 0, 0.006, 0.13 * strength, d * 0.6);
+      tone(dest, t, 'sine', subF, 0, 0.008, 0.50 * strength, d);           // true sub 40–90Hz, parallel garnish
+      click(dest, t, 2600, 0.10 * strength, 0.03);
+    }
+    // Light-reactive score: sequencer steps on an 8th-note grid derived from the SAME clock as the
+    // weapon's visual glow throb (drawT*0.12, peak at π/2) — the lamp visibly throbs on the beat.
+    // Layers gate on lampLight: embers always → shimmer 0.2 → bells 0.45 → pulse-bass 0.7 → full 0.9.
+    // Death → eff=0 → everything above the embers collapses.
+    let lastStep = -1;
+    function tick(dT, light, st) {
+      if (!ac || muted) return;
+      const eff = st === 'playing' ? light : 0;
+      padG.gain.setTargetAtTime(st === 'playing' ? 0.10 + eff * 0.06 : 0.045, ac.currentTime, 0.5);
+      const step = Math.floor((dT * 0.12 - Math.PI / 2) / (Math.PI / 2));
+      if (step === lastStep) return;
+      lastStep = step;
+      const s8 = ((step % 8) + 8) % 8;
+      const t = ac.currentTime + 0.01;
+      if (s8 === 0 || s8 === 4) bassHit(musicG, t, 55, 0.30 + eff * 0.45, 0.30); // ember pulse ON the throb peak
+      if (eff >= 0.7 && (s8 === 3 || s8 === 6)) bassHit(musicG, t, 73.4, 0.38, 0.18); // pulse-bass syncopation
+      if (eff >= 0.2 && (s8 === 2 || s8 === 6)) { // shimmer: offbeat pentatonic plucks
+        const PENT = [880, 1046.5, 1174.7, 1318.5, 1568];
+        tone(musicG, t, 'triangle', PENT[((step * 3 + (step >> 2)) % 5 + 5) % 5], 0, 0.005, 0.05 + eff * 0.05, 0.22);
+      }
+      if (eff >= 0.45 && s8 === 0 && ((step >> 3) & 1)) { // bells: motif every other bar
+        const MOTIF = [440, 523.25, 659.25, 587.33];
+        const f = MOTIF[(((step >> 4) % 4) + 4) % 4];
+        tone(musicG, t, 'sine', f, 0, 0.004, 0.10, 0.55);
+        tone(musicG, t, 'sine', f * 2.76, 0, 0.004, 0.028, 0.30); // inharmonic partial = bell character
+      }
+      if (eff >= 0.9) click(musicG, t, 3400, 0.045, 0.02); // full: hat tick every 8th (below the 4–5k fatigue band)
+    }
+    const ok = () => ac && !muted;
+    return {
+      get muted() { return muted; },
+      resume() { init(); if (ac.state === 'suspended') ac.resume(); },
+      setMuted(m) { muted = !!m; try { localStorage.setItem('rooftopSprintMuted', muted ? '1' : '0'); } catch(e){} applyGain(); },
+      toggleMute() { this.setMuted(!muted); return muted; },
+      duck(on) { ducked = !!on; applyGain(); }, // ad-break ducking
+      setTs(ts) { if (ac) lpf.frequency.setTargetAtTime(ts < 0.98 ? 260 + ts * 1400 : 18000, ac.currentTime, 0.08); }, // slow-mo sweep
+      tick,
+      qaHighpass(hz) { if (ac) qaHP.frequency.setTargetAtTime(hz || 10, ac.currentTime, 0.02); }, // QA: 800/400/200 = the phone test
+      jump()   { if (!ok()) return; const t = ac.currentTime; noiseSweep(sfxG, t, 500, 1600, 1.8, 0.03, 0.09, 0.16); click(sfxG, t, 2400, 0.04, 0.02); },
+      land()   { if (!ok()) return; const t = ac.currentTime; bassHit(sfxG, t, 50, 0.35, 0.14); tone(sfxG, t, 'triangle', 210, 120, 0.004, 0.09, 0.09); },
+      swing()  { if (!ok()) return; noiseSweep(sfxG, ac.currentTime, 900, 2600, 2.2, 0.02, 0.08, 0.10); },
+      kill(tier) { // 0 CLEAN low → 1 HEAVY → 2 PERFECT bright
+        if (!ok()) return; const t = ac.currentTime;
+        bassHit(sfxG, t, [52, 62, 82][tier], 0.5 + tier * 0.2, 0.22);
+        click(sfxG, t, [2200, 2800, 3600][tier], 0.13 + tier * 0.07, 0.04);
+        tone(sfxG, t, 'triangle', [260, 330, 440][tier], 0, 0.004, 0.11, 0.14);
+        if (tier === 2) tone(sfxG, t + 0.03, 'sine', 1760, 0, 0.004, 0.06, 0.30);
+      },
+      chime(i) { // light-stream arrival — pitch rises as the lamp fills
+        if (!ok()) return;
+        const PENT = [1046.5, 1174.7, 1318.5, 1568, 1760, 2093];
+        tone(sfxG, ac.currentTime, 'sine', PENT[Math.max(0, Math.min(i | 0, 5))], 0, 0.003, 0.045, 0.18);
+      },
+      domino() { if (!ok()) return; const t = ac.currentTime; bassHit(sfxG, t, 45, 1.0, 0.40); click(sfxG, t, 3000, 0.18, 0.05); tone(sfxG, t, 'triangle', 196, 90, 0.005, 0.13, 0.20); },
+      sparkle(){ if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sine', 1568, 0, 0.003, 0.05, 0.12); tone(sfxG, t + 0.05, 'sine', 2093, 0, 0.003, 0.045, 0.14); },
+      death()  { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sawtooth', 220, 45, 0.01, 0.12, 0.70); noiseSweep(sfxG, t, 1800, 220, 1.2, 0.02, 0.10, 0.50); bassHit(sfxG, t + 0.05, 48, 0.6, 0.40); },
+      slide()  { if (!ok()) return; noiseSweep(sfxG, ac.currentTime, 700, 380, 1.0, 0.03, 0.07, 0.30); },
+      bird()   { if (!ok()) return; const t = ac.currentTime; for (let i = 0; i < 3; i++) noiseSweep(sfxG, t + i * 0.06, 1500, 2400, 2.5, 0.01, 0.04, 0.05); },
+    };
+  })();
+  window.Snd = Snd; // platform build wrappers (GM/GD __adPause) duck through this at B7 regen
+  // AudioContext needs a user gesture — spin it up on the first input of any kind
+  const audioKick = () => Snd.resume();
+  window.addEventListener('pointerdown', audioKick);
+  window.addEventListener('keydown', audioKick);
 
   // ---------- Pre-rendered art (rebuilt when the render scale changes; per-frame cost is a drawImage) ----------
   // RSCALE = canvas device pixels per logical unit. All game logic stays in 480×270 logical space;
@@ -375,6 +534,7 @@
     player.coyoteT = 0; player.jumpBufT = 0;
     player.sliding = false; player.slideT = 0; // jump cancels a slide
     spawnBurst(player.x+player.w/2, player.y, 3, '#cfd6e6');
+    Snd.jump();
   }
   function jumpPress() {
     if (state !== 'playing') return;
@@ -387,6 +547,7 @@
     if (!player.onGround || player.sliding) return;
     player.sliding = true; player.slideT = SLIDE_FRAMES;
     spawnBurst(player.x+player.w/2, player.y, 4, '#9a8f80');
+    Snd.slide();
   }
   // Context action button (2-button philosophy): a guard in staff reach always wins the press;
   // otherwise a low hazard coming up means slide; otherwise the staff just whiffs.
@@ -411,6 +572,7 @@
       }
     }
     player.strikeFlash = 8;
+    Snd.swing();
     if (nearest) {
       // Lunge-dash: blink through the target — turns each kill into forward momentum
       const trailFrom = player.x;
@@ -429,18 +591,21 @@
         spawnBurst(nearest.x, nearest.y-16, 16, '#ffffff');
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
         spawnMessage(nearest.x, nearest.y-44, 'PERFECT', 40);
+        Snd.kill(2);
         shake = 12;
         slowmoT = Math.max(slowmoT, 300); // brief dip so the launch reads
       } else if (tierDx <= w.mid) {       // MID — heavy blow: launched half a screen, tumbling
         nearest.fly = 1; nearest.vx = 7; nearest.vy = -2.6; nearest.spin = 0.28;
         spawnBurst(nearest.x, nearest.y-16, 12, '#f0a04a');
         spawnMessage(nearest.x, nearest.y-42, 'HEAVY BLOW', 32);
+        Snd.kill(1);
         shake = 9;
         slowmoT = Math.max(slowmoT, 200);
       } else {                            // FAR — clean kill
         nearest.fly = 0;
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
         spawnMessage(nearest.x, nearest.y-40, 'CLEAN');
+        Snd.kill(0);
         shake = 6;
       }
     }
@@ -449,6 +614,7 @@
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (!e.repeat) jumpPress(); }
     if (e.code === 'KeyX' || e.code === 'KeyF') { e.preventDefault(); if (!e.repeat) tryAction(); }
+    if (e.code === 'KeyM' && !e.repeat) { Snd.resume(); Snd.toggleMute(); syncMuteBtn(); }
     if (e.code === 'Enter' && state !== 'playing') { beginGame(); }
   });
   window.addEventListener('keyup', (e) => {
@@ -458,6 +624,9 @@
   window.addEventListener('pointerup', () => jumpRelease());     // release anywhere ends the hold
   window.addEventListener('pointercancel', () => jumpRelease());
   btnStrike.addEventListener('pointerdown', (e) => { e.preventDefault(); tryAction(); });
+  function syncMuteBtn() { muteBtn.textContent = Snd.muted ? '\u{1F507}' : '\u{1F50A}'; }
+  muteBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); Snd.resume(); Snd.toggleMute(); syncMuteBtn(); });
+  syncMuteBtn();
   startBtn.addEventListener('click', () => beginGame());
   canvas.addEventListener('pointerdown', () => { if (state === 'dead') beginGame(); });
 
@@ -507,6 +676,7 @@
       player.onGround = true; player.coyoteT = COYOTE_FRAMES;
       if (justLanded) {
         spawnBurst(player.x+player.w/2, player.y, 2, '#cfd6e6');
+        Snd.land();
         if (player.jumpBufT > 0) doJump(); // buffered press fires the moment we touch down
       }
     } else {
@@ -541,6 +711,7 @@
                 spawnStream(o.x, o.y - 40, 6);
                 spawnBurst(o.x, o.y-16, 12, '#ffffff');
                 spawnMessage(o.x, o.y-42, 'FELLED', 32);
+                Snd.domino(); // the sub-garnish moment
                 shake = Math.max(shake, 8);
                 slowmoT = Math.max(slowmoT, SLOWMO_MS); // the money shot — let the domino land in slow motion
               }
@@ -588,7 +759,7 @@
       f.bob += 0.1;
       const dx = Math.abs(f.x - (player.x+player.w/2));
       const dy = Math.abs((f.y + Math.sin(f.bob)*4) - (player.y - 16));
-      if (dx < 16 && dy < 18) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); }
+      if (dx < 16 && dy < 18) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); Snd.sparkle(); }
     }
 
     // cloak: each point eases toward a spot behind/below the previous one; speed streams it back
@@ -605,7 +776,7 @@
     for (const b of birds) {
       if (!b.active) continue;
       if (b.perched) {
-        if (b.x - player.x < 88) { b.perched = false; b.vx = 1.4 + Math.random()*0.8; b.vy = -1.9; } // flee!
+        if (b.x - player.x < 88) { b.perched = false; b.vx = 1.4 + Math.random()*0.8; b.vy = -1.9; Snd.bird(); } // flee!
       } else {
         b.x += b.vx + speed*0.3; b.y += b.vy; b.vy -= 0.015; b.flap += 0.45;
         if (b.y < -30) b.active = false;
@@ -625,6 +796,7 @@
       if (d < 14) {
         st.active = false;
         lampLight = Math.min(1, lampLight + LAMP_PER_KILL / 6); // 6 motes per kill
+        Snd.chime(Math.round(lampLight * 8)); // the lamp feeds in — pitch rises with the light
         spawnParticle(lampX, lampY, (Math.random()-0.5)*1.2, -0.8, 12, '#ffe9b0');
       } else if (st.x < player.x - 200) st.active = false;
     }
@@ -647,6 +819,7 @@
     deathCause = cause;
     state = 'dead'; player.dead = true;
     spawnBurst(player.x+player.w/2, player.y-10, 14, '#a44');
+    Snd.death(); // the claimed layers collapse back to embers (tick gates on state)
     shake = 10;
     CG.gameplayStop();
     const finalScore = Math.floor(distance) + feathers*5;
@@ -917,6 +1090,7 @@
   }
   function draw() {
     drawT++;
+    Snd.tick(drawT, lampLight, state); // score sequencer shares the glow-throb clock
     const camX = player.x - 80;
     ctx.drawImage(skyImg, 0, 0, W, H);
     // stars twinkle in the upper sky
@@ -982,6 +1156,7 @@
     const ts = Math.min(tsImpact, tsTut);
     slowmoT = Math.max(0, slowmoT - dt);
     tutSlowT = Math.max(0, tutSlowT - dt);
+    Snd.setTs(ts); // slow-mo darkens the whole mix through a low-pass sweep
     acc += dt * ts;
     while (acc >= STEP) { update(); acc -= STEP; }
     draw();
@@ -995,7 +1170,15 @@
   bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
   requestAnimationFrame(loop);
   // SDK call order still matters: game.* calls only fire after init() resolves (sdkLive).
-  CG.init(() => { CG.loadingStart(); CG.loadingStop(); });
+  CG.init(() => {
+    CG.loadingStart(); CG.loadingStop();
+    // platform mute setting (CG guideline) — API shape guarded, no-op off-platform
+    try {
+      const s = window.CrazyGames?.SDK?.game?.settings;
+      const add = s && (s.addListener || s.addEventListener);
+      if (add) add.call(s, 'muteAudio', (m) => { Snd.setMuted(!!m); syncMuteBtn(); });
+    } catch(e){}
+  });
 })();
 </script>
 </body>

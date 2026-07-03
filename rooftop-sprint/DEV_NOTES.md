@@ -1,11 +1,24 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-02, Batch 2 shipped): Next = BATCH 3 — audio (light-reactive score,
-> ~1.5 sessions).** Read `ROADMAP.md` FIRST — dev-owned backlog; §7 has the full speaker-scaling
-> layer architecture the music must be built on. Batches: B1 feel ✅ → B2 identity ✅ →
-> **B3 audio** → B4 score/tally → B5 economy + permanent progression (approved, spec §4,
-> 2 sessions) → B6 districts/content → B7 ship wave (regenerate stale `builds/` there; GM/GD
-> keep GAMEID_PLACEHOLDER pending Mike's dashboards).
+> **⚡ RESUME HERE (2026-07-02, Batch 3 shipped): Next = BATCH 4 — score/tally.** Read
+> `ROADMAP.md` FIRST (§3 has Mike's points spec: CLEAN 100 / HEAVY 250 / PERFECT 500 / domino
+> escalator + end-of-run count-up tally). Batches: B1 feel ✅ → B2 identity ✅ → B3 audio ✅ →
+> **B4 score/tally** → B5 economy + permanent progression (approved, spec §4, 2 sessions) →
+> B6 districts/content → B7 ship wave (regenerate stale `builds/` there; GM/GD keep
+> GAMEID_PLACEHOLDER pending Mike's dashboards).
+>
+> **🔊 BATCH 3 (light-reactive audio) DONE 2026-07-02:** procedural WebAudio `Snd` module, zero
+> assets. Every voice = §7 speaker-scaling layers (click 2–5kHz / mid / 2nd–4th-harmonic bass /
+> true-sub garnish, exponential ramps, mono by construction). Music sequencer runs off the SAME
+> clock as the weapon glow throb (`Snd.tick(drawT, lampLight, state)` from `draw()`; 8th grid on
+> `drawT*0.12`, bass lands on the throb peak) — layers gate on `lampLight` (embers → shimmer 0.2
+> → bells 0.45 → pulse-bass 0.7 → hats 0.9), death collapses to embers. Full SFX set wired
+> (jump/land/swing/kill-by-tier/chime-rising/domino/sparkle/death/slide/bird). Slow-mo = master
+> low-pass via `Snd.setTs`. Mute = 🔊 button + M key + persisted + CG muteAudio listener; ad duck
+> on CG adStarted/adFinished; `window.Snd` exposed for GM/GD `__adPause` wiring at B7 regen.
+> **Headless-inert:** no `AudioContext` in the vm sandbox → Snd returns a noop stub, suite
+> untouched. AudioContext resumes on first pointer/key gesture. QA knob: `Snd.qaHighpass(800)`
+> in console = the phone test (10 = off). Mike's real-speaker ear pass pending.
 >
 > **🏮 BATCH 2 (Lamplighter identity) DONE 2026-07-02:** weapon = lamp on a pole (same
 > reach/hitbox/timing — purely visual); guards carry lamp-poles (lamp goes dark on kill) and 6

@@ -150,18 +150,20 @@ sub pitch — the brain reconstructs the missing fundamental; this IS the bass o
 (small drivers filter it out acoustically — one mix works everywhere). Avoid 4–5kHz buildup
 (handset resonance/fatigue). Envelopes via exponential ramps only (no gain jumps/clicks).
 
-- [ ] 🔷 **Light-reactive music:** minimal warm ember-groove base; each lamp claimed from an enemy
-  ADDS an instrument layer (shimmer → bells → pulse-bass → full); death drops back to embers.
-  🔷 **Bass pulse timed to the weapon's light pulse** — the lamp visually throbs on the beat and
-  the sub/harmonic-bass layer hits with it (audio and weapon glow share one clock).
-- [ ] ⚡ SFX set (layered per architecture): jump whoosh, land thud, strike swing, kill hit
-  (pitch by tier CLEAN low → PERFECT bright) + **light-stream chime** as the lamp feeds in,
-  domino impact (sub garnish moment), Light-mote sparkle, death (layers collapse), slide scrape,
-  bird flutter
-- [ ] Slow-mo audio: low-pass filter sweep during bullet-time (sells the effect hard, cheap)
-- [ ] Mute button (platform guideline: CG `muteAudio` setting listener + in-game toggle)
-- [ ] ⚡ Ad-break ducking hooks already exist (`__adPause`) — wire `Snd.duck` when audio lands
-- [ ] QA: audition through a master high-pass swept at 800/400/200Hz + in mono (the phone test)
+- [x] 🔷 **Light-reactive music (B3, 2026-07-02):** ember pad + beat pulse always; layers gate on
+  `lampLight` — shimmer 0.2 → bells 0.45 → pulse-bass 0.7 → full/hats 0.9; death → embers.
+  🔷 Bass pulse shares the weapon's glow-throb clock (`Snd.tick(drawT,…)`, 8th grid off
+  `drawT*0.12`, beat lands on the throb peak at π/2) — lamp throbs ON the beat.
+- [x] ⚡ SFX set (B3, all voices layered per architecture via `bassHit`/`click`/`tone`/`noiseSweep`):
+  jump whoosh, land thud, swing, kill by tier (CLEAN 52Hz → PERFECT 82Hz + bright click + ping),
+  light-stream chime (pitch rises with lampLight), domino (sub-garnish moment), mote sparkle,
+  death collapse, slide scrape, bird flutter
+- [x] Slow-mo low-pass sweep (`Snd.setTs(ts)` from the main loop)
+- [x] Mute: in-game 🔊 button (top center) + M key, persisted; CG `muteAudio` listener (guarded)
+- [x] ⚡ Ad ducking: CG interstitial/rewarded adStarted/adFinished → `Snd.duck`; `window.Snd`
+  exposed so GM/GD build wrappers wire their `__adPause` through it at B7 regen
+- [~] QA: `Snd.qaHighpass(800/400/200)` console knob built in (master HPF insert); all voices are
+  mono by construction. Mike's ear pass on real speakers/phone still pending
 
 ## 8. Visuals & juice
 
