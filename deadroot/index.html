@@ -183,6 +183,26 @@ const SFX = {
   deny(){ tone(220,150,0.12,"square",0.09); }
 };
 
+/* ===== Drone (persistent bass, rises as Hive HP drops) ===== */
+function stopDrone(){
+  if(droneNode){ try{ droneNode.stop(); droneNode.disconnect(); }catch(e){} droneNode=null; droneGain=null; }
+}
+function updateDrone(){
+  if(!AC || AC.state==="suspended") return;
+  if(!droneNode){
+    try{
+      droneNode = AC.createOscillator(); droneGain = AC.createGain();
+      droneNode.type = "sawtooth"; droneNode.frequency.value = 55;
+      droneGain.gain.value = 0;
+      droneNode.connect(droneGain); droneGain.connect(AC.destination);
+      droneNode.start();
+    }catch(e){ droneNode=null; droneGain=null; return; }
+  }
+  const hpRatio = hiveMax>0 ? Math.max(0, hiveHP/hiveMax) : 1;
+  const target = muted ? 0 : (hpRatio>0.6 ? 0 : (0.6-hpRatio)/0.6*0.12);
+  droneGain.gain.setTargetAtTime(target, AC.currentTime, 0.8);
+}
+
 /* ===== World state ===== */
 let mode = "title"; // title | play | prep | over | victory
 let meta = metaVals();
@@ -200,6 +220,10 @@ let boonChoice = null; // [boon, boon] while a pick is pending
 let banner = null;     // {txt, sub, t}
 let overgrowthT = 0, pherT = 0;
 let gameSpeed = 1; // 1x / 2x fast-forward
+// DR-#010 juice
+let hitStop = 0, slowMoT = 0, timeScale = 1; // hit-stop + wave-clear slow-mo
+let edgePulseT = 0;                           // screen-edge red flash on hive damage
+let droneNode = null, droneGain = null;       // persistent bass drone
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
 const DAILY_HOSTILE = [
@@ -346,6 +370,7 @@ function applyTier2(t){
 }
 function popup(x,y,txt,col){ popups.push({x,y,txt,col,t:1.2}); }
 function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=30+Math.random()*90; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.4+Math.random()*0.4,col}); } }
+function bigBurst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=80+Math.random()*200; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.7+Math.random()*0.5,col,big:true}); } }
 function shakeIt(n){ shake = Math.max(shake,n); }
 
 /* ===== Sweeper pathing (simple greedy A*-lite on small grid) ===== */
@@ -385,7 +410,7 @@ function newRun(){
   firstMutateDone = false; onboardT = 0; menu = null;
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
-  gameSpeed = 1;
+  gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
   dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
@@ -423,8 +448,8 @@ function waveCleared(){
   if(daily){ if(!save.dailyBest)save.dailyBest={}; save.dailyBest[dayIndex()]=Math.max(save.dailyBest[dayIndex()]||0,wn); }
   persist();
   popup(W/2, H/2-60, "WAVE "+wn+" REPELLED  +"+gain+" DNA", "#c9a0f0");
-  CG.happytime();
-  if(!endless && waveIdx>=WAVES.length-1){ mode="victory"; save.won=true; persist(); CG.gameplayStop(); return; }
+  CG.happytime(); slowMoT=0.45; timeScale=0.15;
+  if(!endless && waveIdx>=WAVES.length-1){ mode="victory"; save.won=true; persist(); stopDrone(); CG.gameplayStop(); return; }
   if(endless){ endlessN++; save.endlessBest=Math.max(save.endlessBest,endlessN); persist(); }
   else waveIdx++;
   mode = "prep"; prepT = CFG.prepTime;
@@ -432,7 +457,7 @@ function waveCleared(){
   if((!endless && CFG.boonWaves.includes(waveIdx)) || (endless && endlessN%3===1)) offerBoons();
 }
 function gameOver(){
-  mode = "over"; menu = null;
+  mode = "over"; menu = null; stopDrone();
   if(daily){ if(!save.dailyBest)save.dailyBest={}; save.dailyBest[dayIndex()]=Math.max(save.dailyBest[dayIndex()]||0,waveIdx+1); }
   persist();
   CG.gameplayStop();
@@ -531,7 +556,7 @@ function update(){
         e.atkT += DT;
         if(e.atkT>=1){
           e.atkT=0; hiveHP -= e.dmg;
-          SFX.hiveHit(); shakeIt(5); burst(e.x,e.y,"#e07f7f",10);
+          SFX.hiveHit(); shakeIt(5); burst(e.x,e.y,"#e07f7f",10); edgePulseT = 1.0;
           if(hiveHP<=0){ hiveHP=0; gameOver(); return; }
         }
       } else {
@@ -552,7 +577,7 @@ function update(){
             if((cl.x-e.x)**2+(cl.y-e.y)**2 < sq(cl.r)){
               // thermobaric: cloud ignites
               clouds.splice(clouds.indexOf(cl),1);
-              SFX.boom(); shakeIt(8); burst(cl.x,cl.y,"#f0b050",30); burst(cl.x,cl.y,"#e06040",20);
+              SFX.boom(); shakeIt(8); hitStop=3; bigBurst(cl.x,cl.y,"#f0b050",30); bigBurst(cl.x,cl.y,"#e06040",20);
               popup(cl.x,cl.y,"THERMOBARIC!","#f0b050");
               for(const v of enemies){ if((v.x-cl.x)**2+(v.y-cl.y)**2 < sq(CFG.tile*2.2)) damage(v, 85, true); }
               break;
@@ -653,8 +678,8 @@ function kill(e){
   const idx = enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
   biomass += CFG.killBounty + run.killBonus;
   burst(e.x,e.y,e.col,10);
-  if(e.type==="boss"){ SFX.boom(); shakeIt(10); for(let i=0;i<3;i++) dropCorpse(e.x+(i-1)*CFG.tile, e.y); }
-  else if(e.type==="butcher"){ SFX.boom(); shakeIt(7); popup(e.x,e.y,"THE BUTCHER FALLS","#b04a4a"); for(let i=0;i<2;i++) dropCorpse(e.x+(i*2-1)*CFG.tile*0.5, e.y); }
+  if(e.type==="boss"){ SFX.boom(); shakeIt(10); hitStop=4; bigBurst(e.x,e.y,"#c9d3dd",32); bigBurst(e.x,e.y,"#e0c0ff",18); for(let i=0;i<3;i++) dropCorpse(e.x+(i-1)*CFG.tile, e.y); }
+  else if(e.type==="butcher"){ SFX.boom(); shakeIt(7); hitStop=3; bigBurst(e.x,e.y,"#b04a4a",24); popup(e.x,e.y,"THE BUTCHER FALLS","#b04a4a"); for(let i=0;i<2;i++) dropCorpse(e.x+(i*2-1)*CFG.tile*0.5, e.y); }
   else dropCorpse(e.x,e.y);
   noise(0.08,0.15,false);
 }
@@ -971,7 +996,7 @@ function draw(){
   ctx.fillStyle="#c8f050";
   for(const p of projectiles){ ctx.beginPath(); ctx.arc(p.x,p.y,4,0,6.283); ctx.fill(); }
   // particles
-  for(const p of particles){ ctx.globalAlpha=Math.min(1,p.t*2.5); ctx.fillStyle=p.col; ctx.fillRect(p.x-2,p.y-2,4,4); }
+  for(const p of particles){ ctx.globalAlpha=p.big?Math.min(1,p.t*1.4):Math.min(1,p.t*2.5); ctx.fillStyle=p.col; const ps=p.big?7:3; ctx.fillRect(p.x-ps/2,p.y-ps/2,ps,ps); }
   ctx.globalAlpha=1;
   // popups
   ctx.textAlign="center"; ctx.font="bold 18px monospace";
@@ -993,6 +1018,15 @@ function draw(){
   const g = ctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,H*0.75);
   g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(10,4,14,0.45)");
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // screen-edge red pulse: flash on hive hit + persistent breathing at low HP
+  const hpPct = hiveMax>0 ? hiveHP/hiveMax : 1;
+  const pulsePersist = (mode==="play"||mode==="prep") && hpPct<0.3 ? 0.18*(1+0.4*Math.sin(perfNow*6)) : 0;
+  const edgeA = Math.max(edgePulseT*0.55, pulsePersist);
+  if(edgeA>0.01){
+    const eg = ctx.createRadialGradient(W/2,H/2,H*0.2,W/2,H/2,H*0.85);
+    eg.addColorStop(0,"rgba(0,0,0,0)"); eg.addColorStop(1,"rgba(210,40,40,"+edgeA.toFixed(3)+")");
+    ctx.fillStyle=eg; ctx.fillRect(0,0,W,H);
+  }
 }
 function drawHive(){
   const [x0,y0]=tileToXY(CFG.hive.c0,CFG.hive.r0), [x1,y1]=tileToXY(CFG.hive.c1,CFG.hive.r1);
@@ -1264,7 +1298,11 @@ function frame(t){
   let dt = (t-lastT)/1000; lastT = t;
   if(dt>0.25) dt = 0.25;
   perfNow += dt;
-  if(!paused){ acc += dt; while(acc>=DT){ for(let i=0;i<gameSpeed;i++) update(); acc-=DT; } }
+  if(edgePulseT>0) edgePulseT = Math.max(0, edgePulseT - dt*2.5);
+  if(slowMoT>0){ slowMoT -= dt; if(slowMoT<=0) timeScale=1; }
+  if(hitStop>0){ hitStop--; draw(); return; }
+  if(!paused){ acc += dt*timeScale; while(acc>=DT){ for(let i=0;i<gameSpeed;i++) update(); acc-=DT; } }
+  if((mode==="play"||mode==="prep") && !paused) updateDrone();
   draw();
 }
 CG.init(()=>{});
