@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>JADE FIST</title>
+<style>
+  html,body{margin:0;padding:0;background:#0a0d12;height:100%;overflow:hidden;touch-action:none;
+    -webkit-user-select:none;user-select:none;font-family:Georgia,'Times New Roman',serif}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  canvas{display:block;background:#0a0d12}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+'use strict';
+// ============================================================================
+// JADE FIST — kung fu counter-brawler prototype (JF-#001)
+// Single file, canvas + vanilla JS, procedural art + WebAudio. No assets.
+// Verbs: STRIKE (tap toward an enemy) / COUNTER (strike during their red
+// telegraph flash -> throw, knocks down neighbors) / combo chain multiplier.
+// ============================================================================
+
+const W = 960, H = 540;
+const cv = document.getElementById('c'), cx = cv.getContext('2d');
+let scale = 1;
+function fit(){
+  const ww = innerWidth, wh = innerHeight;
+  scale = Math.min(ww / W, wh / H);
+  cv.width = W; cv.height = H;
+  cv.style.width = (W * scale) + 'px';
+  cv.style.height = (H * scale) + 'px';
+}
+addEventListener('resize', fit); fit();
+
+// ---------------------------------------------------------------- audio ----
+// Layered voices per the speaker-scaling architecture: transient click
+// 2-5kHz + mid body 200-500Hz + harmonic bass; sub sine as parallel garnish.
+const Snd = (() => {
+  let ac = null, master = null, muted = localStorage.getItem('jf_mute') === '1';
+  function ensure(){
+    if (!ac){
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain(); master.gain.value = muted ? 0 : 0.8;
+      master.connect(ac.destination);
+    }
+    if (ac.state === 'suspended') ac.resume();
+  }
+  function env(g, t0, a, peak, dur){
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  }
+  function tone(freq, dur, type, peak, when, bend){
+    const t0 = ac.currentTime + (when || 0);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t0);
+    if (bend) o.frequency.exponentialRampToValueAtTime(bend, t0 + dur);
+    env(g, t0, 0.004, peak, dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function noise(dur, peak, hp, when){
+    const t0 = ac.currentTime + (when || 0);
+    const n = Math.floor(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, n, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const s = ac.createBufferSource(); s.buffer = buf;
+    const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp || 1000;
+    const g = ac.createGain(); env(g, t0, 0.003, peak, dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t0);
+  }
+  return {
+    get muted(){ return muted; },
+    toggleMute(){
+      muted = !muted; localStorage.setItem('jf_mute', muted ? '1' : '0');
+      if (master) master.gain.value = muted ? 0 : 0.8;
+    },
+    unlock(){ ensure(); },
+    whoosh(){ ensure(); noise(0.09, 0.25, 2200); },
+    hit(combo){
+      ensure();
+      const p = Math.min(combo, 8);
+      noise(0.05, 0.5, 2500);                          // transient click
+      tone(220 * Math.pow(1.06, p), 0.09, 'square', 0.22);  // mid body, pitch rises w/ combo
+      tone(90, 0.12, 'sine', 0.4, 0, 55);              // harmonic bass thump
+      tone(52, 0.14, 'sine', 0.3);                     // sub garnish
+    },
+    counter(){
+      ensure();
+      noise(0.06, 0.6, 3000);
+      tone(660, 0.5, 'sine', 0.28);                    // gong shimmer
+      tone(662.5, 0.5, 'sine', 0.2);                   // beat frequency = gong wobble
+      tone(110, 0.3, 'triangle', 0.35, 0, 70);
+      tone(48, 0.3, 'sine', 0.35);
+    },
+    hurt(){
+      ensure();
+      noise(0.12, 0.5, 800);
+      tone(140, 0.25, 'sawtooth', 0.25, 0, 60);
+      tone(45, 0.3, 'sine', 0.4);
+    },
+    ko(){
+      ensure();
+      tone(180, 0.7, 'triangle', 0.3, 0, 40);
+      tone(44, 0.8, 'sine', 0.45);
+      noise(0.3, 0.3, 400, 0.05);
+    },
+    tick(){ ensure(); tone(880, 0.05, 'sine', 0.15); },
+    best(){ ensure(); [523,659,784].forEach((f,i)=>tone(f, 0.25, 'sine', 0.2, i*0.09)); }
+  };
+})();
+
+// ----------------------------------------------------------------- state ----
+const S_MENU = 0, S_PLAY = 1, S_DEAD = 2;
+let state = S_MENU;
+let t = 0;                       // global frame clock
+let shake = 0, hitStop = 0, slowMo = 0;
+let score = 0, best = +(localStorage.getItem('jf_best') || 0);
+let combo = 0, comboT = 0;       // combo count + decay timer
+let kills = 0, counters = 0, bestCombo = 0;
+let hearts = 3, hurtFlash = 0;
+let popups = [], parts = [], enemies = [];
+let waveT = 0, spawnT = 60, difficulty = 0;
+let tallyStep = 0, tallyT = 0, newBest = false;
+let msg = null, msgT = 0;
+
+const P = { x: W/2, y: 420, face: 1, punchT: 0, punchSide: 1, stance: 0 };
+
+// ---------------------------------------------------------------- enemies ---
+// Enemy lifecycle: walk in -> windup (RED TELEGRAPH = counter window) ->
+// strike (hits you if still standing there) -> recover -> walk again.
+const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5;
+function spawnEnemy(){
+  const side = Math.random() < 0.5 ? -1 : 1;
+  enemies.push({
+    x: W/2 + side * (W/2 + 40), side: -side,     // walks toward center
+    st: E_WALK, stT: 0,
+    speed: 1.1 + Math.random() * 0.5 + difficulty * 0.12,
+    windup: Math.max(26, 46 - difficulty * 2),   // telegraph shrinks as waves rise
+    vx: 0, vy: 0, y: 420, rot: 0, hue: 0 | (Math.random() * 30)
+  });
+}
+
+const REACH = 92;   // strike range from player center
+function nearestInReach(dir){
+  let bestE = null, bd = 1e9;
+  for (const e of enemies){
+    if (e.st === E_DOWN || e.st === E_THROWN) continue;
+    const dx = e.x - P.x;
+    if (dir && Math.sign(dx) !== dir) continue;
+    const d = Math.abs(dx);
+    if (d < REACH + 18 && d < bd){ bd = d; bestE = e; }
+  }
+  return bestE;
+}
+
+function popup(x, y, txt, col, big){
+  popups.push({ x, y, txt, col: col || '#e8dcc0', life: 46, big: !!big });
+}
+function burst(x, y, col, n, pow){
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2, s = (0.5 + Math.random()) * (pow || 3);
+    parts.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 1, life: 20 + Math.random()*16, col });
+  }
+}
+
+// ----------------------------------------------------------------- verbs ----
+function strike(dir){
+  if (state !== S_PLAY) return;
+  P.face = dir; P.punchT = 12; P.punchSide = dir;
+  const e = nearestInReach(dir);
+  if (!e){ Snd.whoosh(); return; }
+
+  if (e.st === E_WINDUP){                       // ---- COUNTER ----
+    counters++;
+    e.st = E_THROWN; e.stT = 0;
+    e.vx = dir * 9; e.vy = -7;
+    combo++; comboT = 150;
+    const pts = 500 * Math.min(combo, 5);
+    score += pts;
+    popup(e.x, e.y - 90, 'COUNTER +' + pts, '#7ce8a8', true);
+    Snd.counter(); hitStop = 7; shake = 10; slowMo = 26;
+    burst(e.x, e.y - 40, '#7ce8a8', 22, 5);
+    // thrown body knocks down neighbors in its path
+    for (const o of enemies){
+      if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
+      if (Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < 150){
+        o.st = E_DOWN; o.stT = 0; o.vx = dir * 5; o.vy = -4;
+        score += 250; kills++;
+        popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a');
+        burst(o.x, o.y - 40, '#e8c76a', 10, 3);
+      }
+    }
+    kills++;
+  } else {                                       // ---- CLEAN STRIKE ----
+    e.st = E_DOWN; e.stT = 0;
+    e.vx = dir * 4.5; e.vy = -4.5;
+    combo++; comboT = 150;
+    const pts = 100 * Math.min(combo, 5);
+    score += pts; kills++;
+    popup(e.x, e.y - 80, (combo > 1 ? '×' + Math.min(combo,5) + ' ' : '') + '+' + pts, '#e8dcc0');
+    Snd.hit(combo); hitStop = 3; shake = 4;
+    burst(e.x, e.y - 45, '#d8d0c0', 10, 3);
+  }
+  if (combo > bestCombo) bestCombo = combo;
+}
+
+function hurtPlayer(){
+  hearts--; hurtFlash = 18; combo = 0;
+  shake = 12; Snd.hurt();
+  burst(P.x, P.y - 50, '#e86a6a', 16, 4);
+  if (hearts <= 0){
+    state = S_DEAD; tallyStep = 0; tallyT = 0;
+    newBest = score > best;
+    if (newBest){ best = score; localStorage.setItem('jf_best', best); }
+    Snd.ko();
+  }
+}
+
+// ----------------------------------------------------------------- input ----
+function press(dir){
+  Snd.unlock();
+  if (state === S_MENU){ startRun(); return; }
+  if (state === S_DEAD){ if (tallyT > 30) startRun(); return; }
+  strike(dir);
+}
+addEventListener('keydown', e => {
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
+  if (e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.code === 'KeyQ') press(-1);
+  else if (e.code === 'ArrowRight' || e.code === 'KeyD') press(1);
+  else if (e.code === 'Space' || e.code === 'Enter') press(P.face);
+});
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) / scale, y = (e.clientY - r.top) / scale;
+  if (x > W - 60 && y < 50){ Snd.toggleMute(); return; }   // mute button hitbox
+  press(x < W/2 ? -1 : 1);
+});
+
+function startRun(){
+  state = S_PLAY;
+  score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
+  hearts = 3; hurtFlash = 0; difficulty = 0; waveT = 0; spawnT = 50;
+  enemies.length = 0; popups.length = 0; parts.length = 0;
+  msg = 'Strike toward them.  Strike the RED flash to counter.'; msgT = 240;
+}
+
+// ---------------------------------------------------------------- update ----
+function update(){
+  t++;
+  if (shake > 0) shake *= 0.85;
+  if (hurtFlash > 0) hurtFlash--;
+  if (msgT > 0) msgT--;
+  if (P.punchT > 0) P.punchT--;
+
+  popups = popups.filter(p => (p.life--, p.y -= 0.7, p.life > 0));
+  parts = parts.filter(p => {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life--;
+    return p.life > 0 && p.y < 470;
+  });
+
+  if (state !== S_PLAY){ if (state === S_DEAD) tallyT++; return; }
+  if (hitStop > 0){ hitStop--; return; }
+  const dt = slowMo > 0 ? 0.35 : 1;
+  if (slowMo > 0) slowMo--;
+
+  if (comboT > 0){ comboT -= dt; if (comboT <= 0) combo = 0; }
+
+  // difficulty + spawning
+  waveT += dt;
+  difficulty = Math.min(12, waveT / 480);
+  spawnT -= dt;
+  if (spawnT <= 0){
+    spawnEnemy();
+    if (difficulty > 3 && Math.random() < 0.35) spawnEnemy();
+    spawnT = Math.max(34, 95 - difficulty * 6) * (0.7 + Math.random() * 0.6);
+  }
+
+  for (const e of enemies){
+    e.stT += dt;
+    switch (e.st){
+      case E_WALK: {
+        e.x += e.side * e.speed * dt;
+        const d = Math.abs(e.x - P.x);
+        if (d < REACH - 8){ e.st = E_WINDUP; e.stT = 0; }
+        break;
+      }
+      case E_WINDUP:
+        if (e.stT >= e.windup){ e.st = E_STRIKE; e.stT = 0; }
+        break;
+      case E_STRIKE:
+        if (e.stT === dt || (e.stT >= 1 && e.stT - dt < 1)){
+          if (Math.abs(e.x - P.x) < REACH) hurtPlayer();
+        }
+        if (e.stT >= 10){ e.st = E_RECOVER; e.stT = 0; }
+        break;
+      case E_RECOVER:
+        if (e.stT >= 30){ e.st = E_WALK; e.stT = 0; }
+        break;
+      case E_DOWN: case E_THROWN:
+        e.x += e.vx * dt; e.y += e.vy * dt; e.vy += 0.5 * dt;
+        e.rot += e.vx * 0.05 * dt;
+        if (e.y > 470) e.dead = true;
+        break;
+    }
+  }
+  enemies = enemies.filter(e => !e.dead && e.x > -120 && e.x < W + 120);
+}
+
+// ------------------------------------------------------------------ draw ----
+function fighter(x, y, face, opts){
+  // simple articulated kung-fu figure: robe wedge + head + limbs
+  const o = opts || {};
+  cx.save();
+  cx.translate(x, y);
+  if (o.rot) cx.rotate(o.rot);
+  cx.scale(face, 1);
+  const punch = o.punch || 0;
+  const c = o.col || '#e8dcc0';
+  cx.strokeStyle = c; cx.fillStyle = c; cx.lineWidth = 5; cx.lineCap = 'round';
+  // legs (stance)
+  cx.beginPath();
+  cx.moveTo(0, -34); cx.lineTo(-14, 0);
+  cx.moveTo(0, -34); cx.lineTo(16, -4);
+  cx.stroke();
+  // robe
+  cx.beginPath();
+  cx.moveTo(-13, -34); cx.lineTo(13, -34); cx.lineTo(8, -70); cx.lineTo(-8, -70);
+  cx.closePath(); cx.fill();
+  // sash
+  cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 4;
+  cx.beginPath(); cx.moveTo(-11, -46); cx.lineTo(11, -50); cx.stroke();
+  // head + headband tail
+  cx.fillStyle = c;
+  cx.beginPath(); cx.arc(0, -82, 10, 0, 7); cx.fill();
+  cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 3;
+  cx.beginPath(); cx.moveTo(-8, -84); cx.quadraticCurveTo(-20, -84 + Math.sin(t*0.15)*3, -26, -78); cx.stroke();
+  // arms: rear guard + lead arm (extends on punch)
+  cx.strokeStyle = c; cx.lineWidth = 5;
+  cx.beginPath(); cx.moveTo(-6, -64); cx.lineTo(-16, -52); cx.stroke();
+  const ext = punch > 0 ? 30 + punch * 3 : 14;
+  cx.beginPath(); cx.moveTo(6, -64); cx.lineTo(6 + ext, -60 - (punch > 0 ? 4 : -6)); cx.stroke();
+  if (punch > 8){                       // strike flash on fist
+    cx.fillStyle = 'rgba(232,220,192,0.9)';
+    cx.beginPath(); cx.arc(6 + ext + 6, -62, 7 + (12 - punch) * 2, 0, 7); cx.fill();
+  }
+  cx.restore();
+}
+
+function drawWorld(){
+  // night courtyard: sky, moon, pagoda skyline, lanterns, ground
+  const g = cx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0b1020'); g.addColorStop(0.7, '#131a26'); g.addColorStop(1, '#0e1218');
+  cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+  // moon
+  cx.fillStyle = '#e8e2cc';
+  cx.beginPath(); cx.arc(780, 90, 34, 0, 7); cx.fill();
+  cx.fillStyle = 'rgba(232,226,204,0.08)';
+  cx.beginPath(); cx.arc(780, 90, 60, 0, 7); cx.fill();
+  // pagoda silhouettes
+  cx.fillStyle = '#0d1119';
+  for (let i = 0; i < 4; i++){
+    const bx = 90 + i * 250, bw = 120, by = 300 - (i % 2) * 40;
+    cx.fillRect(bx, by, bw, 300);
+    for (let r = 0; r < 3; r++){
+      const rw = bw + 44 - r * 14, ry = by - r * 42;
+      cx.beginPath();
+      cx.moveTo(bx + bw/2 - rw/2 - 12, ry);
+      cx.quadraticCurveTo(bx + bw/2, ry - 34, bx + bw/2 + rw/2 + 12, ry);
+      cx.closePath(); cx.fill();
+    }
+  }
+  // hanging lanterns
+  for (let i = 0; i < 6; i++){
+    const lx = 80 + i * 160, ly = 150 + Math.sin(t * 0.02 + i) * 4;
+    const glow = 0.5 + 0.15 * Math.sin(t * 0.05 + i * 2);
+    cx.strokeStyle = 'rgba(120,100,80,0.5)';
+    cx.beginPath(); cx.moveTo(lx, 0); cx.lineTo(lx, ly - 14); cx.stroke();
+    cx.fillStyle = `rgba(232,140,80,${glow * 0.25})`;
+    cx.beginPath(); cx.arc(lx, ly, 26, 0, 7); cx.fill();
+    cx.fillStyle = `rgba(240,150,90,${glow})`;
+    cx.beginPath(); cx.ellipse(lx, ly, 10, 13, 0, 0, 7); cx.fill();
+  }
+  // ground
+  cx.fillStyle = '#1a1f26'; cx.fillRect(0, 428, W, H - 428);
+  cx.strokeStyle = 'rgba(232,220,192,0.12)'; cx.lineWidth = 2;
+  cx.beginPath(); cx.moveTo(0, 428); cx.lineTo(W, 428); cx.stroke();
+}
+
+function draw(){
+  cx.save();
+  if (shake > 0.5) cx.translate((Math.random()-0.5) * shake, (Math.random()-0.5) * shake);
+  drawWorld();
+
+  // enemies
+  for (const e of enemies){
+    let col = '#8a94a6', punch = 0;
+    if (e.st === E_WINDUP){
+      const flash = Math.sin(e.stT * 0.6) > 0;
+      col = flash ? '#e85a5a' : '#b06a6a';           // RED telegraph = counter window
+      cx.fillStyle = 'rgba(232,90,90,0.25)';
+      cx.beginPath(); cx.arc(e.x, e.y - 55, 40 + Math.sin(e.stT*0.5)*5, 0, 7); cx.fill();
+    } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; }
+    fighter(e.x, e.y, -e.side, { col, sash: '#7a4040', punch, rot: e.rot || 0 });
+  }
+
+  // player
+  const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : '#e8dcc0';
+  fighter(P.x, P.y, P.face, { col: pcol, sash: '#3fae7c', punch: P.punchT });
+
+  // particles
+  for (const p of parts){
+    cx.fillStyle = p.col; cx.globalAlpha = Math.min(1, p.life / 15);
+    cx.fillRect(p.x - 2, p.y - 2, 4, 4);
+  }
+  cx.globalAlpha = 1;
+
+  // popups
+  for (const p of popups){
+    cx.globalAlpha = Math.min(1, p.life / 20);
+    cx.fillStyle = p.col;
+    cx.font = (p.big ? 'bold 26px' : 'bold 18px') + ' Georgia';
+    cx.textAlign = 'center';
+    cx.fillText(p.txt, p.x, p.y);
+  }
+  cx.globalAlpha = 1;
+  cx.restore();
+
+  // ------------------------------------------------------------- HUD ----
+  cx.textAlign = 'center'; cx.fillStyle = '#e8dcc0';
+  if (state === S_PLAY){
+    cx.font = 'bold 30px Georgia';
+    cx.fillText(score, W/2, 46);
+    if (combo > 1){
+      cx.fillStyle = '#7ce8a8'; cx.font = 'bold 20px Georgia';
+      cx.fillText('×' + Math.min(combo, 5) + ' COMBO', W/2, 72);
+    }
+    // hearts
+    cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
+    cx.fillText('♥ '.repeat(hearts) + '♡ '.repeat(3 - hearts), 20, 40);
+    if (msgT > 0){
+      cx.globalAlpha = Math.min(1, msgT / 40);
+      cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia'; cx.textAlign = 'center';
+      cx.fillText(msg, W/2, 120);
+      cx.globalAlpha = 1;
+    }
+  } else if (state === S_MENU){
+    cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 0, W, H);
+    cx.fillStyle = '#7ce8a8'; cx.font = 'bold 64px Georgia'; cx.textAlign = 'center';
+    cx.fillText('JADE FIST', W/2, 200);
+    cx.fillStyle = '#e8dcc0'; cx.font = '20px Georgia';
+    cx.fillText('They come from both sides. Strike toward them.', W/2, 260);
+    cx.fillStyle = '#e85a5a';
+    cx.fillText('Strike a red flash to COUNTER — and throw them into the rest.', W/2, 292);
+    cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
+    cx.fillText('◀ ▶  arrows / A D  ·  or tap left / right', W/2, 340);
+    if ((t / 30 | 0) % 2 === 0){
+      cx.fillStyle = '#e8dcc0'; cx.font = 'bold 22px Georgia';
+      cx.fillText('— press any side to fight —', W/2, 400);
+    }
+    if (best > 0){ cx.fillStyle = '#8a94a6'; cx.font = '16px Georgia'; cx.fillText('BEST ' + best, W/2, 440); }
+  } else if (state === S_DEAD){
+    cx.fillStyle = 'rgba(8,10,14,0.7)'; cx.fillRect(0, 0, W, H);
+    cx.fillStyle = '#e86a6a'; cx.font = 'bold 44px Georgia'; cx.textAlign = 'center';
+    cx.fillText('FELLED', W/2, 150);
+    // line-item tally reveal
+    const lines = [
+      ['Foes dropped', kills + ''],
+      ['Counters', counters + ''],
+      ['Best combo', '×' + bestCombo],
+      ['SCORE', score + '']
+    ];
+    const shown = Math.min(lines.length, Math.floor(tallyT / 24));
+    if (shown > tallyStep){ tallyStep = shown; Snd.tick(); if (shown === lines.length && newBest) Snd.best(); }
+    cx.font = '22px Georgia';
+    for (let i = 0; i < shown; i++){
+      const y = 210 + i * 40;
+      cx.fillStyle = i === lines.length - 1 ? '#7ce8a8' : '#e8dcc0';
+      cx.textAlign = 'right'; cx.fillText(lines[i][0], W/2 - 20, y);
+      cx.textAlign = 'left';  cx.fillText(lines[i][1], W/2 + 20, y);
+    }
+    if (shown === lines.length){
+      if (newBest){
+        cx.fillStyle = '#e8c76a'; cx.font = 'bold 24px Georgia'; cx.textAlign = 'center';
+        cx.fillText('NEW BEST', W/2, 400);
+      } else {
+        cx.fillStyle = '#8a94a6'; cx.font = '16px Georgia'; cx.textAlign = 'center';
+        cx.fillText('BEST ' + best, W/2, 400);
+      }
+      if ((t / 30 | 0) % 2 === 0){
+        cx.fillStyle = '#e8dcc0'; cx.font = '20px Georgia'; cx.textAlign = 'center';
+        cx.fillText('tap to rise again', W/2, 450);
+      }
+    }
+  }
+  // mute button
+  cx.fillStyle = 'rgba(232,220,192,0.6)'; cx.font = '20px Georgia'; cx.textAlign = 'right';
+  cx.fillText(Snd.muted ? '🔇' : '🔊', W - 18, 34);
+}
+
+// ------------------------------------------------------------------ loop ----
+let last = 0, acc = 0;
+const STEP = 1000 / 60;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if (!last) last = ts;
+  acc += Math.min(ts - last, 100); last = ts;
+  while (acc >= STEP){ update(); acc -= STEP; }
+  draw();
+}
+requestAnimationFrame(loop);
+document.addEventListener('visibilitychange', () => { last = 0; acc = 0; });
+</script>
+</body>
+</html>
