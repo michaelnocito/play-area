@@ -116,9 +116,18 @@
   #mapLine .lamp.reach { color: #e8c878; opacity: 0.85; cursor: pointer; }
   #mapLine .lamp.sel { text-decoration: underline; text-underline-offset: 4px; }
   #mapNext { font-size: 10px; letter-spacing: 1px; opacity: 0.7; margin-top: 3px; }
-  #nightBtn.hiddenBtn, #dailyBtn.hiddenBtn { display: none; }
+  #nightBtn.hiddenBtn, #dailyBtn.hiddenBtn, #adReviveBtn.hiddenBtn, #adDoubleBtn.hiddenBtn { display: none; }
   #nightBtn, #dailyBtn { background: #3a3145; color: #e8c878; margin-top: 8px; }
   #dailyBtn { margin-left: 8px; }
+  #adReviveBtn, #adDoubleBtn { background: #2f4a3a; color: #cfe8c8; font-size: 11px; padding: 8px 14px; margin-top: 8px; }
+  #buffRow, #cloakRow { margin-top: 8px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+  .chip {
+    font-size: 9px; padding: 4px 7px; border: 1px solid rgba(232,200,120,0.3);
+    border-radius: 4px; cursor: pointer; color: #f1e3c6; display: flex; align-items: center; gap: 5px;
+  }
+  .chip.eq { border-color: #ffe9b0; box-shadow: 0 0 8px rgba(255,233,176,0.4); }
+  .chip.cant { opacity: 0.4; }
+  .chip .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.45); }
 </style>
 </head>
 <body>
@@ -141,7 +150,11 @@
     <div id="shop"></div>
     <div id="firstBuy">&#9670; your first training is affordable</div>
     <div id="mapLine"></div>
+    <div id="buffRow"></div>
+    <div id="cloakRow"></div>
     <div id="metaLine"></div>
+    <button id="adReviveBtn" class="hiddenBtn">&#9654; Rise again (watch an ad)</button>
+    <button id="adDoubleBtn" class="hiddenBtn">&#9654; Double this run's Light (ad)</button>
     <div id="best"></div>
     <button id="startBtn">Begin the Run</button>
     <button id="nightBtn" class="hiddenBtn">Night Shift &mdash; Endless</button>
@@ -194,6 +207,10 @@
   const mapLine = document.getElementById('mapLine');
   const nightBtn = document.getElementById('nightBtn');
   const nextDist = document.getElementById('nextDist');
+  const buffRow = document.getElementById('buffRow');
+  const cloakRow = document.getElementById('cloakRow');
+  const adReviveBtn = document.getElementById('adReviveBtn');
+  const adDoubleBtn = document.getElementById('adDoubleBtn');
 
   /* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
   // sdkLive = init() actually resolved (only true on the CrazyGames platform); every game/ad
@@ -236,7 +253,8 @@
      Guardrails (§4): upgrades compress the warm-up, never raise the ceiling; ×2 cost/tier;
      first purchase affordable in 1-2 runs; one-tap spend ON the tally screen. */
   const SAVE_KEY = 'rooftopSprintSave_v1';
-  let save = { light: 0, oil: 0, arts: 0, wick: 0, kills: 0, lastDay: '', streak: 0, miles: {}, district: 0, campaignDone: false, seenStory: false };
+  let save = { light: 0, oil: 0, arts: 0, wick: 0, kills: 0, lastDay: '', streak: 0, miles: {}, district: 0, campaignDone: false, seenStory: false,
+    buffs: {}, buffEq: '', cloaks: { 0: 1 }, cloak: 0, dailyBest: 0, dailyDate: '' };
   try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && typeof s === 'object') save = Object.assign(save, s); } catch(e){}
   function saveNow() {
     let str = '';
@@ -255,6 +273,22 @@
   ];
   // Light Burst (campaign-unlocked verb): the lamp absorbs one fatal mistake for half its light
   function burstUnlocked() { return save.district >= 2 || rankIdx(save.kills) >= 1; }
+  // Buff consumables (§4): banked inventory, ONE equipped, consumed at run start
+  const BUFFS = [
+    { k: 'head', n: 'Head Start',    d: 'begin 200m along',      cost: 10 },
+    { k: 'ward', n: 'Warding Charm', d: 'absorb one hit',        cost: 12 },
+    { k: 'mag',  n: 'Mote Magnet',   d: 'strong pull this run',  cost: 8  },
+    { k: 'dbl',  n: 'Double Light',  d: 'banked Light ×2',       cost: 15 },
+  ];
+  let runBuff = '', wardUsed = false;
+  // Cosmetic cloaks — visible on the runner at all times, pure Light sink
+  const CLOAKS = [
+    { n: 'Ember Red',    col: '#7a2f3a', cost: 0   },
+    { n: 'Moonlit Blue', col: '#2f4a7a', cost: 40  },
+    { n: 'Jade',         col: '#2f6a4a', cost: 60  },
+    { n: 'Gold Thread',  col: '#8a6a2f', cost: 90  },
+    { n: 'Midnight',     col: '#22202e', cost: 120 },
+  ];
   // Lantern ranks: lifetime wardens felled → visible rank (the player's sash renders in rank color)
   const RANKS = [
     { at: 0,    name: 'SPARK',        col: '#c9913f' },
@@ -1016,6 +1050,33 @@
   nightBtn.addEventListener('click', () => { mode = 'endless'; startDistrict = 0; beginGame(); });
   const dailyBtn = document.getElementById('dailyBtn');
   dailyBtn.addEventListener('click', () => { mode = 'daily'; startDistrict = 0; beginGame(); });
+  // Ad revive: resume THIS run where it ended (the banked Light/kills are un-banked first so
+  // nothing double-counts when the continued run ends for real)
+  function reviveRun() {
+    if (state !== 'dead') return;
+    save.light -= lastBank.light; save.kills -= lastBank.kills; saveNow();
+    lastBank = { light: 0, kills: 0 };
+    clearTally();
+    player.dead = false;
+    graceT = 60;
+    if (deathCause === 'gap') placeOnNextRoof();
+    spawnBurst(player.x + player.w/2, player.y - 16, 26, '#ffe9b0');
+    spawnMessage(player.x + player.w/2, player.y - 56, 'RISEN', 70);
+    overlay.classList.add('hidden');
+    state = 'playing';
+    CG.gameplayStart();
+    Snd.newBest();
+  }
+  adReviveBtn.addEventListener('click', () => { if (adReviveUsed) return; adReviveUsed = true; adReviveBtn.classList.add('hiddenBtn'); CG.rewarded(reviveRun); });
+  adDoubleBtn.addEventListener('click', () => {
+    if (adDoubleUsed) return; adDoubleUsed = true; adDoubleBtn.classList.add('hiddenBtn');
+    CG.rewarded(() => {
+      save.light += lastBank.light; saveNow();
+      walletLine.textContent = '◆ Light banked: ' + save.light + '  (doubled)';
+      updateMenuMeta(); renderShop(); renderBuffs(); renderCloaks();
+      Snd.newBest();
+    });
+  });
   canvas.addEventListener('pointerdown', () => {
     if (state === 'dead' || state === 'won') beginGame();
     else if (state === 'paused') resumeGame();
@@ -1033,6 +1094,8 @@
     tallyEl.innerHTML = ''; newBestEl.classList.remove('show'); statsLine.textContent = '';
     walletLine.textContent = ''; walletLine.classList.remove('show');
     shopEl.innerHTML = ''; firstBuyEl.classList.remove('show');
+    adReviveBtn.classList.add('hiddenBtn'); adDoubleBtn.classList.add('hiddenBtn');
+    adReviveUsed = false; adDoubleUsed = false; lastBank = { light: 0, kills: 0 };
     // mode setup: Daily Trial = seeded layout + date-pinned modifier (everyone runs the same
     // night); Night Shift = rotating daily modifier; campaign = clean
     if (mode === 'daily') {
@@ -1047,8 +1110,17 @@
     // campaign checkpoint (chosen on the menu map) + Wick & Flint head start — seed BEFORE the
     // world spawns so district population and captain gates line up with the starting distance.
     // The Daily Trial ignores both: everyone runs the identical route.
+    // consume the equipped buff (banked inventory; the Daily Trial allows none — same night for everyone)
+    runBuff = ''; wardUsed = false;
+    if (mode !== 'daily' && save.buffEq && (save.buffs[save.buffEq] || 0) > 0) {
+      runBuff = save.buffEq;
+      save.buffs[runBuff]--;
+      if (save.buffs[runBuff] <= 0) save.buffEq = '';
+      saveNow();
+    }
     distanceSeed = mode === 'daily' ? 0
-      : (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + Math.min(save.wick, 2) * 50; // wick T3 is the revive, not more meters
+      : (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + Math.min(save.wick, 2) * 50 // wick T3 is the revive, not more meters
+        + (runBuff === 'head' ? 200 : 0);
     resetWorld();
     distance = distanceSeed;
     curD = districtIdx(distance);
@@ -1251,7 +1323,7 @@
       }
     }
 
-    const magnetR = 12 * save.arts; // Lamp Arts: Light is drawn to you from farther
+    const magnetR = 12 * save.arts + (runBuff === 'mag' ? 30 : 0); // Lamp Arts + Mote Magnet buff
     for (const f of featherList) {
       if (!f.active || f.taken) continue;
       f.bob += 0.1;
@@ -1370,6 +1442,44 @@
     nightBtn.classList.toggle('hiddenBtn', !(save.campaignDone || rankIdx(save.kills) >= 3));
     dailyBtn.classList.toggle('hiddenBtn', rankIdx(save.kills) < 1);
   }
+  // Buff chips: tap to buy (when empty) or equip/unequip (when owned) — one rides per run
+  function renderBuffs() {
+    buffRow.innerHTML = '';
+    for (const b of BUFFS) {
+      const owned = save.buffs[b.k] || 0;
+      const c = document.createElement('div');
+      c.className = 'chip' + (save.buffEq === b.k ? ' eq' : '') + (!owned && save.light < b.cost ? ' cant' : '');
+      c.innerHTML = owned
+        ? b.n + ' ×' + owned + '<span style="opacity:0.6">' + b.d + '</span>'
+        : b.n + ' ◆' + b.cost + '<span style="opacity:0.6">' + b.d + '</span>';
+      c.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (owned) { save.buffEq = save.buffEq === b.k ? '' : b.k; }
+        else if (save.light >= b.cost) { save.light -= b.cost; save.buffs[b.k] = 1; save.buffEq = b.k; Snd.sparkle(); }
+        else return;
+        saveNow(); renderBuffs(); updateMenuMeta();
+      });
+      buffRow.appendChild(c);
+    }
+  }
+  // Cloak swatches: live on the runner at all times; buy once, equip any time
+  function renderCloaks() {
+    cloakRow.innerHTML = '';
+    CLOAKS.forEach((cl, i) => {
+      const owned = !!save.cloaks[i];
+      const c = document.createElement('div');
+      c.className = 'chip' + (save.cloak === i ? ' eq' : '') + (!owned && save.light < cl.cost ? ' cant' : '');
+      c.innerHTML = '<span class="sw" style="background:' + cl.col + '"></span>' + (owned ? cl.n : cl.n + ' ◆' + cl.cost);
+      c.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (owned) { save.cloak = i; Snd.uiTick(2); }
+        else if (save.light >= cl.cost) { save.light -= cl.cost; save.cloaks[i] = 1; save.cloak = i; Snd.newBest(); }
+        else return;
+        saveNow(); renderCloaks(); updateMenuMeta();
+      });
+      cloakRow.appendChild(c);
+    });
+  }
   // One-tap spend on the tally screen (Rogue Legacy flow rule: death → tally → tap → running again)
   function buyTrack(i) {
     const tr = TRACKS[i], tier = save[tr.key];
@@ -1463,11 +1573,13 @@
       best = finalScore;
       try { Save.get().setItem('rooftopSprintBest', String(best)); } catch(e){}
     }
-    const lightEarned = feathers * (dailyX2 ? 2 : 1) + mileLight + (firstClear ? 100 : 0);
+    const lightEarned = (feathers * (dailyX2 ? 2 : 1) + mileLight) * (runBuff === 'dbl' ? 2 : 1) + (firstClear ? 100 : 0);
     save.light += lightEarned;
     save.kills += cleanK + heavyK + perfK + dominoK + captainK;
+    lastBank = { light: lightEarned, kills: 0 };
     saveNow();
-    updateMenuMeta(); renderMap();
+    updateMenuMeta(); renderMap(); renderBuffs(); renderCloaks();
+    adDoubleBtn.classList.toggle('hiddenBtn', adDoubleUsed || lightEarned <= 0);
     document.querySelector('#overlay h1').textContent = 'THE GREAT BEACON BURNS AGAIN';
     const ps = document.querySelectorAll('#overlay p');
     ps[0].textContent = firstClear
@@ -1483,10 +1595,26 @@
   }
 
   let revived = false; // Wick & Flint T3 "Second Flame" — once per run
+  let adReviveUsed = false, adDoubleUsed = false;
+  let lastBank = { light: 0, kills: 0 }; // un-banked if an ad revive resumes the run
+  function placeOnNextRoof() { // shared by Second Flame + ad revive: a gap death needs ground
+    const next = segments.filter(s => s.active && s.x2 > player.x + 20).sort((a,b)=>a.x1-b.x1)[0];
+    if (next) { player.x = Math.max(player.x, next.x1 + 12); player.y = next.y; player.vy = 0; player.onGround = true; }
+    else { player.y = GROUND_Y - 40; player.vy = 0; }
+  }
   function die(cause) {
+    // Warding Charm buff: absorbs one hit before anything else is spent
+    if (runBuff === 'ward' && !wardUsed && cause !== 'gap') {
+      wardUsed = true;
+      graceT = 50;
+      spawnBurst(player.x + player.w/2, player.y - 16, 18, '#8fd8b4');
+      spawnMessage(player.x + player.w/2, player.y - 56, 'WARDING CHARM', 60);
+      Snd.newBest(); shake = 8; slowmoT = Math.max(slowmoT, 400);
+      return;
+    }
     // Light Burst (unlocked by relighting 2 districts, or at EMBER rank): the lamp absorbs a
     // fatal mistake for half its light. Doesn't work on falls — nothing catches you in a gap.
-    if ((cause === 'guard' || cause === 'low') && burstUnlocked() && lampLight >= 0.5) {
+    if (cause !== 'gap' && burstUnlocked() && lampLight >= 0.5) {
       lampLight -= 0.5;
       graceT = 50;
       spawnBurst(player.x + player.w/2, player.y - 16, 22, '#ffffff');
@@ -1498,11 +1626,7 @@
     if (save.wick >= 3 && !revived) { // Second Flame: one free return per run, any death
       revived = true;
       graceT = 60;
-      if (cause === 'gap') { // set down on the next roof ahead
-        const next = segments.filter(s => s.active && s.x2 > player.x + 20).sort((a,b)=>a.x1-b.x1)[0];
-        if (next) { player.x = Math.max(player.x, next.x1 + 12); player.y = next.y; player.vy = 0; player.onGround = true; }
-        else { player.y = GROUND_Y - 40; player.vy = 0; }
-      }
+      if (cause === 'gap') placeOnNextRoof();
       spawnBurst(player.x + player.w/2, player.y - 16, 26, '#ffe9b0');
       spawnMessage(player.x + player.w/2, player.y - 56, 'SECOND FLAME', 70);
       Snd.newBest(); shake = 10; slowmoT = Math.max(slowmoT, 500);
@@ -1521,12 +1645,17 @@
       try { Save.get().setItem('rooftopSprintBest', String(best)); } catch(e){}
       CG.happytime();
     }
-    // bank the run: Light collected (×2 on the first run of the day) + bounties + lifetime kills
-    const lightEarned = feathers * (dailyX2 ? 2 : 1) + mileLight;
+    // bank the run: Light collected (×2 on the first run of the day, ×2 again on a Double Light buff) + bounties
+    const lightEarned = (feathers * (dailyX2 ? 2 : 1) + mileLight) * (runBuff === 'dbl' ? 2 : 1);
+    const killsEarned = cleanK + heavyK + perfK + dominoK + captainK;
     save.light += lightEarned;
-    save.kills += cleanK + heavyK + perfK + dominoK + captainK;
+    save.kills += killsEarned;
+    lastBank = { light: lightEarned, kills: killsEarned };
     saveNow();
-    updateMenuMeta();
+    updateMenuMeta(); renderBuffs(); renderCloaks();
+    // rewarded-ad offers (never gating, real value): one revive per run + one Light doubling
+    adReviveBtn.classList.toggle('hiddenBtn', adReviveUsed);
+    adDoubleBtn.classList.toggle('hiddenBtn', adDoubleUsed || lightEarned <= 0);
     scoreLine.textContent = '';
     showTally(finalScore, isBest, lightEarned);
     bestEl.textContent = `Best score: ${best}`;
@@ -1744,8 +1873,8 @@
   }
   function drawPlayer(camX) {
     const sx = player.x - camX, sy = player.y;
-    // cloak first (behind the body) — drawn in world space from the verlet chain
-    ctx.fillStyle = '#7a2f3a';
+    // cloak first (behind the body) — drawn in world space from the verlet chain, in the equipped color
+    ctx.fillStyle = CLOAKS[save.cloak] ? CLOAKS[save.cloak].col : '#7a2f3a';
     ctx.beginPath();
     ctx.moveTo(cloak[0].x - camX, cloak[0].y - 5);
     for (let i = 1; i < cloak.length; i++) ctx.lineTo(cloak[i].x - camX, cloak[i].y - 4 + i*0.8);
@@ -1971,7 +2100,7 @@
   bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
   runRankShown = rankIdx(save.kills);
   updateMenuMeta();
-  renderMap();
+  renderMap(); renderBuffs(); renderCloaks();
   // fantasy frame (Law 10): three lines on first boot, one line after
   document.querySelectorAll('#overlay p')[0].innerHTML = save.seenStory
     ? 'Run the rooftops. Take back the light.'
