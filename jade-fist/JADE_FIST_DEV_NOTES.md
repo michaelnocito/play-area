@@ -159,3 +159,7 @@ grants immediately). happytime() on district victories was JF-#013.
 **JF-#017 district ambience (Batch E)**: deterministic drift-from-t layers, zero particle
 state — Courtyard blossom petals, Market rising embers, Temple incense mist banks, Rooftop
 wind streaks, Legend jade motes. Drawn in drawWorld so they freeze with pause.
+
+**JF-#018 menu demo loop (Batch F)**: the two static instruction lines replaced by a looping
+240-frame visual demo (approach → red-flash windup w/ aura → counter throw w/ spin-out) using
+the real fighter() renderer at 0.72 scale, phase captions above. CG visual-first onboarding.

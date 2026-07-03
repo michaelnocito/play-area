@@ -1102,10 +1102,34 @@ function draw(){
     cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 0, W, H);
     cx.fillStyle = '#7ce8a8'; cx.font = 'bold 64px Georgia'; cx.textAlign = 'center';
     cx.fillText('JADE FIST', W/2, 200);
-    cx.fillStyle = '#e8dcc0'; cx.font = '20px Georgia';
-    cx.fillText('They come from both sides. Strike toward them.', W/2, 260);
-    cx.fillStyle = '#e85a5a';
-    cx.fillText('Strike a red flash to COUNTER — and throw them into the rest.', W/2, 292);
+    // JF-#018: visual onboarding — a looping counter demo instead of two text lines
+    // (CG: teach visually, minimal text). 240-frame script: approach → red flash →
+    // counter throw → reset. Captions change per phase.
+    {
+      const dT = t % 240, gy = 312;
+      let ex2 = 0, ecol = '#8a94a6', erot = 0, ppunch = 0, cap, capCol = '#e8dcc0';
+      if (dT < 80){                                   // approach from the right
+        ex2 = W/2 + 220 - dT * 1.6;
+        cap = 'they come at you — strike toward them';
+      } else if (dT < 140){                           // windup: the red flash
+        ex2 = W/2 + 92;
+        const late = (dT - 80) / 60 > 0.66;
+        ecol = (late || Math.sin(dT * 0.6) > 0) ? (late ? '#ff4a4a' : '#e85a5a') : '#b06a6a';
+        cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
+        cx.beginPath(); cx.arc(ex2, gy - 44, 34 + Math.sin(dT * 0.5) * 4, 0, 7); cx.fill();
+        cap = 'RED flash = strike NOW to counter'; capCol = '#e85a5a';
+      } else if (dT < 200){                           // the throw
+        const ft = dT - 140;
+        ex2 = W/2 + 92 + ft * 6; erot = ft * 0.12; ecol = '#e8c76a';
+        ppunch = Math.max(0, 12 - ft);
+        cap = 'COUNTER — throw them into the rest'; capCol = '#e8c76a';
+      } else { ex2 = -999; cap = 'they come at you — strike toward them'; }
+      fighter(W/2 - 40, gy, 1, { col: '#e8dcc0', sash: '#3fae7c', punch: ppunch, size: 0.72 });
+      if (ex2 > -200 && ex2 < W + 200)
+        fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
+      cx.fillStyle = capCol; cx.font = '19px Georgia'; cx.textAlign = 'center';
+      cx.fillText(cap, W/2, 236);
+    }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
     cx.fillText(TOUCH ? 'tap the LEFT or RIGHT half of the screen' : '◀ ▶  arrows  ·  A / D  ·  Space = strike where you face', W/2, 332);
     // JF-#009: district selector — the campaign map in one line
