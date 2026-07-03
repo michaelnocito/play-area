@@ -146,3 +146,7 @@ victory. Parse-checked only — Batch B (pause + auto-pause on blur) is next.
 (visibilitychange), any key/tap resumes; update() early-returns so the world is fully
 frozen; dark overlay w/ PAUSED + resume hint drawn over the frozen frame; CG
 gameplayStop/Start bracket the pause per CG guidelines. No Escape binding (CG rule).
+
+**JF-#015 dpi-crisp canvas (Batch C)**: backing store = 960x540 x scale x devicePixelRatio,
+base setTransform maps logical coords to physical pixels; CSS size unchanged so pointer math
+untouched. Crisp on hi-dpi per CG requirement.

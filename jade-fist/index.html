@@ -27,12 +27,18 @@
 const W = 960, H = 540;
 const cv = document.getElementById('c'), cx = cv.getContext('2d');
 let scale = 1;
+// JF-#015: back the canvas at devicePixelRatio so it stays crisp on hi-dpi
+// displays (CG requirement). All game code keeps drawing in 960x540 logical
+// coords — the base transform maps them to physical pixels.
 function fit(){
   const ww = innerWidth, wh = innerHeight;
+  const dpr = window.devicePixelRatio || 1;
   scale = Math.min(ww / W, wh / H);
-  cv.width = W; cv.height = H;
+  cv.width = Math.round(W * scale * dpr);
+  cv.height = Math.round(H * scale * dpr);
   cv.style.width = (W * scale) + 'px';
   cv.style.height = (H * scale) + 'px';
+  cx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
 }
 addEventListener('resize', fit); fit();
 
