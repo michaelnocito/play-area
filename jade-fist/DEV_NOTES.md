@@ -26,4 +26,14 @@ enemy flashes **RED** during windup = counter window → strike the flash = **CO
 - Player is stationary (pure counter-brawler, one-position). Consider micro-step/lane later.
 - No CG SDK wiring yet (adapter pattern exists in rooftop-sprint/flipline — copy at ship batch).
 - No pause, no district/wave structure, no economy/progression.
-- Enemy hit check in E_STRIKE uses a first-frame check that's approximate under slow-mo dt.
+- ~~Enemy hit check in E_STRIKE approximate under slow-mo~~ fixed JF-#002 (`didHit` flag).
+
+## JF-#002 polish pass (no new features)
+1. Strike hit-check bug fixed (one guaranteed check via `didHit`).
+2. Input buffered through hit-stop (press lands when time resumes, never eaten).
+3. Telegraph fairness: rising windup audio cue + final third goes solid bright red ("NOW").
+4. Combo-decay bar under the combo counter (you can see the chain expiring).
+5. Device-adaptive prompts (touch vs keyboard wording on menu/teach/retry).
+6. Tally fast-forward: first tap reveals all lines, next tap restarts.
+7. Pincer guard: first 15s spawns alternate sides; an enemy never opens a windup while
+   the opposite side is already threatening (holds just outside reach instead).

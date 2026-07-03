@@ -107,6 +107,7 @@ const Snd = (() => {
       tone(44, 0.8, 'sine', 0.45);
       noise(0.3, 0.3, 400, 0.05);
     },
+    windup(frames){ ensure(); tone(320, frames / 60, 'sine', 0.12, 0, 520); },
     tick(){ ensure(); tone(880, 0.05, 'sine', 0.15); },
     best(){ ensure(); [523,659,784].forEach((f,i)=>tone(f, 0.25, 'sine', 0.2, i*0.09)); }
   };
@@ -123,6 +124,9 @@ let kills = 0, counters = 0, bestCombo = 0;
 let hearts = 3, hurtFlash = 0;
 let popups = [], parts = [], enemies = [];
 let waveT = 0, spawnT = 60, difficulty = 0;
+let bufDir = 0, bufT = 0;        // input buffer across hit-stop
+let lastSpawnSide = 1;
+const TOUCH = matchMedia('(pointer:coarse)').matches;
 let tallyStep = 0, tallyT = 0, newBest = false;
 let msg = null, msgT = 0;
 
@@ -133,7 +137,9 @@ const P = { x: W/2, y: 420, face: 1, punchT: 0, punchSide: 1, stance: 0 };
 // strike (hits you if still standing there) -> recover -> walk again.
 const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5;
 function spawnEnemy(){
-  const side = Math.random() < 0.5 ? -1 : 1;
+  // first ~15s: strictly alternate sides so the player is never pincered while learning
+  const side = waveT < 900 ? -lastSpawnSide : (Math.random() < 0.5 ? -1 : 1);
+  lastSpawnSide = side;
   enemies.push({
     x: W/2 + side * (W/2 + 40), side: -side,     // walks toward center
     st: E_WALK, stT: 0,
@@ -169,6 +175,7 @@ function burst(x, y, col, n, pow){
 // ----------------------------------------------------------------- verbs ----
 function strike(dir){
   if (state !== S_PLAY) return;
+  if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
   P.face = dir; P.punchT = 12; P.punchSide = dir;
   const e = nearestInReach(dir);
   if (!e){ Snd.whoosh(); return; }
@@ -223,7 +230,11 @@ function hurtPlayer(){
 function press(dir){
   Snd.unlock();
   if (state === S_MENU){ startRun(); return; }
-  if (state === S_DEAD){ if (tallyT > 30) startRun(); return; }
+  if (state === S_DEAD){
+    if (tallyT < 24 * 4) tallyT = 24 * 4;      // first tap: reveal full tally instantly
+    else if (tallyT > 24 * 4 + 10) startRun(); // next tap: restart (small guard vs double-tap)
+    return;
+  }
   strike(dir);
 }
 addEventListener('keydown', e => {
@@ -245,7 +256,8 @@ function startRun(){
   score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
   hearts = 3; hurtFlash = 0; difficulty = 0; waveT = 0; spawnT = 50;
   enemies.length = 0; popups.length = 0; parts.length = 0;
-  msg = 'Strike toward them.  Strike the RED flash to counter.'; msgT = 240;
+  msg = (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
+        ' the RED flash to counter.'; msgT = 240;
 }
 
 // ---------------------------------------------------------------- update ----
@@ -264,6 +276,7 @@ function update(){
 
   if (state !== S_PLAY){ if (state === S_DEAD) tallyT++; return; }
   if (hitStop > 0){ hitStop--; return; }
+  if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir; bufDir = 0; bufT = 0; strike(d); } }
   const dt = slowMo > 0 ? 0.35 : 1;
   if (slowMo > 0) slowMo--;
 
@@ -283,16 +296,25 @@ function update(){
     e.stT += dt;
     switch (e.st){
       case E_WALK: {
-        e.x += e.side * e.speed * dt;
         const d = Math.abs(e.x - P.x);
-        if (d < REACH - 8){ e.st = E_WINDUP; e.stT = 0; }
+        // fairness guard: never open a windup while the OTHER side is already
+        // threatening — hold just outside reach instead of pincering
+        const otherThreat = enemies.some(o => o !== e &&
+          (o.st === E_WINDUP || o.st === E_STRIKE) &&
+          Math.sign(o.x - P.x) !== Math.sign(e.x - P.x));
+        if (d < REACH - 8){
+          if (otherThreat){ e.x = P.x + Math.sign(e.x - P.x) * (REACH + 4); break; }
+          e.st = E_WINDUP; e.stT = 0;
+          Snd.windup(e.windup);
+        } else e.x += e.side * e.speed * dt;
         break;
       }
       case E_WINDUP:
-        if (e.stT >= e.windup){ e.st = E_STRIKE; e.stT = 0; }
+        if (e.stT >= e.windup){ e.st = E_STRIKE; e.stT = 0; e.didHit = false; }
         break;
       case E_STRIKE:
-        if (e.stT === dt || (e.stT >= 1 && e.stT - dt < 1)){
+        if (!e.didHit){
+          e.didHit = true;
           if (Math.abs(e.x - P.x) < REACH) hurtPlayer();
         }
         if (e.stT >= 10){ e.st = E_RECOVER; e.stT = 0; }
@@ -399,10 +421,11 @@ function draw(){
   for (const e of enemies){
     let col = '#8a94a6', punch = 0;
     if (e.st === E_WINDUP){
-      const flash = Math.sin(e.stT * 0.6) > 0;
-      col = flash ? '#e85a5a' : '#b06a6a';           // RED telegraph = counter window
-      cx.fillStyle = 'rgba(232,90,90,0.25)';
-      cx.beginPath(); cx.arc(e.x, e.y - 55, 40 + Math.sin(e.stT*0.5)*5, 0, 7); cx.fill();
+      const late = e.stT / e.windup > 0.66;          // final third: solid bright = NOW
+      const flash = late || Math.sin(e.stT * 0.6) > 0;
+      col = flash ? (late ? '#ff4a4a' : '#e85a5a') : '#b06a6a';   // RED telegraph = counter window
+      cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
+      cx.beginPath(); cx.arc(e.x, e.y - 55, (late ? 50 : 40) + Math.sin(e.stT*0.5)*5, 0, 7); cx.fill();
     } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; }
     fighter(e.x, e.y, -e.side, { col, sash: '#7a4040', punch, rot: e.rot || 0 });
   }
@@ -437,6 +460,9 @@ function draw(){
     if (combo > 1){
       cx.fillStyle = '#7ce8a8'; cx.font = 'bold 20px Georgia';
       cx.fillText('×' + Math.min(combo, 5) + ' COMBO', W/2, 72);
+      const bw = 120 * (comboT / 150);               // visible combo-decay bar
+      cx.fillStyle = 'rgba(124,232,168,0.6)';
+      cx.fillRect(W/2 - bw/2, 80, bw, 4);
     }
     // hearts
     cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
@@ -456,7 +482,7 @@ function draw(){
     cx.fillStyle = '#e85a5a';
     cx.fillText('Strike a red flash to COUNTER — and throw them into the rest.', W/2, 292);
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText('◀ ▶  arrows / A D  ·  or tap left / right', W/2, 340);
+    cx.fillText(TOUCH ? 'tap the LEFT or RIGHT half of the screen' : '◀ ▶  arrows  ·  A / D  ·  Space = strike where you face', W/2, 340);
     if ((t / 30 | 0) % 2 === 0){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 22px Georgia';
       cx.fillText('— press any side to fight —', W/2, 400);
@@ -492,7 +518,7 @@ function draw(){
       }
       if ((t / 30 | 0) % 2 === 0){
         cx.fillStyle = '#e8dcc0'; cx.font = '20px Georgia'; cx.textAlign = 'center';
-        cx.fillText('tap to rise again', W/2, 450);
+        cx.fillText(TOUCH ? 'tap to rise again' : 'press any key to rise again', W/2, 450);
       }
     }
   }
