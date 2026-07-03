@@ -94,3 +94,17 @@ first buy in 1-2 runs; Rogue Legacy one-tap-spend-on-tally flow):
 6. **Duo rush scales**: chance `min(0.2 + diff·0.05, 0.55)` (was flat 0.35); past diff 7
    the second spawn has a 40% chance to take the OPPOSITE side (feeds the pincer test).
 7. **Combo window base 150→120 frames** — INNER FOCUS tiers now matter.
+
+## JF-#007 attack/enemy-interaction pass (7 items, CG depth bar; every tell visual)
+1. **PERFECT COUNTER**: countering in the final-third "NOW" flash = 1.5× points, +5◆,
+   harder throw (vx 12), wider fell radius (220), gold burst — rewards the tell JF-#002 built.
+2. **Thrown bodies are projectiles**: an airborne countered enemy fells anyone he passes
+   through mid-flight (E_THROWN collision, 40px) — throw DIRECTION is now a tactical choice.
+3. **SWEEP bonus**: one throw felling 2+ = +500 and +2◆, center banner.
+4. **Viper FEINT** (diff>4, 35%): pale flash, NO windup audio, springs back out of reach
+   (untargetable) — striking it = whiff + recovery. Real telegraphs stay red + audible.
+5. **Brute ENRAGE**: each shove he eats cuts his next windup 15% (floor 55% of base,
+   `windup0`); "ENRAGED" popup + reddish tint at 2 shoves — shove-stalling escalates.
+6. **Guarded vipers** (diff>5): bracer guard no longer initiate-only.
+7. **Adaptive guards**: while combo ≥8, new spawns get +20% guard chance (cap 0.6) and a
+   one-time "THE CROWD WISES UP" banner — pushes flow players from strike-spam to counters.
