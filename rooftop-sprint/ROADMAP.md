@@ -25,6 +25,39 @@ The city's lights are going out; you are the Lamplighter, running the rooftops t
 
 ---
 
+## 🕯 GAME_BIBLE GAP REPORT (2026-07-03) — 30 identified changes, NOT yet built
+
+Critical test today FAILS on all five questions (4th-run reason = "score", nothing changes
+between runs, ranks = paint, no ending, pitch = a mechanic). Part 1 compliance is largely done
+post-B5-UX; the gap is Part 2. Numbered list mirrors the design chat 2026-07-03; 🔁 = already
+elsewhere in this roadmap, promoted/reframed here.
+
+**A. Something to beat (Law 1 — biggest gap):** ①campaign spine: run = journey to relight the
+Great Beacon ②🔁finite ~6-district sequence (banner/palette/hazards/density — upgrades §2
+districts from flavor to spine) ③final district + real ending screen, completion saved
+④endless = POST-game unlock "Night Shift" ⑤district checkpoints (start from any reached).
+**B. Run arc & drama (Laws 2/6):** ⑥gauntlet pressure pockets + scripted rest (spikes & relief
+vs monotone ramp) ⑦Warden Captain boss at each district gate ⑧death identity ("Felled by a
+Captain in Lantern Row") ⑨🔁speed plateau ~2500m (§6) ⑩🔁guaranteed gentle intro chunk (§6).
+**C. Progression changes play (Laws 3/4):** ⑪🔁Lamp Arts real tier behaviors (stun flash /
+farther dominoes) ⑫new verb: Light Burst — spend lamp light to erase one mistake (campaign
+unlock) ⑬ranks GATE mechanics (EMBER=daily trial, FLAME=boon slot, BEACON=early Night Shift)
+⑭Wick & Flint T3 = free revive (behavior, not +50m) ⑮🔁buff consumables (§4 B5.2).
+**D. Every run different (Law 5):** ⑯daily trial (seeded route + modifier + daily best)
+⑰boon choice at each district gate (1 of 2 run modifiers) ⑱rotating nightly modifier in Night
+Shift ⑲🔁chunk library + anti-streak (§2) ⑳🔁guard formations for domino jackpots (§2).
+**E. New reads, same 2 buttons (Laws 7/9):** ㉑Archer — deflect arrow w/ timed strike ㉒feint
+warden (fake telegraph, punishes early press; looks AND sounds different) ㉓strikeable braziers
+(environmental strike) ㉔distinct tell per enemy type ㉕whiff recovery (spam can't win).
+**F. Fantasy frame & orientation (Laws 8/10):** ㉖3-line skippable boot story ㉗menu campaign
+map (districts as lit/unlit lamps, next named) ㉘goal-gradient HUD/tally ("next district 80m",
+"12 wardens to FLAME") ㉙ending screen + retellable pitch in store copy.
+**G. Compliance leftovers (Parts 1/4):** ㉚🔁rewarded ads w/ real value + adblock-safe path
+(revive at Captain, double-Light on tally; never gating).
+
+Suggested re-batching: B5.2 economy finishers (⑪⑭⑮㉚) → B6 becomes CAMPAIGN batch (①-⑩, ㉖-㉙,
+2 sessions) → B6.5 variety batch (⑯-㉕) → B7 ship wave. Await Mike's priority call.
+
 ## 1. Core loop & mechanics
 
 **Now:** run → jump gaps → timed strikes (CLEAN/HEAVY/PERFECT + domino) → die → retry.
