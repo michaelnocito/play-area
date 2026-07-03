@@ -229,11 +229,18 @@
     try { str = JSON.stringify(save); localStorage.setItem(SAVE_KEY, str); } catch(e){}
     try { if (str) Save.get().setItem(SAVE_KEY, str); } catch(e){}
   }
+  // Progression changes PLAY, not just stats (Law 3): each tier's description is what the
+  // NEXT purchase actually does; tiers 2-3 add behaviors, not bigger numbers.
   const TRACKS = [
-    { key: 'oil',  name: 'MORNING OIL',  desc: 'Start with the lamp partly lit',      max: 3, costs: [15, 30, 60] },
-    { key: 'arts', name: 'LAMP ARTS',    desc: 'Light is drawn to you from farther',  max: 3, costs: [15, 30, 60] },
-    { key: 'wick', name: 'WICK & FLINT', desc: 'Head start: begin farther along',     max: 3, costs: [15, 30, 60] },
+    { key: 'oil',  name: 'MORNING OIL',  max: 3, costs: [15, 30, 60],
+      descs: ['Start with the lamp partly lit', 'Start brighter (a music layer up)', 'Start at a mid-run glow'] },
+    { key: 'arts', name: 'LAMP ARTS',    max: 3, costs: [15, 30, 60],
+      descs: ['Light is drawn to you from farther', 'PERFECT kills STUN nearby wardens', 'Dominoes chain farther'] },
+    { key: 'wick', name: 'WICK & FLINT', max: 3, costs: [15, 30, 60],
+      descs: ['Head start: begin 50m along', 'Head start: begin 100m along', 'SECOND FLAME: one free revive per run'] },
   ];
+  // Light Burst (campaign-unlocked verb): the lamp absorbs one fatal mistake for half its light
+  function burstUnlocked() { return save.district >= 2 || rankIdx(save.kills) >= 1; }
   // Lantern ranks: lifetime wardens felled → visible rank (the player's sash renders in rank color)
   const RANKS = [
     { at: 0,    name: 'SPARK',        col: '#c9913f' },
@@ -575,6 +582,7 @@
   let lastRoofHadLow = false; // no low hazards on consecutive roofs — a slide ends with no time to start the next one
   let lastGapEndX = 0;        // landing edge of the most recent gap — hazards must sit beyond any jump-arc landing
   let winAt = -1;             // beacon lit → short breath → ending screen
+  let lastSegHadGap = false;  // anti-streak: one roof of recovery between gaps, always
   function distAtX(x) { return distanceSeed + (x - 80) / 10; } // world-x → run distance (m)
 
   function resetWorld() {
@@ -590,11 +598,11 @@
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
     killPts = 0; dominoBonus = 0; cleanK = 0; heavyK = 0; perfK = 0; dominoK = 0; bestChain = 0;
-    captainK = 0; bannerT = 0; curD = 0;
+    captainK = 0; bannerT = 0; curD = 0; revived = false;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
     player.onGround = true; player.coyoteT = 0; player.jumpBufT = 0; player.jumpHeld = false;
     player.sliding = false; player.slideT = 0; player.dead = false; player.strikeFlash=0;
-    nextSpawnX = 0; lastRoofHadLow = false; lastGapEndX = 0;
+    nextSpawnX = 0; lastRoofHadLow = false; lastGapEndX = 0; lastSegHadGap = false;
     spawnSegment(true);
   }
 
@@ -608,7 +616,11 @@
     // Single-jump rule: a full-hold jump gives ~39 frames of air even onto a +20 step-up, so cap
     // gap width at speed×26 frames of travel — late presses and step-ups still clear (re-simmed
     // with tools/rs_playtest.js after the double-jump removal).
-    let gap = first ? 0 : (gapRoll < 0.32 ? Math.min(34 + Math.random()*26 + Math.min(distance/40, 26), speed * 26) : 0);
+    // Anti-streak (§6 root cause, seeded-suite repro 2026-07-03): never two gapped segments in a
+    // row — at high speed a full-hold jump can overfly a minimum-length roof entirely and land in
+    // a second gap with no time to press again. One roof of recovery between gaps, always.
+    let gap = first || lastSegHadGap ? 0 : (gapRoll < 0.32 ? Math.min(34 + Math.random()*26 + Math.min(distance/40, 26), speed * 26) : 0);
+    lastSegHadGap = gap > 0;
     let y = lastY;
     if (gap > 0) {
       const lvl = Math.random();
@@ -644,7 +656,7 @@
       if (cslot && capX <= x2 - 30) {
         cslot.active=true; cslot.alive=true; cslot.x=capX; cslot.y=y;
         cslot.patrolDir=-1; cslot.patrolMin=capX-1; cslot.patrolMax=capX+1;
-        cslot.alerted=false; cslot.deathT=0; cslot.fly=0; cslot.vx=0; cslot.vy=0; cslot.spin=0; cslot.chain=0;
+        cslot.alerted=false; cslot.deathT=0; cslot.fly=0; cslot.vx=0; cslot.vy=0; cslot.spin=0; cslot.chain=0; cslot.stunT=0;
         cslot.cap=true; cslot.hp=3; cslot.capD=Math.round(nextCaptainD / DISTRICT_LEN) - 1;
         nextCaptainD += DISTRICT_LEN;
         placedCap = true;
@@ -662,12 +674,12 @@
         gslot.active=true; gslot.alive=true; gslot.x=gx; gslot.y=y;
         gslot.patrolDir = Math.random()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
-        gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1;
+        gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1; gslot.stunT=0;
         if (pressure && len > 150 && Math.random() < 0.5) { // gauntlet pair — feeds domino jackpots
           const g2 = guards.find(g => !g.active);
           if (g2) {
             Object.assign(g2, { active:true, alive:true, x:gx+34, y, patrolDir:gslot.patrolDir,
-              patrolMin:x1+16, patrolMax:x2-16, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0, cap:false, hp:1 });
+              patrolMin:x1+16, patrolMax:x2-16, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0, cap:false, hp:1, stunT:0 });
           }
         }
       }
@@ -803,6 +815,15 @@
         spawnBurst(nearest.x, nearest.y-16, 16, '#ffffff');
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
         spawnMessage(nearest.x, nearest.y-44, 'PERFECT +' + PTS_PERFECT, 40);
+        if (save.arts >= 2) { // Lamp Arts T2: the flash of a perfect strike stuns nearby wardens
+          for (const s of guards) {
+            if (!s.active || !s.alive || s === nearest || s.cap) continue;
+            if (Math.abs(s.x - nearest.x) < 110 && Math.abs(s.y - nearest.y) < 40) {
+              s.stunT = 130;
+              spawnBurst(s.x, s.y - 20, 5, '#ffffff');
+            }
+          }
+        }
         Snd.kill(2);
         shake = 12;
         slowmoT = Math.max(slowmoT, 300); // brief dip so the launch reads
@@ -881,7 +902,7 @@
     shopEl.innerHTML = ''; firstBuyEl.classList.remove('show');
     // campaign checkpoint (chosen on the menu map) + Wick & Flint head start — seed BEFORE the
     // world spawns so district population and captain gates line up with the starting distance
-    distanceSeed = (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + save.wick * 50;
+    distanceSeed = (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + Math.min(save.wick, 2) * 50; // wick T3 is the revive, not more meters
     resetWorld();
     distance = distanceSeed;
     curD = districtIdx(distance);
@@ -981,10 +1002,11 @@
         if (g.fly > 0) { // launched corpse: tumble (mid) or flat missile (perfect)
           g.x += g.vx; g.y += g.vy;
           g.vy += g.fly === 2 ? 0.08 : 0.3;
-          if (g.fly === 2) { // missile dominoes any guard it touches
+          if (g.fly === 2) { // missile dominoes any guard it touches (Lamp Arts T3: wider chain)
+            const dR = save.arts >= 3 ? 24 : 15;
             for (const o of guards) {
               if (!o.active || !o.alive || o === g) continue;
-              if (Math.abs(o.x - g.x) < 15 && Math.abs(o.y - g.y) < 24) {
+              if (Math.abs(o.x - g.x) < dR && Math.abs(o.y - g.y) < 24) {
                 o.alive = false; o.deathT = 1; o.fly = 1; o.vx = g.vx * 0.6; o.vy = -2.2; o.spin = 0.35;
                 feathers += 1;
                 g.chain = (g.chain || 1) + 1; // chain position 2, 3, ... — the jackpot escalator
@@ -1004,8 +1026,13 @@
         }
         continue;
       }
-      g.x += g.patrolDir * 0.55;
-      if (g.x < g.patrolMin || g.x > g.patrolMax) g.patrolDir *= -1;
+      if (g.stunT > 0) { // stunned wardens stand dazed — free pass or free kill
+        g.stunT--;
+        if ((g.stunT & 7) === 0) spawnParticle(g.x, g.y - 40, (Math.random()-0.5)*0.8, -0.5, 10, '#ffffff');
+      } else {
+        g.x += g.patrolDir * 0.55;
+        if (g.x < g.patrolMin || g.x > g.patrolMax) g.patrolDir *= -1;
+      }
 
       // No stealth here — guards never "see" you. The marker is player-facing: it lights up
       // the moment your strike can land, so the cue IS the attack window.
@@ -1017,7 +1044,7 @@
         tutSlowT = 2400; // give the player time to orient, read, and get ready
       }
       const dx = Math.abs(sdx);
-      if (graceT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die('guard'); return; }
+      if (graceT <= 0 && g.stunT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die('guard'); return; }
     }
     if (graceT > 0) graceT--;
 
@@ -1031,7 +1058,7 @@
         spawnMessage(o.x + o.w/2, o.y - 58, 'TAP STRIKE TO SLIDE UNDER', 150);
         tutSlowT = 2400;
       }
-      if (pxc + 6 > o.x && pxc - 6 < o.x + o.w) {
+      if (graceT <= 0 && pxc + 6 > o.x && pxc - 6 < o.x + o.w) { // graceT: Light Burst / revive carry through the hazard
         const top = player.y - (player.sliding ? SLIDE_H : player.h);
         if (top < o.y - LOWBAR_BOT && player.y > o.y - LOWBAR_TOP) { die('low'); return; }
       }
@@ -1125,7 +1152,8 @@
   function clearTally() { for (const t of tallyTimers) clearTimeout(t); tallyTimers = []; tallyDone = false; }
   function updateMenuMeta() {
     metaLine.textContent = '◆ Light ' + save.light + ' · ' + RANKS[rankIdx(save.kills)].name +
-      (save.streak > 1 ? ' · day ' + save.streak : '');
+      (save.streak > 1 ? ' · day ' + save.streak : '') +
+      (burstUnlocked() ? ' · LIGHT BURST ready' : '');
   }
   // Campaign map (Law 8: where you're going is always visible): six lamps, lit as districts
   // are relit; tap a reached lamp to start the next run from that checkpoint
@@ -1146,7 +1174,8 @@
       ? 'THE GREAT BEACON BURNS · start: ' + DISTRICTS[startDistrict].name
       : 'next: ' + DISTRICTS[save.district].name + (startDistrict !== save.district ? ' · start: ' + DISTRICTS[startDistrict].name : '');
     mapLine.appendChild(n);
-    nightBtn.classList.toggle('hiddenBtn', !save.campaignDone);
+    // Night Shift opens by finishing the campaign — or at BEACON rank (Law 3: ranks gate things)
+    nightBtn.classList.toggle('hiddenBtn', !(save.campaignDone || rankIdx(save.kills) >= 3));
   }
   // One-tap spend on the tally screen (Rogue Legacy flow rule: death → tally → tap → running again)
   function buyTrack(i) {
@@ -1165,7 +1194,7 @@
       if (!maxed && save.light >= cost && cost < cheapestCost) { cheapest = i; cheapestCost = cost; }
       const d = document.createElement('div');
       d.className = 'shopRow show' + (!maxed && save.light >= cost ? '' : ' cant');
-      d.innerHTML = '<span><span class="sname">' + (i+1) + '. ' + tr.name + '</span><br><span class="sdesc">' + tr.desc + '</span></span>' +
+      d.innerHTML = '<span><span class="sname">' + (i+1) + '. ' + tr.name + '</span><br><span class="sdesc">' + tr.descs[Math.min(tier, tr.max - 1)] + '</span></span>' +
         '<span class="pips">' + '●'.repeat(tier) + '○'.repeat(tr.max - tier) + '</span>' +
         '<span class="scost">' + (maxed ? 'MAX' : '◆ ' + cost) + '</span>';
       d.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); buyTrack(i); });
@@ -1260,7 +1289,32 @@
     Snd.newBest();
   }
 
+  let revived = false; // Wick & Flint T3 "Second Flame" — once per run
   function die(cause) {
+    // Light Burst (unlocked by relighting 2 districts, or at EMBER rank): the lamp absorbs a
+    // fatal mistake for half its light. Doesn't work on falls — nothing catches you in a gap.
+    if ((cause === 'guard' || cause === 'low') && burstUnlocked() && lampLight >= 0.5) {
+      lampLight -= 0.5;
+      graceT = 50;
+      spawnBurst(player.x + player.w/2, player.y - 16, 22, '#ffffff');
+      spawnBurst(player.x + player.w/2, player.y - 16, 12, '#ffe9b0');
+      spawnMessage(player.x + player.w/2, player.y - 56, 'LIGHT BURST', 60);
+      Snd.domino(); shake = 10; slowmoT = Math.max(slowmoT, 400);
+      return;
+    }
+    if (save.wick >= 3 && !revived) { // Second Flame: one free return per run, any death
+      revived = true;
+      graceT = 60;
+      if (cause === 'gap') { // set down on the next roof ahead
+        const next = segments.filter(s => s.active && s.x2 > player.x + 20).sort((a,b)=>a.x1-b.x1)[0];
+        if (next) { player.x = Math.max(player.x, next.x1 + 12); player.y = next.y; player.vy = 0; player.onGround = true; }
+        else { player.y = GROUND_Y - 40; player.vy = 0; }
+      }
+      spawnBurst(player.x + player.w/2, player.y - 16, 26, '#ffe9b0');
+      spawnMessage(player.x + player.w/2, player.y - 56, 'SECOND FLAME', 70);
+      Snd.newBest(); shake = 10; slowmoT = Math.max(slowmoT, 500);
+      return;
+    }
     deathCause = cause;
     state = 'dead'; player.dead = true; deathAtT = drawT;
     spawnBurst(player.x+player.w/2, player.y-10, 14, '#a44');
