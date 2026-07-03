@@ -100,6 +100,14 @@ Opening was overwhelming before the player could build/acclimate. Wave 1: 6 scav
 → 8 @1.3, sweepers 5s → 6s apart. Waves 4+ untouched — the ramp starts once the player
 knows the loop.
 
+## DR-#008 — Flesh Wardens replace Buds (2026-07-03, Mike direction)
+Monsters, not plants. Purchasable Bud removed entirely (no more empty-tile build menu).
+Instead every run STARTS with 4 free Flesh Wardens, one per cardinal direction (N/S/W/E
+tiles 12,3 / 12,14 / 6,9 / 19,9): big overweight chain-swinging undead brutes (150 HP,
+chain sweep hits ALL humans within 1.7 tiles, 16 dmg @0.8/s). They block their tile,
+can burn down, and guarantee each lane can kill an easy unit before corpse towers exist.
+Visual: stitched belly, hood eyes, orbiting chain ball that whips fast on swing.
+
 ## Backlog / next
 - DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
 - Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).
