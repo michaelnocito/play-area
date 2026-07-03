@@ -238,3 +238,15 @@ Adopt list (ranked G1-G7) lives in JADE_FIST_ROADMAP.md.
   RESEARCH FACT: CG leaderboards are invite-only (one board/game, Mon-Mon seasons,
   client SDK needs an Encryption Key) — so local board now, CG.submitScore(s) no-op
   seam in all three adapters (master + GM/GD via make-alt-builds.ps1) for later.
+
+## Bot fairness pass — RESULTS (2026-07-03, post-#026 build)
+Fixes found by running the suite: bot no longer pokes brutes/bosses (strike only
+shoves them = wave livelock), waits when a staggered brute body-blocks the counter
+lane, and dismisses the S_END ending screen. Body-blocking itself is BY DESIGN.
+- ?bot=3&react=12 (200ms): 12/12 wins, avg wave 5.0, ZERO hits taken. No pincer,
+  no unreactable telegraphs at normal reaction speed. PASS.
+- ?bot=2&react=18 (300ms stress): 8/8 wins, 4 hits total; 3 = late-game vipers
+  (16-frame/267ms telegraph, intended skill test), 1 = allowed late pincer (diff>6).
+  Distribution matches design intent. PASS.
+- Tuning note for JF-#027: perfect-play bot wins 20/20 runs — difficulty leans
+  gentle at optimal play; viper floor is 16f (267ms) if late-game ever feels cheap.

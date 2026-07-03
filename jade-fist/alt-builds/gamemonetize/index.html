@@ -270,11 +270,21 @@ function botThink(){
     const r = e.stT / e.windup;
     if (r > ripest){ ripest = r; tgt = e; }
   }
-  if (tgt){ strike(Math.sign(tgt.x - P.x) || 1); return; }
-  // otherwise thin the crowd at a human-ish cadence
+  if (tgt){
+    // don't punch into a brute/boss body-blocking the lane â€” the strike would
+    // hit HIM (shove/shrug), not the windup behind him; wait like a human would
+    const dir = Math.sign(tgt.x - P.x) || 1;
+    const nr = nearestInReach(dir);
+    if (nr && nr !== tgt && (nr.type === T_BRUTE || nr.type === T_BOSS) && nr.st !== E_WINDUP) return;
+    strike(dir); return;
+  }
+  // otherwise thin the crowd at a human-ish cadence â€” but never poke brutes or
+  // bosses (strikes only shove/annoy them; correct play is to await the windup,
+  // and spamming them re-staggers forever and stalls the wave)
   if (t % 10 === 0){
     const e = nearestInReach(0);
-    if (e && e.st !== E_WINDUP) strike(Math.sign(e.x - P.x) || 1);
+    if (e && e.st !== E_WINDUP && e.type !== T_BRUTE && e.type !== T_BOSS)
+      strike(Math.sign(e.x - P.x) || 1);
   }
 }
 function botHit(e){
@@ -286,6 +296,7 @@ function botHit(e){
 }
 function botFrame(){
   if (BOT.done) return;
+  if (state === S_END){ press(1); return; }   // dismiss the ending â†’ tally
   if (state === S_STORY || state === S_MENU){
     sel = Math.min(3, Math.floor(BOT.run / BOT.runs));
     BOT.cur = { hits: [] };
