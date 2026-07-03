@@ -89,8 +89,10 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
   (survive one hit), feather magnet, double-feathers run — banked inventory, one equipped per run
 - [ ] Rewarded-ad hooks on the economy (revive-once-per-run; double-feathers offer on tally screen)
   — adapters already wired in all three platform builds
-- [ ] Persistence: extend the existing Save wrapper (localStorage + CG Data Module) to a save object
-  (coins, owned, equipped) — version the key
+- [x] Persistence (B5.1, 2026-07-03): versioned save object `rooftopSprintSave_v1` (Light wallet,
+  3 track tiers, lifetime kills, daily streak, milestones) — localStorage + CG Data Module mirror;
+  CG research (via Jade Fist JF-#004): localStorage IS the cloud save (Automatic Progress Save) —
+  tick "Progress Save" in the submission flow
 - [ ] 🔷 **APPROVED (Mike, 2026-07-02): permanent progression** — deep-researched (design-science
   brief in project chat; CG's own launch-metrics docs list "meaningful progression through
   unlocks and upgrades" as a top retention lever). Why it works: loss-aversion buffering (every
@@ -107,6 +109,16 @@ monetization = ads, not IAP). Flipline's 17-item shop is the proven template.
   - **Flow rule (Rogue Legacy GDC):** death → tally → one-tap spend → running again. No shop
     agonizing between runs; upgrade buttons live ON the tally screen.
   +1 session in Batch 5.
+  **[~] B5.1 SHIPPED (2026-07-03, 7-item CG-retention pass, JF-#005 pattern):** ① versioned save
+  (above) ② 3 tracks live w/ one-tap tally spend (keys 1-3 / tap; ×2 costs 15/30/60): Morning Oil
+  = lampLight seed 0.12/tier cap 0.36 (starting music layers follow free), Lamp Arts = Light-magnet
+  +12px/tier, Wick & Flint = head start 50m/tier ③ goal-gradient: cheapest-affordable row pulses +
+  first-buy callout ④ **Lantern ranks** (lifetime kills 0/25/75/200/500/1200 → SPARK…LIGHTBRINGER),
+  sash renders in rank color, live promotion banner, rank on menu ⑤ daily return: first run/day =
+  ×2 Light + streak on menu ⑥ one-time bounties (First Perfect 10 / Triple Domino 20 / 500m 15 /
+  1000m 30) w/ banners ⑦ wallet count-up on tally + `tallyDone` input gate. **Still open for B5.2:**
+  Lamp Arts tier behaviors (stun flash, farther dominoes — currently magnet ×3), cosmetic shop,
+  buff consumables, rewarded-ad hooks, interstitial cooldown.
 
 ## 5. Controls & input feel
 

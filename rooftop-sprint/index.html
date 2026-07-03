@@ -83,6 +83,26 @@
     text-shadow: 0 0 12px rgba(255,233,176,0.8); }
   #newBest.show { opacity: 1; transition: opacity 0.2s; }
   #statsLine { font-size: 10px; opacity: 0.6; margin-top: 6px; }
+  #walletLine { font-size: 13px; margin-top: 8px; color: #ffe9b0; opacity: 0; }
+  #walletLine.show { opacity: 1; transition: opacity 0.15s; }
+  #shop { margin-top: 8px; min-width: 270px; }
+  .shopRow {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 5px 8px; margin-top: 4px; border: 1px solid rgba(232,200,120,0.25);
+    border-radius: 4px; cursor: pointer; text-align: left; opacity: 0;
+  }
+  .shopRow.show { opacity: 1; transition: opacity 0.15s; }
+  .shopRow .sname { font-size: 11px; letter-spacing: 1px; color: #e8c878; }
+  .shopRow .sdesc { font-size: 9px; opacity: 0.7; }
+  .shopRow .scost { font-size: 11px; white-space: nowrap; color: #ffe9b0; }
+  .shopRow .pips { letter-spacing: 2px; font-size: 9px; color: #e8c878; }
+  .shopRow.cant { opacity: 0.45; cursor: default; }
+  .shopRow.cant.show { opacity: 0.45; }
+  .shopRow.pulse { animation: shopPulse 0.9s infinite; }
+  @keyframes shopPulse { 50% { border-color: #ffe9b0; box-shadow: 0 0 10px rgba(255,233,176,0.4); } }
+  #firstBuy { font-size: 10px; color: #ffe9b0; margin-top: 5px; opacity: 0; }
+  #firstBuy.show { opacity: 0.9; animation: shopPulse 0.9s infinite; }
+  #metaLine { font-size: 11px; opacity: 0.75; margin-top: 8px; color: #ffe9b0; }
 </style>
 </head>
 <body>
@@ -101,6 +121,10 @@
     <div id="tally"></div>
     <div id="newBest">&#10022; NEW BEST &#10022;</div>
     <div id="statsLine"></div>
+    <div id="walletLine"></div>
+    <div id="shop"></div>
+    <div id="firstBuy">&#9670; your first training is affordable</div>
+    <div id="metaLine"></div>
     <div id="best"></div>
     <button id="startBtn">Begin the Run</button>
   </div>
@@ -130,6 +154,10 @@
   const tallyEl = document.getElementById('tally');
   const newBestEl = document.getElementById('newBest');
   const statsLine = document.getElementById('statsLine');
+  const walletLine = document.getElementById('walletLine');
+  const shopEl = document.getElementById('shop');
+  const firstBuyEl = document.getElementById('firstBuy');
+  const metaLine = document.getElementById('metaLine');
 
   /* ===== CrazyGames SDK (graceful no-op offline; verify call names vs current docs) ===== */
   // sdkLive = init() actually resolved (only true on the CrazyGames platform); every game/ad
@@ -165,6 +193,45 @@
   };
 
   let best = parseInt(localStorage.getItem('rooftopSprintBest') || '0', 10) || 0;
+
+  /* ===== Persistent progression (Batch 5.1, CG-research-grounded: acceptance is judged on
+     depth/retention potential; localStorage IS the cloud save — CG's Automatic Progress Save
+     backs it up, and the Data Module mirror syncs it for logged-in users) =====
+     Guardrails (§4): upgrades compress the warm-up, never raise the ceiling; ×2 cost/tier;
+     first purchase affordable in 1-2 runs; one-tap spend ON the tally screen. */
+  const SAVE_KEY = 'rooftopSprintSave_v1';
+  let save = { light: 0, oil: 0, arts: 0, wick: 0, kills: 0, lastDay: '', streak: 0, miles: {} };
+  try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && typeof s === 'object') save = Object.assign(save, s); } catch(e){}
+  function saveNow() {
+    let str = '';
+    try { str = JSON.stringify(save); localStorage.setItem(SAVE_KEY, str); } catch(e){}
+    try { if (str) Save.get().setItem(SAVE_KEY, str); } catch(e){}
+  }
+  const TRACKS = [
+    { key: 'oil',  name: 'MORNING OIL',  desc: 'Start with the lamp partly lit',      max: 3, costs: [15, 30, 60] },
+    { key: 'arts', name: 'LAMP ARTS',    desc: 'Light is drawn to you from farther',  max: 3, costs: [15, 30, 60] },
+    { key: 'wick', name: 'WICK & FLINT', desc: 'Head start: begin farther along',     max: 3, costs: [15, 30, 60] },
+  ];
+  // Lantern ranks: lifetime wardens felled → visible rank (the player's sash renders in rank color)
+  const RANKS = [
+    { at: 0,    name: 'SPARK',        col: '#c9913f' },
+    { at: 25,   name: 'EMBER',        col: '#e07840' },
+    { at: 75,   name: 'FLAME',        col: '#e84a4a' },
+    { at: 200,  name: 'BEACON',       col: '#e8c878' },
+    { at: 500,  name: 'LUMINARY',     col: '#ffe9b0' },
+    { at: 1200, name: 'LIGHTBRINGER', col: '#ffffff' },
+  ];
+  function rankIdx(kills) { let r = 0; for (let i = 0; i < RANKS.length; i++) if (kills >= RANKS[i].at) r = i; return r; }
+  // One-time Light bounties — checked mid-run, banked with the run
+  const MILESTONES = [
+    { key: 'perfect1', light: 10, label: 'FIRST PERFECT',   hit: () => perfK > 0 },
+    { key: 'chain3',   light: 20, label: 'TRIPLE DOMINO',   hit: () => bestChain >= 3 },
+    { key: 'dist500',  light: 15, label: '500M LIT',        hit: () => distance >= 500 },
+    { key: 'dist1000', light: 30, label: '1000M LIT',       hit: () => distance >= 1000 },
+  ];
+  let mileLight = 0;      // bounty Light earned this run
+  let runRankShown = 0;   // rank at last check — promotion banner fires when it rises
+  let dailyX2 = false;    // first run of the day = ×2 Light
 
   /* ===== Procedural audio (Batch 3) — light-reactive score + layered SFX =====
      Speaker-scaling architecture (ROADMAP §7): every voice = parallel layers into one bus —
@@ -647,6 +714,7 @@
     if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (!e.repeat) jumpPress(); }
     if (e.code === 'KeyX' || e.code === 'KeyF') { e.preventDefault(); if (!e.repeat) tryAction(); }
     if (e.code === 'KeyM' && !e.repeat) { Snd.resume(); Snd.toggleMute(); syncMuteBtn(); }
+    if (state === 'dead' && tallyDone && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) { buyTrack(+e.code.slice(-1) - 1); return; }
     if (e.code === 'Enter' && state !== 'playing') { beginGame(); }
   });
   window.addEventListener('keyup', (e) => {
@@ -665,9 +733,24 @@
   function beginGame() {
     clearTally();
     tallyEl.innerHTML = ''; newBestEl.classList.remove('show'); statsLine.textContent = '';
+    walletLine.textContent = ''; walletLine.classList.remove('show');
+    shopEl.innerHTML = ''; firstBuyEl.classList.remove('show');
     resetWorld();
+    // permanent progression seeds (warm-up compression only — the ceiling is untouched):
+    lampLight = Math.min(0.36, save.oil * 0.12);          // Morning Oil: lamp starts partly lit (music layers follow)
+    distance = save.wick * 50;                            // Wick & Flint: skip the boring open
+    runRankShown = rankIdx(save.kills); mileLight = 0;
+    // daily return bonus: first run each day = ×2 Light; consecutive days build a streak
+    const today = new Date().toDateString();
+    dailyX2 = save.lastDay !== today;
+    if (dailyX2) {
+      const yest = new Date(Date.now() - 864e5).toDateString();
+      save.streak = save.lastDay === yest ? (save.streak || 0) + 1 : 1;
+      save.lastDay = today; saveNow();
+    }
     while (nextSpawnX < W + 500 && spawnSegment(false));
     state = 'playing';
+    if (dailyX2) spawnMessage(player.x + 200, 78, 'FIRST RUN TODAY — ALL LIGHT ×2', 200);
     overlay.classList.add('hidden');
     CG.gameplayStart();
   }
@@ -792,12 +875,13 @@
       }
     }
 
+    const magnetR = 12 * save.arts; // Lamp Arts: Light is drawn to you from farther
     for (const f of featherList) {
       if (!f.active || f.taken) continue;
       f.bob += 0.1;
       const dx = Math.abs(f.x - (player.x+player.w/2));
       const dy = Math.abs((f.y + Math.sin(f.bob)*4) - (player.y - 16));
-      if (dx < 16 && dy < 18) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); spawnMessage(f.x, f.y-10, '+' + PTS_LIGHT, 20); Snd.sparkle(); }
+      if (dx < 16 + magnetR && dy < 18 + magnetR) { f.taken = true; f.active=false; feathers += 1; spawnBurst(f.x, f.y, 6, '#f1e3c6'); spawnMessage(f.x, f.y-10, '+' + PTS_LIGHT, 20); Snd.sparkle(); }
     }
 
     // cloak: each point eases toward a spot behind/below the previous one; speed streams it back
@@ -849,6 +933,21 @@
 
     if (shake > 0) shake -= 0.5;
 
+    // one-time Light bounties + live rank promotion (goal-gradient beats, JF pattern)
+    for (const m of MILESTONES) {
+      if (!save.miles[m.key] && m.hit()) {
+        save.miles[m.key] = 1; mileLight += m.light;
+        spawnMessage(player.x + 200, 92, m.label + '  +' + m.light + ' LIGHT', 130);
+        Snd.sparkle();
+      }
+    }
+    const liveRank = rankIdx(save.kills + cleanK + heavyK + perfK + dominoK);
+    if (liveRank > runRankShown) {
+      runRankShown = liveRank;
+      spawnMessage(player.x + 200, 64, 'RANK OF ' + RANKS[liveRank].name, 200);
+      Snd.newBest();
+    }
+
     distVal.textContent = Math.floor(distance) + 'm';
     scoreVal.textContent = runScore();
     featherVal.textContent = feathers;
@@ -857,8 +956,40 @@
   // End-of-run tally: line-item count-up (the retention beat) — rows reveal one by one with
   // ticks, TOTAL counts up, NEW BEST stinger last. Timers cancelled if the player restarts early.
   let tallyTimers = [];
-  function clearTally() { for (const t of tallyTimers) clearTimeout(t); tallyTimers = []; }
-  function showTally(finalScore, isBest) {
+  let tallyDone = false; // gates shop key input until the reveal finishes (variable line count)
+  function clearTally() { for (const t of tallyTimers) clearTimeout(t); tallyTimers = []; tallyDone = false; }
+  function updateMenuMeta() {
+    metaLine.textContent = '◆ Light ' + save.light + ' · ' + RANKS[rankIdx(save.kills)].name +
+      (save.streak > 1 ? ' · day ' + save.streak : '');
+  }
+  // One-tap spend on the tally screen (Rogue Legacy flow rule: death → tally → tap → running again)
+  function buyTrack(i) {
+    const tr = TRACKS[i], tier = save[tr.key];
+    if (tier >= tr.max || save.light < tr.costs[tier]) return;
+    save.light -= tr.costs[tier]; save[tr.key] = tier + 1; saveNow();
+    Snd.newBest();
+    walletLine.textContent = '◆ Light banked: ' + save.light;
+    renderShop(); updateMenuMeta();
+  }
+  function renderShop() {
+    shopEl.innerHTML = '';
+    let cheapest = -1, cheapestCost = Infinity, ownedAny = save.oil + save.arts + save.wick > 0;
+    TRACKS.forEach((tr, i) => {
+      const tier = save[tr.key], maxed = tier >= tr.max, cost = maxed ? 0 : tr.costs[tier];
+      if (!maxed && save.light >= cost && cost < cheapestCost) { cheapest = i; cheapestCost = cost; }
+      const d = document.createElement('div');
+      d.className = 'shopRow show' + (!maxed && save.light >= cost ? '' : ' cant');
+      d.innerHTML = '<span><span class="sname">' + (i+1) + '. ' + tr.name + '</span><br><span class="sdesc">' + tr.desc + '</span></span>' +
+        '<span class="pips">' + '●'.repeat(tier) + '○'.repeat(tr.max - tier) + '</span>' +
+        '<span class="scost">' + (maxed ? 'MAX' : '◆ ' + cost) + '</span>';
+      d.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); buyTrack(i); });
+      shopEl.appendChild(d);
+    });
+    // goal-gradient nudges: cheapest affordable pulses; first-buy callout when nothing owned yet
+    if (cheapest >= 0 && shopEl.children[cheapest]) shopEl.children[cheapest].classList.add('pulse');
+    firstBuyEl.classList.toggle('show', !ownedAny && cheapest >= 0);
+  }
+  function showTally(finalScore, isBest, lightEarned) {
     clearTally();
     const rows = [
       ['Distance ' + Math.floor(distance) + 'm', Math.floor(distance) * PTS_PER_M],
@@ -890,6 +1021,19 @@
           if (s === STEPS && isBest) { newBestEl.classList.add('show'); Snd.newBest(); }
         }, s * 55));
       }
+      // wallet count-up + shop reveal after the total lands
+      tallyTimers.push(setTimeout(() => {
+        walletLine.classList.add('show');
+        const WSTEPS = 10, from = save.light - lightEarned;
+        for (let s = 1; s <= WSTEPS; s++) {
+          tallyTimers.push(setTimeout(() => {
+            walletLine.textContent = '◆ Light banked: ' + Math.round(from + lightEarned * s / WSTEPS) +
+              '  (+' + lightEarned + (dailyX2 ? ' ×2 daily' : '') + ')';
+            Snd.uiTick(s + 3);
+            if (s === WSTEPS) { renderShop(); tallyDone = true; }
+          }, s * 50));
+        }
+      }, STEPS * 55 + 150));
     }, totStart));
     statsLine.textContent = 'Kills ' + (cleanK + heavyK + perfK + dominoK) +
       (bestChain > 1 ? ' · Best chain ' + bestChain : '');
@@ -909,8 +1053,14 @@
       try { Save.get().setItem('rooftopSprintBest', String(best)); } catch(e){}
       CG.happytime();
     }
+    // bank the run: Light collected (×2 on the first run of the day) + bounties + lifetime kills
+    const lightEarned = feathers * (dailyX2 ? 2 : 1) + mileLight;
+    save.light += lightEarned;
+    save.kills += cleanK + heavyK + perfK + dominoK;
+    saveNow();
+    updateMenuMeta();
     scoreLine.textContent = '';
-    showTally(finalScore, isBest);
+    showTally(finalScore, isBest, lightEarned);
     bestEl.textContent = `Best score: ${best}`;
     document.querySelector('#overlay h1').textContent =
       cause === 'gap' ? 'THE ROOF RAN OUT' : cause === 'low' ? 'KNOCKED FLAT' : 'YOUR LAMP WENT OUT';
@@ -1130,8 +1280,8 @@
     ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(-8,-h,4,h-8);
     ctx.fillStyle = '#1a1922';
     ctx.beginPath(); ctx.moveTo(-9,-h); ctx.quadraticCurveTo(0,-h-12,9,-h); ctx.quadraticCurveTo(6,-h+6,0,-h+7); ctx.quadraticCurveTo(-6,-h+6,-9,-h); ctx.fill();
-    // sash
-    ctx.fillStyle = '#c9913f'; ctx.fillRect(-8,-h+13,16,2.5);
+    // sash — renders in lantern-rank color (visible lifetime progression)
+    ctx.fillStyle = RANKS[runRankShown].col; ctx.fillRect(-8,-h+13,16,2.5);
     // rear arm swings opposite the legs (tucked out of sight during a slide)
     if (!player.sliding) {
       ctx.strokeStyle = '#23222b'; ctx.lineWidth = 3.5;
@@ -1250,6 +1400,8 @@
   resetWorld();
   while (nextSpawnX < W + 500 && spawnSegment(false));
   bestEl.textContent = best > 0 ? `Best score: ${best}` : '';
+  runRankShown = rankIdx(save.kills);
+  updateMenuMeta();
   requestAnimationFrame(loop);
   // SDK call order still matters: game.* calls only fire after init() resolves (sdkLive).
   CG.init(() => {

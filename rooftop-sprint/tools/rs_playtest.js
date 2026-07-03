@@ -35,8 +35,8 @@ function noop() {}
 function makeCtx() { const prox = new Proxy(function(){}, { get: (t,p) => p==='canvas' ? null : prox, set: () => true, apply: () => prox }); return prox; }
 function el(id) {
   return {
-    id, textContent: '', innerHTML: '', style: {}, width: 480, height: 270,
-    classList: { add: noop, remove: noop, contains: () => false },
+    id, textContent: '', innerHTML: '', style: {}, width: 480, height: 270, children: [],
+    classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
     addEventListener: noop, getContext: makeCtx, click: noop, appendChild: noop,
   };
 }

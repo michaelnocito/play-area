@@ -1,12 +1,23 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-03, Batch 4 shipped): Next = BATCH 5 — economy + permanent
-> progression (2 sessions).** Read `ROADMAP.md` FIRST (§4 has the approved spec: Light wallet +
-> versioned save object, cosmetic shop, buff consumables, rewarded-ad hooks, interstitial
-> cooldown, Morning Oil / Lamp Arts / Wick & Flint progression w/ one-tap spend ON the tally
-> screen). Batches: B1 feel ✅ → B2 identity ✅ → B3 audio ✅ → B4 score/tally ✅ → **B5 economy**
-> → B6 districts/content → B7 ship wave (regenerate stale `builds/` there; GM/GD keep
-> GAMEID_PLACEHOLDER pending Mike's dashboards).
+> **⚡ RESUME HERE (2026-07-03, Batch 5 session 1 shipped): Next = B5 SESSION 2 — economy
+> finishers.** Read `ROADMAP.md` FIRST — §4's B5.1 note lists exactly what's open: Lamp Arts
+> real tier behaviors (tier 2 = PERFECT stun flash, tier 3 = dominoes chain farther — currently
+> all 3 tiers just widen the magnet), cosmetic shop (cloaks/lamp skins/trails, live try-on),
+> buff consumables (pre-run pick), rewarded-ad hooks (revive once/run + double-Light on tally),
+> interstitial min-interval cooldown (currently every death). Then B6 districts/content →
+> B7 ship wave (regenerate stale `builds/`; GM/GD keep GAMEID_PLACEHOLDER).
+>
+> **◆ BATCH 5.1 (persistence + progression, 7-item CG-retention pass) DONE 2026-07-03** — CG
+> research via Jade Fist JF-#004/005: acceptance judged on depth/retention. Versioned save
+> `rooftopSprintSave_v1` (wallet/tiers/lifetime kills/streak/milestones; localStorage + CG Data
+> Module; localStorage IS CG's cloud save — tick "Progress Save" at submission). 3 tracks w/
+> one-tap spend ON the tally (keys 1-3 or tap, `tallyDone` gates keys): Morning Oil (lampLight
+> seed, capped 0.36), Lamp Arts (magnet +12px/tier), Wick & Flint (head start 50m/tier); costs
+> 15/30/60 each. Lantern ranks by lifetime kills (sash color + promotion banner + menu line);
+> daily ×2 Light + streak; 4 one-time bounties; wallet count-up; cheapest-affordable pulse +
+> first-buy callout. Harness stubs grew `children`/`classList.toggle`. §6 RNG flake unchanged
+> (FAIL ~1 in 2-3 suite runs, pre-existing — SEED THE SUITE RNG soon, it's getting noisy).
 >
 > **🏆 BATCH 4 (score & tally) DONE 2026-07-03:** points per §3 spec — CLEAN 100 / HEAVY 250 /
 > PERFECT 500 / domino FELLED = 500 × chain position (chain lives on the missile guard,
