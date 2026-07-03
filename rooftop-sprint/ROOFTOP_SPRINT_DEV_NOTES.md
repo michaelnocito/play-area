@@ -18,7 +18,7 @@
 > then resumes the run) + double-Light on the tally. Harness: bots read feints (leap) and
 > arrows (deflect), presses are reach-aware (whiff recovery punishes flails), boon state
 > handled, `RS_DEBUG=1` dumps death forensics to stderr. Suite green, campaign winnable,
-> slow tier separates. Earlier same day: RS-CAMPAIGN + RS-PROG (see below).
+> slow tier separates. Earlier same day: RS-CAMPAIGN + RS-PROG (full detail in the roadmap's gap-report block; older batch logs live in git history of this file).
 >
 **What this is:** CrazyGames auto-runner, hooded-assassin rooftop theme. Two
 mobile-friendly inputs only: **JUMP** (auto-scroll, time your jumps over
