@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>JADE FIST</title>
+<!-- JF-#013: CrazyGames SDK v3 (verify against current docs before submitting) -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <style>
   html,body{margin:0;padding:0;background:#0a0d12;height:100%;overflow:hidden;touch-action:none;
     -webkit-user-select:none;user-select:none;font-family:Georgia,'Times New Roman',serif}
@@ -118,6 +120,34 @@ const Snd = (() => {
     best(){ ensure(); [523,659,784].forEach((f,i)=>tone(f, 0.25, 'sine', 0.2, i*0.09)); }
   };
 })();
+
+// -------------------------------------------------- CrazyGames SDK (JF-#013) --
+// Adapter copied from rooftop-sprint: graceful no-op offline. sdkLive = init()
+// actually resolved (only true on the CG platform); every game/ad call is gated
+// on it — calling the SDK pre-init or off-platform just logs errors and is dropped.
+let sdkLive = false;
+const CG = {
+  init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>{ sdkLive = true; cb&&cb(); }).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
+  loadingStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStart(); }catch(e){} },
+  loadingStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStop(); }catch(e){} },
+  gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
+  gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
+  happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
+  interstitial(){ try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {
+    adStarted(){}, adFinished(){}, adError(){},
+  }); }catch(e){} },
+  rewarded(onReward){
+    try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
+      window.CrazyGames.SDK.ad.requestAd("rewarded", {
+        adStarted(){}, adFinished(){ onReward&&onReward(); }, adError(){ onReward&&onReward(); },
+      }); return;
+    } }catch(e){}
+    onReward&&onReward();
+  },
+};
+// Single-file game: everything is already parsed by init time, so loading
+// start/stop bracket only the SDK handshake itself.
+CG.init(() => { CG.loadingStart(); CG.loadingStop(); });
 
 // ----------------------------------------------------------------- state ----
 // ------------------------------------------------------- progression save ---
@@ -549,6 +579,8 @@ function hurtPlayer(){
 // JF-#009: one exit for both endings — felled, or district cleared
 function endRun(victory){
   state = S_DEAD; tallyStep = 0; tallyT = 0; tallyDone = false;
+  CG.gameplayStop();    // JF-#013
+  if (victory) CG.happytime();
   walletShown = save.jade;   // wallet animates up from pre-run balance as jade banks
   newBest = score > best;
   if (newBest){ best = score; localStorage.setItem('jf_best', best); }
@@ -627,6 +659,7 @@ cv.addEventListener('pointerdown', e => {
 
 function startRun(){
   state = S_PLAY;
+  CG.gameplayStart();   // JF-#013: SDK brackets every run
   score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
   jadeRun = 0;
   PR = REACH + save.up.palm * 8;

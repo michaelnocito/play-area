@@ -135,3 +135,9 @@ tdone); menu checklist. Daily OMEN boon/curse pair (3-pool: +1♥/faster telegra
 district line instead of controls lesson, ROOFTOP victory = S_END ending screen ("THE JADE IS
 RECLAIMED") then tally; save.dist→4 unlocks LEGEND district (dBase 7, endless, boss returns
 every 5 waves +1 hp, never `won`).
+
+**JF-#013 CG SDK wiring (Batch A)**: SDK v3 script tag + rooftop-sprint adapter copied verbatim
+(sdkLive gate, graceful no-op offline; interstitial/rewarded stubs in place for Batch D).
+`CG.init()` at boot with loadingStart/Stop bracketing the handshake (single-file game, nothing
+else to load); `gameplayStart()` in startRun, `gameplayStop()` in endRun, `happytime()` on
+victory. Parse-checked only — Batch B (pause + auto-pause on blur) is next.
