@@ -250,3 +250,28 @@ lane, and dismisses the S_END ending screen. Body-blocking itself is BY DESIGN.
   Distribution matches design intent. PASS.
 - Tuning note for JF-#027: perfect-play bot wins 20/20 runs — difficulty leans
   gentle at optimal play; viper floor is 16f (267ms) if late-game ever feels cheap.
+
+## JF-#027/#028 — cartoon art + duck/jump + difficulty (2026-07-03, Mike "50% ready")
+- #027 cartoon pass: fighter() rebuilt — chunky cel-outlined limbs (OUT=#181220),
+  BIG heads, live faces (idle/angry-V-brows/X-eyes/dizzy pupils), squash&stretch param;
+  popups now comic-font (Comic Sans stack) with springy pop-in + tilt + outline;
+  burst() throws stars on heavy hits; brighter enemy palette (viper cyan/brute purple/
+  spear teal/boss gold); sleepy-faced moon w/ drifting z's; outlined bouncing title+banner.
+- #028 duck/jump + throws + difficulty (Mike: campaign too easy):
+  * vertical dodge axis: jump (up/W, swipe up) dodges LOW throws, duck (down/S, swipe
+    down) dodges HIGH throws. JUMP_DUR 32 / JUMP_H 76 / DUCK_DUR 26. Brief action
+    windows, one dodge at a time. Player squash reads the pose; attack during a dodge
+    just uses that pose (jump-kick/low-sweep look). Touch: pointermove >42px = dodge,
+    refunds the tap's whiff so a pure dodge is free.
+  * spearman (T_SPEAR) now willThrow=true: from range (d<340, >reach+20) enters E_AIM,
+    telegraphs high(amber=DUCK)/low(cyan=JUMP) with a dashed line + pulse + caption,
+    releases a flying spear (dart), THEN closes to normal melee. Throws NOT red
+    (red stays melee-counter only). darts[] {x,vx,high,y0,life}; collide within 30px;
+    dodged = +150 & 'dodge' trial, else hurtPlayer.
+  * difficulty bump: dBase 1/3/5/7/9 (was 0/2/4/6/7), boss hp 3/4/5/5/6, per-wave
+    ramp 1.1->1.3 cap 13, INTRO 900->720, pincer guard lifts at diff 5 (was 6),
+    duo gate diff>2 & p up, spear chance 0.18->0.24 & appears from diff 3 (all districts).
+  * bot: dodges incoming darts (react at 90px), logs dart hits type 'dart'.
+  * FAIRNESS (?bot=3&react=12, 200ms): 11/12 wins (was 12/12 flawless), avg wave 4.8,
+    14 hits total — 13 darts + 1 melee, 0% unreactable(fast), 7% pincer. One legit
+    Rooftop w3 loss (spear district). Harder + still fair. PASS.
