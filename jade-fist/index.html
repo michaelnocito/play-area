@@ -273,7 +273,15 @@ const BOT = BOTQ.has('bot')
   : null;
 if (BOT){ save.dist = 4; save.intro = 1; persist = () => {}; }
 function botThink(){
-  // counter first: the ripest windup that has been visible >= reaction frames
+  // JF-#028: survival first — dodge an incoming spear before anything else
+  if (P.jumpT <= 0 && P.duckT <= 0){
+    for (const d of darts){
+      if (d.hit) continue;
+      const closing = (d.x - P.x) * Math.sign(d.vx) < 0;   // heading toward us
+      if (closing && Math.abs(d.x - P.x) < 90){ d.high ? duck() : jump(); return; }
+    }
+  }
+  // counter next: the ripest windup that has been visible >= reaction frames
   let tgt = null, ripest = -1;
   for (const e of enemies){
     if (e.st !== E_WINDUP || e.stT < BOT.react) continue;
@@ -371,10 +379,11 @@ const TRIALS = [
   { k: 'sweep',   name: 'Sweep 3 crowds',             n: 3 },
   { k: 'nohit',   name: 'Clear a wave untouched',     n: 1 },
   { k: 'heavy',   name: 'Punish 6 recovering foes',   n: 6 },
-  { k: 'stumble', name: 'Cause 4 stumbles',           n: 4 }
+  { k: 'stumble', name: 'Cause 4 stumbles',           n: 4 },
+  { k: 'dodge',   name: 'Dodge 5 thrown spears',      n: 5 }   // JF-#028
 ];
 const dayNum = () => Math.floor(Date.now() / 86400000);
-function todayTrio(){ const d = dayNum(); return [d % 6, (d + 2) % 6, (d + 4) % 6]; }
+function todayTrio(){ const n = TRIALS.length, d = dayNum(); return [d % n, (d + 2) % n, (d + 4) % n]; }
 let trialCt = {};
 function bumpTrial(k, amt){
   trialCt[k] = (trialCt[k] || 0) + (amt || 1);
@@ -438,21 +447,24 @@ let won = false;                      // district boss felled this run
 // JF-#009: districts are levels — each with its own fight, palette, and boss.
 // Beat a district's master to unlock the next.
 const DISTRICTS = [
+  // JF-#028: difficulty bump — Mike's playtest read the campaign as too easy.
+  // Raised district bases + boss HP; harder pressure also comes from spearman
+  // throws (dodge axis) and earlier pincers, not just faster telegraphs.
   { name: 'COURTYARD', line: 'Where the jade was taken.', boss: 'THE IRON MASTER',
-    dBase: 0, quirk: '', bossHp: 3,
+    dBase: 1, quirk: '', bossHp: 3,
     sky: ['#0b1020','#131a26','#0e1218'], ground: '#1a1f26', lant: [240,150,90], pag: 4 },
   { name: 'MARKET', line: 'They crowd like locusts.', boss: 'THE BUTCHER',
-    dBase: 2, quirk: 'crowd', bossHp: 3,
+    dBase: 3, quirk: 'crowd', bossHp: 4,
     sky: ['#180f0c','#2a1a10','#170f0a'], ground: '#241a12', lant: [250,190,90], pag: 6 },
   { name: 'TEMPLE', line: 'Every hand is guarded.', boss: 'THE ABBOT',
-    dBase: 4, quirk: 'guard', bossHp: 4,
+    dBase: 5, quirk: 'guard', bossHp: 5,
     sky: ['#0c1410','#14231a','#0c1410'], ground: '#16211a', lant: [140,230,160], pag: 3 },
   { name: 'ROOFTOP', line: 'The thief waits above.', boss: 'THE JADE THIEF',
-    dBase: 6, quirk: 'spear', bossHp: 4,
+    dBase: 7, quirk: 'spear', bossHp: 5,
     sky: ['#141020','#221a33','#120e1c'], ground: '#1d1826', lant: [190,150,240], pag: 5 },
   // JF-#012: LEGEND — the endless retelling, unlocked by reclaiming the jade
   { name: 'LEGEND', line: 'The tale retold, without end.', boss: 'THE IRON MASTER',
-    dBase: 7, quirk: '', bossHp: 5, legend: true,
+    dBase: 9, quirk: '', bossHp: 6, legend: true,
     sky: ['#100c18','#1c1426','#0e0a14'], ground: '#1c1620', lant: [232,199,106], pag: 5 }
 ];
 let sel = 0;                          // selected district (menu)
@@ -516,12 +528,30 @@ let tallyStep = 0, tallyT = 0, newBest = false;
 let hallRank = 0;                     // JF-#026: rank earned by the last run (0 = none)
 let msg = null, msgT = 0;
 
-const P = { x: W/2, y: 420, face: 1, punchT: 0, punchSide: 1, stance: 0 };
+const GROUND_Y = 420;
+const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, jumpT: 0, duckT: 0 };
+// JF-#028: vertical dodge axis. Jump = airborne (dodges LOW throws); duck = crouch
+// (dodges HIGH throws). Brief action windows, not held stances, so the fight stays
+// snappy and you commit to a read the same way a counter commits.
+const JUMP_DUR = 32, JUMP_H = 76, DUCK_DUR = 26;
+let darts = [];   // in-flight thrown spears: {x, vx, high, y0, life}
+function jump(){
+  if (state === S_PAUSE){ resumeGame(); return; }
+  if (state !== S_PLAY || scrollOffer) return;
+  if (P.jumpT > 0 || P.duckT > 0) return;   // one dodge at a time
+  P.jumpT = JUMP_DUR; Snd.whoosh();
+}
+function duck(){
+  if (state === S_PAUSE){ resumeGame(); return; }
+  if (state !== S_PLAY || scrollOffer) return;
+  if (P.jumpT > 0 || P.duckT > 0) return;
+  P.duckT = DUCK_DUR; Snd.whoosh();
+}
 
 // ---------------------------------------------------------------- enemies ---
 // Enemy lifecycle: walk in -> windup (RED TELEGRAPH = counter window) ->
 // strike (hits you if still standing there) -> recover -> walk again.
-const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5, E_STAGGER = 6, E_FEINT = 7;
+const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5, E_STAGGER = 6, E_FEINT = 7, E_AIM = 8;   // JF-#028: E_AIM = spearman throw wind-up
 // types: 0 initiate · 1 viper (fast, short telegraph) · 2 iron monk (brute — strikes
 // only SHOVE him, counter to fell) · 3 spearman (attacks from long range — counter at range)
 const T_NORM = 0, T_FAST = 1, T_BRUTE = 2, T_SPEAR = 3, T_BOSS = 4;
@@ -533,7 +563,7 @@ function spawnEnemy(forceSide){
   const q = DISTRICTS[sel].quirk;
   let type = T_NORM;
   const r = Math.random();
-  const spearTh = q === 'spear' ? 0.34 : 0.18, spearDiff = q === 'spear' ? 1.5 : 4;
+  const spearTh = q === 'spear' ? 0.34 : 0.24, spearDiff = q === 'spear' ? 1.5 : 3;   // JF-#028: throwers in every district
   const bruteTh = q === 'guard' ? 0.52 : 0.38, bruteDiff = q === 'guard' ? 1.5 : 2.5;
   const fastTh  = q === 'crowd' ? 0.78 : 0.6;
   if (difficulty > spearDiff && r < spearTh) type = T_SPEAR;
@@ -554,7 +584,10 @@ function spawnEnemy(forceSide){
         (q === 'guard' ? 0.18 : 0), 0.65)) ? 1 : 0,
     // JF-#007: some vipers open with a FEINT — pale flash, no audio, hops back out of reach
     feint: type === T_FAST && difficulty > 4 && Math.random() < 0.35,
-    vx: 0, vy: 0, y: 420, rot: 0
+    vx: 0, vy: 0, y: 420, rot: 0,
+    // JF-#028: a spearman hurls ONE spear from range before closing to melee.
+    // high throw -> DUCK, low throw -> JUMP. After it throws, it fights normally.
+    willThrow: type === T_SPEAR, projHigh: Math.random() < 0.5
   });
   const ne = enemies[enemies.length - 1];
   ne.windup0 = ne.windup;                     // base windup (brute rage floors off this)
@@ -906,6 +939,10 @@ addEventListener('keydown', e => {
   if (state === S_MENU && (e.code === 'ArrowRight' || e.code === 'KeyD')){
     sel = (sel + 1) % (save.dist + 1); Snd.tick(); return;
   }
+  // JF-#028: vertical dodge — up/W jump, down/S duck (KeyW/KeyS are physical
+  // positions, so they land on AZERTY's Z/S up-down keys too)
+  if (e.code === 'ArrowUp' || e.code === 'KeyW'){ Snd.unlock(); jump(); return; }
+  if (e.code === 'ArrowDown' || e.code === 'KeyS'){ Snd.unlock(); duck(); return; }
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.code === 'KeyQ') press(-1);
   else if (e.code === 'ArrowRight' || e.code === 'KeyD') press(1);
   else if (e.code === 'Space' || e.code === 'Enter') press(P.face);
@@ -934,7 +971,21 @@ cv.addEventListener('pointerdown', e => {
     }
     if (y > 370) return;    // dead zone around the shop — no accidental restarts
   }
+  // JF-#028: remember where this touch began so a drag can become a dodge
+  touchStartY = e.clientY; touchSwiped = false;
   press(x < W/2 ? -1 : 1);
+});
+// JF-#028: a vertical drag during play is a dodge (swipe up = jump, down = duck).
+// The tap already fired a strike on pointerdown so counters stay instant; if that
+// strike only hit air, the swipe refunds the whiff so a pure dodge costs nothing.
+let touchStartY = 0, touchSwiped = false;
+cv.addEventListener('pointermove', e => {
+  if (state !== S_PLAY || touchSwiped || !e.buttons && e.pointerType === 'mouse') return;
+  const dy = (e.clientY - touchStartY) / scale;
+  if (Math.abs(dy) > 42){
+    touchSwiped = true; whiffT = 0;            // refund the tap's whiff
+    if (dy < 0) jump(); else duck();
+  }
 });
 
 function startRun(){
@@ -951,7 +1002,7 @@ function startRun(){
   // difficulty formula; the alternating-spawn learning window still shrinks
   const belt = beltOf(save.kills);
   waveT = 0;
-  INTRO = Math.max(300, 900 - belt * 120);
+  INTRO = Math.max(240, 720 - belt * 120);   // JF-#028: shorter safe-learning window
   promoted = -1;
   // JF-#011: trial-day rollover + run counters + omen application
   const today0 = new Date().toDateString();
@@ -972,7 +1023,8 @@ function startRun(){
   }
   hearts = Math.max(1, 3 + save.up.body + omen.heart); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false;
   if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
-  enemies.length = 0; popups.length = 0; parts.length = 0;
+  enemies.length = 0; popups.length = 0; parts.length = 0; darts.length = 0;
+  P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
   dBase = DISTRICTS[sel].dBase;
@@ -980,8 +1032,8 @@ function startRun(){
   // JF-#012: veterans get the district's line instead of the controls lesson
   msg = save.kills > 50
     ? DISTRICTS[sel].name + ' — ' + DISTRICTS[sel].line
-    : (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
-      ' the RED flash to counter.';
+    : (TOUCH ? 'Tap toward them, tap the RED flash to counter. Swipe to dodge spears.'
+             : 'Strike toward them, strike the RED flash to counter. ▲/▼ to dodge spears.');
   msgT = 240;
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS — DOUBLE JADE' +
     (save.streak > 1 ? '  ·  DAY ' + save.streak : ''), '#7ce8a8', true);
@@ -1010,13 +1062,35 @@ function update(){
   if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir; bufDir = 0; bufT = 0; strike(d); } }
   const dt = slowMo > 0 ? 0.35 : 1;
   if (slowMo > 0) slowMo--;
+  // JF-#028: dodge timers + jump arc (world-time so it slows with hit-stop/slow-mo)
+  if (P.jumpT > 0){ P.jumpT -= dt; if (P.jumpT < 0) P.jumpT = 0; }
+  if (P.duckT > 0){ P.duckT -= dt; if (P.duckT < 0) P.duckT = 0; }
+  P.y = GROUND_Y - (P.jumpT > 0 ? Math.sin((1 - P.jumpT / JUMP_DUR) * Math.PI) * JUMP_H : 0);
+  // JF-#028: thrown spears fly flat at their telegraphed height; dodge or wear it
+  for (const d of darts){
+    d.x += d.vx * dt; d.spin += 0.5 * dt;
+    if (!d.hit && Math.abs(d.x - P.x) < 30){
+      d.hit = true; d.dead = true;
+      const dodged = d.high ? P.duckT > 0 : P.jumpT > 0;
+      if (dodged){
+        score += 150; jadeRun++; bumpTrial('dodge');
+        popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
+        burst(P.x, d.y0, '#7ce8a8', 8, 3);
+      } else {
+        // JF-#028: log dart hits for the fairness suite (marked type 'dart')
+        if (BOT && BOT.cur) BOT.cur.hits.push({ wave, type: 'dart', windup: d.high ? 'high' : 'low', pincer: false, fast: false });
+        hurtPlayer();
+      }
+    }
+  }
+  darts = darts.filter(d => !d.dead && d.x > -40 && d.x < W + 40 && d.life-- > 0);
 
   if (comboT > 0){ comboT -= dt; if (comboT <= 0) combo = 0; }
 
   // JF-#008: wave machine — difficulty comes from wave number, not a treadmill
   waveT += dt;
   if (waveT >= 5400) award('endure');
-  difficulty = Math.min(12, dBase + (wave - 1) * 1.1 + Math.min(beltOf(save.kills), 6) * 0.3);
+  difficulty = Math.min(13, dBase + (wave - 1) * 1.3 + Math.min(beltOf(save.kills), 6) * 0.3);   // JF-#028: steeper
   if (wavePhase === 1){                                // rest beat between waves
     if (scrollOffer) return;                           // JF-#025: world waits on the choice
     restT -= dt;
@@ -1029,7 +1103,7 @@ function update(){
     if (spawnT <= 0 && toSpawn > 0){
       toSpawn--; spawnEnemy();
       // duo rush scales with difficulty; late duos may split to opposite sides
-      if (toSpawn > 0 && difficulty > 3 && Math.random() < Math.min(0.2 + difficulty * 0.05, 0.55)){
+      if (toSpawn > 0 && difficulty > 2 && Math.random() < Math.min(0.24 + difficulty * 0.055, 0.62)){   // JF-#028: more duos
         toSpawn--;
         spawnEnemy(difficulty > 7 && Math.random() < 0.4 ? -lastSpawnSide : lastSpawnSide);
       }
@@ -1047,9 +1121,15 @@ function update(){
         // fairness guard: never open a windup while the OTHER side is already
         // threatening — hold just outside reach instead of pincering.
         // JF-#006: guard lifts past difficulty 6 — late game allows true pincers.
-        const otherThreat = e.type !== T_BOSS && difficulty <= 6 && enemies.some(o => o !== e &&
+        const otherThreat = e.type !== T_BOSS && difficulty <= 5 && enemies.some(o => o !== e &&   // JF-#028: earlier pincers
           (o.st === E_WINDUP || o.st === E_STRIKE) &&
           Math.sign(o.x - P.x) !== Math.sign(e.x - P.x));
+        // JF-#028: a spearman still holding its spear aims from range first
+        if (e.willThrow && d < 340 && d > e.reach + 20){
+          e.st = E_AIM; e.stT = 0; e.aimDur = Math.max(34, 52 - difficulty * 1.5);
+          Snd.windup(e.aimDur);
+          break;
+        }
         if (d < e.reach - 8){
           if (otherThreat){ e.x = P.x + Math.sign(e.x - P.x) * (e.reach + 4); break; }
           if (e.feint){ e.st = E_FEINT; e.stT = 0; break; }   // fake-out: no windup audio
@@ -1058,6 +1138,16 @@ function update(){
         } else e.x += e.side * e.speed * dt;
         break;
       }
+      case E_AIM:
+        // JF-#028: release the spear at the telegraphed height, then close to melee
+        if (e.stT >= e.aimDur){
+          const dir = Math.sign(P.x - e.x) || 1;
+          darts.push({ x: e.x + dir * 20, vx: dir * 8.5, high: e.projHigh,
+            y0: e.projHigh ? P.y - 78 : P.y - 20, life: 120, spin: 0 });
+          Snd.hurt();
+          e.willThrow = false; e.st = E_WALK; e.stT = 0;
+        }
+        break;
       case E_WINDUP:
         if (e.stT >= e.windup){
           e.st = E_STRIKE; e.stT = 0; e.didHit = false;
@@ -1362,6 +1452,26 @@ function draw(){
     } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; eyes = 'angry'; }
     else if (e.st === E_RECOVER){ col = '#7a6a9a'; rot += 0.12 * Math.sign(e.x - P.x); eyes = 'dizzy'; }  // slumped = punishable
     else if (e.st === E_STAGGER){ col = '#9a90b0'; rot += 0.2 * Math.sign(e.vx || 1); eyes = 'dizzy'; }
+    else if (e.st === E_AIM){
+      // JF-#028: throw wind-up — amber = high (DUCK), cyan = low (JUMP). Never
+      // red: red is reserved for meleecounter windows, throws read differently.
+      eyes = 'angry';
+      const tcol = e.projHigh ? '#f0b24a' : '#5fd0e0';
+      const ty = e.projHigh ? P.y - 78 : P.y - 20;
+      const prog = Math.min(1, e.stT / e.aimDur), pulse = 0.4 + 0.4 * Math.sin(e.stT * 0.5);
+      cx.strokeStyle = tcol; cx.globalAlpha = 0.35 + prog * 0.4; cx.lineWidth = 2;
+      cx.setLineDash([8, 8]); cx.lineDashOffset = -e.stT * 2;
+      cx.beginPath(); cx.moveTo(e.x, ty); cx.lineTo(P.x + Math.sign(P.x - e.x) * 20, ty); cx.stroke();
+      cx.setLineDash([]); cx.globalAlpha = 1;
+      cx.fillStyle = tcol; cx.globalAlpha = pulse;
+      cx.beginPath(); cx.arc(e.x, ty, 6 + prog * 4, 0, 7); cx.fill(); cx.globalAlpha = 1;
+      // caption teaches the read
+      cx.save(); cx.translate(P.x, ty - 22); cx.scale(0.9, 0.9);
+      cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
+      cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(e.projHigh ? 'DUCK!' : 'JUMP!', 0, 0);
+      cx.fillStyle = tcol; cx.fillText(e.projHigh ? 'DUCK!' : 'JUMP!', 0, 0);
+      cx.restore();
+    }
     else if (e.st === E_DOWN || e.st === E_THROWN){ eyes = 'x'; }
     // squash: pop on spawn-walk and squish when knocked down
     const squash = (e.st === E_DOWN || e.st === E_THROWN) ? -0.5 : 0;
@@ -1380,10 +1490,27 @@ function draw(){
     }
   }
 
+  // JF-#028: thrown spears in flight — colored by the height they demand
+  for (const d of darts){
+    const dir = Math.sign(d.vx) || 1, tip = d.x + dir * 22, tc = d.high ? '#f0b24a' : '#5fd0e0';
+    cx.strokeStyle = 'rgba(200,190,170,0.3)'; cx.lineWidth = 2;   // motion streak
+    cx.beginPath(); cx.moveTo(d.x - dir * 26, d.y0); cx.lineTo(d.x, d.y0); cx.stroke();
+    cx.strokeStyle = OUT; cx.lineWidth = 6; cx.lineCap = 'round';
+    cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
+    cx.strokeStyle = '#a8906a'; cx.lineWidth = 3;
+    cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
+    cx.fillStyle = tc;
+    cx.beginPath(); cx.moveTo(tip, d.y0 - 5); cx.lineTo(tip + dir * 12, d.y0); cx.lineTo(tip, d.y0 + 5); cx.closePath(); cx.fill();
+    cx.strokeStyle = OUT; cx.lineWidth = 1.5; cx.stroke();
+  }
+
   // player
   const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : wearCol();   // JF-#023
+  // JF-#028: duck = squash crouch, jump = slight stretch; attack pose reads off it
+  const pSquash = P.duckT > 0 ? -0.62 : P.jumpT > 0 ? 0.28 : 0;
   fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
-    punch: P.punchT, eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
+    punch: P.punchT, squash: pSquash,
+    eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
   // particles
   for (const p of parts){
@@ -1525,7 +1652,7 @@ function draw(){
       cx.fillText(cap, W/2, 236);
     }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap the LEFT or RIGHT half of the screen' : '◀ ▶  arrows  ·  A / D  ·  Space = strike where you face', W/2, 332);
+    cx.fillText(TOUCH ? 'tap L / R to strike  ·  swipe up = jump, down = duck' : '◀ ▶ strike  ·  ▲ / W jump  ·  ▼ / S duck  ·  dodge thrown spears', W/2, 332);
     // JF-#009: district selector — the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';

@@ -43,6 +43,22 @@ corpse on the spot.
 - Pitch: "Tower defense where the enemies ARE your towers — mutate their corpses before
   the cleanup crew steals them back."
 
+## DR-#002 — Category B: depth & retention (2026-07-03)
+Audit sorted improvements into 3 categories (A feel/juice, B depth/retention, C platform
+compliance). Mike picked B. Three changes:
+1. **Hive Mind actives** (progression that changes play, bible law #3): 3 new Mycelial
+   unlock nodes — OVERGROWTH 60 DNA (all humans near-stopped 4s), FUNGAL BLOOM 80 (all
+   corpses decay instantly for full payout), PHEROMONE 100 (6s: towers hunt Sweepers
+   first +40% fire rate). Unlocked actives appear as bottom-left HUD buttons, 75s CD.
+2. **Boon choices** (every run differs, law #5): after waves 3/6/9/11 (and every 3rd
+   endless wave), prep pauses with "THE HIVE ADAPTS" — pick 1 of 2 run-only boons from
+   a pool of 8 (acid dmg, slow rot, kill bounty, sweeper slow, cloud time, tower HP,
+   root radius, instant biomass).
+3. **Difficulty drama** (law #6 + #8): THE BUTCHER mini-boss punctuates wave 8 (520hp,
+   cleaver silhouette, drops 2 corpses); named banners on phase starts + boss waves;
+   Purifier siren; goal-gradient tease in prep ("2 waves to THE BUTCHER").
+End-screen layout compacted to fit 9 meta rows (shared endLayout() for draw + hit).
+
 ## Backlog / next
 - DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
 - Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).

@@ -49,6 +49,7 @@ const CFG = {
   },
   enemies: {
     scav:    { hp:30,  spd:2.2, dmg:5,  armor:0,    r:9,  col:"#7fb2d9" },
+    butcher: { hp:520, spd:1.1, dmg:22, armor:0.25, r:16, col:"#b04a4a" },
     troop:   { hp:95,  spd:1.25,dmg:10, armor:0.30, r:12, col:"#4d7ea8" },
     incin:   { hp:65,  spd:1.5, dmg:8,  armor:0.10, r:11, col:"#d98f4a" },
     sweeper: { hp:75,  spd:1.9, dmg:0,  armor:0.20, r:11, col:"#e3d34e" },
@@ -61,8 +62,15 @@ const CFG = {
     { id:"decay", label:"ROOT ABSORPTION",   fx:"+6 decay payout",    cost:25, max:5 },
     { id:"rot",   label:"PRESERVATION",      fx:"+3s corpse rot time",cost:25, max:4 },
     { id:"dmg",   label:"ACIDIC EFFICIENCY", fx:"+10% tower damage",  cost:40, max:5 },
-    { id:"rate",  label:"HIVE MIND SYNC",    fx:"+8% fire rate",      cost:40, max:5 }
-  ]
+    { id:"rate",  label:"HIVE MIND SYNC",    fx:"+8% fire rate",      cost:40, max:5 },
+    // Hive Mind actives — unlocks, not stats: new verbs the player didn't have
+    { id:"overgrowth", label:"UNLOCK: OVERGROWTH",  fx:"active: roots erupt, all humans near-stopped 4s", cost:60,  max:1 },
+    { id:"bloom",      label:"UNLOCK: FUNGAL BLOOM",fx:"active: every corpse decays instantly for full payout", cost:80, max:1 },
+    { id:"pheromone",  label:"UNLOCK: PHEROMONE",   fx:"active: 6s — towers hunt Sweepers first, +40% fire rate", cost:100, max:1 }
+  ],
+  abilityCD: 75,
+  boonWaves: [2,5,8,10] // campaign waveIdx values that open with a boon choice
+
 };
 
 /* Campaign: 12 waves in 3 named assaults. Each wave = list of [type,count,interval]. */
@@ -79,7 +87,7 @@ const WAVES = [
   [["troop",6,2.2],["sweeper",2,6]],
   [["scav",10,0.8],["incin",3,4]],
   [["troop",6,2.0],["incin",3,4],["sweeper",3,5]],
-  [["scav",14,0.7],["troop",4,3]],
+  [["butcher",1,1],["scav",14,0.7],["troop",4,3]],
   [["incin",6,2.2],["sweeper",4,4]],
   [["troop",10,1.6],["scav",8,1.0]],
   [["scav",12,0.7],["troop",6,2],["incin",5,2.5],["sweeper",4,4]],
@@ -179,6 +187,33 @@ let blocked = null, flow = null;
 let shake = 0, menu = null; // menu = {corpse}
 let firstMutateDone = false, onboardT = 0;
 let dnaEarned = 0;
+/* run-scoped modifiers (boons) + ability state */
+let run = null;
+let boonChoice = null; // [boon, boon] while a pick is pending
+let banner = null;     // {txt, sub, t}
+let overgrowthT = 0, pherT = 0;
+
+const BOONS = [
+  { id:"acid",   txt:"ACID GLANDS",     sub:"+30% Spitter damage",        apply:r=>r.spitDmg+=0.30 },
+  { id:"mire",   txt:"PRESERVING MIRE", sub:"corpses rot 5s slower",      apply:r=>r.rotBonus+=5 },
+  { id:"marrow", txt:"RICH MARROW",     sub:"+4 biomass per kill",        apply:r=>r.killBonus+=4 },
+  { id:"air",    txt:"HEAVY AIR",       sub:"Sweepers move 25% slower",   apply:r=>r.sweepSlow+=0.25 },
+  { id:"linger", txt:"LINGERING SPORES",sub:"clouds last +2s",            apply:r=>r.cloudT+=2 },
+  { id:"hide",   txt:"THICK HIDE",      sub:"new towers +40 HP",          apply:r=>r.towerHp+=40 },
+  { id:"roots",  txt:"DEEP ROOTS",      sub:"Rootmass radius +30%",       apply:r=>r.rootR+=0.30 },
+  { id:"glut",   txt:"GLUT",            sub:"+50 biomass right now",      apply:r=>{ biomass+=50; } }
+];
+function newRunMods(){
+  return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
+    abil: ["overgrowth","bloom","pheromone"].filter(id=>tier(id)>0).map(id=>({id, cd:0})) };
+}
+function offerBoons(){
+  const pool = BOONS.slice();
+  const a = pool.splice(Math.floor(Math.random()*pool.length),1)[0];
+  const b = pool.splice(Math.floor(Math.random()*pool.length),1)[0];
+  boonChoice = [a,b];
+}
+function showBanner(txt,sub){ banner = {txt, sub, t:2.6}; }
 
 function inGrid(c,r){ return c>=0 && c<CFG.cols && r>=0 && r<CFG.rows; }
 function isHive(c,r){ return c>=CFG.hive.c0 && c<=CFG.hive.c1 && r>=CFG.hive.r0 && r<=CFG.hive.r1; }
@@ -244,10 +279,11 @@ function dropCorpse(x,y){
   const [c,r] = xyToTile(x,y);
   if(!inGrid(c,r) || isHive(c,r)) return;
   // stack onto existing corpse tile -> just refresh & bonus
+  const rot = meta.rot + (run?run.rotBonus:0);
   const ex = corpses.find(k=>k.c===c&&k.r===r);
-  if(ex){ ex.t = meta.rot; ex.stack++; popup(x,y,"+STACKED","#9be07f"); return; }
+  if(ex){ ex.t = rot; ex.maxT = rot; ex.stack++; popup(x,y,"+STACKED","#9be07f"); return; }
   const walk = !blocked[r][c] ? tryBlock(c,r) : false;
-  corpses.push({ c, r, t: meta.rot, trampled: !walk, stack:1 });
+  corpses.push({ c, r, t: rot, maxT: rot, trampled: !walk, stack:1 });
 }
 function mutate(k, type){
   const t = CFG.towers[type];
@@ -256,7 +292,8 @@ function mutate(k, type){
   corpses.splice(corpses.indexOf(k),1);
   if(k.trampled){ if(!tryBlock(k.c,k.r)){ /* still trampled tower: allowed, stays walkable */ } }
   const [x,y] = tileToXY(k.c,k.r);
-  towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:60, max:60, flash:0, pulse:Math.random()*6 });
+  const thp = 60 + run.towerHp;
+  towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6 });
   SFX.squelch(); burst(x,y,"#9be07f",14); shakeIt(2);
   if(!firstMutateDone){ firstMutateDone = true; }
   menu = null;
@@ -300,6 +337,7 @@ function newRun(){
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   rebuildFlow();
   firstMutateDone = false; onboardT = 0; menu = null;
+  run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
   // onboarding: three starter corpses beside the hive — teach mutate before wave 1
   dropCorpse(...tileToXY(CFG.hive.c0-3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+3, 9));
@@ -318,6 +356,14 @@ function queueWave(){
   spawnT = 0;
   mode = "play";
   SFX.wave();
+  // drama: name the moments
+  if(!endless){
+    if(waveIdx===0) showBanner("THE SCOUTS","they come to probe the dark");
+    else if(waveIdx===4) showBanner("THE PURGE BEGINS","heavy squads. hold the line");
+    else if(waveIdx===7) showBanner("THE BUTCHER","he burned a hundred hives");
+    else if(waveIdx===8) showBanner("THE EXTERMINATION","everything they have left");
+    else if(waveIdx===11){ showBanner("THE PURIFIER","kill it and the surface is yours"); tone(80,60,1.2,"sawtooth",0.2); tone(80,60,1.2,"sawtooth",0.2,1.3); }
+  } else if(endlessN%3===2) showBanner("PURIFIER INBOUND","the long night deepens");
 }
 function waveCleared(){
   const wn = endless ? 12+endlessN+1 : waveIdx+1;
@@ -330,6 +376,8 @@ function waveCleared(){
   if(endless){ endlessN++; save.endlessBest=Math.max(save.endlessBest,endlessN); persist(); }
   else waveIdx++;
   mode = "prep"; prepT = CFG.prepTime;
+  // boon choice: the Hive adapts — every run differs
+  if((!endless && CFG.boonWaves.includes(waveIdx)) || (endless && endlessN%3===1)) offerBoons();
 }
 function gameOver(){
   mode = "over"; menu = null; persist();
@@ -342,9 +390,13 @@ const DT = 1/60;
 function update(){
   if(mode==="title"||mode==="over"||mode==="victory") return;
   if(shake>0) shake = Math.max(0, shake-20*DT);
+  if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
+  if(overgrowthT>0) overgrowthT -= DT;
+  if(pherT>0) pherT -= DT;
+  for(const a of run.abil) if(a.cd>0) a.cd -= DT;
 
   if(mode==="prep"){
-    if(firstMutateDone || corpses.length===0) prepT -= DT;
+    if((firstMutateDone || corpses.length===0) && !boonChoice) prepT -= DT;
     onboardT += DT;
     if(prepT<=0) queueWave();
   }
@@ -376,8 +428,10 @@ function update(){
     // spore coat DoT
     if(e.coat>0){ e.coat-=DT; e.hp -= 6*DT*meta.dmg; }
     e.snared = false;
-    for(const t of towers){ if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*CFG.tile)){ e.snared=true; break; } }
+    for(const t of towers){ if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*(1+run.rootR)*CFG.tile)){ e.snared=true; break; } }
     let spd = e.spd * CFG.tile * (e.snared?1-CFG.towers.rootmass.slow:1);
+    if(overgrowthT>0) spd *= 0.15;
+    if(e.type==="sweeper") spd *= (1-run.sweepSlow);
 
     if(e.type==="sweeper"){
       // find nearest corpse
@@ -467,20 +521,21 @@ function update(){
     }
     if(t.type==="rootmass"||t.type==="node") continue;
     const def = CFG.towers[t.type];
-    let rate = def.rate * meta.rate;
+    let rate = def.rate * meta.rate * (pherT>0?1.4:1);
     for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq(CFG.towers.node.range*CFG.tile)){ rate*=1.5; break; } }
     t.cd -= DT*rate;
     if(t.cd<=0){
-      // find target in range
+      // find target in range (pheromone: hunt sweepers first)
       let tgt=null, bd=Infinity;
-      for(const e of enemies){ const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } }
+      if(pherT>0){ for(const e of enemies){ if(e.type!=="sweeper") continue; const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
+      if(!tgt){ bd=Infinity; for(const e of enemies){ const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
       if(tgt){
         t.cd = 1;
         if(t.type==="spitter"){
-          projectiles.push({x:t.x,y:t.y,tgt,spd:340,dmg:def.dmg*meta.dmg});
+          projectiles.push({x:t.x,y:t.y,tgt,spd:340,dmg:def.dmg*meta.dmg*(1+run.spitDmg)});
           SFX.shot();
         } else if(t.type==="spore"){
-          clouds.push({x:tgt.x,y:tgt.y,r:def.cloudR*CFG.tile,t:def.cloudT});
+          clouds.push({x:tgt.x,y:tgt.y,r:def.cloudR*CFG.tile,t:def.cloudT+run.cloudT});
         }
       }
     }
@@ -529,9 +584,10 @@ function damage(e, amt, pierce){
 }
 function kill(e){
   const idx = enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
-  biomass += CFG.killBounty;
+  biomass += CFG.killBounty + run.killBonus;
   burst(e.x,e.y,e.col,10);
   if(e.type==="boss"){ SFX.boom(); shakeIt(10); for(let i=0;i<3;i++) dropCorpse(e.x+(i-1)*CFG.tile, e.y); }
+  else if(e.type==="butcher"){ SFX.boom(); shakeIt(7); popup(e.x,e.y,"THE BUTCHER FALLS","#b04a4a"); for(let i=0;i<2;i++) dropCorpse(e.x+(i*2-1)*CFG.tile*0.5, e.y); }
   else dropCorpse(e.x,e.y);
   noise(0.08,0.15,false);
 }
@@ -557,6 +613,23 @@ function onTap(x,y){
   // pause button
   if(x>W-92 && x<W-52 && y>8 && y<48){ paused=true; CG.gameplayStop(); return; }
   // prep skip button
+  // boon pick blocks everything else
+  if(boonChoice){
+    const cards = boonCards();
+    for(let i=0;i<cards.length;i++){
+      const o = cards[i];
+      if(x>=o.x&&x<=o.x+o.w&&y>=o.y&&y<=o.y+o.h){
+        boonChoice[i].apply(run);
+        popup(W/2,H/2-90,boonChoice[i].txt,"#c9a0f0"); SFX.ui();
+        boonChoice = null; return;
+      }
+    }
+    return;
+  }
+  // hive mind ability buttons (bottom-left)
+  for(const b of abilBtns()){
+    if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){ activateAbility(b.a); return; }
+  }
   if(mode==="prep" && firstMutateDone && x>W/2-90 && x<W/2+90 && y>TOP+8 && y<TOP+44){
     biomass += 15; popup(W/2,TOP+60,"+15 EARLY CALL","#8fd9a8"); queueWave(); return;
   }
@@ -587,9 +660,41 @@ function menuOpts(){
   let my = Math.max(TOP+6, Math.min(ky-totalH/2, H-totalH-10));
   return types.map((t,i)=>({type:t, x:mx, y:my+i*(h+gap), w, h}));
 }
+function abilBtns(){
+  if(!run) return [];
+  return run.abil.map((a,i)=>({a, x:10+i*58, y:H-58, w:48, h:48}));
+}
+function boonCards(){
+  const w=230,h=120,gap=24;
+  return [{x:W/2-w-gap/2,y:H/2-h/2,w,h},{x:W/2+gap/2,y:H/2-h/2,w,h}];
+}
+function activateAbility(a){
+  if(a.cd>0 || (mode!=="play" && mode!=="prep")){ SFX.deny(); return; }
+  a.cd = CFG.abilityCD;
+  if(a.id==="overgrowth"){
+    overgrowthT = 4; SFX.squelch(); shakeIt(4);
+    popup(W/2,H/2-40,"OVERGROWTH","#8a6a3f");
+    for(const e of enemies) burst(e.x,e.y,"#8a6a3f",5);
+  } else if(a.id==="bloom"){
+    popup(W/2,H/2-40,"FUNGAL BLOOM","#8fd9a8"); SFX.decay();
+    for(let i=corpses.length-1;i>=0;i--){
+      const k = corpses[i];
+      const pay = meta.decay * k.stack;
+      biomass += pay;
+      const [x,y]=tileToXY(k.c,k.r);
+      popup(x,y,"+"+pay,"#8fd9a8"); burst(x,y,"#8fd9a8",8);
+      corpses.splice(i,1);
+      if(!k.trampled) unblock(k.c,k.r);
+    }
+    menu = null;
+  } else if(a.id==="pheromone"){
+    pherT = 6; SFX.sweep();
+    popup(W/2,H/2-40,"PHEROMONE BURST","#e3d34e");
+  }
+}
 function handleEndScreen(x,y){
   // meta buttons laid out by drawEnd(); recompute same layout
-  const bx = W/2-260, bw=520, rowH=52, by = 250;
+  const {bx,bw,rowH,by} = endLayout();
   for(let i=0;i<CFG.meta.length;i++){
     const m = CFG.meta[i];
     const ry = by + i*rowH;
@@ -660,7 +765,7 @@ function draw(){
     ctx.fillStyle="#454d55"; ctx.beginPath(); ctx.arc(x+9,y-4,5,0,6.283); ctx.fill();
     // rot ring
     ctx.strokeStyle = "rgba(143,217,168,0.8)"; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(x,y,18,-Math.PI/2,-Math.PI/2 + 6.283*(k.t/meta.rot)); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x,y,18,-Math.PI/2,-Math.PI/2 + 6.283*(k.t/k.maxT)); ctx.stroke();
     if(k.stack>1){ ctx.fillStyle="#9be07f"; ctx.font="bold 11px monospace"; ctx.textAlign="center"; ctx.fillText("x"+k.stack,x,y-22); }
     ctx.restore();
   }
@@ -706,6 +811,12 @@ function draw(){
     } else if(e.type==="incin"){
       ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
       ctx.fillStyle="#f0c060"; ctx.beginPath(); ctx.arc(0,-e.r*0.4,4,0,6.283); ctx.fill(); // pilot light
+    } else if(e.type==="butcher"){
+      ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
+      ctx.strokeStyle="#5c1f1f"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.stroke();
+      ctx.fillStyle="#d0d4d8"; ctx.save(); ctx.rotate(perfNow*2);
+      ctx.fillRect(e.r*0.4,-3,e.r*0.9,6); ctx.restore(); // swinging cleaver
+      ctx.fillStyle="#2a0f0f"; ctx.beginPath(); ctx.arc(0,-3,4,0,6.283); ctx.fill();
     } else if(e.type==="boss"){
       ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
       ctx.strokeStyle="#8fa0b0"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0,e.r+5,0,6.283); ctx.stroke();
@@ -731,8 +842,11 @@ function draw(){
   ctx.globalAlpha=1;
 
   drawHUD();
+  drawAbilities();
   if(menu) drawMenu();
   if(mode==="prep") drawPrep();
+  if(boonChoice) drawBoons();
+  if(banner) drawBanner();
   if(paused) drawPaused();
   if(mode==="over") drawEnd(false);
   if(mode==="victory") drawEnd(true);
@@ -824,7 +938,64 @@ function drawPrep(){
     const nxt = endless?"THE LONG NIGHT":phaseOf(waveIdx);
     ctx.fillStyle="#8a94a0"; ctx.font="12px monospace";
     ctx.fillText("next: "+(endless?"endless "+(endlessN+1):"wave "+(waveIdx+1))+" — "+nxt, W/2, TOP+62);
+    // goal gradient: how far to the next named moment
+    if(!endless){
+      let tease = "";
+      if(waveIdx<4) tease = (4-waveIdx)+" wave"+(4-waveIdx>1?"s":"")+" to THE PURGE";
+      else if(waveIdx<7) tease = (7-waveIdx)+" wave"+(7-waveIdx>1?"s":"")+" to THE BUTCHER";
+      else if(waveIdx<11) tease = (11-waveIdx)+" wave"+(11-waveIdx>1?"s":"")+" to THE PURIFIER";
+      if(tease){ ctx.fillStyle="#c9a0f0"; ctx.fillText(tease, W/2, TOP+82); }
+    }
   }
+}
+function drawAbilities(){
+  const glyphs = { overgrowth:"Ψ", bloom:"✦", pheromone:"◎" };
+  const names = { overgrowth:"OVERGROW", bloom:"BLOOM", pheromone:"PHEROMONE" };
+  for(const b of abilBtns()){
+    const ready = b.a.cd<=0;
+    ctx.fillStyle = ready ? "rgba(30,45,30,0.9)" : "rgba(20,24,26,0.9)";
+    ctx.fillRect(b.x,b.y,b.w,b.h);
+    ctx.strokeStyle = ready ? "#8fd9a8" : "#444"; ctx.strokeRect(b.x,b.y,b.w,b.h);
+    ctx.textAlign="center";
+    ctx.fillStyle = ready ? "#c9f0a8" : "#555"; ctx.font="18px monospace";
+    ctx.fillText(glyphs[b.a.id], b.x+b.w/2, b.y+24);
+    ctx.font="7px monospace"; ctx.fillStyle = ready ? "#8fd9a8" : "#555";
+    ctx.fillText(names[b.a.id], b.x+b.w/2, b.y+40);
+    if(!ready){
+      ctx.strokeStyle="#e3d34e"; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(b.x+b.w/2,b.y+b.h/2,20,-Math.PI/2,-Math.PI/2+6.283*(1-b.a.cd/CFG.abilityCD)); ctx.stroke();
+      ctx.lineWidth=1;
+    }
+  }
+}
+function drawBoons(){
+  ctx.fillStyle="rgba(5,7,9,0.75)"; ctx.fillRect(0,0,W,H);
+  ctx.textAlign="center";
+  ctx.fillStyle="#c9a0f0"; ctx.font="bold 22px monospace";
+  ctx.fillText("THE HIVE ADAPTS — choose a mutation", W/2, H/2-100);
+  const cards = boonCards();
+  for(let i=0;i<cards.length;i++){
+    const o=cards[i], b=boonChoice[i];
+    ctx.fillStyle="rgba(26,19,48,0.95)"; ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.strokeStyle="#b088e0"; ctx.lineWidth=2; ctx.strokeRect(o.x,o.y,o.w,o.h); ctx.lineWidth=1;
+    ctx.fillStyle="#dfe6ec"; ctx.font="bold 16px monospace";
+    ctx.fillText(b.txt, o.x+o.w/2, o.y+46);
+    ctx.fillStyle="#8fd9a8"; ctx.font="13px monospace";
+    ctx.fillText(b.sub, o.x+o.w/2, o.y+74);
+  }
+  ctx.fillStyle="#8a94a0"; ctx.font="12px monospace";
+  ctx.fillText("this run only — every run differs", W/2, H/2+100);
+}
+function drawBanner(){
+  const a = Math.min(1, banner.t/0.5);
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle="rgba(5,7,9,0.6)"; ctx.fillRect(0,H/2-70,W,110);
+  ctx.textAlign="center";
+  ctx.fillStyle="#e0d0f0"; ctx.font="bold 42px Georgia, serif";
+  ctx.fillText(banner.txt, W/2, H/2-14);
+  ctx.fillStyle="#8a94a0"; ctx.font="14px monospace";
+  ctx.fillText(banner.sub, W/2, H/2+20);
+  ctx.restore();
 }
 function drawPaused(){
   ctx.fillStyle="rgba(5,7,9,0.7)"; ctx.fillRect(0,0,W,H);
@@ -852,6 +1023,7 @@ function drawTitle(){
   ctx.fillStyle="#565f68"; ctx.font="11px monospace";
   ctx.fillText("tap corpses to mutate defenders · M mute · P pause", W/2, H-30);
 }
+function endLayout(){ return { bx: W/2-260, bw: 520, rowH: 46, by: 224 }; }
 function drawEnd(won){
   ctx.fillStyle="rgba(5,7,9,0.88)"; ctx.fillRect(0,0,W,H);
   ctx.textAlign="center";
@@ -871,8 +1043,8 @@ function drawEnd(won){
   }
   // Mycelial Network
   ctx.fillStyle="#b088e0"; ctx.font="bold 18px monospace";
-  ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 225);
-  const bx=W/2-260, bw=520, rowH=52, by=250;
+  ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 206);
+  const {bx,bw,rowH,by} = endLayout();
   ctx.font="12px monospace";
   for(let i=0;i<CFG.meta.length;i++){
     const m=CFG.meta[i], ry=by+i*rowH, tr=tier(m.id), maxed=tr>=m.max, cost=metaCost(m);
