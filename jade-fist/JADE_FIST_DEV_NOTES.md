@@ -175,3 +175,55 @@ counters on non-bosses = comedy send (vx x1.7, vy -11, wild spin, gold one-liner
 pool); (2) airborne thrown bodies BONK off the screen edge once and rebound back into play
 (still a projectile — can fell on the return); (3) 12% chance a felled foe mutters a small
 grey yelp under the FELLED popup. No balance change beyond the send arc.
+
+## §top-100 — CrazyGames top-100 research (2026-07-03)
+
+Method: scraped /hot (Popular This Month, 46 ranked) + popularity-ordered leaders from
+every /c/<tag> page (~100 titles deduped); deep-read the top-20 game pages; cross-checked
+CG docs (basic-launch-metrics, requirements) + industry commentary.
+
+### Recurring patterns in the top games
+1. One-input / mouse-only control floor (Space Waves, Realm Traveler, merge games)
+2. Sub-10s load, straight into gameplay (CG bar: 80%+ conversion past 1 min, <20MB)
+3. Visible growth fantasy WITHIN a single run (EvoWars, Fish Eat, Count Masters)
+4. Merge/upgrade meta bolted onto simple combat (Zombies 4, Merge Master Tanks)
+5. Death-retry loop measured in seconds ("one more try" = interstitial cadence)
+6. Persistent progression + cloud save (CG: "lost progress means lost players")
+7. Multiplayer/with-friends as distribution — BUT current /hot top-10 is majority SP casual
+8. Local 2-3P on one keyboard (Ragdoll Archers, Fish Eat) — MP tag with zero netcode
+9. Trend-surfing memes (brainrot wave) — search capture, short shelf life, not our lane
+10. Genre-classic revivals with modern juice (Marble Boom, Frogger, Bloons)
+11. Idle/AFK layers even in action games — session length + return habit
+12. Leaderboards as retention scaffolding (CG curates "Leaderboards"/"be the best" shelves)
+13. Cosmetic unlock economies (Smash Karts hats, Shell Shockers eggs) — no pay-to-win
+14. Listing = autoplay hover VIDEO (8 MP4 sizes), not the static thumbnail; first 5s decide CTR
+15. Daily hooks (CG-recommended); retention feeds the ranking algo, so retention IS distribution
+
+### Unlisted/structural (from inspecting the top-20 pages myself)
+- Titles are keyword strings, not brands ("Merge X", "X Simulator", "X.io", "Obby: X")
+- CG Originals get ~30% of category top-15 slots — exclusivity buys placement
+- "Updated" badge in Hot/New lists: shipping updates re-triggers discovery
+- Editorial intent tags ("5-minute fun", "Premium Perks", "Adrenaline rush") = shelves to design for
+- Controller tag is tiny (59 games) — cheap differentiation
+- Mobile tag on 18/20 of top-20 — table stakes
+
+### Jade Fist verdict
+Already match: fast run loop + retry cadence, rewarded double-jade + interstitial, daily
+trials/omen/return bonus, endless LEGEND, cosmetics (#023), one-tap mobile, district goals.
+Adopt list (ranked G1-G7) lives in JADE_FIST_ROADMAP.md.
+
+## JF-#021..#024 — backlog cleared (2026-07-03)
+- #021 reactive music: A-pentatonic pluck bed + 2-voice drone inside Snd; one intensity
+  knob (0.32 + difficulty*.045 + combo*.025 + boss*.18); taiko thump under bosses;
+  intensity 0 on pause/blur; routes through master so mute covers it.
+- #022 bot fairness suite: ?bot=N&react=12; bot counters any windup visible >= react
+  frames, thins crowds at t%10; every hit classified pincer/fast/clean; per-run
+  console.table + aggregate verdict (flags >15% fast or >35% pincer). BOT mode
+  no-ops persist(), forces dist=4, never writes jf_best.
+- #023 cosmetic shop: STYLES robe dyes (0/40/60/90/120), save.cos {own, wear};
+  menu wardrobe under trials, C cycles / B or tap buys; wearCol() used in-fight,
+  hurt flash still overrides.
+- #024 alt builds: SDK:HEAD + SDK:ADAPTER markers in master; make-alt-builds.ps1
+  regex-swaps them into alt-builds/gamemonetize + gamedistribution (same CG facade,
+  placeholder gameIds, rewarded falls back to immediate grant). Regenerate after any
+  master change if the alt builds are ever needed.
