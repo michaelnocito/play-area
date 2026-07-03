@@ -122,4 +122,4 @@ These are *suggestions*, not constraints. Surprise me.
 
 ---
 
-*Source of truth for game logic: `index.html`, `ROADMAP.md`, `DEV_NOTES.md` in this repo (github.com/michaelnocito/rune-dash, private). This handoff covers the design surface only.*
+*Source of truth for game logic: `index.html`, `RUNE_DASH_ROADMAP.md`, `RUNE_DASH_DEV_NOTES.md` in this repo (github.com/michaelnocito/rune-dash, private). This handoff covers the design surface only.*

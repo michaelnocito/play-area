@@ -1,6 +1,6 @@
 # JADE FIST — Handoff
 
-Read `DEV_NOTES.md` + `ROADMAP.md` in this folder and the `project_jade_fist_state` memory.
+Read `JADE_FIST_DEV_NOTES.md` + `JADE_FIST_ROADMAP.md` in this folder and the `project_jade_fist_state` memory.
 The full handoff text (including the CrazyGames research digest and working rules) is the
 same as the chat handoff — see DEV_NOTES for the research and per-batch history.
 

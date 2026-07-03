@@ -2,11 +2,11 @@
 
 **Repo:** `github.com/michaelnocito/play-area` (PUBLIC monorepo, branch `main`) — Flipline lives in the `flipline/` subfolder · **Local:** `C:\Users\Mike\Projects\GAMES\play-area\flipline`
 **HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
-**Read first:** this file + **`ROADMAP.md`** (the dev-owned backlog — CrazyGames-grade rework, 🧦 ODD SOCK identity pivot 2026-07-02) + memory `project_flipline_state.md` (full per-feature + submission history). Also `HANDOFF.md`, `FLIPLINE_lore_bible.md` (⚠️ pre-sock lore — superseded by ROADMAP's Odd Sock section), `FLIPLINE_store_copy.md` (⚠️ rewrite gated on final name, Batch D).
+**Read first:** this file + **`FLIPLINE_ROADMAP.md`** (the dev-owned backlog — CrazyGames-grade rework, 🧦 ODD SOCK identity pivot 2026-07-02) + memory `project_flipline_state.md` (full per-feature + submission history). Also `FLIPLINE_HANDOFF.md`, `FLIPLINE_lore_bible.md` (⚠️ pre-sock lore — superseded by ROADMAP's Odd Sock section), `FLIPLINE_store_copy.md` (⚠️ rewrite gated on final name, Batch D).
 
 ## 🧭 NORTH STAR CHANGE (2026-07-02, Mike's call)
 No more speed-to-portals. **ONE quality bar (CrazyGames-grade), ONE build everywhere.** Full audit
-(guideline-grounded + 1,500-run bot-verified) + batch plan live in `ROADMAP.md`. Identity rework:
+(guideline-grounded + 1,500-run bot-verified) + batch plan live in `FLIPLINE_ROADMAP.md`. Identity rework:
 **ODD SOCK** — googly-eyed runaway sock journeying home to its pair through the house-world;
 danger stays red; shop becomes sock patterns; name final call after graphics (ODD SOCK / SOCK HOP /
 TUMBLE). Fairness/perf/audio/UX/monetization pillars measured AT standard; gaps = visual identity

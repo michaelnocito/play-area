@@ -4,7 +4,7 @@ This is gospel. Every game project (this repo and beyond) is built against this 
 It is the distilled result of CrazyGames research (docs.crazygames.com, verified 2026-07-03),
 one rejection (Flipline), one accepted-pipeline submission (GameMonetize), and the full
 Jade Fist design restructure. When a new chat starts a game task: read this first, then the
-project's DEV_NOTES.md, then build.
+project's <GAME>_DEV_NOTES.md, then build.
 
 **Prime rule: before building ANY feature, check it against Part 1 and Part 2. If a game
 fails Part 2, no amount of Part 1 compliance saves it.**
@@ -114,7 +114,7 @@ Where's the ending? What's the one-line pitch a player tells a friend? If any an
 - **Task numbering**: `XX-#NNN` per project in commits and DEV_NOTES; one batch per
   commit; commit + push after every change without asking (solo authorship, no AI
   trailers, author = Michael Nocito <hello.michaelnocito@gmail.com>).
-- **DEV_NOTES.md per game** is the design log: every batch documented with rationale.
+- **<GAME>_DEV_NOTES.md per game (unique game-prefixed filename, never generic)** is the design log: every batch documented with rationale.
   It's the handoff. Keep it current in the same commit.
 - **Test steps enumerated** (`013a`, `013b`, ...) so pass/fail is precise. Parse-check
   (`node -e "new Function(script)"`) before every commit. Mike playtests on the live URL;

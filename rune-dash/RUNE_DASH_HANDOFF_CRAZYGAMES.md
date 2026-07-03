@@ -19,7 +19,7 @@ Reject (or park with a one-line "later") anything that needs a Godot→HTML5 por
 - **Core mechanic (locked this week):** **freeze-jump.** Rune Bolt freezes a drifting shade into a permanent platform → you leap on it to **stomp-bounce** → **chain** bounces up an ice staircase without touching down. Prototyped/polished on the **Isa** realm (oversized "Prototype" card in realm select).
 - **Feel systems already built (RD-#037→#043):** escalating combo juice (pitch-rising stomp sfx, hit-stop, screen-shake, cyan bloom + shockwave rings), **apex bullet-time** on chains, a **crescendo resolution** (major-chord swell + "CHAIN ×N +X◆" payoff pop when a chain lands), no-double-jump-on-Isa (glide-to-bridge for fine touch), a global `GAME_SPEED` pace dial, and audio that suspends when the tab is hidden.
 - **Lore hook:** pre-level **Rune Reading** — you predict a rune's meaning to choose it; its omen reshapes the run. "We teach you the runes" is the differentiator.
-- **Read `DEV_NOTES.md` + `ROADMAP.md` in the repo and the `project_rune_dash_state` memory for full detail.**
+- **Read `RUNE_DASH_DEV_NOTES.md` + `RUNE_DASH_ROADMAP.md` in the repo and the `project_rune_dash_state` memory for full detail.**
 
 ## Your three tasks
 
