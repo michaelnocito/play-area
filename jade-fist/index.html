@@ -180,6 +180,13 @@ let kills = 0, counters = 0, bestCombo = 0;
 let hearts = 3, hurtFlash = 0;
 let popups = [], parts = [], enemies = [];
 let waveT = 0, spawnT = 60, difficulty = 0;
+// JF-#008: wave machine — quota waves with rest beats; every 5th wave = boss
+const WAVES_PER_DISTRICT = 5;
+let wave = 1, wavePhase = 0, restT = 0, toSpawn = 0;   // phase 0=fight 1=rest
+let dBase = 0;                        // district base difficulty (district table)
+let bannerTxt = '', bannerT = 0;      // big center banner (wave/boss/clear)
+function banner(txt, col, frames){ bannerTxt = txt; bannerCol = col || '#e8dcc0'; bannerT = frames || 110; }
+let bannerCol = '#e8dcc0';
 let bufDir = 0, bufT = 0;        // input buffer across hit-stop
 let whiffT = 0;                  // whiff recovery: striking air locks strikes briefly (JF-#006)
 let adaptShown = false;          // "crowd wises up" banner shown once per run (JF-#007)
@@ -204,7 +211,7 @@ const P = { x: W/2, y: 420, face: 1, punchT: 0, punchSide: 1, stance: 0 };
 const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5, E_STAGGER = 6, E_FEINT = 7;
 // types: 0 initiate · 1 viper (fast, short telegraph) · 2 iron monk (brute — strikes
 // only SHOVE him, counter to fell) · 3 spearman (attacks from long range — counter at range)
-const T_NORM = 0, T_FAST = 1, T_BRUTE = 2, T_SPEAR = 3;
+const T_NORM = 0, T_FAST = 1, T_BRUTE = 2, T_SPEAR = 3, T_BOSS = 4;
 function spawnEnemy(forceSide){
   // first ~15s: strictly alternate sides so the player is never pincered while learning
   const side = forceSide || (waveT < INTRO ? -lastSpawnSide : (Math.random() < 0.5 ? -1 : 1));
@@ -234,6 +241,47 @@ function spawnEnemy(forceSide){
   if (ne.guard && combo >= 8 && !adaptShown){
     adaptShown = true;
     popup(W/2, 220, 'THE CROWD WISES UP', '#a8b4c8', true);
+  }
+}
+
+// JF-#008: boss — the Master. Counters are the ONLY damage; each counter taken
+// drops a phase: faster telegraphs + he calls two students to the fight.
+function spawnBoss(hp){
+  const side = Math.random() < 0.5 ? -1 : 1;
+  enemies.push({
+    x: W/2 + side * (W/2 + 60), side: -side, y: 420,
+    st: E_WALK, stT: 0, type: T_BOSS,
+    speed: 0.9, windup: 52, windup0: 52,
+    reach: REACH + 24, guard: 0, feint: false,
+    hp, hpMax: hp, vx: 0, vy: 0, rot: 0
+  });
+}
+
+// wave lifecycle
+function beginWave(n){
+  wave = n; wavePhase = 0;
+  const bossWave = wave % WAVES_PER_DISTRICT === 0;
+  if (bossWave){
+    toSpawn = 0;
+    spawnBoss(3 + Math.floor((wave / WAVES_PER_DISTRICT - 1) * 1));   // +1 hp per boss cycle
+    banner('THE IRON MASTER', '#e86a6a', 140);
+    Snd.windup(60);
+  } else {
+    toSpawn = 5 + wave * 2;
+    banner('WAVE ' + wave, '#e8dcc0', 90);
+  }
+  spawnT = 40;
+}
+function onWaveClear(){
+  wavePhase = 1;
+  const bossWave = wave % WAVES_PER_DISTRICT === 0;
+  if (bossWave){
+    jadeRun += 25;
+    banner('THE MASTER FALLS  ·  +25◆', '#7ce8a8', 170);
+    restT = 200; slowMo = Math.max(slowMo, 30); Snd.best();
+  } else {
+    banner('WAVE ' + wave + ' CLEARED', '#7ce8a8', 100);
+    restT = 140; Snd.tick();
   }
 }
 
@@ -271,6 +319,20 @@ function strike(dir){
   const e = nearestInReach(dir);
   if (!e){ Snd.whoosh(); whiffT = 14; return; }   // JF-#006: whiff = brief recovery (no free spam)
 
+  if (e.st === E_WINDUP && e.type === T_BOSS && e.hp > 1){   // ---- BOSS PHASE ----
+    // JF-#008: counters are the only damage; each one staggers him a phase
+    e.hp--; e.st = E_STAGGER; e.stT = 0; e.vx = dir * 7;
+    e.windup = Math.max(30, e.windup - 8);       // each phase: faster telegraphs
+    counters++; jadeRun += 3; combo++; comboT = CW;
+    score += 1000;
+    popup(e.x, e.y - 110, 'MASTER STAGGERED +1000', '#7ce8a8', true);
+    Snd.counter(); hitStop = 8; shake = 14; slowMo = 30;
+    burst(e.x, e.y - 50, '#e86a6a', 26, 6);
+    banner('HE CALLS HIS STUDENTS', '#e8b06a', 80);
+    spawnEnemy(-1); spawnEnemy(1);               // phase adds, both sides
+    if (combo > bestCombo) bestCombo = combo;
+    return;
+  }
   if (e.st === E_WINDUP){                       // ---- COUNTER ----
     // JF-#007: final-third ("NOW" bright flash) = PERFECT counter
     const perfect = e.stT / e.windup > 0.66;
@@ -281,7 +343,7 @@ function strike(dir){
     e.st = E_THROWN; e.stT = 0;
     e.vx = dir * (perfect ? 12 : 9); e.vy = perfect ? -8 : -7;
     combo++; comboT = CW;
-    const baseC = e.type === T_BRUTE ? 750 : e.type === T_SPEAR ? 600 : 500;
+    const baseC = e.type === T_BOSS ? 2000 : e.type === T_BRUTE ? 750 : e.type === T_SPEAR ? 600 : 500;
     const pts = Math.round(baseC * (perfect ? 1.5 : 1)) * Math.min(combo, 5);
     score += pts;
     popup(e.x, e.y - 90, (perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8', true);
@@ -291,7 +353,7 @@ function strike(dir){
     let felled = 0;
     for (const o of enemies){
       if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
-      if (Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < (perfect ? 220 : 150)){
+      if (o.type !== T_BOSS && Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < (perfect ? 220 : 150)){
         o.st = E_DOWN; o.stT = 0; o.vx = dir * 5; o.vy = -4;
         score += 250; kills++; jadeRun++; felled++;
         popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a');
@@ -309,6 +371,10 @@ function strike(dir){
     popup(e.x, e.y - 80, 'BLOCKED', '#a8b4c8');
     Snd.block(); hitStop = 2; shake = 2;
     burst(e.x, e.y - 58, '#a8b4c8', 6, 2);
+  } else if (e.type === T_BOSS){                 // ---- the Master shrugs strikes off ----
+    e.x += dir * 8;
+    popup(e.x, e.y - 110, 'SHRUGGED OFF', '#a8b4c8');
+    Snd.block(); hitStop = 2; shake = 2;
   } else if (e.type === T_BRUTE){                // ---- SHOVE (brute won't fall) ----
     e.st = E_STAGGER; e.stT = 0; e.vx = dir * 6;
     score += 50;
@@ -421,9 +487,10 @@ function startRun(){
   PR = REACH + save.up.palm * 8;
   CW = 120 + save.up.focus * 40;   // JF-#006: tighter base window (was 150) — FOCUS earns its cost
   windAvail = save.up.wind > 0;
-  // warm-up compression: higher belts skip the too-easy opening ramp, never the ceiling
+  // warm-up compression: higher belts start hotter via the belt term in the
+  // difficulty formula; the alternating-spawn learning window still shrinks
   const belt = beltOf(save.kills);
-  waveT = Math.min(belt, 6) * 200;
+  waveT = 0;
   INTRO = Math.max(300, 900 - belt * 120);
   promoted = -1;
   // return bonus: first fight of a new day = double jade (streak tracked)
@@ -436,6 +503,8 @@ function startRun(){
   }
   hearts = 3 + save.up.body; hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false;
   enemies.length = 0; popups.length = 0; parts.length = 0;
+  bannerT = 0;
+  beginWave(1);
   msg = (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
         ' the RED flash to counter.'; msgT = 240;
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS — DOUBLE JADE' +
@@ -448,6 +517,7 @@ function update(){
   if (shake > 0) shake *= 0.85;
   if (hurtFlash > 0) hurtFlash--;
   if (msgT > 0) msgT--;
+  if (bannerT > 0) bannerT--;
   if (P.punchT > 0) P.punchT--;
 
   popups = popups.filter(p => (p.life--, p.y -= 0.7, p.life > 0));
@@ -465,17 +535,25 @@ function update(){
 
   if (comboT > 0){ comboT -= dt; if (comboT <= 0) combo = 0; }
 
-  // difficulty + spawning
+  // JF-#008: wave machine — difficulty comes from wave number, not a treadmill
   waveT += dt;
   if (waveT >= 5400) award('endure');
-  difficulty = Math.min(12, waveT / 390);              // JF-#006: steeper ramp (was /480)
-  spawnT -= dt;
-  if (spawnT <= 0){
-    spawnEnemy();
-    // duo rush scales with difficulty; late duos may split to opposite sides (true pincer feed)
-    if (difficulty > 3 && Math.random() < Math.min(0.2 + difficulty * 0.05, 0.55))
-      spawnEnemy(difficulty > 7 && Math.random() < 0.4 ? -lastSpawnSide : lastSpawnSide);
-    spawnT = Math.max(26, 90 - difficulty * 7) * (0.7 + Math.random() * 0.6);
+  difficulty = Math.min(12, dBase + (wave - 1) * 1.1 + Math.min(beltOf(save.kills), 6) * 0.3);
+  if (wavePhase === 1){                                // rest beat between waves
+    restT -= dt;
+    if (restT <= 0) beginWave(wave + 1);
+  } else {
+    spawnT -= dt;
+    if (spawnT <= 0 && toSpawn > 0){
+      toSpawn--; spawnEnemy();
+      // duo rush scales with difficulty; late duos may split to opposite sides
+      if (toSpawn > 0 && difficulty > 3 && Math.random() < Math.min(0.2 + difficulty * 0.05, 0.55)){
+        toSpawn--;
+        spawnEnemy(difficulty > 7 && Math.random() < 0.4 ? -lastSpawnSide : lastSpawnSide);
+      }
+      spawnT = Math.max(26, 90 - difficulty * 7) * (0.7 + Math.random() * 0.6);
+    }
+    if (toSpawn <= 0 && enemies.length === 0) onWaveClear();
   }
 
   for (const e of enemies){
@@ -486,7 +564,7 @@ function update(){
         // fairness guard: never open a windup while the OTHER side is already
         // threatening — hold just outside reach instead of pincering.
         // JF-#006: guard lifts past difficulty 6 — late game allows true pincers.
-        const otherThreat = difficulty <= 6 && enemies.some(o => o !== e &&
+        const otherThreat = e.type !== T_BOSS && difficulty <= 6 && enemies.some(o => o !== e &&
           (o.st === E_WINDUP || o.st === E_STRIKE) &&
           Math.sign(o.x - P.x) !== Math.sign(e.x - P.x));
         if (d < e.reach - 8){
@@ -518,7 +596,7 @@ function update(){
         // a shoved body stumbles whoever it slides into
         if (!e.chained && Math.abs(e.vx) > 1.5){
           for (const o of enemies){
-            if (o === e || o.st === E_DOWN || o.st === E_THROWN || o.st === E_STAGGER) continue;
+            if (o === e || o.st === E_DOWN || o.st === E_THROWN || o.st === E_STAGGER || o.type === T_BOSS) continue;
             if (Math.abs(o.x - e.x) < 34){
               o.st = E_STAGGER; o.stT = 0; o.vx = e.vx * 0.8; o.guard = 0;
               score += 100; popup(o.x, o.y - 80, 'STUMBLE +100', '#c8bfa8');
@@ -541,7 +619,7 @@ function update(){
         // JF-#007: an airborne thrown body is a projectile — fells anyone it passes through
         if (e.st === E_THROWN && e.y < 440){
           for (const o of enemies){
-            if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
+            if (o === e || o.st === E_DOWN || o.st === E_THROWN || o.type === T_BOSS) continue;
             if (Math.abs(o.x - e.x) < 40){
               o.st = E_DOWN; o.stT = 0; o.vx = e.vx * 0.6; o.vy = -4;
               score += 250; kills++; jadeRun++;
@@ -656,10 +734,10 @@ function draw(){
   // enemies
   for (const e of enemies){
     // type silhouette: viper pale+slim, iron monk grey+broad, spearman tall+pole
-    let col = e.type === T_FAST ? '#b8c8d8' : e.type === T_BRUTE ? '#8a929e' : '#8a94a6';
+    let col = e.type === T_BOSS ? '#c8a878' : e.type === T_FAST ? '#b8c8d8' : e.type === T_BRUTE ? '#8a929e' : '#8a94a6';
     if (e.type === T_BRUTE && (e.rage || 0) >= 2) col = '#a8807a';   // enraged tint (JF-#007)
     let punch = 0, rot = e.rot || 0;
-    const size = e.type === T_BRUTE ? 1.28 : e.type === T_FAST ? 0.88 : e.type === T_SPEAR ? 1.08 : 1;
+    const size = e.type === T_BOSS ? 1.6 : e.type === T_BRUTE ? 1.28 : e.type === T_FAST ? 0.88 : e.type === T_SPEAR ? 1.08 : 1;
     if (e.st === E_WINDUP){
       const late = e.stT / e.windup > 0.66;          // final third: solid bright = NOW
       const flash = late || Math.sin(e.stT * 0.6) > 0;
@@ -674,10 +752,17 @@ function draw(){
     else if (e.st === E_STAGGER){ col = '#7a8494'; rot += 0.2 * Math.sign(e.vx || 1); }
     fighter(e.x, e.y, -e.side, {
       col, punch, rot, size,
-      sash: e.type === T_BRUTE ? '#4a4f58' : '#7a4040',
+      sash: e.type === T_BOSS ? '#7a2020' : e.type === T_BRUTE ? '#4a4f58' : '#7a4040',
       spear: e.type === T_SPEAR,
       guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER)
     });
+    // boss hp pips: one jade dot per counter still owed
+    if (e.type === T_BOSS && e.st !== E_THROWN && e.st !== E_DOWN){
+      for (let i = 0; i < e.hpMax; i++){
+        cx.fillStyle = i < e.hp ? '#e86a6a' : 'rgba(140,148,166,0.35)';
+        cx.beginPath(); cx.arc(e.x - (e.hpMax - 1) * 8 + i * 16, e.y - 160, 5, 0, 7); cx.fill();
+      }
+    }
   }
 
   // player
@@ -707,6 +792,18 @@ function draw(){
   if (state === S_PLAY){
     cx.font = 'bold 30px Georgia';
     cx.fillText(score, W/2, 46);
+    // wave counter, top right under the mute button
+    cx.fillStyle = '#c8bfa8'; cx.font = 'bold 16px Georgia'; cx.textAlign = 'right';
+    cx.fillText('WAVE ' + wave, W - 18, 60);
+    cx.textAlign = 'center';
+    // big center banner (wave open/clear, boss beats)
+    if (bannerT > 0){
+      cx.globalAlpha = Math.min(1, bannerT / 30);
+      cx.fillStyle = bannerCol; cx.font = 'bold 34px Georgia';
+      cx.fillText(bannerTxt, W/2, 170);
+      cx.globalAlpha = 1;
+    }
+    cx.fillStyle = '#e8dcc0';
     if (combo > 1){
       cx.fillStyle = '#7ce8a8'; cx.font = 'bold 20px Georgia';
       cx.fillText('×' + Math.min(combo, 5) + ' COMBO', W/2, 72);
@@ -756,20 +853,21 @@ function draw(){
     cx.fillText('FELLED', W/2, 150);
     // line-item tally reveal
     const lines = [
+      ['Felled on', 'WAVE ' + wave],
       ['Foes dropped', kills + ''],
       ['Counters', counters + ''],
       ['Best combo', '×' + bestCombo],
       ['Jade earned', '◆ ' + jadeRun + (dailyBonus ? '  (×2 return bonus)' : '')],
       ['SCORE', score + '']
     ];
-    if (promoted >= 0) lines.splice(3, 0,
+    if (promoted >= 0) lines.splice(4, 0,
       ['Promoted', BELTS[promoted].name + ' BELT']);
     const shown = Math.min(lines.length, Math.floor(tallyT / 24));
     if (shown > tallyStep){ tallyStep = shown; Snd.tick(); if (shown === lines.length && newBest) Snd.best(); }
     cx.font = '20px Georgia';
     for (let i = 0; i < shown; i++){
       const y = 190 + i * 32;
-      cx.fillStyle = i === lines.length - 1 ? '#7ce8a8' : i === 3 ? '#7ce8a8' : '#e8dcc0';
+      cx.fillStyle = i === lines.length - 1 || lines[i][0] === 'Jade earned' ? '#7ce8a8' : '#e8dcc0';
       cx.textAlign = 'right'; cx.fillText(lines[i][0], W/2 - 20, y);
       cx.textAlign = 'left';  cx.fillText(lines[i][1], W/2 + 20, y);
     }
