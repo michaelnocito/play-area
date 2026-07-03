@@ -955,6 +955,42 @@ function drawWorld(){
   cx.fillStyle = D.ground; cx.fillRect(0, 428, W, H - 428);
   cx.strokeStyle = 'rgba(232,220,192,0.12)'; cx.lineWidth = 2;
   cx.beginPath(); cx.moveTo(0, 428); cx.lineTo(W, 428); cx.stroke();
+  // JF-#017: district ambience — deterministic drift from t, no particle state
+  if (sel === 0){                       // COURTYARD: falling blossom petals
+    cx.fillStyle = 'rgba(232,168,184,0.55)';
+    for (let i = 0; i < 12; i++){
+      const py = (i * 97 + t * 0.5) % 560 - 10;
+      const px = (i * 173 % W) + Math.sin(t * 0.02 + i) * 34;
+      cx.save(); cx.translate(px, py); cx.rotate(t * 0.03 + i);
+      cx.beginPath(); cx.ellipse(0, 0, 4, 2.2, 0, 0, 7); cx.fill(); cx.restore();
+    }
+  } else if (sel === 1){                // MARKET: embers rising off the braziers
+    for (let i = 0; i < 10; i++){
+      const ey = 470 - ((i * 83 + t * 0.9) % 480);
+      const ex = (i * 199 % W) + Math.sin(t * 0.05 + i * 3) * 12;
+      cx.fillStyle = `rgba(240,150,70,${0.15 + 0.4 * (ey / 470)})`;
+      cx.fillRect(ex, ey, 3, 3);
+    }
+  } else if (sel === 2){                // TEMPLE: low incense mist banks
+    for (let i = 0; i < 3; i++){
+      const mx = ((t * (0.3 + i * 0.15) + i * 400) % (W + 500)) - 250;
+      cx.fillStyle = `rgba(180,200,210,${0.05 + 0.02 * Math.sin(t * 0.01 + i)})`;
+      cx.beginPath(); cx.ellipse(mx, 415 - i * 16, 220, 22, 0, 0, 7); cx.fill();
+    }
+  } else if (sel === 3){                // ROOFTOP: wind streaks tearing past
+    cx.strokeStyle = 'rgba(220,230,240,0.18)'; cx.lineWidth = 1.5;
+    for (let i = 0; i < 7; i++){
+      const wy = i * 61 % 400 + 30, wx = W - ((i * 137 + t * 7) % (W + 200));
+      cx.beginPath(); cx.moveTo(wx, wy); cx.lineTo(wx + 60 + i * 8, wy - 3); cx.stroke();
+    }
+  } else if (sel === 4){                // LEGEND: jade motes drifting upward
+    for (let i = 0; i < 10; i++){
+      const my = 540 - ((i * 89 + t * 0.4) % 560);
+      const mx2 = (i * 211 % W) + Math.sin(t * 0.03 + i * 2) * 20;
+      cx.fillStyle = `rgba(124,232,168,${0.12 + 0.25 * Math.abs(Math.sin(t * 0.04 + i))})`;
+      cx.beginPath(); cx.arc(mx2, my, 2.5, 0, 7); cx.fill();
+    }
+  }
 }
 
 function draw(){

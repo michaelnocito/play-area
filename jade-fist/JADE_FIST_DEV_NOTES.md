@@ -155,3 +155,7 @@ untouched. Crisp on hi-dpi per CG requirement.
 first run, 3-min cooldown); rewarded DOUBLE JADE offer on the tally (gold button right of the
 upgrade grid, R key or tap, once per run, +jadeRun banked again on adFinished; offline fallback
 grants immediately). happytime() on district victories was JF-#013.
+
+**JF-#017 district ambience (Batch E)**: deterministic drift-from-t layers, zero particle
+state — Courtyard blossom petals, Market rising embers, Temple incense mist banks, Rooftop
+wind streaks, Legend jade motes. Drawn in drawWorld so they freeze with pause.
