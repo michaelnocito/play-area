@@ -5,7 +5,9 @@ One quality bar, one submission wave.
 
 - [x] JF-#001 Prototype: core counter-brawler loop (strike / counter-throw / combo / tally)
 - [ ] Feel pass: input buffering, telegraph readability tuning, counter-window fairness across speed
-- [ ] Enemy variety: fast striker (short flash), armored (needs counter), spear reach, duo rush
+- [x] JF-#003 Enemy variety: viper (short flash), iron monk (counter-only kill, shove), spearman
+      (long reach + lunge + punishable recover), guard/block + guard-break, shove-stumble chains,
+      HEAVY recover punish, same-side duo rush
 - [ ] Wave/belt structure: named belts every N kills (banner + palette + density step) — content answer
 - [ ] Music: reactive score keyed to combo heat (rooftop-sprint speaker architecture)
 - [ ] Economy: soft currency + cosmetic shop + pre-run buffs + permanent progression (Rooftop §4 spec)

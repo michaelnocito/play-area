@@ -108,6 +108,12 @@ const Snd = (() => {
       noise(0.3, 0.3, 400, 0.05);
     },
     windup(frames){ ensure(); tone(320, frames / 60, 'sine', 0.12, 0, 520); },
+    block(){
+      ensure();
+      noise(0.05, 0.5, 4000);                          // metallic clank
+      tone(1200, 0.08, 'square', 0.12);
+      tone(300, 0.1, 'triangle', 0.2, 0, 200);
+    },
     tick(){ ensure(); tone(880, 0.05, 'sine', 0.15); },
     best(){ ensure(); [523,659,784].forEach((f,i)=>tone(f, 0.25, 'sine', 0.2, i*0.09)); }
   };
@@ -135,17 +141,29 @@ const P = { x: W/2, y: 420, face: 1, punchT: 0, punchSide: 1, stance: 0 };
 // ---------------------------------------------------------------- enemies ---
 // Enemy lifecycle: walk in -> windup (RED TELEGRAPH = counter window) ->
 // strike (hits you if still standing there) -> recover -> walk again.
-const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5;
-function spawnEnemy(){
+const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5, E_STAGGER = 6;
+// types: 0 initiate · 1 viper (fast, short telegraph) · 2 iron monk (brute — strikes
+// only SHOVE him, counter to fell) · 3 spearman (attacks from long range — counter at range)
+const T_NORM = 0, T_FAST = 1, T_BRUTE = 2, T_SPEAR = 3;
+function spawnEnemy(forceSide){
   // first ~15s: strictly alternate sides so the player is never pincered while learning
-  const side = waveT < 900 ? -lastSpawnSide : (Math.random() < 0.5 ? -1 : 1);
+  const side = forceSide || (waveT < 900 ? -lastSpawnSide : (Math.random() < 0.5 ? -1 : 1));
   lastSpawnSide = side;
+  let type = T_NORM;
+  const r = Math.random();
+  if (difficulty > 4 && r < 0.18) type = T_SPEAR;
+  else if (difficulty > 2.5 && r < 0.38) type = T_BRUTE;
+  else if (difficulty > 1 && r < 0.6) type = T_FAST;
+  const base = 1.1 + Math.random() * 0.5 + difficulty * 0.12;
+  const wind = Math.max(26, 46 - difficulty * 2);   // telegraph shrinks as waves rise
   enemies.push({
-    x: W/2 + side * (W/2 + 40), side: -side,     // walks toward center
-    st: E_WALK, stT: 0,
-    speed: 1.1 + Math.random() * 0.5 + difficulty * 0.12,
-    windup: Math.max(26, 46 - difficulty * 2),   // telegraph shrinks as waves rise
-    vx: 0, vy: 0, y: 420, rot: 0, hue: 0 | (Math.random() * 30)
+    x: W/2 + side * (W/2 + 40 + Math.random() * 70), side: -side,   // walks toward center
+    st: E_WALK, stT: 0, type,
+    speed: type === T_FAST ? base * 1.5 : type === T_BRUTE ? base * 0.7 : base,
+    windup: type === T_FAST ? Math.max(16, wind * 0.6) : type === T_BRUTE ? wind * 1.3 : wind,
+    reach: type === T_SPEAR ? REACH + 70 : REACH,
+    guard: (type === T_NORM && Math.random() < Math.min(0.15 + difficulty * 0.04, 0.5)) ? 1 : 0,
+    vx: 0, vy: 0, y: 420, rot: 0
   });
 }
 
@@ -157,7 +175,9 @@ function nearestInReach(dir){
     const dx = e.x - P.x;
     if (dir && Math.sign(dx) !== dir) continue;
     const d = Math.abs(dx);
-    if (d < REACH + 18 && d < bd){ bd = d; bestE = e; }
+    // a winding-up spearman can be countered at HIS reach, not just yours
+    const range = (e.st === E_WINDUP ? e.reach : REACH) + 18;
+    if (d < range && d < bd){ bd = d; bestE = e; }
   }
   return bestE;
 }
@@ -185,7 +205,8 @@ function strike(dir){
     e.st = E_THROWN; e.stT = 0;
     e.vx = dir * 9; e.vy = -7;
     combo++; comboT = 150;
-    const pts = 500 * Math.min(combo, 5);
+    const baseC = e.type === T_BRUTE ? 750 : e.type === T_SPEAR ? 600 : 500;
+    const pts = baseC * Math.min(combo, 5);
     score += pts;
     popup(e.x, e.y - 90, 'COUNTER +' + pts, '#7ce8a8', true);
     Snd.counter(); hitStop = 7; shake = 10; slowMo = 26;
@@ -201,6 +222,26 @@ function strike(dir){
       }
     }
     kills++;
+  } else if (e.guard > 0){                       // ---- BLOCKED (guard break) ----
+    e.guard = 0; e.st = E_STAGGER; e.stT = 0; e.vx = dir * 2.5;
+    popup(e.x, e.y - 80, 'BLOCKED', '#a8b4c8');
+    Snd.block(); hitStop = 2; shake = 2;
+    burst(e.x, e.y - 58, '#a8b4c8', 6, 2);
+  } else if (e.type === T_BRUTE){                // ---- SHOVE (brute won't fall) ----
+    e.st = E_STAGGER; e.stT = 0; e.vx = dir * 6;
+    score += 50;
+    popup(e.x, e.y - 80, 'SHOVED +50', '#c8bfa8');
+    Snd.hit(1); hitStop = 2; shake = 3;
+    burst(e.x, e.y - 45, '#9aa2b0', 8, 3);
+  } else if (e.st === E_RECOVER){                // ---- HEAVY (punish the whiff) ----
+    e.st = E_DOWN; e.stT = 0;
+    e.vx = dir * 6; e.vy = -5.5;
+    combo++; comboT = 150;
+    const pts = 250 * Math.min(combo, 5);
+    score += pts; kills++;
+    popup(e.x, e.y - 80, 'HEAVY +' + pts, '#e8c76a');
+    Snd.hit(combo + 3); hitStop = 5; shake = 6;
+    burst(e.x, e.y - 45, '#e8c76a', 14, 4);
   } else {                                       // ---- CLEAN STRIKE ----
     e.st = E_DOWN; e.stT = 0;
     e.vx = dir * 4.5; e.vy = -4.5;
@@ -288,7 +329,7 @@ function update(){
   spawnT -= dt;
   if (spawnT <= 0){
     spawnEnemy();
-    if (difficulty > 3 && Math.random() < 0.35) spawnEnemy();
+    if (difficulty > 3 && Math.random() < 0.35) spawnEnemy(lastSpawnSide);   // duo rush, same side
     spawnT = Math.max(34, 95 - difficulty * 6) * (0.7 + Math.random() * 0.6);
   }
 
@@ -302,25 +343,45 @@ function update(){
         const otherThreat = enemies.some(o => o !== e &&
           (o.st === E_WINDUP || o.st === E_STRIKE) &&
           Math.sign(o.x - P.x) !== Math.sign(e.x - P.x));
-        if (d < REACH - 8){
-          if (otherThreat){ e.x = P.x + Math.sign(e.x - P.x) * (REACH + 4); break; }
+        if (d < e.reach - 8){
+          if (otherThreat){ e.x = P.x + Math.sign(e.x - P.x) * (e.reach + 4); break; }
           e.st = E_WINDUP; e.stT = 0;
           Snd.windup(e.windup);
         } else e.x += e.side * e.speed * dt;
         break;
       }
       case E_WINDUP:
-        if (e.stT >= e.windup){ e.st = E_STRIKE; e.stT = 0; e.didHit = false; }
+        if (e.stT >= e.windup){
+          e.st = E_STRIKE; e.stT = 0; e.didHit = false;
+          if (e.type === T_SPEAR) e.x -= Math.sign(e.x - P.x) * 58;   // lunge in
+        }
         break;
       case E_STRIKE:
         if (!e.didHit){
           e.didHit = true;
-          if (Math.abs(e.x - P.x) < REACH) hurtPlayer();
+          if (Math.abs(e.x - P.x) < REACH + 12) hurtPlayer();
         }
         if (e.stT >= 10){ e.st = E_RECOVER; e.stT = 0; }
         break;
       case E_RECOVER:
-        if (e.stT >= 30){ e.st = E_WALK; e.stT = 0; }
+        if (e.stT >= (e.type === T_SPEAR ? 44 : 30)){ e.st = E_WALK; e.stT = 0; }
+        break;
+      case E_STAGGER:
+        e.x += e.vx * dt; e.vx *= 0.86;
+        // a shoved body stumbles whoever it slides into
+        if (!e.chained && Math.abs(e.vx) > 1.5){
+          for (const o of enemies){
+            if (o === e || o.st === E_DOWN || o.st === E_THROWN || o.st === E_STAGGER) continue;
+            if (Math.abs(o.x - e.x) < 34){
+              o.st = E_STAGGER; o.stT = 0; o.vx = e.vx * 0.8; o.guard = 0;
+              score += 100; popup(o.x, o.y - 80, 'STUMBLE +100', '#c8bfa8');
+              burst(o.x, o.y - 45, '#c8bfa8', 6, 2);
+              e.chained = true;
+              break;
+            }
+          }
+        }
+        if (e.stT >= 25){ e.st = E_WALK; e.stT = 0; e.chained = false; }
         break;
       case E_DOWN: case E_THROWN:
         e.x += e.vx * dt; e.y += e.vy * dt; e.vy += 0.5 * dt;
@@ -339,7 +400,8 @@ function fighter(x, y, face, opts){
   cx.save();
   cx.translate(x, y);
   if (o.rot) cx.rotate(o.rot);
-  cx.scale(face, 1);
+  const sz = o.size || 1;
+  cx.scale(face * sz, sz);
   const punch = o.punch || 0;
   const c = o.col || '#e8dcc0';
   cx.strokeStyle = c; cx.fillStyle = c; cx.lineWidth = 5; cx.lineCap = 'round';
@@ -368,6 +430,16 @@ function fighter(x, y, face, opts){
   if (punch > 8){                       // strike flash on fist
     cx.fillStyle = 'rgba(232,220,192,0.9)';
     cx.beginPath(); cx.arc(6 + ext + 6, -62, 7 + (12 - punch) * 2, 0, 7); cx.fill();
+  }
+  if (o.spear){                         // spearman: long pole past the lead hand
+    cx.strokeStyle = '#8a7a5a'; cx.lineWidth = 3;
+    cx.beginPath(); cx.moveTo(-8, -50); cx.lineTo(6 + ext + 44, -66); cx.stroke();
+    cx.fillStyle = '#c8c0a8';
+    cx.beginPath(); cx.moveTo(6 + ext + 44, -66); cx.lineTo(6 + ext + 56, -68); cx.lineTo(6 + ext + 44, -72); cx.closePath(); cx.fill();
+  }
+  if (o.guard){                         // raised-guard bracer arc in front
+    cx.strokeStyle = 'rgba(200,212,232,0.85)'; cx.lineWidth = 4;
+    cx.beginPath(); cx.arc(22, -62, 14, -1.1, 1.1); cx.stroke();
   }
   cx.restore();
 }
@@ -419,15 +491,25 @@ function draw(){
 
   // enemies
   for (const e of enemies){
-    let col = '#8a94a6', punch = 0;
+    // type silhouette: viper pale+slim, iron monk grey+broad, spearman tall+pole
+    let col = e.type === T_FAST ? '#b8c8d8' : e.type === T_BRUTE ? '#8a929e' : '#8a94a6';
+    let punch = 0, rot = e.rot || 0;
+    const size = e.type === T_BRUTE ? 1.28 : e.type === T_FAST ? 0.88 : e.type === T_SPEAR ? 1.08 : 1;
     if (e.st === E_WINDUP){
       const late = e.stT / e.windup > 0.66;          // final third: solid bright = NOW
       const flash = late || Math.sin(e.stT * 0.6) > 0;
       col = flash ? (late ? '#ff4a4a' : '#e85a5a') : '#b06a6a';   // RED telegraph = counter window
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
-      cx.beginPath(); cx.arc(e.x, e.y - 55, (late ? 50 : 40) + Math.sin(e.stT*0.5)*5, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(e.x, e.y - 55, ((late ? 50 : 40) + Math.sin(e.stT*0.5)*5) * size, 0, 7); cx.fill();
     } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; }
-    fighter(e.x, e.y, -e.side, { col, sash: '#7a4040', punch, rot: e.rot || 0 });
+    else if (e.st === E_RECOVER){ col = '#5e6878'; rot += 0.12 * Math.sign(e.x - P.x); }  // slumped = punishable
+    else if (e.st === E_STAGGER){ col = '#7a8494'; rot += 0.2 * Math.sign(e.vx || 1); }
+    fighter(e.x, e.y, -e.side, {
+      col, punch, rot, size,
+      sash: e.type === T_BRUTE ? '#4a4f58' : '#7a4040',
+      spear: e.type === T_SPEAR,
+      guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER)
+    });
   }
 
   // player

@@ -37,3 +37,16 @@ enemy flashes **RED** during windup = counter window → strike the flash = **CO
 6. Tally fast-forward: first tap reveals all lines, next tap restarts.
 7. Pincer guard: first 15s spawns alternate sides; an enemy never opens a windup while
    the opposite side is already threatening (holds just outside reach instead).
+
+## JF-#003 enemy interactions pass
+1. **Viper** (diff>1): fast walker, 60% telegraph — tests reaction. Pale + slim.
+2. **Iron Monk** (diff>2.5): strikes only SHOVE him (+50); COUNTER is the only kill (750 base).
+   Broad + grey, dark sash.
+3. **Spearman** (diff>4): winds up at long range and lunges; counterable at HIS reach (600
+   base); long recover = the punish answer. Pole + blade rendered.
+4. **Guard/block**: some initiates raise a bracer arc — first strike = BLOCKED (clank, no
+   combo), breaks guard + staggers; follow-up fells. Chance scales with difficulty (cap 50%).
+5. **Shove chains**: a staggered body sliding into a neighbor STUMBLEs them (+100, breaks
+   their guard) — space control tool vs brutes/crowds.
+6. **HEAVY punish**: striking any enemy during recover (slumped, tilted, dim) = HEAVY 250×combo.
+7. **Duo rush** (diff>3): doubles now spawn same-side, staggered — feeds counter-throw fells.
