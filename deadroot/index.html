@@ -42,6 +42,7 @@ const CFG = {
   killBounty: 6,
   corpse: { rot: 15, payout: 25 },
   towers: {
+    bud:      { cost:60, name:"BUD",      desc:"hive-grown",  range:2.8, rate:0.9, dmg:9 },
     spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:3.3, rate:1.1, dmg:13 },
     rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
@@ -306,6 +307,18 @@ function mutate(k, type){
   if(!firstMutateDone){ firstMutateDone = true; }
   menu = null;
 }
+function buildBud(c,r){
+  const def = CFG.towers.bud;
+  const [x,y] = tileToXY(c,r);
+  if(biomass < def.cost){ SFX.deny(); popup(x,y,"NEED ◈"+def.cost,"#e07f7f"); return; }
+  if(!tryBlock(c,r)){ SFX.deny(); popup(x,y,"KEEP A PATH OPEN","#e07f7f"); menu=null; return; }
+  biomass -= def.cost;
+  const thp = 60 + run.towerHp;
+  towers.push({ type:"bud", c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6 });
+  SFX.squelch(); burst(x,y,"#b088e0",14); shakeIt(2);
+  if(!firstMutateDone){ firstMutateDone = true; }
+  menu = null;
+}
 function popup(x,y,txt,col){ popups.push({x,y,txt,col,t:1.2}); }
 function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=30+Math.random()*90; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.4+Math.random()*0.4,col}); } }
 function shakeIt(n){ shake = Math.max(shake,n); }
@@ -347,10 +360,9 @@ function newRun(){
   firstMutateDone = false; onboardT = 0; menu = null;
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
   gameSpeed = 1;
-  // onboarding: three starter corpses beside the hive — teach mutate before wave 1
-  dropCorpse(...tileToXY(CFG.hive.c0-3, 8));
-  dropCorpse(...tileToXY(CFG.hive.c1+3, 9));
-  dropCorpse(...tileToXY(12, CFG.hive.r0-3));
+  // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
+  dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
+  dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
   mode = "prep"; prepT = 12; // generous first prep; shortens once they mutate
   CG.gameplayStart();
 }
@@ -541,8 +553,8 @@ function update(){
       if(!tgt){ bd=Infinity; for(const e of enemies){ const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
       if(tgt){
         t.cd = 1;
-        if(t.type==="spitter"){
-          projectiles.push({x:t.x,y:t.y,tgt,spd:340,dmg:def.dmg*meta.dmg*(1+run.spitDmg)});
+        if(t.type==="spitter"||t.type==="bud"){
+          projectiles.push({x:t.x,y:t.y,tgt,spd:340,dmg:def.dmg*meta.dmg*(t.type==="spitter"?1+run.spitDmg:1)});
           SFX.shot();
         } else if(t.type==="spore"){
           clouds.push({x:tgt.x,y:tgt.y,r:def.cloudR*CFG.tile,t:def.cloudT+run.cloudT});
@@ -649,19 +661,24 @@ function onTap(x,y){
   // mutate menu open?
   if(menu){
     const picked = menuHit(x,y);
-    if(picked){ mutate(menu.corpse, picked); return; }
+    if(picked){ if(menu.corpse) mutate(menu.corpse, picked); else buildBud(menu.tile.c, menu.tile.r); return; }
     menu = null; // clicked elsewhere closes
   }
   // corpse tap
   const [c,r] = xyToTile(x,y);
   const k = corpses.find(k=>k.c===c&&k.r===r);
   if(k){ menu = {corpse:k}; SFX.ui(); return; }
+  // empty ground tap: the Hive can grow a Bud anywhere its roots reach (no lane left undefendable)
+  if(inGrid(c,r) && !isHive(c,r) && !blocked[r][c] && (mode==="play"||mode==="prep")){
+    menu = {tile:{c,r}}; SFX.ui(); return;
+  }
 }
+function menuAnchor(){ const s = menu.corpse || menu.tile; return tileToXY(s.c, s.r); }
 function menuOpts(){
-  // radial icon buttons around the corpse (Bloons/Kingdom Rush pattern)
+  // radial icon buttons around the corpse/tile (Bloons/Kingdom Rush pattern)
   if(!menu) return [];
-  const [kx,ky] = tileToXY(menu.corpse.c, menu.corpse.r);
-  const types = ["spitter","rootmass","spore","node"];
+  const [kx,ky] = menuAnchor();
+  const types = menu.corpse ? ["spitter","rootmass","spore","node"] : ["bud"];
   const R = 92, br = 40; // orbit distance, button radius
   return types.map((t,i)=>{
     const a = -Math.PI/2 + i*(Math.PI/2); // N, E, S, W
@@ -678,7 +695,16 @@ function menuHit(x,y){
 /* draw a tower's art as an icon at (px,py), scale s — same silhouettes as the live towers */
 function drawTowerIcon(type,px,py,s){
   ctx.save(); ctx.translate(px,py); ctx.scale(s,s);
-  if(type==="spitter"){
+  if(type==="bud"){
+    ctx.strokeStyle="#7a4fa0"; ctx.lineWidth=4;
+    ctx.beginPath(); ctx.moveTo(0,12); ctx.quadraticCurveTo(3,2,0,-4); ctx.stroke();
+    ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.arc(0,-8,8,0,6.283); ctx.fill();
+    ctx.fillStyle="#b088e0"; ctx.beginPath(); ctx.arc(0,-8,4,0,6.283); ctx.fill();
+    // pictogram: shot dots (it fights)
+    ctx.fillStyle="#c8f050";
+    ctx.beginPath(); ctx.arc(10,-13,2,0,6.283); ctx.fill();
+    ctx.beginPath(); ctx.arc(15,-16,1.6,0,6.283); ctx.fill();
+  } else if(type==="spitter"){
     ctx.fillStyle="#6fae5e"; ctx.beginPath(); ctx.arc(0,2,13,0,6.283); ctx.fill();
     ctx.fillStyle="#3f7a34"; ctx.beginPath(); ctx.arc(0,-7,6,0,6.283); ctx.fill();
     ctx.fillStyle="#c8f050"; ctx.beginPath(); ctx.arc(0,-7,2.5,0,6.283); ctx.fill();
@@ -824,7 +850,13 @@ function draw(){
     const p = 1+0.05*Math.sin(t.pulse*3);
     ctx.scale(p,p);
     if(t.flash>0){ ctx.globalAlpha=0.6; }
-    if(t.type==="spitter"){
+    if(t.type==="bud"){
+      ctx.strokeStyle="#7a4fa0"; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.moveTo(0,10); ctx.quadraticCurveTo(3,0,0,-6); ctx.stroke();
+      ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.arc(0,-9,8,0,6.283); ctx.fill();
+      ctx.fillStyle="#b088e0"; ctx.beginPath(); ctx.arc(0,-9,4,0,6.283); ctx.fill();
+      ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(0,11,10,4,0,0,6.283); ctx.fill();
+    } else if(t.type==="spitter"){
       ctx.fillStyle="#6fae5e"; ctx.beginPath(); ctx.arc(0,0,13,0,6.283); ctx.fill();
       ctx.fillStyle="#3f7a34"; ctx.beginPath(); ctx.arc(0,-8,6,0,6.283); ctx.fill();
       ctx.fillStyle="#c8f050"; ctx.beginPath(); ctx.arc(0,-8,2.5,0,6.283); ctx.fill();
@@ -958,7 +990,7 @@ function drawHUD(){
 }
 function drawMenu(){
   const opts = menuOpts();
-  const k = menu.corpse; const [kx,ky]=tileToXY(k.c,k.r);
+  const [kx,ky] = menuAnchor();
   // dim the field so the choice pops
   ctx.fillStyle="rgba(5,7,9,0.35)"; ctx.fillRect(0,TOP,W,H-TOP);
   ctx.strokeStyle="#9be07f"; ctx.lineWidth=3;

@@ -83,6 +83,17 @@ icon+number HUDs, almost no words. Applied:
   popups 14→18px, onboarding cut to just "TAP A CORPSE ▼", goal tease now "2 ➜ THE
   BUTCHER". Boon cards 290×150 with bigger type. Meta rows widened/bumped.
 
+## DR-#006 — Undefendable-gap fix: Hive Buds (2026-07-03, Mike design catch)
+Corpse-only building left lanes with no recent kills impossible to defend, and the
+starter corpses weren't on wave 1's spawn side. Fixes:
+- Starter corpses now BOTH sit on the right lane (hive+3/+4), matching wave 1's east-only
+  spawns from DR-#003.
+- NEW: tap any empty tile → grow a BUD (◈60): a hive-grown purple sprout shooter (range
+  2.8, rate 0.9, dmg 9) — weaker + pricier than corpse towers so corpses stay the
+  economy, but no lane is ever unanswerable. Anti-box rule applies: if a Bud would seal
+  the last path it's denied ("KEEP A PATH OPEN"). Buds block tiles, burn like other
+  towers, count for first-mutate onboarding.
+
 ## Backlog / next
 - DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
 - Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).
