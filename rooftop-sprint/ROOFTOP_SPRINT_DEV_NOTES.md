@@ -3,7 +3,7 @@
 > **⚡ RESUME HERE (2026-07-03, RS-CAMPAIGN + RS-PROG shipped — the game now has an ENDING):
 > Next = B-VARIETY** (daily trial, district-gate boons w/ FLAME rank gate, Night Shift
 > modifiers, archer/feint-warden/brazier reads, whiff recovery, chunk library — the gap
-> report's ⑰⑱⑲㉕-㉙ items in `ROOFTOP_SPRINT_ROADMAP.md`, status block at top). Then B-ECON
+> report's ⑯⑰⑱ + ㉑-㉕ items in `ROOFTOP_SPRINT_ROADMAP.md`, status block at top). Then B-ECON
 > (buff consumables, rewarded ads + adblock, cosmetic shop) → B7 ship wave.
 >
 > **🏰 RS-CAMPAIGN + RS-PROG (19 of the 30 gap-report items) DONE 2026-07-03:** 6 named
