@@ -635,9 +635,11 @@ function popup(x, y, txt, col, big){
   popups.push({ x, y, txt, col: col || '#e8dcc0', life: 46, big: !!big });
 }
 function burst(x, y, col, n, pow){
+  const star = (pow || 3) >= 5;   // JF-#027: heavy hits throw comic stars
   for (let i = 0; i < n; i++){
     const a = Math.random() * Math.PI * 2, s = (0.5 + Math.random()) * (pow || 3);
-    parts.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 1, life: 20 + Math.random()*16, col });
+    parts.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 1, life: 20 + Math.random()*16, col,
+      star: star && i % 3 === 0, sz: 2 + Math.random() * 2, rot: Math.random() * 7 });
   }
 }
 
@@ -1129,53 +1131,116 @@ function update(){
 }
 
 // ------------------------------------------------------------------ draw ----
+// JF-#027: cartoon pass — chunky cel-outlined fighters, big heads, live faces,
+// squash & stretch. Pop and quirk over clean and clinical (top-20 research:
+// bright cartoon characters dominate; the comedy of #020 needs a body that sells it).
+const OUT = '#181220';                 // cel outline everywhere
+const COMIC = '"Comic Sans MS","Segoe Print","Chalkboard SE",cursive';
 function fighter(x, y, face, opts){
-  // simple articulated kung-fu figure: robe wedge + head + limbs
   const o = opts || {};
   cx.save();
   cx.translate(x, y);
   if (o.rot) cx.rotate(o.rot);
-  const sz = o.size || 1;
-  cx.scale(face * sz, sz);
+  const sz = o.size || 1, sq = o.squash || 0;
+  cx.scale(face * sz * (1 + 0.16 * sq), sz * (1 - 0.16 * sq));
   const punch = o.punch || 0;
   const c = o.col || '#e8dcc0';
-  cx.strokeStyle = c; cx.fillStyle = c; cx.lineWidth = 5; cx.lineCap = 'round';
-  // legs (stance)
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
+  // legs: chunky, cel-outlined, with foot blobs
+  cx.strokeStyle = OUT; cx.lineWidth = 9;
+  cx.beginPath(); cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); cx.stroke();
+  cx.strokeStyle = c; cx.lineWidth = 5.5;
+  cx.beginPath(); cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); cx.stroke();
+  cx.fillStyle = OUT;
+  cx.beginPath(); cx.ellipse(-16, 1, 6, 4, 0, 0, 7); cx.fill();
+  cx.beginPath(); cx.ellipse(18, -2, 6, 4, 0, 0, 7); cx.fill();
+  // robe: plump rounded wedge with a swishy hem
   cx.beginPath();
-  cx.moveTo(0, -34); cx.lineTo(-14, 0);
-  cx.moveTo(0, -34); cx.lineTo(16, -4);
-  cx.stroke();
-  // robe
-  cx.beginPath();
-  cx.moveTo(-13, -34); cx.lineTo(13, -34); cx.lineTo(8, -70); cx.lineTo(-8, -70);
-  cx.closePath(); cx.fill();
+  cx.moveTo(-16, -28);
+  cx.quadraticCurveTo(0, -20 + Math.sin(t * 0.12) * 1.5, 16, -28);
+  cx.quadraticCurveTo(13, -52, 9, -66);
+  cx.quadraticCurveTo(0, -73, -9, -66);
+  cx.quadraticCurveTo(-13, -52, -16, -28);
+  cx.closePath();
+  cx.fillStyle = c; cx.fill();
+  cx.strokeStyle = OUT; cx.lineWidth = 3; cx.stroke();
   // sash
-  cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 4;
-  cx.beginPath(); cx.moveTo(-11, -46); cx.lineTo(11, -50); cx.stroke();
-  // head + headband tail
+  cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 5;
+  cx.beginPath(); cx.moveTo(-12, -44); cx.quadraticCurveTo(0, -40, 12, -48); cx.stroke();
+  // head: BIG (cartoon proportion), outlined
   cx.fillStyle = c;
-  cx.beginPath(); cx.arc(0, -82, 10, 0, 7); cx.fill();
-  cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 3;
-  cx.beginPath(); cx.moveTo(-8, -84); cx.quadraticCurveTo(-20, -84 + Math.sin(t*0.15)*3, -26, -78); cx.stroke();
-  // arms: rear guard + lead arm (extends on punch)
-  cx.strokeStyle = c; cx.lineWidth = 5;
-  cx.beginPath(); cx.moveTo(-6, -64); cx.lineTo(-16, -52); cx.stroke();
-  const ext = punch > 0 ? 30 + punch * 3 : 14;
-  cx.beginPath(); cx.moveTo(6, -64); cx.lineTo(6 + ext, -60 - (punch > 0 ? 4 : -6)); cx.stroke();
-  if (punch > 8){                       // strike flash on fist
-    cx.fillStyle = 'rgba(232,220,192,0.9)';
-    cx.beginPath(); cx.arc(6 + ext + 6, -62, 7 + (12 - punch) * 2, 0, 7); cx.fill();
+  cx.beginPath(); cx.arc(0, -84, 15, 0, 7); cx.fill();
+  cx.strokeStyle = OUT; cx.lineWidth = 3; cx.stroke();
+  // headband + flapping tail
+  cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 4;
+  cx.beginPath(); cx.moveTo(-14, -89); cx.lineTo(14, -89); cx.stroke();
+  cx.beginPath(); cx.moveTo(-13, -89); cx.quadraticCurveTo(-27, -87 + Math.sin(t * 0.15) * 4, -33, -78); cx.stroke();
+  // face: eyes carry the state (idle / angry / x / dizzy)
+  const eyes = o.eyes || 'idle';
+  if (eyes === 'x'){                              // felled: X eyes
+    cx.strokeStyle = OUT; cx.lineWidth = 2.5;
+    for (const ex of [4.5, 11]){
+      cx.beginPath();
+      cx.moveTo(ex - 2.5, -87); cx.lineTo(ex + 2.5, -81.5);
+      cx.moveTo(ex + 2.5, -87); cx.lineTo(ex - 2.5, -81.5);
+      cx.stroke();
+    }
+  } else {
+    cx.fillStyle = '#fff';
+    cx.beginPath(); cx.arc(5, -84, 4, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(11.5, -84, 4, 0, 7); cx.fill();
+    cx.fillStyle = OUT;
+    const pp = eyes === 'dizzy' ? Math.sin(t * 0.35) * 2 : 1.6;   // dizzy pupils wander
+    cx.beginPath(); cx.arc(5 + pp, -84, 1.9, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(11.5 + pp, -84, 1.9, 0, 7); cx.fill();
+    if (eyes === 'angry'){                        // V brows
+      cx.strokeStyle = OUT; cx.lineWidth = 2.5;
+      cx.beginPath(); cx.moveTo(0.5, -90.5); cx.lineTo(8, -87.5); cx.moveTo(15.5, -90.5); cx.lineTo(9, -87.5); cx.stroke();
+    }
   }
-  if (o.spear){                         // spearman: long pole past the lead hand
-    cx.strokeStyle = '#8a7a5a'; cx.lineWidth = 3;
-    cx.beginPath(); cx.moveTo(-8, -50); cx.lineTo(6 + ext + 44, -66); cx.stroke();
-    cx.fillStyle = '#c8c0a8';
-    cx.beginPath(); cx.moveTo(6 + ext + 44, -66); cx.lineTo(6 + ext + 56, -68); cx.lineTo(6 + ext + 44, -72); cx.closePath(); cx.fill();
+  // arms: chunky, with round fists; lead arm extends on punch
+  const arm = (x1, y1, x2, y2) => {
+    cx.strokeStyle = OUT; cx.lineWidth = 9;
+    cx.beginPath(); cx.moveTo(x1, y1); cx.lineTo(x2, y2); cx.stroke();
+    cx.strokeStyle = c; cx.lineWidth = 5.5;
+    cx.beginPath(); cx.moveTo(x1, y1); cx.lineTo(x2, y2); cx.stroke();
+    cx.fillStyle = c;
+    cx.beginPath(); cx.arc(x2, y2, 6, 0, 7); cx.fill();
+    cx.strokeStyle = OUT; cx.lineWidth = 2.5; cx.stroke();
+  };
+  arm(-7, -62, -18, -50);
+  const ext = punch > 0 ? 34 + punch * 3 : 15;
+  arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7));
+  if (punch > 8){                       // starburst on the fist
+    drawStar(7 + ext + 7, -62, 10 + (12 - punch) * 2, '#ffe9a8', t * 0.3);
+  }
+  if (o.spear){                         // spearman: pole past the lead hand
+    cx.strokeStyle = OUT; cx.lineWidth = 5;
+    cx.beginPath(); cx.moveTo(-8, -50); cx.lineTo(7 + ext + 44, -66); cx.stroke();
+    cx.strokeStyle = '#a8906a'; cx.lineWidth = 3;
+    cx.beginPath(); cx.moveTo(-8, -50); cx.lineTo(7 + ext + 44, -66); cx.stroke();
+    cx.fillStyle = '#d8d0b8';
+    cx.beginPath(); cx.moveTo(7 + ext + 44, -66); cx.lineTo(7 + ext + 58, -68); cx.lineTo(7 + ext + 44, -73); cx.closePath(); cx.fill();
+    cx.strokeStyle = OUT; cx.lineWidth = 2; cx.stroke();
   }
   if (o.guard){                         // raised-guard bracer arc in front
-    cx.strokeStyle = 'rgba(200,212,232,0.85)'; cx.lineWidth = 4;
-    cx.beginPath(); cx.arc(22, -62, 14, -1.1, 1.1); cx.stroke();
+    cx.strokeStyle = OUT; cx.lineWidth = 7;
+    cx.beginPath(); cx.arc(23, -62, 14, -1.1, 1.1); cx.stroke();
+    cx.strokeStyle = '#cfe0f8'; cx.lineWidth = 4;
+    cx.beginPath(); cx.arc(23, -62, 14, -1.1, 1.1); cx.stroke();
   }
+  cx.restore();
+}
+// 4-spike cartoon star
+function drawStar(x, y, r, col, rot){
+  cx.save(); cx.translate(x, y); cx.rotate(rot || 0);
+  cx.fillStyle = col;
+  cx.beginPath();
+  for (let i = 0; i < 8; i++){
+    const rr = i % 2 === 0 ? r : r * 0.42, a = i * Math.PI / 4;
+    cx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+  }
+  cx.closePath(); cx.fill();
   cx.restore();
 }
 
@@ -1185,11 +1250,25 @@ function drawWorld(){
   const g = cx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, D.sky[0]); g.addColorStop(0.7, D.sky[1]); g.addColorStop(1, D.sky[2]);
   cx.fillStyle = g; cx.fillRect(0, 0, W, H);
-  // moon
-  cx.fillStyle = '#e8e2cc';
-  cx.beginPath(); cx.arc(780, 90, 34, 0, 7); cx.fill();
+  // moon — JF-#027: sleepy cartoon face, snoozing over the brawl
   cx.fillStyle = 'rgba(232,226,204,0.08)';
   cx.beginPath(); cx.arc(780, 90, 60, 0, 7); cx.fill();
+  cx.fillStyle = '#f0ead2';
+  cx.beginPath(); cx.arc(780, 90, 34, 0, 7); cx.fill();
+  cx.strokeStyle = 'rgba(24,18,32,0.35)'; cx.lineWidth = 2.5; cx.lineCap = 'round';
+  cx.beginPath();                                   // two closed eyes
+  cx.arc(771, 86, 6, 0.2, Math.PI - 0.2); cx.moveTo(795, 86); cx.arc(789, 86, 6, 0.2, Math.PI - 0.2);
+  cx.stroke();
+  cx.beginPath(); cx.arc(781, 96, 7, 0.15, Math.PI - 0.15); cx.stroke();   // little smile
+  // drifting "z z z" that resets slowly
+  cx.fillStyle = 'rgba(240,234,210,0.5)'; cx.textAlign = 'left';
+  cx.font = 'italic 14px ' + COMIC;
+  for (let i = 0; i < 3; i++){
+    const zt = (t * 0.4 + i * 40) % 120;
+    cx.globalAlpha = Math.max(0, 0.6 - zt / 200);
+    cx.fillText('z', 812 + i * 9 + zt * 0.15, 66 - zt * 0.35);
+  }
+  cx.globalAlpha = 1;
   // pagoda silhouettes (count/height vary by district)
   cx.fillStyle = 'rgba(8,11,17,0.85)';
   for (let i = 0; i < D.pag; i++){
@@ -1265,25 +1344,30 @@ function draw(){
   // enemies
   for (const e of enemies){
     // type silhouette: viper pale+slim, iron monk grey+broad, spearman tall+pole
-    let col = e.type === T_BOSS ? '#c8a878' : e.type === T_FAST ? '#b8c8d8' : e.type === T_BRUTE ? '#8a929e' : '#8a94a6';
-    if (e.type === T_BRUTE && (e.rage || 0) >= 2) col = '#a8807a';   // enraged tint (JF-#007)
-    let punch = 0, rot = e.rot || 0;
+    // JF-#027: brighter cartoon palette (telegraph still overrides to red)
+    let col = e.type === T_BOSS ? '#e0b050' : e.type === T_FAST ? '#5fd0e0' : e.type === T_BRUTE ? '#9a7fd0' : e.type === T_SPEAR ? '#5fc98a' : '#7f9cd8';
+    if (e.type === T_BRUTE && (e.rage || 0) >= 2) col = '#e0705a';   // enraged tint (JF-#007)
+    let punch = 0, rot = e.rot || 0, eyes = 'idle';
     const size = e.type === T_BOSS ? 1.6 : e.type === T_BRUTE ? 1.28 : e.type === T_FAST ? 0.88 : e.type === T_SPEAR ? 1.08 : 1;
     if (e.st === E_WINDUP){
       const late = e.stT / e.windup > perfTh();   // final third: solid bright = NOW (JF-#025: CRANE widens)
       const flash = late || Math.sin(e.stT * 0.6) > 0;
       col = flash ? (late ? '#ff4a4a' : '#e85a5a') : '#b06a6a';   // RED telegraph = counter window
+      eyes = 'angry';
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
       cx.beginPath(); cx.arc(e.x, e.y - 55, ((late ? 50 : 40) + Math.sin(e.stT*0.5)*5) * size, 0, 7); cx.fill();
     } else if (e.st === E_FEINT){
       // feint tell: PALE flash, no red, no audio — only real telegraphs go red
       col = Math.sin(e.stT * 0.8) > 0 ? '#c8a8a0' : '#b8c8d8';
-    } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; }
-    else if (e.st === E_RECOVER){ col = '#5e6878'; rot += 0.12 * Math.sign(e.x - P.x); }  // slumped = punishable
-    else if (e.st === E_STAGGER){ col = '#7a8494'; rot += 0.2 * Math.sign(e.vx || 1); }
+    } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; eyes = 'angry'; }
+    else if (e.st === E_RECOVER){ col = '#7a6a9a'; rot += 0.12 * Math.sign(e.x - P.x); eyes = 'dizzy'; }  // slumped = punishable
+    else if (e.st === E_STAGGER){ col = '#9a90b0'; rot += 0.2 * Math.sign(e.vx || 1); eyes = 'dizzy'; }
+    else if (e.st === E_DOWN || e.st === E_THROWN){ eyes = 'x'; }
+    // squash: pop on spawn-walk and squish when knocked down
+    const squash = (e.st === E_DOWN || e.st === E_THROWN) ? -0.5 : 0;
     fighter(e.x, e.y, -e.side, {
-      col, punch, rot, size,
-      sash: e.type === T_BOSS ? '#7a2020' : e.type === T_BRUTE ? '#4a4f58' : '#7a4040',
+      col, punch, rot, size, eyes, squash,
+      sash: e.type === T_BOSS ? '#a02828' : e.type === T_BRUTE ? '#3a3050' : e.type === T_SPEAR ? '#2a6a48' : '#a04848',
       spear: e.type === T_SPEAR,
       guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER)
     });
@@ -1298,22 +1382,31 @@ function draw(){
 
   // player
   const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : wearCol();   // JF-#023
-  fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col, punch: P.punchT });
+  fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
+    punch: P.punchT, eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
   // particles
   for (const p of parts){
-    cx.fillStyle = p.col; cx.globalAlpha = Math.min(1, p.life / 15);
-    cx.fillRect(p.x - 2, p.y - 2, 4, 4);
+    cx.globalAlpha = Math.min(1, p.life / 15);
+    if (p.star){ drawStar(p.x, p.y, (p.sz || 2) + 2, p.col, (p.rot || 0) + p.life * 0.2); }
+    else { cx.fillStyle = p.col; cx.beginPath(); cx.arc(p.x, p.y, p.sz || 2.4, 0, 7); cx.fill(); }
   }
   cx.globalAlpha = 1;
 
-  // popups
+  // popups — JF-#027: comic pop-in (springy scale), jaunty tilt, cel outline
+  cx.textAlign = 'center';
   for (const p of popups){
-    cx.globalAlpha = Math.min(1, p.life / 20);
-    cx.fillStyle = p.col;
-    cx.font = (p.big ? 'bold 26px' : 'bold 18px') + ' Georgia';
-    cx.textAlign = 'center';
-    cx.fillText(p.txt, p.x, p.y);
+    const age = 46 - p.life;
+    const sc = age < 5 ? 0.4 + age * 0.16 : Math.max(1, 1.2 - (age - 5) * 0.04);
+    const tilt = Math.sin(p.x * 0.7) * 0.07;
+    cx.save();
+    cx.globalAlpha = Math.min(1, p.life / 16);
+    cx.translate(p.x, p.y); cx.rotate(tilt); cx.scale(sc, sc);
+    cx.font = (p.big ? 'bold 26px ' : 'bold 18px ') + COMIC;
+    cx.lineJoin = 'round'; cx.strokeStyle = OUT; cx.lineWidth = p.big ? 5 : 4;
+    cx.strokeText(p.txt, 0, 0);
+    cx.fillStyle = p.col; cx.fillText(p.txt, 0, 0);
+    cx.restore();
   }
   cx.globalAlpha = 1;
   cx.restore();
@@ -1330,8 +1423,11 @@ function draw(){
     // big center banner (wave open/clear, boss beats)
     if (bannerT > 0){
       cx.globalAlpha = Math.min(1, bannerT / 30);
-      cx.fillStyle = bannerCol; cx.font = 'bold 34px Georgia';
-      cx.fillText(bannerTxt, W/2, 170);
+      cx.save(); cx.translate(W/2, 170); cx.rotate(-0.02);
+      cx.font = 'bold 34px ' + COMIC; cx.lineJoin = 'round';
+      cx.strokeStyle = OUT; cx.lineWidth = 7; cx.strokeText(bannerTxt, 0, 0);
+      cx.fillStyle = bannerCol; cx.fillText(bannerTxt, 0, 0);
+      cx.restore();
       cx.globalAlpha = 1;
     }
     cx.fillStyle = '#e8dcc0';
@@ -1392,8 +1488,14 @@ function draw(){
     }
   } else if (state === S_MENU){
     cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 0, W, H);
-    cx.fillStyle = '#7ce8a8'; cx.font = 'bold 64px Georgia'; cx.textAlign = 'center';
-    cx.fillText('JADE FIST', W/2, 200);
+    // JF-#027: chunky outlined comic title with a lil bounce
+    cx.textAlign = 'center';
+    cx.save();
+    cx.translate(W/2, 196 + Math.sin(t * 0.05) * 4); cx.rotate(-0.03);
+    cx.font = 'bold 66px ' + COMIC; cx.lineJoin = 'round';
+    cx.strokeStyle = OUT; cx.lineWidth = 12; cx.strokeText('JADE FIST', 0, 0);
+    cx.fillStyle = '#7ce8a8'; cx.fillText('JADE FIST', 0, 0);
+    cx.restore();
     // JF-#018: visual onboarding — a looping counter demo instead of two text lines
     // (CG: teach visually, minimal text). 240-frame script: approach → red flash →
     // counter throw → reset. Captions change per phase.

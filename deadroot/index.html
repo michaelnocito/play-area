@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Deadroot</title>
+<!-- Verify against current CrazyGames SDK docs before submitting -->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; background:#07090b; overflow:hidden; touch-action:none; }
+  canvas { display:block; margin:0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+/* ================================================================
+   DEADROOT — humans nearly wiped the undead out. The virus got
+   smarter. You are the Hive. Their dead are your walls, your
+   weapons, your food. Survive the extermination.
+   Single-file, no assets, fixed 60Hz timestep. DR-#001.
+   ================================================================ */
+
+/* ===== CrazyGames SDK adapter (no-op offline) ===== */
+let sdkLive = false;
+const CG = {
+  init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>{ sdkLive=true; cb&&cb(); }).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
+  loadingStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStart(); }catch(e){} },
+  loadingStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStop(); }catch(e){} },
+  gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
+  gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
+  happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
+  interstitial(done){ try{ if(sdkLive){ window.CrazyGames.SDK.ad.requestAd("midgame",{adFinished:done,adError:done,adStarted:()=>{}}); return; } }catch(e){} done&&done(); }
+};
+
+/* ===== Config (all tuning lives here) ===== */
+const CFG = {
+  cols: 26, rows: 18, tile: 40,
+  hive: { c0:12, r0:8, c1:13, r1:9, hp: 100 },
+  startBiomass: 60,
+  killBounty: 6,
+  corpse: { rot: 15, payout: 25 },
+  towers: {
+    spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:3.3, rate:1.1, dmg:13 },
+    rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
+    spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
+    node:     { cost:70, name:"NODE",     desc:"+50% nearby fire rate", range:1.6 }
+  },
+  enemies: {
+    scav:    { hp:30,  spd:2.2, dmg:5,  armor:0,    r:9,  col:"#7fb2d9" },
+    troop:   { hp:95,  spd:1.25,dmg:10, armor:0.30, r:12, col:"#4d7ea8" },
+    incin:   { hp:65,  spd:1.5, dmg:8,  armor:0.10, r:11, col:"#d98f4a" },
+    sweeper: { hp:75,  spd:1.9, dmg:0,  armor:0.20, r:11, col:"#e3d34e" },
+    boss:    { hp:1400,spd:0.7, dmg:34, armor:0.35, r:20, col:"#c9d3dd" }
+  },
+  prepTime: 7,
+  meta: [ // Mycelial Network — id, label, cost base (x2/tier), max tier
+    { id:"hp",    label:"HIVE RESILIENCE",   fx:"+20 Hive HP",        cost:30, max:5 },
+    { id:"bio",   label:"BIOMASS RESERVOIR", fx:"+20 start Biomass",  cost:30, max:5 },
+    { id:"decay", label:"ROOT ABSORPTION",   fx:"+6 decay payout",    cost:25, max:5 },
+    { id:"rot",   label:"PRESERVATION",      fx:"+3s corpse rot time",cost:25, max:4 },
+    { id:"dmg",   label:"ACIDIC EFFICIENCY", fx:"+10% tower damage",  cost:40, max:5 },
+    { id:"rate",  label:"HIVE MIND SYNC",    fx:"+8% fire rate",      cost:40, max:5 }
+  ]
+};
+
+/* Campaign: 12 waves in 3 named assaults. Each wave = list of [type,count,interval]. */
+const PHASES = [
+  { name:"THE SCOUTS",        waves:[0,1,2,3] },
+  { name:"THE PURGE",         waves:[4,5,6,7] },
+  { name:"THE EXTERMINATION", waves:[8,9,10,11] }
+];
+const WAVES = [
+  [["scav",6,1.4]],
+  [["scav",9,1.1]],
+  [["scav",8,1.0],["sweeper",2,5]],
+  [["scav",6,1.0],["troop",3,3]],
+  [["troop",6,2.2],["sweeper",2,6]],
+  [["scav",10,0.8],["incin",3,4]],
+  [["troop",6,2.0],["incin",3,4],["sweeper",3,5]],
+  [["scav",14,0.7],["troop",4,3]],
+  [["incin",6,2.2],["sweeper",4,4]],
+  [["troop",10,1.6],["scav",8,1.0]],
+  [["scav",12,0.7],["troop",6,2],["incin",5,2.5],["sweeper",4,4]],
+  [["boss",1,1],["troop",8,2.5],["sweeper",4,5]]
+];
+function phaseOf(w){ for(const p of PHASES) if(p.waves.includes(w)) return p.name; return "THE LONG NIGHT"; }
+/* Endless (post-victory unlock): scale wave 11 upward */
+function endlessWave(n){
+  const s = 1 + n*0.15;
+  return [["scav",Math.floor(10+n*2),0.7],["troop",Math.floor(5+n),1.8],["incin",Math.floor(3+n*0.7),2.5],["sweeper",Math.floor(3+n*0.5),4]].map(g=>[g[0],g[1],g[2]]).concat(n%3===2?[["boss",1,1]]:[]);
+}
+
+/* ===== Save (versioned, defensive) ===== */
+const SAVE_KEY = "deadroot_save_v1";
+let save = { dna:0, tiers:{}, bestWave:0, won:false, endlessBest:0, muted:false };
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if(s && typeof s==="object") save = Object.assign(save, s); } catch(e){}
+function persist(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }catch(e){} }
+function tier(id){ return save.tiers[id]|0; }
+function metaCost(m){ return m.cost * Math.pow(2, tier(m.id)); }
+function metaVals(){
+  return {
+    hp: CFG.hive.hp + 20*tier("hp"),
+    bio: CFG.startBiomass + 20*tier("bio"),
+    decay: CFG.corpse.payout + 6*tier("decay"),
+    rot: CFG.corpse.rot + 3*tier("rot"),
+    dmg: 1 + 0.10*tier("dmg"),
+    rate: 1 + 0.08*tier("rate")
+  };
+}
+
+/* ===== Canvas / DPR ===== */
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const W = CFG.cols*CFG.tile, H = CFG.rows*CFG.tile + 56; // +56 top HUD band
+let viewScale = 1, offX = 0, offY = 0;
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const vw = window.innerWidth, vh = window.innerHeight;
+  viewScale = Math.min(vw/W, vh/H);
+  canvas.style.width = Math.floor(W*viewScale)+"px";
+  canvas.style.height = Math.floor(H*viewScale)+"px";
+  canvas.width = Math.floor(W*viewScale*dpr);
+  canvas.height = Math.floor(H*viewScale*dpr);
+  ctx.setTransform(viewScale*dpr,0,0,viewScale*dpr,0,0);
+}
+window.addEventListener("resize", resize); resize();
+const TOP = 56; // gameplay area starts below HUD
+function tileToXY(c,r){ return [c*CFG.tile+CFG.tile/2, TOP + r*CFG.tile+CFG.tile/2]; }
+function xyToTile(x,y){ return [Math.floor(x/CFG.tile), Math.floor((y-TOP)/CFG.tile)]; }
+
+/* ===== Audio (procedural WebAudio) ===== */
+let AC=null, muted = !!save.muted;
+function audio(){ if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(AC&&AC.state==="suspended") AC.resume(); }
+function tone(f0,f1,dur,type,vol,delay){
+  if(muted||!AC) return;
+  try{
+    const t = AC.currentTime + (delay||0);
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = type||"sine"; o.frequency.setValueAtTime(f0,t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(f1,1),t+dur);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+dur+0.02);
+  }catch(e){}
+}
+function noise(dur,vol,hp){
+  if(muted||!AC) return;
+  try{
+    const n = AC.sampleRate*dur, buf = AC.createBuffer(1,n,AC.sampleRate), d = buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+    const s = AC.createBufferSource(); s.buffer=buf;
+    const f = AC.createBiquadFilter(); f.type = hp?"highpass":"lowpass"; f.frequency.value = hp?1800:600;
+    const g = AC.createGain(); g.gain.value = vol;
+    s.connect(f); f.connect(g); g.connect(AC.destination); s.start();
+  }catch(e){}
+}
+const SFX = {
+  shot(){ tone(520,180,0.08,"square",0.05); },
+  hit(){ noise(0.05,0.12,true); },
+  squelch(){ tone(140,60,0.18,"sawtooth",0.15); noise(0.12,0.2,false); },
+  decay(){ tone(300,700,0.25,"sine",0.09); tone(450,900,0.3,"sine",0.06,0.05); },
+  hiveHit(){ tone(120,50,0.3,"sawtooth",0.22); noise(0.2,0.25,false); },
+  boom(){ tone(90,30,0.5,"sawtooth",0.3); noise(0.35,0.35,false); },
+  sweep(){ tone(900,1400,0.12,"square",0.05); },
+  wave(){ tone(200,400,0.35,"triangle",0.12); tone(300,600,0.35,"triangle",0.09,0.12); },
+  ui(){ tone(600,800,0.06,"sine",0.07); },
+  deny(){ tone(220,150,0.12,"square",0.09); }
+};
+
+/* ===== World state ===== */
+let mode = "title"; // title | play | prep | over | victory
+let meta = metaVals();
+let biomass = 0, hiveHP = 0, hiveMax = 100;
+let waveIdx = 0, endlessN = 0, endless = false;
+let prepT = 0, spawnQ = [], spawnT = 0;
+let enemies = [], corpses = [], towers = [], projectiles = [], clouds = [], particles = [], popups = [];
+let blocked = null, flow = null;
+let shake = 0, menu = null; // menu = {corpse}
+let firstMutateDone = false, onboardT = 0;
+let dnaEarned = 0;
+
+function inGrid(c,r){ return c>=0 && c<CFG.cols && r>=0 && r<CFG.rows; }
+function isHive(c,r){ return c>=CFG.hive.c0 && c<=CFG.hive.c1 && r>=CFG.hive.r0 && r<=CFG.hive.r1; }
+
+/* Flow field: BFS from hive across walkable tiles. flow[r][c] = [dc,dr] step or null. */
+function computeFlow(blk){
+  const dist = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(Infinity));
+  const fl = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(null));
+  const q = [];
+  for(let r=CFG.hive.r0;r<=CFG.hive.r1;r++) for(let c=CFG.hive.c0;c<=CFG.hive.c1;c++){ dist[r][c]=0; q.push([c,r]); }
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  let head=0;
+  while(head<q.length){
+    const [c,r] = q[head++];
+    for(const [dc,dr] of dirs){
+      const nc=c+dc, nr=r+dr;
+      if(!inGrid(nc,nr) || blk[nr][nc] || dist[nr][nc]!==Infinity) continue;
+      dist[nr][nc] = dist[r][c]+1;
+      fl[nr][nc] = [-dc,-dr]; // step back toward source
+      q.push([nc,nr]);
+    }
+  }
+  return { flow: fl, dist };
+}
+function rebuildFlow(){
+  const res = computeFlow(blocked);
+  flow = res.flow; flowDist = res.dist;
+}
+let flowDist = null;
+
+/* Anti-boxing: try to block tile; if any edge spawn tile loses its path, keep it walkable (trampled). */
+function tryBlock(c,r){
+  blocked[r][c] = true;
+  const res = computeFlow(blocked);
+  let ok = true;
+  for(let i=0;i<CFG.cols;i++){ if(!blocked[0][i] && res.dist[0][i]===Infinity){ ok=false; break; } if(!blocked[CFG.rows-1][i] && res.dist[CFG.rows-1][i]===Infinity){ ok=false; break; } }
+  if(ok) for(let i=0;i<CFG.rows;i++){ if(!blocked[i][0] && res.dist[i][0]===Infinity){ ok=false; break; } if(!blocked[i][CFG.cols-1] && res.dist[i][CFG.cols-1]===Infinity){ ok=false; break; } }
+  if(!ok){ blocked[r][c] = false; return false; }
+  flow = res.flow; flowDist = res.dist;
+  return true;
+}
+function unblock(c,r){ blocked[r][c] = false; rebuildFlow(); }
+
+/* ===== Entities ===== */
+let nextId = 1;
+function spawnEnemy(type){
+  const e = CFG.enemies[type];
+  // random edge tile that has a path
+  let c,r,tries=0;
+  do{
+    const side = Math.floor(Math.random()*4);
+    if(side===0){ c=Math.floor(Math.random()*CFG.cols); r=0; }
+    else if(side===1){ c=Math.floor(Math.random()*CFG.cols); r=CFG.rows-1; }
+    else if(side===2){ c=0; r=Math.floor(Math.random()*CFG.rows); }
+    else { c=CFG.cols-1; r=Math.floor(Math.random()*CFG.rows); }
+    tries++;
+  } while((blocked[r][c] || flowDist[r][c]===Infinity) && tries<40);
+  const [x,y] = tileToXY(c,r);
+  enemies.push({ id:nextId++, type, x, y, hp:e.hp, max:e.hp, spd:e.spd, dmg:e.dmg, armor:e.armor, r:e.r,
+    col:e.col, flash:0, drench:0, coat:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0 });
+}
+function dropCorpse(x,y){
+  const [c,r] = xyToTile(x,y);
+  if(!inGrid(c,r) || isHive(c,r)) return;
+  // stack onto existing corpse tile -> just refresh & bonus
+  const ex = corpses.find(k=>k.c===c&&k.r===r);
+  if(ex){ ex.t = meta.rot; ex.stack++; popup(x,y,"+STACKED","#9be07f"); return; }
+  const walk = !blocked[r][c] ? tryBlock(c,r) : false;
+  corpses.push({ c, r, t: meta.rot, trampled: !walk, stack:1 });
+}
+function mutate(k, type){
+  const t = CFG.towers[type];
+  if(biomass < t.cost){ SFX.deny(); popup(...tileToXY(k.c,k.r), "NEED BIOMASS", "#e07f7f"); return; }
+  biomass -= t.cost;
+  corpses.splice(corpses.indexOf(k),1);
+  if(k.trampled){ if(!tryBlock(k.c,k.r)){ /* still trampled tower: allowed, stays walkable */ } }
+  const [x,y] = tileToXY(k.c,k.r);
+  towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:60, max:60, flash:0, pulse:Math.random()*6 });
+  SFX.squelch(); burst(x,y,"#9be07f",14); shakeIt(2);
+  if(!firstMutateDone){ firstMutateDone = true; }
+  menu = null;
+}
+function popup(x,y,txt,col){ popups.push({x,y,txt,col,t:1.2}); }
+function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=30+Math.random()*90; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.4+Math.random()*0.4,col}); } }
+function shakeIt(n){ shake = Math.max(shake,n); }
+
+/* ===== Sweeper pathing (simple greedy A*-lite on small grid) ===== */
+function pathStep(fc,fr,tc,tr){
+  // BFS from target to walker (grid is small; called sparingly)
+  const dist = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(Infinity));
+  const q=[[tc,tr]]; dist[tr][tc]=0; let head=0;
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  while(head<q.length){
+    const [c,r]=q[head++];
+    if(c===fc&&r===fr) break;
+    for(const [dc,dr] of dirs){
+      const nc=c+dc,nr=r+dr;
+      if(!inGrid(nc,nr)||dist[nr][nc]!==Infinity) continue;
+      if(blocked[nr][nc] && !(nc===tc&&nr===tr)) continue;
+      if(isHive(nc,nr)) continue;
+      dist[nr][nc]=dist[r][c]+1; q.push([nc,nr]);
+    }
+  }
+  let best=null, bd=dist[fr]?dist[fr][fc]:Infinity;
+  if(bd===Infinity) return null;
+  for(const [dc,dr] of dirs){
+    const nc=fc+dc,nr=fr+dr;
+    if(inGrid(nc,nr)&&dist[nr][nc]<bd){ bd=dist[nr][nc]; best=[dc,dr]; }
+  }
+  return best;
+}
+
+/* ===== Game flow ===== */
+function newRun(){
+  meta = metaVals();
+  biomass = meta.bio; hiveMax = meta.hp; hiveHP = hiveMax;
+  waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0;
+  enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
+  blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
+  rebuildFlow();
+  firstMutateDone = false; onboardT = 0; menu = null;
+  // onboarding: three starter corpses beside the hive — teach mutate before wave 1
+  dropCorpse(...tileToXY(CFG.hive.c0-3, 8));
+  dropCorpse(...tileToXY(CFG.hive.c1+3, 9));
+  dropCorpse(...tileToXY(12, CFG.hive.r0-3));
+  mode = "prep"; prepT = 12; // generous first prep; shortens once they mutate
+  CG.gameplayStart();
+}
+function queueWave(){
+  const def = endless ? endlessWave(endlessN) : WAVES[waveIdx];
+  spawnQ = [];
+  for(const [type,count,intv] of def){
+    let t = 0.5;
+    for(let i=0;i<count;i++){ spawnQ.push({type, at:t}); t += intv; }
+  }
+  spawnQ.sort((a,b)=>a.at-b.at);
+  spawnT = 0;
+  mode = "play";
+  SFX.wave();
+}
+function waveCleared(){
+  const wn = endless ? 12+endlessN+1 : waveIdx+1;
+  const gain = Math.max(3, wn);
+  save.dna += gain; dnaEarned += gain;
+  save.bestWave = Math.max(save.bestWave, wn); persist();
+  popup(W/2, H/2-60, "WAVE "+wn+" REPELLED  +"+gain+" DNA", "#c9a0f0");
+  CG.happytime();
+  if(!endless && waveIdx>=WAVES.length-1){ mode="victory"; save.won=true; persist(); CG.gameplayStop(); return; }
+  if(endless){ endlessN++; save.endlessBest=Math.max(save.endlessBest,endlessN); persist(); }
+  else waveIdx++;
+  mode = "prep"; prepT = CFG.prepTime;
+}
+function gameOver(){
+  mode = "over"; menu = null; persist();
+  CG.gameplayStop();
+  CG.interstitial();
+}
+
+/* ===== Update (fixed 60Hz) ===== */
+const DT = 1/60;
+function update(){
+  if(mode==="title"||mode==="over"||mode==="victory") return;
+  if(shake>0) shake = Math.max(0, shake-20*DT);
+
+  if(mode==="prep"){
+    if(firstMutateDone || corpses.length===0) prepT -= DT;
+    onboardT += DT;
+    if(prepT<=0) queueWave();
+  }
+  if(mode==="play"){
+    spawnT += DT;
+    while(spawnQ.length && spawnQ[0].at<=spawnT){ spawnEnemy(spawnQ.shift().type); }
+  }
+
+  /* corpses rot */
+  for(let i=corpses.length-1;i>=0;i--){
+    const k = corpses[i];
+    k.t -= DT;
+    if(k.t<=0){
+      const pay = meta.decay * k.stack;
+      biomass += pay;
+      const [x,y]=tileToXY(k.c,k.r);
+      popup(x,y,"+"+pay,"#8fd9a8"); burst(x,y,"#8fd9a8",8); SFX.decay();
+      corpses.splice(i,1);
+      if(!k.trampled) unblock(k.c,k.r);
+      if(menu && menu.corpse===k) menu=null;
+    }
+  }
+
+  /* enemies */
+  for(let i=enemies.length-1;i>=0;i--){
+    const e = enemies[i];
+    if(e.flash>0) e.flash-=DT;
+    if(e.drench>0) e.drench-=DT;
+    // spore coat DoT
+    if(e.coat>0){ e.coat-=DT; e.hp -= 6*DT*meta.dmg; }
+    e.snared = false;
+    for(const t of towers){ if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*CFG.tile)){ e.snared=true; break; } }
+    let spd = e.spd * CFG.tile * (e.snared?1-CFG.towers.rootmass.slow:1);
+
+    if(e.type==="sweeper"){
+      // find nearest corpse
+      if(!e.target || !corpses.includes(e.target)){
+        e.target=null; e.chanT=0; let bd=Infinity;
+        for(const k of corpses){ const [kx,ky]=tileToXY(k.c,k.r); const d=(kx-e.x)**2+(ky-e.y)**2; if(d<bd){bd=d;e.target=k;} }
+      }
+      if(e.target){
+        const [tx,ty]=tileToXY(e.target.c,e.target.r);
+        const d = Math.hypot(tx-e.x,ty-e.y);
+        if(d < CFG.tile*0.8){
+          e.chanT += DT; // sanitize channel
+          if(e.chanT>=3){
+            const k=e.target;
+            corpses.splice(corpses.indexOf(k),1);
+            if(!k.trampled) unblock(k.c,k.r);
+            if(menu&&menu.corpse===k) menu=null;
+            popup(tx,ty,"SANITIZED","#e3d34e"); SFX.sweep();
+            e.target=null; e.chanT=0;
+          }
+        } else {
+          e.chanT=0;
+          const [ec,er]=xyToTile(e.x,e.y);
+          const step = inGrid(ec,er) ? pathStep(ec,er,e.target.c,e.target.r) : null;
+          let dx,dy;
+          if(step){ const [nx,ny]=tileToXY(ec+step[0],er+step[1]); dx=nx-e.x; dy=ny-e.y; }
+          else { dx=tx-e.x; dy=ty-e.y; }
+          const m=Math.hypot(dx,dy)||1;
+          e.x += dx/m*spd*DT; e.y += dy/m*spd*DT;
+        }
+      } else {
+        // no corpses: drift toward nearest edge (retreat)
+        e.y += (e.y<H/2?-1:1)*spd*DT*0.6;
+        if(e.y<TOP-20||e.y>H+20){ enemies.splice(i,1); continue; }
+      }
+    } else {
+      // walk flow field to hive
+      const [ec,er]=xyToTile(e.x,e.y);
+      if(isHive(ec,er) || nearHive(e)){
+        e.atkT += DT;
+        if(e.atkT>=1){
+          e.atkT=0; hiveHP -= e.dmg;
+          SFX.hiveHit(); shakeIt(5); burst(e.x,e.y,"#e07f7f",10);
+          if(hiveHP<=0){ hiveHP=0; gameOver(); return; }
+        }
+      } else {
+        let dx=0,dy=0;
+        const f = inGrid(ec,er) ? flow[er][ec] : null;
+        if(f){ const [nx,ny]=tileToXY(ec+f[0],er+f[1]); dx=nx-e.x; dy=ny-e.y; }
+        else { const [hx,hy]=tileToXY(12.5,8.5); dx=hx-e.x; dy=hy-e.y; }
+        const m=Math.hypot(dx,dy)||1;
+        e.x += dx/m*spd*DT; e.y += dy/m*spd*DT;
+      }
+      // incinerator: burns adjacent towers; detonates spore clouds
+      if(e.type==="incin"){
+        e.burnT += DT;
+        if(e.burnT>=0.5){
+          e.burnT=0;
+          for(const t of towers){ if(dist2(e,t)<sq(CFG.tile*1.4)){ t.hp-=6; t.flash=0.2; particles.push({x:t.x,y:t.y,vx:0,vy:-30,t:0.4,col:"#e0a04a"}); } }
+          for(const cl of clouds){
+            if((cl.x-e.x)**2+(cl.y-e.y)**2 < sq(cl.r)){
+              // thermobaric: cloud ignites
+              clouds.splice(clouds.indexOf(cl),1);
+              SFX.boom(); shakeIt(8); burst(cl.x,cl.y,"#f0b050",30); burst(cl.x,cl.y,"#e06040",20);
+              popup(cl.x,cl.y,"THERMOBARIC!","#f0b050");
+              for(const v of enemies){ if((v.x-cl.x)**2+(v.y-cl.y)**2 < sq(CFG.tile*2.2)) damage(v, 85, true); }
+              break;
+            }
+          }
+        }
+      }
+    }
+    if(e.hp<=0){ kill(e); }
+  }
+
+  /* towers */
+  for(let i=towers.length-1;i>=0;i--){
+    const t = towers[i];
+    t.pulse += DT;
+    if(t.flash>0) t.flash-=DT;
+    if(t.hp<=0){
+      burst(t.x,t.y,"#7a8f6a",16); popup(t.x,t.y,"BURNED DOWN","#e0a04a");
+      towers.splice(i,1);
+      const stillHere = corpses.some(k=>k.c===t.c&&k.r===t.r);
+      if(!stillHere && blocked[t.r][t.c]) unblock(t.c,t.r);
+      continue;
+    }
+    if(t.type==="rootmass"||t.type==="node") continue;
+    const def = CFG.towers[t.type];
+    let rate = def.rate * meta.rate;
+    for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq(CFG.towers.node.range*CFG.tile)){ rate*=1.5; break; } }
+    t.cd -= DT*rate;
+    if(t.cd<=0){
+      // find target in range
+      let tgt=null, bd=Infinity;
+      for(const e of enemies){ const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } }
+      if(tgt){
+        t.cd = 1;
+        if(t.type==="spitter"){
+          projectiles.push({x:t.x,y:t.y,tgt,spd:340,dmg:def.dmg*meta.dmg});
+          SFX.shot();
+        } else if(t.type==="spore"){
+          clouds.push({x:tgt.x,y:tgt.y,r:def.cloudR*CFG.tile,t:def.cloudT});
+        }
+      }
+    }
+  }
+
+  /* clouds */
+  for(let i=clouds.length-1;i>=0;i--){
+    const cl = clouds[i]; cl.t-=DT;
+    if(cl.t<=0){ clouds.splice(i,1); continue; }
+    for(const e of enemies){ if((e.x-cl.x)**2+(e.y-cl.y)**2 < sq(cl.r)) e.coat = 1.5; }
+  }
+
+  /* projectiles */
+  for(let i=projectiles.length-1;i>=0;i--){
+    const p = projectiles[i];
+    if(!enemies.includes(p.tgt)){ projectiles.splice(i,1); continue; }
+    const dx=p.tgt.x-p.x, dy=p.tgt.y-p.y, m=Math.hypot(dx,dy)||1;
+    p.x += dx/m*p.spd*DT; p.y += dy/m*p.spd*DT;
+    if(m < 10){
+      let dmg = p.dmg;
+      // synergy: FERMENT — snared + drenched = double damage puddle
+      if(p.tgt.snared && p.tgt.drench>0){ dmg*=2; popup(p.tgt.x,p.tgt.y,"FERMENT x2","#b0e07f"); burst(p.tgt.x,p.tgt.y,"#b0e07f",8); }
+      p.tgt.drench = 4;
+      damage(p.tgt, dmg, false);
+      SFX.hit();
+      projectiles.splice(i,1);
+    }
+  }
+
+  /* particles / popups */
+  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.t-=DT; p.x+=p.vx*DT; p.y+=p.vy*DT; p.vx*=0.94; p.vy*=0.94; if(p.t<=0) particles.splice(i,1); }
+  for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.t-=DT; p.y-=24*DT; if(p.t<=0) popups.splice(i,1); }
+
+  /* wave clear check */
+  if(mode==="play" && spawnQ.length===0 && enemies.length===0) waveCleared();
+}
+function nearHive(e){
+  const [hx0,hy0]=tileToXY(CFG.hive.c0,CFG.hive.r0), [hx1,hy1]=tileToXY(CFG.hive.c1,CFG.hive.r1);
+  const cx=Math.max(hx0-20,Math.min(e.x,hx1+20)), cy=Math.max(hy0-20,Math.min(e.y,hy1+20));
+  return (e.x-cx)**2+(e.y-cy)**2 < sq(6);
+}
+function damage(e, amt, pierce){
+  const arm = Math.max(0, e.armor - (e.drench>0?0.15:0));
+  e.hp -= amt * (pierce?1:(1-arm));
+  e.flash = 0.12;
+}
+function kill(e){
+  const idx = enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
+  biomass += CFG.killBounty;
+  burst(e.x,e.y,e.col,10);
+  if(e.type==="boss"){ SFX.boom(); shakeIt(10); for(let i=0;i<3;i++) dropCorpse(e.x+(i-1)*CFG.tile, e.y); }
+  else dropCorpse(e.x,e.y);
+  noise(0.08,0.15,false);
+}
+function dist2(a,b){ return (a.x-b.x)**2+(a.y-b.y)**2; }
+function sq(n){ return n*n; }
+
+/* ===== Input ===== */
+let paused = false;
+function canvasPos(ev){
+  const rect = canvas.getBoundingClientRect();
+  const px = (ev.touches?ev.touches[0].clientX:ev.clientX) - rect.left;
+  const py = (ev.touches?ev.touches[0].clientY:ev.clientY) - rect.top;
+  return [px/viewScale, py/viewScale];
+}
+function onTap(x,y){
+  audio();
+  if(mode==="title"){ newRun(); return; }
+  if(mode==="over"||mode==="victory"){ handleEndScreen(x,y); return; }
+  if(paused){ paused=false; CG.gameplayStart(); return; }
+
+  // mute button (top-right)
+  if(x>W-46 && x<W-6 && y>8 && y<48){ muted=!muted; save.muted=muted; persist(); SFX.ui(); return; }
+  // pause button
+  if(x>W-92 && x<W-52 && y>8 && y<48){ paused=true; CG.gameplayStop(); return; }
+  // prep skip button
+  if(mode==="prep" && firstMutateDone && x>W/2-90 && x<W/2+90 && y>TOP+8 && y<TOP+44){
+    biomass += 15; popup(W/2,TOP+60,"+15 EARLY CALL","#8fd9a8"); queueWave(); return;
+  }
+
+  // mutate menu open?
+  if(menu){
+    const picked = menuHit(x,y);
+    if(picked){ mutate(menu.corpse, picked); return; }
+    menu = null; // clicked elsewhere closes
+  }
+  // corpse tap
+  const [c,r] = xyToTile(x,y);
+  const k = corpses.find(k=>k.c===c&&k.r===r);
+  if(k){ menu = {corpse:k}; SFX.ui(); return; }
+}
+function menuHit(x,y){
+  const opts = menuOpts();
+  for(const o of opts){ if(x>=o.x&&x<=o.x+o.w&&y>=o.y&&y<=o.y+o.h) return o.type; }
+  return null;
+}
+function menuOpts(){
+  if(!menu) return [];
+  const [kx,ky] = tileToXY(menu.corpse.c, menu.corpse.r);
+  const types = ["spitter","rootmass","spore","node"];
+  const w=118,h=42,gap=6;
+  const totalH = types.length*h + (types.length-1)*gap;
+  let mx = kx + 30; if(mx+w > W-10) mx = kx-30-w;
+  let my = Math.max(TOP+6, Math.min(ky-totalH/2, H-totalH-10));
+  return types.map((t,i)=>({type:t, x:mx, y:my+i*(h+gap), w, h}));
+}
+function handleEndScreen(x,y){
+  // meta buttons laid out by drawEnd(); recompute same layout
+  const bx = W/2-260, bw=520, rowH=52, by = 250;
+  for(let i=0;i<CFG.meta.length;i++){
+    const m = CFG.meta[i];
+    const ry = by + i*rowH;
+    if(x>bx+bw-110 && x<bx+bw-10 && y>ry+6 && y<ry+rowH-8){
+      if(tier(m.id)<m.max && save.dna>=metaCost(m)){
+        save.dna -= metaCost(m); save.tiers[m.id]=tier(m.id)+1; persist(); SFX.ui();
+      } else SFX.deny();
+      return;
+    }
+  }
+  // bottom buttons
+  if(y > by + CFG.meta.length*rowH + 20){
+    if(mode==="victory" || save.won){
+      if(x<W/2){ newRun(); return; }
+      else { // endless
+        newRun(); endless = true; endlessN = 0; return;
+      }
+    }
+    newRun();
+  }
+}
+canvas.addEventListener("mousedown", ev=>{ const [x,y]=canvasPos(ev); onTap(x,y); });
+canvas.addEventListener("touchstart", ev=>{ ev.preventDefault(); const [x,y]=canvasPos(ev); onTap(x,y); }, {passive:false});
+window.addEventListener("keydown", ev=>{
+  const k = ev.key.toLowerCase();
+  if(k==="m"){ muted=!muted; save.muted=muted; persist(); }
+  if(k==="p" && (mode==="play"||mode==="prep")){ paused=!paused; if(paused) CG.gameplayStop(); else CG.gameplayStart(); }
+});
+document.addEventListener("visibilitychange", ()=>{
+  if(document.hidden){ lastT = 0; if((mode==="play"||mode==="prep") && !paused){ paused = true; CG.gameplayStop(); } }
+});
+
+/* ===== Render ===== */
+function draw(){
+  ctx.save();
+  if(shake>0){ ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); }
+  // ground
+  ctx.fillStyle = "#0b0e10"; ctx.fillRect(0,0,W,H);
+  // soil texture: sparse root veins
+  ctx.strokeStyle = "rgba(90,120,90,0.06)"; ctx.lineWidth=2;
+  for(let i=0;i<14;i++){
+    ctx.beginPath();
+    const sx=(i*173)%W, sy=TOP+((i*271)%(H-TOP));
+    ctx.moveTo(sx,sy); ctx.quadraticCurveTo(sx+60,sy+40,sx+20,sy+110);
+    ctx.stroke();
+  }
+  // grid whisper
+  ctx.strokeStyle = "rgba(140,160,140,0.045)"; ctx.lineWidth=1;
+  for(let c=0;c<=CFG.cols;c++){ ctx.beginPath(); ctx.moveTo(c*CFG.tile,TOP); ctx.lineTo(c*CFG.tile,H); ctx.stroke(); }
+  for(let r=0;r<=CFG.rows;r++){ ctx.beginPath(); ctx.moveTo(0,TOP+r*CFG.tile); ctx.lineTo(W,TOP+r*CFG.tile); ctx.stroke(); }
+
+  if(mode==="title"){ drawTitle(); ctx.restore(); return; }
+
+  drawHive();
+  // clouds
+  for(const cl of clouds){
+    ctx.fillStyle = "rgba(150,220,120,"+(0.10+0.08*Math.sin(cl.t*6))+")";
+    ctx.beginPath(); ctx.arc(cl.x,cl.y,cl.r,0,6.283); ctx.fill();
+    ctx.strokeStyle="rgba(150,220,120,0.25)"; ctx.stroke();
+  }
+  // corpses
+  for(const k of corpses){
+    const [x,y]=tileToXY(k.c,k.r);
+    const fade = Math.min(1, k.t/3);
+    ctx.save(); ctx.globalAlpha = 0.4+0.6*fade;
+    ctx.fillStyle = "#5d6670";
+    ctx.beginPath(); ctx.ellipse(x,y,15,9,0.5,0,6.283); ctx.fill();
+    ctx.fillStyle="#454d55"; ctx.beginPath(); ctx.arc(x+9,y-4,5,0,6.283); ctx.fill();
+    // rot ring
+    ctx.strokeStyle = "rgba(143,217,168,0.8)"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,18,-Math.PI/2,-Math.PI/2 + 6.283*(k.t/meta.rot)); ctx.stroke();
+    if(k.stack>1){ ctx.fillStyle="#9be07f"; ctx.font="bold 11px monospace"; ctx.textAlign="center"; ctx.fillText("x"+k.stack,x,y-22); }
+    ctx.restore();
+  }
+  // towers
+  for(const t of towers){
+    ctx.save(); ctx.translate(t.x,t.y);
+    const p = 1+0.05*Math.sin(t.pulse*3);
+    ctx.scale(p,p);
+    if(t.flash>0){ ctx.globalAlpha=0.6; }
+    if(t.type==="spitter"){
+      ctx.fillStyle="#6fae5e"; ctx.beginPath(); ctx.arc(0,0,13,0,6.283); ctx.fill();
+      ctx.fillStyle="#3f7a34"; ctx.beginPath(); ctx.arc(0,-8,6,0,6.283); ctx.fill();
+      ctx.fillStyle="#c8f050"; ctx.beginPath(); ctx.arc(0,-8,2.5,0,6.283); ctx.fill();
+    } else if(t.type==="rootmass"){
+      ctx.strokeStyle="#8a6a3f"; ctx.lineWidth=4;
+      for(let i=0;i<5;i++){ const a=i*1.256+t.pulse*0.4; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*16,Math.sin(a)*16); ctx.stroke(); }
+      ctx.fillStyle="#6a4f2e"; ctx.beginPath(); ctx.arc(0,0,9,0,6.283); ctx.fill();
+    } else if(t.type==="spore"){
+      ctx.fillStyle="#8fd980"; ctx.beginPath(); ctx.arc(0,2,11,0,6.283); ctx.fill();
+      ctx.fillStyle="#bef0a0"; ctx.beginPath(); ctx.arc(0,-9,7,0,6.283); ctx.fill();
+      ctx.fillStyle="#e8ffd0"; ctx.beginPath(); ctx.arc(-2,-11,2,0,6.283); ctx.fill();
+    } else { // node
+      ctx.fillStyle="#c9a0f0"; ctx.beginPath();
+      for(let i=0;i<6;i++){ const a=i*1.047+t.pulse; const rr=10+2*Math.sin(t.pulse*2+i); if(i===0) ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr); else ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle="#efe0ff"; ctx.beginPath(); ctx.arc(0,0,3,0,6.283); ctx.fill();
+    }
+    ctx.restore();
+    // hp bar if hurt
+    if(t.hp<t.max){ ctx.fillStyle="#333"; ctx.fillRect(t.x-14,t.y-24,28,4); ctx.fillStyle="#e0a04a"; ctx.fillRect(t.x-14,t.y-24,28*(t.hp/t.max),4); }
+  }
+  // enemies
+  for(const e of enemies){
+    ctx.save(); ctx.translate(e.x,e.y);
+    ctx.fillStyle = e.flash>0 ? "#ffffff" : e.col;
+    if(e.type==="sweeper"){
+      ctx.fillRect(-e.r,-e.r,e.r*2,e.r*2);
+      ctx.fillStyle="#2a2a1a"; ctx.fillRect(-e.r*0.5,-e.r*0.5,e.r,e.r*0.6); // visor
+      if(e.chanT>0){ ctx.strokeStyle="#e3d34e"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,0,e.r+6,-Math.PI/2,-Math.PI/2+6.283*(e.chanT/3)); ctx.stroke(); }
+    } else if(e.type==="troop"){
+      ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
+      ctx.fillStyle="#2c4a63"; ctx.fillRect(-e.r,-e.r*0.9,e.r*0.7,e.r*1.8); // shield
+    } else if(e.type==="incin"){
+      ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
+      ctx.fillStyle="#f0c060"; ctx.beginPath(); ctx.arc(0,-e.r*0.4,4,0,6.283); ctx.fill(); // pilot light
+    } else if(e.type==="boss"){
+      ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
+      ctx.strokeStyle="#8fa0b0"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0,e.r+5,0,6.283); ctx.stroke();
+      ctx.fillStyle="#e05050"; ctx.beginPath(); ctx.arc(0,0,5,0,6.283); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
+    }
+    if(e.snared){ ctx.strokeStyle="#8a6a3f"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,e.r*0.6,e.r*0.8,0,3.14); ctx.stroke(); }
+    if(e.drench>0){ ctx.fillStyle="rgba(180,240,80,0.5)"; ctx.beginPath(); ctx.arc(e.r*0.5,-e.r*0.5,3,0,6.283); ctx.fill(); }
+    ctx.restore();
+    // hp bar
+    if(e.hp<e.max){ ctx.fillStyle="#222"; ctx.fillRect(e.x-14,e.y-e.r-10,28,4); ctx.fillStyle="#e06060"; ctx.fillRect(e.x-14,e.y-e.r-10,28*Math.max(0,e.hp/e.max),4); }
+  }
+  // projectiles
+  ctx.fillStyle="#c8f050";
+  for(const p of projectiles){ ctx.beginPath(); ctx.arc(p.x,p.y,4,0,6.283); ctx.fill(); }
+  // particles
+  for(const p of particles){ ctx.globalAlpha=Math.min(1,p.t*2.5); ctx.fillStyle=p.col; ctx.fillRect(p.x-2,p.y-2,4,4); }
+  ctx.globalAlpha=1;
+  // popups
+  ctx.textAlign="center"; ctx.font="bold 14px monospace";
+  for(const p of popups){ ctx.globalAlpha=Math.min(1,p.t); ctx.fillStyle=p.col; ctx.fillText(p.txt,p.x,p.y); }
+  ctx.globalAlpha=1;
+
+  drawHUD();
+  if(menu) drawMenu();
+  if(mode==="prep") drawPrep();
+  if(paused) drawPaused();
+  if(mode==="over") drawEnd(false);
+  if(mode==="victory") drawEnd(true);
+  ctx.restore();
+  // vignette
+  const g = ctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,H*0.75);
+  g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(10,4,14,0.45)");
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+function drawHive(){
+  const [x0,y0]=tileToXY(CFG.hive.c0,CFG.hive.r0), [x1,y1]=tileToXY(CFG.hive.c1,CFG.hive.r1);
+  const cx=(x0+x1)/2, cy=(y0+y1)/2;
+  const pulse = 1+0.04*Math.sin(perfNow*2.2);
+  // roots radiating
+  ctx.strokeStyle="rgba(150,100,180,0.25)"; ctx.lineWidth=3;
+  for(let i=0;i<8;i++){ const a=i*0.785+0.3; ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.quadraticCurveTo(cx+Math.cos(a)*60, cy+Math.sin(a)*60, cx+Math.cos(a+0.4)*95, cy+Math.sin(a+0.4)*95); ctx.stroke(); }
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(pulse,pulse);
+  ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(0,0,52,42,0,0,6.283); ctx.fill();
+  ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(0,0,38,30,0,0,6.283); ctx.fill();
+  ctx.fillStyle="#b088e0"; ctx.beginPath(); ctx.ellipse(0,0,18,14,0,0,6.283); ctx.fill();
+  const hurt = hiveHP/hiveMax;
+  if(hurt<0.5){ ctx.strokeStyle="rgba(224,80,80,"+(0.5-hurt)+")"; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(-30,-10); ctx.lineTo(-5,8); ctx.lineTo(15,-14); ctx.stroke(); }
+  ctx.restore();
+}
+function drawHUD(){
+  ctx.fillStyle="#0e1214"; ctx.fillRect(0,0,W,TOP);
+  ctx.strokeStyle="rgba(176,136,224,0.3)"; ctx.beginPath(); ctx.moveTo(0,TOP); ctx.lineTo(W,TOP); ctx.stroke();
+  ctx.textAlign="left"; ctx.font="bold 18px monospace";
+  ctx.fillStyle="#8fd9a8"; ctx.fillText("BIOMASS "+Math.floor(biomass), 16, 34);
+  // hive hp bar
+  ctx.fillStyle="#c9a0f0"; ctx.font="bold 14px monospace"; ctx.fillText("HIVE", 240, 33);
+  ctx.fillStyle="#2a2033"; ctx.fillRect(295,20,180,16);
+  ctx.fillStyle = hiveHP/hiveMax>0.35 ? "#b088e0" : "#e06060";
+  ctx.fillRect(295,20,180*Math.max(0,hiveHP/hiveMax),16);
+  ctx.strokeStyle="rgba(255,255,255,0.2)"; ctx.strokeRect(295,20,180,16);
+  // wave label
+  ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 15px monospace";
+  const wn = endless ? "ENDLESS "+(endlessN+1) : "WAVE "+(waveIdx+1)+" / "+WAVES.length;
+  ctx.fillText(wn, W/2+80, 26);
+  ctx.font="11px monospace"; ctx.fillStyle="#8a94a0";
+  ctx.fillText(endless?"THE LONG NIGHT":phaseOf(waveIdx), W/2+80, 42);
+  ctx.fillStyle="#c9a0f0"; ctx.textAlign="right"; ctx.font="bold 13px monospace";
+  ctx.fillText("DNA "+save.dna, W-110, 33);
+  // pause + mute buttons
+  ctx.fillStyle="#1c2226"; ctx.fillRect(W-92,8,40,40); ctx.fillRect(W-46,8,40,40);
+  ctx.strokeStyle="rgba(255,255,255,0.15)"; ctx.strokeRect(W-92,8,40,40); ctx.strokeRect(W-46,8,40,40);
+  ctx.fillStyle="#dfe6ec"; ctx.fillRect(W-80,18,6,20); ctx.fillRect(W-70,18,6,20);
+  ctx.font="bold 16px monospace"; ctx.textAlign="center";
+  ctx.fillStyle = muted ? "#e06060" : "#8fd9a8";
+  ctx.fillText(muted?"✕":"♪", W-26, 34);
+}
+function drawMenu(){
+  const opts = menuOpts();
+  const k = menu.corpse; const [kx,ky]=tileToXY(k.c,k.r);
+  ctx.strokeStyle="#9be07f"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(kx,ky,22,0,6.283); ctx.stroke();
+  ctx.font="bold 12px monospace";
+  for(const o of opts){
+    const def = CFG.towers[o.type];
+    const ok = biomass>=def.cost;
+    ctx.fillStyle = ok ? "rgba(20,32,20,0.95)" : "rgba(28,20,20,0.95)";
+    ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.strokeStyle = ok ? "#8fd9a8" : "#555";
+    ctx.strokeRect(o.x,o.y,o.w,o.h);
+    ctx.textAlign="left";
+    ctx.fillStyle = ok ? "#dfe6ec" : "#777";
+    ctx.fillText(def.name+"  "+def.cost, o.x+8, o.y+17);
+    ctx.fillStyle = ok ? "#8a94a0" : "#555"; ctx.font="10px monospace";
+    ctx.fillText(def.desc, o.x+8, o.y+32); ctx.font="bold 12px monospace";
+  }
+}
+function drawPrep(){
+  ctx.textAlign="center";
+  if(!firstMutateDone && corpses.length>0){
+    const k = corpses[0]; const [kx,ky]=tileToXY(k.c,k.r);
+    const bob = 6*Math.sin(perfNow*4);
+    ctx.fillStyle="#9be07f"; ctx.font="bold 18px monospace";
+    ctx.fillText("TAP A CORPSE", kx, ky-40+bob);
+    ctx.fillText("▼", kx, ky-24+bob);
+    ctx.font="13px monospace"; ctx.fillStyle="#8a94a0";
+    ctx.fillText("their dead are your weapons", kx, ky+44);
+  } else {
+    ctx.fillStyle="rgba(14,18,20,0.85)"; ctx.fillRect(W/2-90,TOP+8,180,36);
+    ctx.strokeStyle="#8fd9a8"; ctx.strokeRect(W/2-90,TOP+8,180,36);
+    ctx.fillStyle="#8fd9a8"; ctx.font="bold 13px monospace";
+    ctx.fillText("SEND NOW  +15◈  ("+Math.ceil(prepT)+")", W/2, TOP+31);
+    const nxt = endless?"THE LONG NIGHT":phaseOf(waveIdx);
+    ctx.fillStyle="#8a94a0"; ctx.font="12px monospace";
+    ctx.fillText("next: "+(endless?"endless "+(endlessN+1):"wave "+(waveIdx+1))+" — "+nxt, W/2, TOP+62);
+  }
+}
+function drawPaused(){
+  ctx.fillStyle="rgba(5,7,9,0.7)"; ctx.fillRect(0,0,W,H);
+  ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 28px monospace";
+  ctx.fillText("PAUSED", W/2, H/2-10);
+  ctx.font="14px monospace"; ctx.fillStyle="#8a94a0";
+  ctx.fillText("tap or press P to resume", W/2, H/2+20);
+}
+function drawTitle(){
+  ctx.textAlign="center";
+  ctx.fillStyle="#b088e0"; ctx.font="bold 64px Georgia, serif";
+  ctx.fillText("DEADROOT", W/2, 190);
+  ctx.fillStyle="#8a94a0"; ctx.font="15px monospace";
+  ctx.fillText("They nearly wiped us out. The virus got smarter.", W/2, 240);
+  ctx.fillText("Now their dead are our walls, our weapons, our food.", W/2, 262);
+  ctx.fillStyle="#8fd9a8"; ctx.font="bold 20px monospace";
+  ctx.fillText(save.won ? "TAP TO DEFEND THE HIVE — again" : "TAP TO DEFEND THE HIVE", W/2, 340+6*Math.sin(perfNow*3));
+  if(save.bestWave>0){ ctx.fillStyle="#c9a0f0"; ctx.font="13px monospace";
+    ctx.fillText("best: wave "+save.bestWave+(save.won?"  ·  campaign complete":""), W/2, 380); }
+  // little hive
+  const cx=W/2, cy=490;
+  ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(cx,cy,60,46,0,0,6.283); ctx.fill();
+  ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(cx,cy,42,32,0,0,6.283); ctx.fill();
+  ctx.fillStyle="#b088e0"; ctx.beginPath(); ctx.ellipse(cx,cy,20,15,0,0,6.283); ctx.fill();
+  ctx.fillStyle="#565f68"; ctx.font="11px monospace";
+  ctx.fillText("tap corpses to mutate defenders · M mute · P pause", W/2, H-30);
+}
+function drawEnd(won){
+  ctx.fillStyle="rgba(5,7,9,0.88)"; ctx.fillRect(0,0,W,H);
+  ctx.textAlign="center";
+  if(won){
+    ctx.fillStyle="#8fd9a8"; ctx.font="bold 40px Georgia, serif";
+    ctx.fillText("THE SURFACE IS SILENT", W/2, 110);
+    ctx.fillStyle="#dfe6ec"; ctx.font="15px monospace";
+    ctx.fillText("The extermination squads are gone. The Hive endures.", W/2, 148);
+    ctx.fillStyle="#c9a0f0"; ctx.fillText("ENDLESS MODE UNLOCKED — the long night awaits", W/2, 172);
+  } else {
+    const wn = endless ? 12+endlessN+1 : waveIdx+1;
+    ctx.fillStyle="#e06060"; ctx.font="bold 40px Georgia, serif";
+    ctx.fillText("THE HIVE HAS FALLEN", W/2, 110);
+    ctx.fillStyle="#dfe6ec"; ctx.font="15px monospace";
+    ctx.fillText("Overrun on wave "+wn+" — "+(endless?"THE LONG NIGHT":phaseOf(Math.min(waveIdx,11))), W/2, 148);
+    ctx.fillStyle="#c9a0f0"; ctx.fillText("+"+dnaEarned+" DNA harvested this run", W/2, 172);
+  }
+  // Mycelial Network
+  ctx.fillStyle="#b088e0"; ctx.font="bold 18px monospace";
+  ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 225);
+  const bx=W/2-260, bw=520, rowH=52, by=250;
+  ctx.font="12px monospace";
+  for(let i=0;i<CFG.meta.length;i++){
+    const m=CFG.meta[i], ry=by+i*rowH, tr=tier(m.id), maxed=tr>=m.max, cost=metaCost(m);
+    ctx.fillStyle="rgba(26,19,48,0.9)"; ctx.fillRect(bx,ry,bw,rowH-8);
+    ctx.strokeStyle="rgba(176,136,224,0.3)"; ctx.strokeRect(bx,ry,bw,rowH-8);
+    ctx.textAlign="left";
+    ctx.fillStyle="#dfe6ec"; ctx.font="bold 13px monospace";
+    ctx.fillText(m.label+"  "+"◆".repeat(tr)+"◇".repeat(m.max-tr), bx+12, ry+19);
+    ctx.fillStyle="#8a94a0"; ctx.font="11px monospace";
+    ctx.fillText(m.fx, bx+12, ry+35);
+    const ok = !maxed && save.dna>=cost;
+    ctx.fillStyle = maxed ? "#2a3328" : ok ? "#1f3524" : "#2a2024";
+    ctx.fillRect(bx+bw-110, ry+6, 100, rowH-22);
+    ctx.strokeStyle = ok ? "#8fd9a8" : "#555"; ctx.strokeRect(bx+bw-110,ry+6,100,rowH-22);
+    ctx.textAlign="center"; ctx.fillStyle = maxed ? "#7a8f6a" : ok ? "#8fd9a8" : "#777";
+    ctx.font="bold 12px monospace";
+    ctx.fillText(maxed?"MAX":cost+" DNA", bx+bw-60, ry+25);
+  }
+  const byBot = by + CFG.meta.length*rowH + 20;
+  ctx.font="bold 16px monospace";
+  if(won || save.won){
+    ctx.fillStyle="#8fd9a8"; ctx.textAlign="center";
+    ctx.fillText("[ NEW CAMPAIGN ]", W/4+60, byBot+30);
+    ctx.fillStyle="#c9a0f0";
+    ctx.fillText("[ ENDLESS ]", W*3/4-60, byBot+30);
+  } else {
+    ctx.fillStyle="#8fd9a8"; ctx.textAlign="center";
+    ctx.fillText("[ RISE AGAIN ]", W/2, byBot+30);
+  }
+}
+
+/* ===== Loop (fixed timestep) ===== */
+let lastT = 0, acc = 0, perfNow = 0;
+function frame(t){
+  requestAnimationFrame(frame);
+  if(!lastT){ lastT = t; return; }
+  let dt = (t-lastT)/1000; lastT = t;
+  if(dt>0.25) dt = 0.25;
+  perfNow += dt;
+  if(!paused){ acc += dt; while(acc>=DT){ update(); acc-=DT; } }
+  draw();
+}
+CG.init(()=>{});
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
