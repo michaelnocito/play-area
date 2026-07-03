@@ -120,6 +120,25 @@ const Snd = (() => {
 })();
 
 // ----------------------------------------------------------------- state ----
+// ------------------------------------------------------- progression save ---
+// localStorage save = free cloud sync on CrazyGames (Automatic Progress Save
+// backs up localStorage for HTML5 games; Data Module syncs for logged-in users).
+// Design rule (Rooftop §4 research): upgrades compress the warm-up / add options,
+// never raise the skill ceiling; ~×2 cost per tier; first buy within 1-2 runs.
+const SAVE_KEY = 'jf_save_v1';
+let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 } };
+try {
+  const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+  if (s && s.up) save = { jade: s.jade | 0, up: Object.assign(save.up, s.up) };
+} catch (e) {}
+function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+const UPS = [
+  { k: 'body',  name: 'IRON BODY',   max: 2, cost: t => 20 * (1 << t), desc: '+1 heart' },
+  { k: 'palm',  name: 'JADE PALM',   max: 3, cost: t => 12 * (1 << t), desc: 'longer reach' },
+  { k: 'focus', name: 'INNER FOCUS', max: 3, cost: t => 12 * (1 << t), desc: 'combo lasts longer' },
+  { k: 'wind',  name: 'SECOND WIND', max: 1, cost: () => 60,           desc: 'rise once per fight' }
+];
+
 const S_MENU = 0, S_PLAY = 1, S_DEAD = 2;
 let state = S_MENU;
 let t = 0;                       // global frame clock
@@ -132,6 +151,9 @@ let popups = [], parts = [], enemies = [];
 let waveT = 0, spawnT = 60, difficulty = 0;
 let bufDir = 0, bufT = 0;        // input buffer across hit-stop
 let lastSpawnSide = 1;
+let jadeRun = 0, windAvail = false;   // jade earned this run; Second Wind charge
+let PR = 92, CW = 150;                // player reach / combo window (upgraded at startRun)
+let btnRects = [];                    // tally upgrade-button hitboxes (rebuilt each draw)
 const TOUCH = matchMedia('(pointer:coarse)').matches;
 let tallyStep = 0, tallyT = 0, newBest = false;
 let msg = null, msgT = 0;
@@ -176,7 +198,7 @@ function nearestInReach(dir){
     if (dir && Math.sign(dx) !== dir) continue;
     const d = Math.abs(dx);
     // a winding-up spearman can be countered at HIS reach, not just yours
-    const range = (e.st === E_WINDUP ? e.reach : REACH) + 18;
+    const range = (e.st === E_WINDUP ? Math.max(e.reach, PR) : PR) + 18;
     if (d < range && d < bd){ bd = d; bestE = e; }
   }
   return bestE;
@@ -201,10 +223,10 @@ function strike(dir){
   if (!e){ Snd.whoosh(); return; }
 
   if (e.st === E_WINDUP){                       // ---- COUNTER ----
-    counters++;
+    counters++; jadeRun += 3;
     e.st = E_THROWN; e.stT = 0;
     e.vx = dir * 9; e.vy = -7;
-    combo++; comboT = 150;
+    combo++; comboT = CW;
     const baseC = e.type === T_BRUTE ? 750 : e.type === T_SPEAR ? 600 : 500;
     const pts = baseC * Math.min(combo, 5);
     score += pts;
@@ -216,7 +238,7 @@ function strike(dir){
       if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
       if (Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < 150){
         o.st = E_DOWN; o.stT = 0; o.vx = dir * 5; o.vy = -4;
-        score += 250; kills++;
+        score += 250; kills++; jadeRun++;
         popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a');
         burst(o.x, o.y - 40, '#e8c76a', 10, 3);
       }
@@ -236,18 +258,18 @@ function strike(dir){
   } else if (e.st === E_RECOVER){                // ---- HEAVY (punish the whiff) ----
     e.st = E_DOWN; e.stT = 0;
     e.vx = dir * 6; e.vy = -5.5;
-    combo++; comboT = 150;
+    combo++; comboT = CW;
     const pts = 250 * Math.min(combo, 5);
-    score += pts; kills++;
+    score += pts; kills++; jadeRun++;
     popup(e.x, e.y - 80, 'HEAVY +' + pts, '#e8c76a');
     Snd.hit(combo + 3); hitStop = 5; shake = 6;
     burst(e.x, e.y - 45, '#e8c76a', 14, 4);
   } else {                                       // ---- CLEAN STRIKE ----
     e.st = E_DOWN; e.stT = 0;
     e.vx = dir * 4.5; e.vy = -4.5;
-    combo++; comboT = 150;
+    combo++; comboT = CW;
     const pts = 100 * Math.min(combo, 5);
-    score += pts; kills++;
+    score += pts; kills++; jadeRun++;
     popup(e.x, e.y - 80, (combo > 1 ? '×' + Math.min(combo,5) + ' ' : '') + '+' + pts, '#e8dcc0');
     Snd.hit(combo); hitStop = 3; shake = 4;
     burst(e.x, e.y - 45, '#d8d0c0', 10, 3);
@@ -260,9 +282,17 @@ function hurtPlayer(){
   shake = 12; Snd.hurt();
   burst(P.x, P.y - 50, '#e86a6a', 16, 4);
   if (hearts <= 0){
+    if (windAvail){                              // SECOND WIND: rise once per fight
+      windAvail = false; hearts = 1; slowMo = 40;
+      popup(P.x, P.y - 110, 'SECOND WIND', '#7ce8a8', true);
+      burst(P.x, P.y - 50, '#7ce8a8', 24, 5);
+      Snd.counter();
+      return;
+    }
     state = S_DEAD; tallyStep = 0; tallyT = 0;
     newBest = score > best;
     if (newBest){ best = score; localStorage.setItem('jf_best', best); }
+    save.jade += jadeRun; persist();             // every death still banks progress
     Snd.ko();
   }
 }
@@ -272,15 +302,26 @@ function press(dir){
   Snd.unlock();
   if (state === S_MENU){ startRun(); return; }
   if (state === S_DEAD){
-    if (tallyT < 24 * 4) tallyT = 24 * 4;      // first tap: reveal full tally instantly
-    else if (tallyT > 24 * 4 + 10) startRun(); // next tap: restart (small guard vs double-tap)
+    if (tallyT < 24 * 5) tallyT = 24 * 5;      // first tap: reveal full tally instantly
+    else if (tallyT > 24 * 5 + 10) startRun(); // next tap: restart (small guard vs double-tap)
     return;
   }
   strike(dir);
 }
+function buyUp(i){
+  const u = UPS[i], tier = save.up[u.k];
+  if (tier >= u.max) return;
+  const cost = u.cost(tier);
+  if (save.jade < cost){ Snd.tick(); return; }
+  save.jade -= cost; save.up[u.k] = tier + 1; persist();
+  Snd.best();
+}
 addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
+  if (state === S_DEAD && /^Digit[1-4]$/.test(e.code) && tallyT >= 24 * 5){
+    buyUp(+e.code.slice(5) - 1); return;
+  }
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.code === 'KeyQ') press(-1);
   else if (e.code === 'ArrowRight' || e.code === 'KeyD') press(1);
   else if (e.code === 'Space' || e.code === 'Enter') press(P.face);
@@ -289,13 +330,23 @@ cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / scale, y = (e.clientY - r.top) / scale;
   if (x > W - 60 && y < 50){ Snd.toggleMute(); return; }   // mute button hitbox
+  if (state === S_DEAD && tallyT >= 24 * 5){
+    for (const b of btnRects){
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){ buyUp(b.i); return; }
+    }
+    if (y > 370) return;    // dead zone around the shop — no accidental restarts
+  }
   press(x < W/2 ? -1 : 1);
 });
 
 function startRun(){
   state = S_PLAY;
   score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
-  hearts = 3; hurtFlash = 0; difficulty = 0; waveT = 0; spawnT = 50;
+  jadeRun = 0;
+  PR = REACH + save.up.palm * 8;
+  CW = 150 + save.up.focus * 40;
+  windAvail = save.up.wind > 0;
+  hearts = 3 + save.up.body; hurtFlash = 0; difficulty = 0; waveT = 0; spawnT = 50;
   enemies.length = 0; popups.length = 0; parts.length = 0;
   msg = (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
         ' the RED flash to counter.'; msgT = 240;
@@ -542,13 +593,17 @@ function draw(){
     if (combo > 1){
       cx.fillStyle = '#7ce8a8'; cx.font = 'bold 20px Georgia';
       cx.fillText('×' + Math.min(combo, 5) + ' COMBO', W/2, 72);
-      const bw = 120 * (comboT / 150);               // visible combo-decay bar
+      const bw = 120 * (comboT / CW);                // visible combo-decay bar
       cx.fillStyle = 'rgba(124,232,168,0.6)';
       cx.fillRect(W/2 - bw/2, 80, bw, 4);
     }
     // hearts
+    const maxH = 3 + save.up.body;
     cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
-    cx.fillText('♥ '.repeat(hearts) + '♡ '.repeat(3 - hearts), 20, 40);
+    cx.fillText('♥ '.repeat(Math.max(0, hearts)) + '♡ '.repeat(Math.max(0, maxH - hearts)), 20, 40);
+    if (windAvail){ cx.fillStyle = '#7ce8a8'; cx.font = '15px Georgia'; cx.fillText('second wind ready', 20, 62); }
+    cx.fillStyle = '#7ce8a8'; cx.font = '17px Georgia';
+    cx.fillText('◆ ' + jadeRun, 20, windAvail ? 84 : 62);
     if (msgT > 0){
       cx.globalAlpha = Math.min(1, msgT / 40);
       cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia'; cx.textAlign = 'center';
@@ -569,7 +624,10 @@ function draw(){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 22px Georgia';
       cx.fillText('— press any side to fight —', W/2, 400);
     }
-    if (best > 0){ cx.fillStyle = '#8a94a6'; cx.font = '16px Georgia'; cx.fillText('BEST ' + best, W/2, 440); }
+    cx.fillStyle = '#8a94a6'; cx.font = '16px Georgia';
+    const trained = UPS.reduce((n, u) => n + save.up[u.k], 0);
+    cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
+      (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : ''), W/2, 440);
   } else if (state === S_DEAD){
     cx.fillStyle = 'rgba(8,10,14,0.7)'; cx.fillRect(0, 0, W, H);
     cx.fillStyle = '#e86a6a'; cx.font = 'bold 44px Georgia'; cx.textAlign = 'center';
@@ -579,29 +637,45 @@ function draw(){
       ['Foes dropped', kills + ''],
       ['Counters', counters + ''],
       ['Best combo', '×' + bestCombo],
+      ['Jade earned', '◆ ' + jadeRun],
       ['SCORE', score + '']
     ];
     const shown = Math.min(lines.length, Math.floor(tallyT / 24));
     if (shown > tallyStep){ tallyStep = shown; Snd.tick(); if (shown === lines.length && newBest) Snd.best(); }
-    cx.font = '22px Georgia';
+    cx.font = '20px Georgia';
     for (let i = 0; i < shown; i++){
-      const y = 210 + i * 40;
-      cx.fillStyle = i === lines.length - 1 ? '#7ce8a8' : '#e8dcc0';
+      const y = 190 + i * 32;
+      cx.fillStyle = i === lines.length - 1 ? '#7ce8a8' : i === 3 ? '#7ce8a8' : '#e8dcc0';
       cx.textAlign = 'right'; cx.fillText(lines[i][0], W/2 - 20, y);
       cx.textAlign = 'left';  cx.fillText(lines[i][1], W/2 + 20, y);
     }
+    btnRects = [];
     if (shown === lines.length){
       if (newBest){
-        cx.fillStyle = '#e8c76a'; cx.font = 'bold 24px Georgia'; cx.textAlign = 'center';
-        cx.fillText('NEW BEST', W/2, 400);
-      } else {
-        cx.fillStyle = '#8a94a6'; cx.font = '16px Georgia'; cx.textAlign = 'center';
-        cx.fillText('BEST ' + best, W/2, 400);
+        cx.fillStyle = '#e8c76a'; cx.font = 'bold 22px Georgia'; cx.textAlign = 'center';
+        cx.fillText('NEW BEST', W/2, 348);
       }
-      if ((t / 30 | 0) % 2 === 0){
-        cx.fillStyle = '#e8dcc0'; cx.font = '20px Georgia'; cx.textAlign = 'center';
-        cx.fillText(TOUCH ? 'tap to rise again' : 'press any key to rise again', W/2, 450);
+      // one-tap upgrade spend, right on the tally (Rogue Legacy flow)
+      cx.textAlign = 'center'; cx.fillStyle = '#7ce8a8'; cx.font = 'bold 19px Georgia';
+      cx.fillText('JADE  ◆ ' + save.jade + '   — train:', W/2, 382);
+      const bw2 = 218, bh = 44, gap = 10;   // 2×2 upgrade grid
+      for (let i = 0; i < UPS.length; i++){
+        const u = UPS[i], tier = save.up[u.k], maxed = tier >= u.max;
+        const cost = maxed ? 0 : u.cost(tier);
+        const bx = W/2 + (i % 2 === 0 ? -bw2 - gap/2 : gap/2), by = 398 + Math.floor(i / 2) * (bh + gap);
+        const can = !maxed && save.jade >= cost;
+        btnRects.push({ x: bx, y: by, w: bw2, h: bh, i });
+        cx.fillStyle = maxed ? 'rgba(124,232,168,0.10)' : can ? 'rgba(124,232,168,0.22)' : 'rgba(140,148,166,0.10)';
+        cx.fillRect(bx, by, bw2, bh);
+        cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
+        cx.strokeRect(bx, by, bw2, bh);
+        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
+        cx.fillText((i + 1) + '. ' + u.name + ' ' + '●'.repeat(tier) + '○'.repeat(u.max - tier), bx + 10, by + 18);
+        cx.font = '13px Georgia';
+        cx.fillText(u.desc + (maxed ? '  · MAX' : '  · ◆ ' + cost), bx + 10, by + 35);
       }
+      cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia'; cx.textAlign = 'center';
+      cx.fillText((newBest ? '' : 'BEST ' + best + '   ·   ') + (TOUCH ? 'tap the top half to rise again' : '1-4 to train  ·  arrows to rise again'), W/2, 522);
     }
   }
   // mute button

@@ -50,3 +50,19 @@ enemy flashes **RED** during windup = counter window → strike the flash = **CO
    their guard) — space control tool vs brutes/crowds.
 6. **HEAVY punish**: striking any enemy during recover (slumped, tilted, dim) = HEAVY 250×combo.
 7. **Duo rush** (diff>3): doubles now spawn same-side, staggered — feeds counter-throw fells.
+
+## JF-#004 saved progression (CrazyGames research pass, 2026-07-03)
+Research (docs.crazygames.com): acceptance is judged on depth/retention potential; full launch
+gated on avg playtime + conversion + retention. **Automatic Progress Save** backs up
+localStorage for HTML5 games with zero code, and the SDK Data Module cloud-syncs it for
+logged-in users → localStorage IS our cloud save. Tick "Progress Save" in the submission flow.
+
+Design per the Rooftop §4 research (compress warm-up, never raise ceiling; ×2 cost/tier;
+first buy in 1-2 runs; Rogue Legacy one-tap-spend-on-tally flow):
+- Currency: **JADE ◆** — 1/kill, 3/counter; banked on death (`jf_save_v1`, versioned key).
+- **IRON BODY** (2 tiers, 20/40◆): +1 heart.
+- **JADE PALM** (3 tiers, 12/24/48◆): +8 player reach per tier.
+- **INNER FOCUS** (3 tiers, 12/24/48◆): +40 frames combo window per tier.
+- **SECOND WIND** (1 tier, 60◆): rise once per fight at 1♥ (slow-mo + burst moment).
+- Tally = shop: 2×2 upgrade grid on the death screen, tap or keys 1-4, pips show tiers;
+  restart dead-zone below y370 so shop taps never restart. Menu shows jade + training count.

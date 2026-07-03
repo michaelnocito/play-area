@@ -10,7 +10,9 @@ One quality bar, one submission wave.
       HEAVY recover punish, same-side duo rush
 - [ ] Wave/belt structure: named belts every N kills (banner + palette + density step) — content answer
 - [ ] Music: reactive score keyed to combo heat (rooftop-sprint speaker architecture)
-- [ ] Economy: soft currency + cosmetic shop + pre-run buffs + permanent progression (Rooftop §4 spec)
+- [x] JF-#004 Permanent progression: JADE currency + 4 saved upgrade tracks, one-tap spend on
+      tally, localStorage save (= CG Automatic Progress Save / Data Module cloud sync for free)
+- [ ] Economy extras: cosmetic shop + pre-run consumable buffs + rewarded-ad hooks (revive/double-jade)
 - [ ] UX: pause w/ resume countdown, desktop-vs-touch prompts, teach beats in-world
 - [ ] Bot fairness suite (adapt rs_playtest.js pattern)
 - [ ] SDK wave: CG SDK + GM/GD builds from one master (reuse rooftop build script pattern)
