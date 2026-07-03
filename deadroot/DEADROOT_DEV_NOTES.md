@@ -108,9 +108,41 @@ chain sweep hits ALL humans within 1.7 tiles, 16 dmg @0.8/s). They block their t
 can burn down, and guarantee each lane can kill an easy unit before corpse towers exist.
 Visual: stitched belly, hood eyes, orbiting chain ball that whips fast on swing.
 
+## DR-#009 — Category B finish: tier-2 upgrades, daily trial, CORRODE synergy (2026-07-03)
+
+### Tier-2 tower evolution (tap an existing tower to evolve)
+Tap any non-warden tower that hasn't been upgraded → EVOLVE button appears above it (single
+radial button, purple badge with tier-2 name + cost). Purple "2" dot marks evolved towers.
+- GEYSER (Spitter ◈80): shots splash acid on hit — half-damage + drench in 1.5-tile radius.
+- STRANGLER (Rootmass ◈90): snared enemies inside the aura take 8 dmg/s crush DoT.
+- BLIGHT (Spore ◈100): clouds grow 50% wider and coat intensity doubles (3.0 vs 1.5).
+- OVERMIND (Node ◈110): link radius expands to 2.4 tiles; linked towers also get +25% dmg.
+
+### Daily Trial (title screen button)
+"DAILY TRIAL" button on title shows today's forced hostile modifier (red) + helpful modifier
+(green) + "DNA ×1.5". Mods are date-derived (rotate every day, no RNG needed). Hostile: +25%
+enemy HP / +20% enemy speed / corpses rot 5s faster. Helpful: +4 kill bounty / towers +40 HP /
++50 starting biomass. DNA per wave cleared is ×1.5 (ceiling). Daily best wave tracked per day
+and shown on the button ("today: wave N"). Normal tap still starts a standard run.
+
+### CORRODE synergy (new: acid + coat + drench = armor strip)
+When a Spitter (or GEYSER splash) hits a target that is already both coated (in a spore cloud)
+AND drenched (previously hit by acid), that enemy becomes CORRODED for 3s: all armor stripped
+while corroded. Visual: yellow-green glowing ring. Popup "CORRODE!" on trigger.
+Existing synergies preserved: FERMENT (snare+drench → ×2 dmg), THERMOBARIC (incin+cloud →
+explosion), drench strips 15% armor.
+
+### Implementation notes
+- run.enemyHp / run.enemySpd multipliers wired into spawnEnemy() — daily hostile mods apply.
+- FULL LARDER daily helpful now correctly adds biomass (was empty apply fn, now fixed).
+- towers carry tier:0/1 field; menu guards t.tier===0 before offering evolve.
+- menu.tower clears on tower death. menuAnchor/menuOpts/drawMenu handle both corpse and tower
+  menu types cleanly.
+- BLIGHT cloud stores coat intensity in cl.coat field; cloud loop uses Math.max to not
+  downgrade intensity from overlapping clouds.
+
 ## Backlog / next
-- DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
-- Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).
-- Tower upgrades (tier 2 mutations), more synergies (spore+spitter ignite?).
-- Daily trial modifier, per-wave intro banners, better boss telegraphs.
-- Mobile QA on live URL; SDK verify vs current docs before submission.
+- Mike playtest pass: tier-2 cost tuning, daily mod balance, CORRODE trigger frequency.
+- Rewarded ad hook (e.g. revive Hive at 25% HP once/run, or double DNA on tally).
+- Category A: hit-stop/screen flash on big kills, layered audio polish.
+- Category C: rewarded ads, mobile QA on live URL, SDK verify before submission.
