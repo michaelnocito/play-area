@@ -300,7 +300,11 @@ function botFrame(){
     startRun();
     return;
   }
-  if (state === S_PLAY){ botThink(); return; }
+  if (state === S_PLAY){
+    // JF-#025: bot takes a scroll at random so runs keep moving
+    if (scrollOffer){ pickScroll(Math.random() < 0.5 || scrollOffer.b < 0 ? scrollOffer.a : scrollOffer.b); return; }
+    botThink(); return;
+  }
   if (state === S_DEAD && tallyT > 100){
     BOT.run++;
     if (BOT.run >= BOT.runs * 4){
@@ -446,6 +450,41 @@ let whiffT = 0;                  // whiff recovery: striking air locks strikes b
 let adaptShown = false;          // "crowd wises up" banner shown once per run (JF-#007)
 let perfChain = 0;               // consecutive perfect counters (PALM WAVE fuel, JF-#010)
 let lastSpawnSide = 1;
+// JF-#025: scrolls — within-run escalation (top-100 gap G1). Clearing a wave
+// offers a choice of two run-only scrolls; powers stack for THIS run and die
+// with it, so the permanent shop stays the only lasting progression. Every
+// scroll amplifies the two existing verbs — none adds a new input.
+const SCROLLS = [
+  { k: 'tiger',  name: 'TIGER SCROLL',   desc: 'throws fly harder, fell wider' },
+  { k: 'crane',  name: 'CRANE SCROLL',   desc: 'the perfect window opens sooner' },
+  { k: 'ox',     name: 'OX SCROLL',      desc: '+1 heart, now and for this run' },
+  { k: 'serpent',name: 'SERPENT SCROLL', desc: 'combos linger far longer' },
+  { k: 'dragon', name: 'DRAGON SCROLL',  desc: 'jade ×1.5 at the tally' },
+  { k: 'monkey', name: 'MONKEY SCROLL',  desc: 'whiffs recover twice as fast' }
+];
+let run = {};                         // run-scoped scroll flags (k: 1)
+let scrollOffer = null;               // {a, b} SCROLLS indices while choosing
+function offerScrolls(){
+  const left = SCROLLS.map((s, i) => i).filter(i => !run[SCROLLS[i].k]);
+  if (!left.length) return;
+  for (let i = left.length - 1; i > 0; i--){
+    const j = (Math.random() * (i + 1)) | 0; [left[i], left[j]] = [left[j], left[i]];
+  }
+  scrollOffer = { a: left[0], b: left.length > 1 ? left[1] : -1 };
+  Snd.tick();
+}
+function pickScroll(i){
+  if (i < 0){ scrollOffer = null; return; }
+  const s = SCROLLS[i];
+  run[s.k] = 1; scrollOffer = null;
+  if (s.k === 'ox') hearts++;
+  if (s.k === 'serpent') CW += 70;
+  banner(s.name, '#e8c76a', 90);
+  burst(P.x, P.y - 55, '#e8c76a', 20, 4);
+  Snd.best();
+}
+// effective perfect-counter threshold: CRANE opens the window earlier
+function perfTh(){ return run.crane ? Math.min(omen.perfTh, 0.55) : omen.perfTh; }
 let jadeRun = 0, windAvail = false;   // jade earned this run; Second Wind charge
 let dailyBonus = false;               // first fight of the day = double jade
 let promoted = -1;                    // belt reached mid-run (-1 = none)
@@ -557,6 +596,7 @@ function onWaveClear(){
     restT = 140; Snd.tick();
   }
   if (hitsWave === 0) bumpTrial('nohit');
+  if (!won) offerScrolls();   // JF-#025: the rest beat becomes a choice
 }
 let hitsWave = 0;
 
@@ -601,7 +641,7 @@ function strike(dir){
   if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
   P.face = dir; P.punchT = 12; P.punchSide = dir;
   const e = nearestInReach(dir);
-  if (!e){ Snd.whoosh(); whiffT = 14; return; }   // JF-#006: whiff = brief recovery (no free spam)
+  if (!e){ Snd.whoosh(); whiffT = run.monkey ? 7 : 14; return; }   // JF-#006 whiff recovery (JF-#025: MONKEY halves it)
 
   // JF-#010: IRON CATCH — with the technique, an unlanded strike can still be countered
   const ironCatch = e.st === E_STRIKE && !e.didHit && hasTech(1);
@@ -622,7 +662,7 @@ function strike(dir){
   if (e.st === E_WINDUP || ironCatch){          // ---- COUNTER ----
     // JF-#007: final-third ("NOW" bright flash) = PERFECT counter
     // JF-#010: an IRON CATCH always counts as perfect
-    const perfect = ironCatch || e.stT / e.windup > omen.perfTh;
+    const perfect = ironCatch || e.stT / e.windup > perfTh();   // JF-#025: CRANE widens
     if (e.type === T_FAST) bumpTrial('vip');
     if (perfect) bumpTrial('perf');
     counters++; jadeRun += perfect ? 5 : 3;
@@ -632,7 +672,8 @@ function strike(dir){
     e.st = E_THROWN; e.stT = 0;
     // JF-#010: DRAGON SWEEP — perfect throws fly farther and pierce deeper
     const sweep = hasTech(0);
-    e.vx = dir * (perfect ? (sweep ? 15 : 12) : 9); e.vy = perfect ? -8 : -7;
+    e.vx = dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1);   // JF-#025: TIGER
+    e.vy = perfect ? -8 : -7;
     // JF-#020: ~1 in 6 perfect counters is a comedy send — twice the arc, wild spin
     if (perfect && e.type !== T_BOSS && Math.random() < 0.18){
       e.vx *= 1.7; e.vy = -11; e.bigSend = true;
@@ -649,7 +690,7 @@ function strike(dir){
     let felled = 0;
     for (const o of enemies){
       if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
-      if (o.type !== T_BOSS && Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < (perfect ? (sweep ? 260 : 220) : 150)){
+      if (o.type !== T_BOSS && Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < (perfect ? (sweep ? 260 : 220) : 150) + (run.tiger ? 50 : 0)){
         o.st = E_DOWN; o.stT = 0; o.vx = dir * 5; o.vy = -4;
         score += 250; kills++; jadeRun++; felled++;
         popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a'); yelp(o.x, o.y - 104);
@@ -767,6 +808,7 @@ function endRun(victory){
     fast: BOT.cur.hits.filter(h => h.fast).length,
     hitList: BOT.cur.hits
   });
+  if (run.dragon) jadeRun = Math.round(jadeRun * 1.5);   // JF-#025: DRAGON
   jadeRun = Math.round(jadeRun * omen.jadeScale);   // omen boon (JF-#011)
   if (dailyBonus) jadeRun *= 2;                // return bonus pays out at the tally
   save.jade += jadeRun;
@@ -793,6 +835,8 @@ function press(dir){
   if (state === S_STORY){ save.intro = 1; persist(); state = S_MENU; Snd.tick(); return; }
   if (state === S_END){ state = S_DEAD; Snd.tick(); return; }   // ending → tally
   if (state === S_MENU){ startRun(); return; }
+  // JF-#025: while a scroll offer is up, left/right = choose (no enemies exist)
+  if (state === S_PLAY && scrollOffer){ pickScroll(dir < 0 ? scrollOffer.a : scrollOffer.b); return; }
   if (state === S_DEAD){
     if (!tallyDone) tallyT = 24 * 7;   // first tap: reveal full tally instantly
     else startRun();                   // next tap: restart (tallyDone flips on next draw)
@@ -901,6 +945,7 @@ function startRun(){
   if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
   enemies.length = 0; popups.length = 0; parts.length = 0;
   bannerT = 0; won = false; fought = sel; perfChain = 0;
+  run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
   dBase = DISTRICTS[sel].dBase;
   beginWave(1);
   // JF-#012: veterans get the district's line instead of the controls lesson
@@ -944,6 +989,7 @@ function update(){
   if (waveT >= 5400) award('endure');
   difficulty = Math.min(12, dBase + (wave - 1) * 1.1 + Math.min(beltOf(save.kills), 6) * 0.3);
   if (wavePhase === 1){                                // rest beat between waves
+    if (scrollOffer) return;                           // JF-#025: world waits on the choice
     restT -= dt;
     if (restT <= 0){
       if (won) endRun(true);                           // district cleared — run ends in victory
@@ -1197,7 +1243,7 @@ function draw(){
     let punch = 0, rot = e.rot || 0;
     const size = e.type === T_BOSS ? 1.6 : e.type === T_BRUTE ? 1.28 : e.type === T_FAST ? 0.88 : e.type === T_SPEAR ? 1.08 : 1;
     if (e.st === E_WINDUP){
-      const late = e.stT / e.windup > omen.perfTh;   // final third: solid bright = NOW
+      const late = e.stT / e.windup > perfTh();   // final third: solid bright = NOW (JF-#025: CRANE widens)
       const flash = late || Math.sin(e.stT * 0.6) > 0;
       col = flash ? (late ? '#ff4a4a' : '#e85a5a') : '#b06a6a';   // RED telegraph = counter window
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
@@ -1270,7 +1316,7 @@ function draw(){
       cx.fillRect(W/2 - bw/2, 80, bw, 4);
     }
     // hearts
-    const maxH = Math.max(1, 3 + save.up.body + omen.heart);
+    const maxH = Math.max(1, 3 + save.up.body + omen.heart + (run.ox ? 1 : 0));   // JF-#025
     cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
     cx.fillText('♥ '.repeat(Math.max(0, hearts)) + '♡ '.repeat(Math.max(0, maxH - hearts)), 20, 40);
     if (windAvail){ cx.fillStyle = '#7ce8a8'; cx.font = '15px Georgia'; cx.fillText('second wind ready', 20, 62); }
@@ -1288,6 +1334,34 @@ function draw(){
       cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia'; cx.textAlign = 'center';
       cx.fillText(msg, W/2, 120);
       cx.globalAlpha = 1;
+    }
+    // JF-#025: scrolls held this run — small gold glyph row under the hearts
+    {
+      const held = SCROLLS.filter(s => run[s.k]);
+      if (held.length){
+        cx.font = '13px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e8c76a';
+        cx.fillText(held.map(s => '◈ ' + s.name.split(' ')[0]).join('  '), 20, windAvail ? 106 : 84);
+      }
+    }
+    // JF-#025: the scroll choice — two cards over the rest beat
+    if (scrollOffer){
+      cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 130, W, 220);
+      cx.textAlign = 'center'; cx.fillStyle = '#e8c76a'; cx.font = 'bold 26px Georgia';
+      cx.fillText('A SCROLL IS FOUND', W/2, 172);
+      const cards = [[scrollOffer.a, W/2 - 230], [scrollOffer.b, W/2 + 10]];
+      for (const [si, cxx] of cards){
+        if (si < 0) continue;
+        const S = SCROLLS[si], hot = (t / 25 | 0) % 2 === 0;
+        cx.fillStyle = 'rgba(232,199,106,0.13)'; cx.fillRect(cxx, 192, 220, 92);
+        cx.strokeStyle = hot ? '#ffe9a8' : '#e8c76a'; cx.lineWidth = 2;
+        cx.strokeRect(cxx, 192, 220, 92);
+        cx.fillStyle = '#e8c76a'; cx.font = 'bold 17px Georgia';
+        cx.fillText(S.name, cxx + 110, 224);
+        cx.fillStyle = '#e8dcc0'; cx.font = '14px Georgia';
+        cx.fillText(S.desc, cxx + 110, 250);
+      }
+      cx.fillStyle = '#c8bfa8'; cx.font = '16px Georgia';
+      cx.fillText(TOUCH ? 'tap LEFT or RIGHT to take one' : 'strike LEFT or RIGHT to take one', W/2, 316);
     }
   } else if (state === S_MENU){
     cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 0, W, H);
