@@ -227,3 +227,14 @@ Adopt list (ranked G1-G7) lives in JADE_FIST_ROADMAP.md.
   regex-swaps them into alt-builds/gamemonetize + gamedistribution (same CG facade,
   placeholder gameIds, rewarded falls back to immediate grant). Regenerate after any
   master change if the alt builds are ever needed.
+
+## JF-#025/#026 — G1+G2 built (2026-07-03, "complete game" bar before launch)
+- #025 scrolls: non-final wave clears offer 2 of 6 run-only scrolls; world holds
+  (restT frozen) until left/right picks; effects: TIGER throw vx x1.3 + fell range +50,
+  CRANE perfTh min .55, OX +1 heart now/max, SERPENT CW +70, DRAGON jade x1.5 at tally,
+  MONKEY whiff 14->7. run={} resets each run; HUD glyph row under hearts; bot picks random.
+- #026 Hall of Legends: save.hall[5] per-district top-5 {s,w}; tally splices
+  "Hall of Legends #N" line; menu shows selected district top-3 under the omen.
+  RESEARCH FACT: CG leaderboards are invite-only (one board/game, Mon-Mon seasons,
+  client SDK needs an Encryption Key) — so local board now, CG.submitScore(s) no-op
+  seam in all three adapters (master + GM/GD via make-alt-builds.ps1) for later.
