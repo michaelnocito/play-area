@@ -39,9 +39,24 @@ into a second gap; never two gapped segments in a row now · ⑳ gauntlet pairs 
 map / goal-gradient / ending. Suite green on default + all previously-failing seeds; bots WIN
 the campaign (beacon deaths in the summary = clears).
 
-**STILL OPEN:** ⑮ buff consumables · ⑯ daily trial · ⑰ district-gate boons (FLAME gate) ·
-⑱ Night Shift modifiers · ⑲(half) chunk library · ㉑-㉕ new reads (archer / feint warden /
-braziers / per-enemy tells / whiff recovery) · ㉚ rewarded ads + adblock path · cosmetic shop.
+**✅ 2026-07-03 LATER SAME DAY — RS-VARIETY + RS-ECON closed the rest (HEAD `c1519e1`):**
+⑮ buffs (Head Start / Warding Charm / Mote Magnet / Double Light — banked, one equipped/run,
+menu+death chips, none in Daily) · ⑯ Daily Trial (EMBER-gated; seeded route via in-game
+mulberry32 `rnd()`, date-pinned modifier, own daily best) · ⑰ boons (FLAME-gated 1-of-2 at
+every gate; JUMP/STRIKE picks: Gleaming Motes / Kindled Lamp / Quiet Roofs / Long Look) ·
+⑱ Night Shift rotating modifiers (Dark Night / Double Watch / Bright Motes / Low Ceiling) ·
+㉑ archers (hold far roofs, deflectable arrows — deflect kills the sender; slide-under/leap
+also work) · ㉒ feint wardens (steel-X shield read = LEAP, gold diamond = strike; 60/150-frame
+cycle) · ㉓ dark braziers (strike to rekindle +50, never steals the press near a warden) ·
+㉔ distinct tells (X marker+shield plank, bow+red glint, plume+pips) · ㉕ whiff recovery
+(ground 24f / air 10f; slides exempt — ducking is never locked) · ㉚ rewarded ads: once-per-run
+revive (un-banks the tally first) + double-Light on tally; adError → safe path · cosmetic
+cloaks (5 colors, live on the runner). Light Burst rebalanced: covers arrows too. Harness
+taught all new reads (feint-leap, arrow deflect, reach-aware presses) + `RS_DEBUG=1` death
+forensics. Suite green; slow tier still separates.
+
+**STILL OPEN (small):** ⑲(half) hand-authored chunk library (anti-streak + district pacing
+cover most of it) · adblock detection call (error path already safe) · real-device touch pass.
 
 Original 30-item list (🔁 = was already elsewhere in this roadmap):
 
@@ -68,8 +83,9 @@ map (districts as lit/unlit lamps, next named) ㉘goal-gradient HUD/tally ("next
 **G. Compliance leftovers (Parts 1/4):** ㉚🔁rewarded ads w/ real value + adblock-safe path
 (revive at Captain, double-Light on tally; never gating).
 
-Re-batched after the same-day build: **NEXT = B-VARIETY (⑯⑰⑱㉑㉒㉓㉔㉕ + chunk library)** →
-**B-ECON (⑮㉚ + cosmetic shop)** → B7 ship wave.
+All re-batched work landed same day. **NEXT = B7 SHIP WAVE** (perf audit, covers, clips,
+store copy, gameIds, build regen incl. Snd.duck into GM/GD __adPause, submit all portals) —
+plus Mike's full hands-on playtest of the campaign, which no build has had yet.
 
 ## 1. Core loop & mechanics
 
