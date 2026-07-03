@@ -65,6 +65,11 @@ add the LEFT ("THEY FLANK" banner). All four sides open at THE PURGE (wave 5, ba
 sub says "from every direction"). Endless keeps all sides. Banners tell the player each
 escalation (bible law #9: every mechanic has a visible tell).
 
+## DR-#004 — 2x speed toggle (2026-07-03)
+Fast-forward button bottom-right (›1x / »2x). Doubles the fixed-timestep updates per
+frame so simulation stays deterministic (render fps unchanged). Resets to 1x on every
+new run. Standard TD quality-of-life.
+
 ## Backlog / next
 - DR-#002: Mike playtest + tuning pass (wave pacing, costs, sweeper pressure).
 - Rewarded ad hook (e.g. revive Hive at 25% once/run, or double DNA on tally).

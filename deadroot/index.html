@@ -192,6 +192,7 @@ let run = null;
 let boonChoice = null; // [boon, boon] while a pick is pending
 let banner = null;     // {txt, sub, t}
 let overgrowthT = 0, pherT = 0;
+let gameSpeed = 1; // 1x / 2x fast-forward
 
 const BOONS = [
   { id:"acid",   txt:"ACID GLANDS",     sub:"+30% Spitter damage",        apply:r=>r.spitDmg+=0.30 },
@@ -345,6 +346,7 @@ function newRun(){
   rebuildFlow();
   firstMutateDone = false; onboardT = 0; menu = null;
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
+  gameSpeed = 1;
   // onboarding: three starter corpses beside the hive — teach mutate before wave 1
   dropCorpse(...tileToXY(CFG.hive.c0-3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+3, 9));
@@ -634,6 +636,8 @@ function onTap(x,y){
     }
     return;
   }
+  // speed toggle (bottom-right)
+  if(x>W-58 && x<W-10 && y>H-58 && y<H-10){ gameSpeed = gameSpeed===1?2:1; SFX.ui(); return; }
   // hive mind ability buttons (bottom-left)
   for(const b of abilBtns()){
     if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){ activateAbility(b.a); return; }
@@ -851,6 +855,7 @@ function draw(){
 
   drawHUD();
   drawAbilities();
+  drawSpeedBtn();
   if(menu) drawMenu();
   if(mode==="prep") drawPrep();
   if(boonChoice) drawBoons();
@@ -976,6 +981,15 @@ function drawAbilities(){
     }
   }
 }
+function drawSpeedBtn(){
+  const on = gameSpeed===2;
+  ctx.fillStyle = on ? "rgba(45,35,20,0.9)" : "rgba(20,24,26,0.9)";
+  ctx.fillRect(W-58,H-58,48,48);
+  ctx.strokeStyle = on ? "#e0a04a" : "#666"; ctx.strokeRect(W-58,H-58,48,48);
+  ctx.textAlign="center"; ctx.font="bold 16px monospace";
+  ctx.fillStyle = on ? "#e0a04a" : "#8a94a0";
+  ctx.fillText(on?"»2x":"›1x", W-34, H-28);
+}
 function drawBoons(){
   ctx.fillStyle="rgba(5,7,9,0.75)"; ctx.fillRect(0,0,W,H);
   ctx.textAlign="center";
@@ -1092,7 +1106,7 @@ function frame(t){
   let dt = (t-lastT)/1000; lastT = t;
   if(dt>0.25) dt = 0.25;
   perfNow += dt;
-  if(!paused){ acc += dt; while(acc>=DT){ update(); acc-=DT; } }
+  if(!paused){ acc += dt; while(acc>=DT){ for(let i=0;i<gameSpeed;i++) update(); acc-=DT; } }
   draw();
 }
 CG.init(()=>{});
