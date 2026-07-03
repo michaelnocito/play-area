@@ -434,6 +434,15 @@ function burst(x, y, col, n, pow){
   }
 }
 
+// JF-#020: a touch of absurdity — occasional comedy send on perfect counters,
+// wall bonks, and the odd felled-foe yelp. Rare on purpose: seasoning, not a tone change.
+const SENDS = ['SEE YOU NEXT SPRING', "HE'LL WALK THAT OFF", 'STRAIGHT TO THE HEALER',
+               'OVER THE NOODLE CART', 'TELL THE OTHERS'];
+const YELPS = ['my sandals…', 'not the face', 'I quit', 'who hired him?', 'ow.'];
+function yelp(x, y){
+  if (Math.random() < 0.12) popup(x, y, YELPS[(Math.random() * YELPS.length) | 0], '#c8bfa8');
+}
+
 // ----------------------------------------------------------------- verbs ----
 function strike(dir){
   if (state !== S_PLAY) return;
@@ -473,6 +482,11 @@ function strike(dir){
     // JF-#010: DRAGON SWEEP — perfect throws fly farther and pierce deeper
     const sweep = hasTech(0);
     e.vx = dir * (perfect ? (sweep ? 15 : 12) : 9); e.vy = perfect ? -8 : -7;
+    // JF-#020: ~1 in 6 perfect counters is a comedy send — twice the arc, wild spin
+    if (perfect && e.type !== T_BOSS && Math.random() < 0.18){
+      e.vx *= 1.7; e.vy = -11; e.bigSend = true;
+      popup(e.x, e.y - 130, SENDS[(Math.random() * SENDS.length) | 0], '#e8c76a', true);
+    }
     combo++; comboT = CW;
     const baseC = e.type === T_BOSS ? 2000 : e.type === T_BRUTE ? 750 : e.type === T_SPEAR ? 600 : 500;
     const pts = Math.round(baseC * (perfect ? 1.5 : 1)) * Math.min(combo, 5);
@@ -487,7 +501,7 @@ function strike(dir){
       if (o.type !== T_BOSS && Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < (perfect ? (sweep ? 260 : 220) : 150)){
         o.st = E_DOWN; o.stT = 0; o.vx = dir * 5; o.vy = -4;
         score += 250; kills++; jadeRun++; felled++;
-        popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a');
+        popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a'); yelp(o.x, o.y - 104);
         burst(o.x, o.y - 40, '#e8c76a', 10, 3);
       }
     }
@@ -510,7 +524,7 @@ function strike(dir){
           if (Math.abs(o.x - P.x) < 260){
             o.st = E_DOWN; o.stT = 0; o.vx = Math.sign(o.x - P.x) * 6; o.vy = -5;
             score += 250; kills++; jadeRun++;
-            popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a');
+            popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a'); yelp(o.x, o.y - 104);
             burst(o.x, o.y - 40, '#e8c76a', 10, 3);
           }
         }
@@ -844,7 +858,13 @@ function update(){
         break;
       case E_DOWN: case E_THROWN:
         e.x += e.vx * dt; e.y += e.vy * dt; e.vy += 0.5 * dt;
-        e.rot += e.vx * 0.05 * dt;
+        e.rot += e.vx * (e.bigSend ? 0.09 : 0.05) * dt;
+        // JF-#020: airborne bodies bonk off the screen edge once and rebound
+        if (e.st === E_THROWN && !e.bonked && e.y < 440 && (e.x < 26 || e.x > W - 26)){
+          e.bonked = true; e.vx *= -0.55; e.vy = Math.min(e.vy, -3.5);
+          popup(e.x < W/2 ? 40 : W - 40, e.y - 90, 'BONK', '#c8bfa8', true);
+          Snd.block(); shake = Math.max(shake, 6);
+        }
         // JF-#007: an airborne thrown body is a projectile — fells anyone it passes through
         if (e.st === E_THROWN && e.y < 440){
           for (const o of enemies){
@@ -852,7 +872,7 @@ function update(){
             if (Math.abs(o.x - e.x) < 40){
               o.st = E_DOWN; o.stT = 0; o.vx = e.vx * 0.6; o.vy = -4;
               score += 250; kills++; jadeRun++;
-              popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a');
+              popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a'); yelp(o.x, o.y - 104);
               burst(o.x, o.y - 40, '#e8c76a', 10, 3);
             }
           }

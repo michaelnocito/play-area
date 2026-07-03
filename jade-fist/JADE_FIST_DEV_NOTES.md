@@ -168,3 +168,10 @@ the real fighter() renderer at 0.72 scale, phase captions above. CG visual-first
 generator (night city + hero counter scene + title, one-click PNG download);
 `JADE_FIST_SUBMISSION.md` = listing copy, PEGI 12 rationale, Progress Save toggle reminder,
 tech checklist (all A-F items ticked), manual QA list (144Hz/mobile/adblock/campaign/CG preview).
+
+**JF-#020 touch of absurdity**: grounded in CG casual research (physics comedy = top pattern:
+Ragdoll Archers/Happy Wheels). Three light layers, all rare on purpose: (1) ~1-in-6 perfect
+counters on non-bosses = comedy send (vx x1.7, vy -11, wild spin, gold one-liner from a 5-line
+pool); (2) airborne thrown bodies BONK off the screen edge once and rebound back into play
+(still a projectile — can fell on the return); (3) 12% chance a felled foe mutters a small
+grey yelp under the FELLED popup. No balance change beyond the send arc.
