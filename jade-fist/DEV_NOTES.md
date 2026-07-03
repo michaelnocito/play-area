@@ -82,3 +82,15 @@ first buy in 1-2 runs; Rogue Legacy one-tap-spend-on-tally flow):
    untouched (the documented guardrail).
 7. **Wallet count-up on tally** + `tallyDone` flag now gates shop input (fixes variable
    line-count reveal when a promotion line is present).
+
+## JF-#006 difficulty pass (7 items — game was too easy; CG judges retention/tension)
+1. **Whiff recovery**: striking empty air locks strikes for 14 frames (`whiffT`) — kills
+   the spam-both-directions dominant strategy; every press must be a read.
+2. **Steeper ramp**: `difficulty = waveT/390` (was /480) — ~25% faster climb, cap unchanged.
+3. **Spawn cadence**: floor 34→26, slope 6→7 (`max(26, 90 − diff·7)`).
+4. **Tighter telegraphs late**: windup floor 26→20 frames, shrink slope 2→2.4.
+5. **True pincers past difficulty 6**: the opposite-side fairness guard is now
+   learning-phase-only (`difficulty <= 6`) — late game may threaten both sides at once.
+6. **Duo rush scales**: chance `min(0.2 + diff·0.05, 0.55)` (was flat 0.35); past diff 7
+   the second spawn has a 40% chance to take the OPPOSITE side (feeds the pincer test).
+7. **Combo window base 150→120 frames** — INNER FOCUS tiers now matter.

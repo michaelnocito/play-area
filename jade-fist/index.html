@@ -181,6 +181,7 @@ let hearts = 3, hurtFlash = 0;
 let popups = [], parts = [], enemies = [];
 let waveT = 0, spawnT = 60, difficulty = 0;
 let bufDir = 0, bufT = 0;        // input buffer across hit-stop
+let whiffT = 0;                  // whiff recovery: striking air locks strikes briefly (JF-#006)
 let lastSpawnSide = 1;
 let jadeRun = 0, windAvail = false;   // jade earned this run; Second Wind charge
 let dailyBonus = false;               // first fight of the day = double jade
@@ -213,7 +214,7 @@ function spawnEnemy(forceSide){
   else if (difficulty > 2.5 && r < 0.38) type = T_BRUTE;
   else if (difficulty > 1 && r < 0.6) type = T_FAST;
   const base = 1.1 + Math.random() * 0.5 + difficulty * 0.12;
-  const wind = Math.max(26, 46 - difficulty * 2);   // telegraph shrinks as waves rise
+  const wind = Math.max(20, 46 - difficulty * 2.4);   // telegraph shrinks as waves rise (JF-#006: tighter late)
   enemies.push({
     x: W/2 + side * (W/2 + 40 + Math.random() * 70), side: -side,   // walks toward center
     st: E_WALK, stT: 0, type,
@@ -253,10 +254,11 @@ function burst(x, y, col, n, pow){
 // ----------------------------------------------------------------- verbs ----
 function strike(dir){
   if (state !== S_PLAY) return;
+  if (whiffT > 0) return;                               // still recovering from a whiff
   if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
   P.face = dir; P.punchT = 12; P.punchSide = dir;
   const e = nearestInReach(dir);
-  if (!e){ Snd.whoosh(); return; }
+  if (!e){ Snd.whoosh(); whiffT = 14; return; }   // JF-#006: whiff = brief recovery (no free spam)
 
   if (e.st === E_WINDUP){                       // ---- COUNTER ----
     counters++; jadeRun += 3;
@@ -395,7 +397,7 @@ function startRun(){
   score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
   jadeRun = 0;
   PR = REACH + save.up.palm * 8;
-  CW = 150 + save.up.focus * 40;
+  CW = 120 + save.up.focus * 40;   // JF-#006: tighter base window (was 150) — FOCUS earns its cost
   windAvail = save.up.wind > 0;
   // warm-up compression: higher belts skip the too-easy opening ramp, never the ceiling
   const belt = beltOf(save.kills);
@@ -410,7 +412,7 @@ function startRun(){
     save.streak = save.day === yest.toDateString() ? save.streak + 1 : 1;
     save.day = today; persist();
   }
-  hearts = 3 + save.up.body; hurtFlash = 0; difficulty = 0; spawnT = 50;
+  hearts = 3 + save.up.body; hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0;
   enemies.length = 0; popups.length = 0; parts.length = 0;
   msg = (TOUCH ? 'Tap toward them.  Tap' : 'Strike toward them.  Strike') +
         ' the RED flash to counter.'; msgT = 240;
@@ -434,6 +436,7 @@ function update(){
 
   if (state !== S_PLAY){ if (state === S_DEAD) tallyT++; return; }
   if (hitStop > 0){ hitStop--; return; }
+  if (whiffT > 0) whiffT--;
   if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir; bufDir = 0; bufT = 0; strike(d); } }
   const dt = slowMo > 0 ? 0.35 : 1;
   if (slowMo > 0) slowMo--;
@@ -443,12 +446,14 @@ function update(){
   // difficulty + spawning
   waveT += dt;
   if (waveT >= 5400) award('endure');
-  difficulty = Math.min(12, waveT / 480);
+  difficulty = Math.min(12, waveT / 390);              // JF-#006: steeper ramp (was /480)
   spawnT -= dt;
   if (spawnT <= 0){
     spawnEnemy();
-    if (difficulty > 3 && Math.random() < 0.35) spawnEnemy(lastSpawnSide);   // duo rush, same side
-    spawnT = Math.max(34, 95 - difficulty * 6) * (0.7 + Math.random() * 0.6);
+    // duo rush scales with difficulty; late duos may split to opposite sides (true pincer feed)
+    if (difficulty > 3 && Math.random() < Math.min(0.2 + difficulty * 0.05, 0.55))
+      spawnEnemy(difficulty > 7 && Math.random() < 0.4 ? -lastSpawnSide : lastSpawnSide);
+    spawnT = Math.max(26, 90 - difficulty * 7) * (0.7 + Math.random() * 0.6);
   }
 
   for (const e of enemies){
@@ -457,8 +462,9 @@ function update(){
       case E_WALK: {
         const d = Math.abs(e.x - P.x);
         // fairness guard: never open a windup while the OTHER side is already
-        // threatening — hold just outside reach instead of pincering
-        const otherThreat = enemies.some(o => o !== e &&
+        // threatening — hold just outside reach instead of pincering.
+        // JF-#006: guard lifts past difficulty 6 — late game allows true pincers.
+        const otherThreat = difficulty <= 6 && enemies.some(o => o !== e &&
           (o.st === E_WINDUP || o.st === E_STRIKE) &&
           Math.sign(o.x - P.x) !== Math.sign(e.x - P.x));
         if (d < e.reach - 8){
