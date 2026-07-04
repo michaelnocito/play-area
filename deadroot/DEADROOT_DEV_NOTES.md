@@ -254,13 +254,97 @@ ring uses tower color; node range ring now shown.
 ## Backlog / next (v1.1 → submission)
 - Playtest pass on DR-#011/012: salvage balance, UNSCATHED frequency, combo feel,
   boss bar positioning, damage number spam threshold, tower readability QA.
-- Remaining Category C: mobile QA full playthrough on live URL, corpse rot timer /
-  Sweeper sanitize tooltip.
+- Remaining Category C: mobile QA full playthrough on live URL.
 - Human eyes still needed: does the portrait rotate-hint read well; is squeezed
   mobile play (viewScale≈0.36 on a 375px phone) actually comfortable now that
   touch/tap targets are padded/radius-searched — a bigger fix (portrait
   camera/pan) is still open. Also: does the audio compressor actually sound
-  right (can't verify by ear headlessly).
+  right (can't verify by ear headlessly); does the reduced-motion path actually
+  feel calmer (can't force prefers-reduced-motion in headless testing either).
+
+## DR-#017 — CrazyGames-acceptance hardening batch #3 (2026-07-04)
+Third guideline audit pass. By this point the easy/obvious gaps from DR-#015/#016
+were gone, so this batch skews toward: closing the last Category C backlog item
+(corpse-rot tooltip), teaching-tell polish, a real pause menu, and defensive
+robustness. **Found and fixed a real bug introduced by this same batch**: the new
+`hitPad()` had no upper bound, and under a degenerate/very-small `viewScale` it
+inflated to the point where the pause and mute buttons' padded hit-regions covered
+almost the entire screen, swallowing every tap. Caught via headless regression
+(corpse-tap test came back with `menu` unexpectedly null) — capped `hitPad()` at
+80px and added neighbor-aware padding caps (half the gap to the next button) on
+the new pause-menu buttons so adjacent buttons can't swallow each other's taps
+even at the cap. Relanded and re-verified all of the below headlessly: parse-check,
+draw() on every tick of a 15k-tick regression, corpse/evolve tip triggers, pause
+menu (resume/restart/quit) via real tap coordinates, title mute button, and a
+mocked-async rewarded-ad double-tap race (confirmed only 1 SDK request fires).
+
+**Category C, closed:**
+1. **Corpse-rot tooltip** — one-time nudge (first-ever run only, `save.seenRotTip`)
+   pointing at a corpse's rot ring with "the green ring = rot timer / let it empty
+   for biomass, or mutate now." Fades in/out over ~9s.
+2. **Evolve tooltip** — one-time nudge (`save.seenEvolveTip`) after the player's
+   very first tower is built: "tap a tower again to EVOLVE it" — the tier-2 system
+   from DR-#009 previously had no in-fiction teaching moment at all.
+
+**Menus should stop the SDK's "gameplay" clock (bible: "menus... = stopped"):**
+3. `offerBoons()`/`pickBoon()` now bracket the boon-choice screen with
+   `CG.gameplayStop()`/`gameplayStart()` — it's a decision menu, not active play.
+
+**Real pause menu (was tap-anywhere-to-resume only):**
+4. RESUME / RESTART / QUIT buttons replace the single "tap to resume" — RESTART
+   calls `newRun()` directly from pause, QUIT returns to the title screen. Tapping
+   elsewhere on the pause overlay now does nothing (previously any tap resumed,
+   which could double as an accidental menu click right after unpausing).
+
+**Platform/SDK robustness:**
+5. `CG.init` now races the real SDK init against a 4s timeout — a hung/broken SDK
+   can no longer block first paint ("fast load is a feature").
+6. `takeSecondWind`'s async callbacks wrapped in try/catch, and a new `awaitingAd`
+   flag blocks a mashed WATCH-AD button from firing a second concurrent rewarded-ad
+   request — verified with a mocked async SDK that resolves after a delay.
+7. `window.addEventListener("blur", ...)` auto-pauses alongside the existing
+   `visibilitychange` handler (some desktop alt-tab cases don't fire the latter).
+
+**Accessibility — `prefers-reduced-motion`:**
+8. Screen-shake magnitude halved (`shakeIt`).
+9. Hit-stop freeze-frames skipped entirely (`setHitStop` helper).
+10. The persistent low-HP "breathing" edge-pulse is disabled (the one-shot hit
+    flash still fires — only the continuous flashing loop is motion-gated).
+
+**Mobile / input robustness:**
+11. `hitPad()` capped at 80px (see the bug note above) — was unbounded.
+12. Corpse/tower tap-radius, boon cards, and Second Wind buttons now all route
+    through the same padding helper for consistency (previously only some did).
+13. Radial mutate-menu buttons (`menuHit`) padded the same way.
+14. Debounce: a `mousedown` within 350ms of the last `touchstart` is ignored, so
+    hybrid touch+mouse devices can't double-activate on one physical tap.
+15. `viewScale` clamped to a 0.05 floor so a pathological viewport can't collapse
+    the canvas to 0×0.
+16. A second `resize()` fires 300ms after load (some mobile browsers report the
+    wrong `innerHeight` before the URL bar collapses).
+17. `overscroll-behavior`/`user-select`/`-webkit-touch-callout` CSS plus a
+    `contextmenu`/`dragstart` prevent-default on the canvas — no browser chrome
+    (long-press menu, text selection, image-drag ghost) can appear over the game.
+
+**Player-facing polish:**
+18. Title screen gained its own mute button (previously only reachable via the M
+    key or the in-run HUD, which doesn't render on the title screen).
+19. Title screen now shows total banked DNA and a "N/8 mutations found" lifetime
+    completionist counter (`save.boonsSeenEver`) once a player has bested wave 1.
+20. Next-wave enemy preview during prep (small colored dots + counts) — the player
+    used to only see a named-moment tease ("2 ➜ THE BUTCHER"), never what's
+    actually coming next wave-to-wave (bible law #8: player always knows what's
+    next).
+21. End-screen stats line now also reports towers evolved this run
+    (`towersEvolvedThisRun`), not just built.
+22. Desktop: Enter/Space now also sends the wave early from prep and starts a run
+    from the title screen (previously only worked on the death/victory screen).
+23. `<meta name="theme-color">` and canvas `role="img"`/`aria-label` for baseline
+    platform/screen-reader hygiene.
+
+Also fixed the meta viewport/aria niceties from earlier this session and reused the
+`hitPad`/`pickBoon` helpers to avoid duplicating logic across mouse, touch, and
+keyboard input paths.
 
 ## DR-#016 — CrazyGames-acceptance hardening batch #2, 12 more fixes (2026-07-04)
 Re-ran the guideline audit a third time (GAME_BIBLE Parts 1/2/4) looking past what
