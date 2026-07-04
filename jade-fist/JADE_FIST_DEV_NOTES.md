@@ -430,3 +430,23 @@ first-to-last greedy match, since the alt builds' injected SDK head blocks are a
 `gpLast` check; trials-panel line widths confirmed under the 230px inner panel width via
 `measureText`; bot suite re-run 11/12 wins, zero console errors; debug=1 overlay confirmed
 rendering without error.
+
+## JF-#038 — third pass: asked for 50, delivered what was real (2026-07-04)
+After two deep audit rounds (24 verified fixes, several of which were regressions from the
+round before), a genuine third sweep does not turn up 50 more distinct CG-relevant bugs in a
+2300-line file without inventing thin/duplicate findings — which is exactly the pattern that
+caused #036→#037's regressions. Said so and scoped down instead of padding. What was real:
+- **Both `.md` docs were stale**: JADE_FIST_ROADMAP.md still said "Left: Mike re-playtest →
+  JF-#029 tuning pass" as the next step, three batches and two audits behind reality.
+  JADE_FIST_SUBMISSION.md's tech checklist and listing description dated to JF-#018/#019 and
+  never mentioned scrolls/wardrobe/Hall of Legends/LEGEND — undersells depth to CG reviewers,
+  who judge acceptance on exactly that. Rewrote both to current state.
+- **No favicon/meta description/OG tags** — harmless for the CG-hosted listing (their own page
+  chrome), but the standalone GH Pages URL Mike actually uses to test fired a 404 favicon
+  request every load and had nothing useful if the link got shared. Added an inline SVG
+  favicon (no asset file) + description + og:title/og:description.
+- **`checkAdblock()` only ran once, at SDK-init time** — some adblock detectors populate late.
+  Added a re-check right before the first real interstitial/rewarded request too.
+
+VALIDATION: `node --check` on master + both regenerated alt builds; bot suite 12/12 wins, zero
+console errors.

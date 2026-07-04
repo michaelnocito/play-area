@@ -1,7 +1,7 @@
 # JADE FIST — Roadmap to CrazyGames-grade
 
 Same standard as Rooftop Sprint: genuinely fun + polished, clears CG quality guidelines.
-One quality bar, one submission wave. Status as of JF-#026 (2026-07-03).
+One quality bar, one submission wave. Status as of JF-#037 (2026-07-04).
 
 ## Done
 - [x] JF-#001 Prototype: core counter-brawler loop (strike / counter-throw / combo / tally)
@@ -40,16 +40,31 @@ One quality bar, one submission wave. Status as of JF-#026 (2026-07-03).
       chatter, gag props, reactive moon, longest-yeet stat, joke scrolls, accessory
       cosmetics, bowling STRIKE, hype announcer, boss personalities + Butcher cleavers,
       between-wave cameo; validated smoke + bot 12/12 fair
+- [x] JF-#035 Menu legibility pass: darker vignette, solid panels behind corner text,
+      real filled CTA button, condensed trials/omen/hall text (partly reverted by #036
+      once it broke "player always knows what to do now")
+- [x] JF-#036 First CG-guidelines audit (12 fixes): ad/gameplayStart ordering, portrait-
+      mobile rotate prompt, stale click hitbox, duck/jump dodge symmetry, loading-order,
+      restored trial detail, LEGEND loop identity, wardrobe touch targets, mobile font size,
+      adblock-detection hook
+- [x] JF-#037 Second CG-guidelines audit (12 more fixes, several were #036 regressions):
+      independent SDK-call debounce (was silently eating happytime() on every win),
+      window.blur pause listener, ad-cooldown clock starting at session load, mute button
+      visible during pause again, debug=1 QA overlay, GM/GD alt-build callback fix, timeout
+      safety nets on ad/init callbacks, non-optimistic reward flag, trials-panel text
+      overflow fix, startRun() re-entrancy guard, alt-builds regenerated
 
 ## Left (in order)
-- [ ] **Mike re-playtest** — the harder build + new dodge axis + cartoon look; notes feed JF-#029
-- [ ] **JF-#029 tuning pass** — dBase 1/3/5/7/9, boss hp 3/4/5/5/6, throw aim durations,
-      dodge windows (jump 32 / duck 26), spear frequency, dye prices, scroll strengths,
-      music intensity curve, comedy-send/yelp rates
-- [ ] **Manual QA** (list in JADE_FIST_SUBMISSION.md): 144Hz speed, mobile portrait/landscape,
-      adblock-on load, rewarded once-per-tally, CG preview-environment SDK check
+- [ ] **Mike playtest** the current build (post #035–#037: legibility + two compliance
+      audits, no further self-review — see JADE_FIST_DEV_NOTES.md for why diminishing
+      returns set in on solo audit passes)
+- [ ] **Manual QA** (list in JADE_FIST_SUBMISSION.md): 144Hz speed, mobile portrait/landscape
+      (including the new rotate prompt), adblock-on load, rewarded once-per-tally,
+      CG preview-environment SDK check, `?debug=1` readout sanity check
 - [ ] **Submit to CrazyGames** — cover PNG from thumbnail.html, listing copy from
-      JADE_FIST_SUBMISSION.md, PEGI 12, tick Automatic Progress Save
+      JADE_FIST_SUBMISSION.md (now mentions scrolls/Hall of Legends/wardrobe for CG's
+      depth-and-retention read, not just the base combat loop), PEGI 12, tick Automatic
+      Progress Save
 - [ ] Post-review iterate on CG reviewer feedback
 
 ## Top-100 gap analysis (2026-07-03 research vs current build)

@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>JADE FIST</title>
+<!-- JF-#037: no favicon/description/OG tags before this — the standalone GH Pages URL
+     (Mike's own play/test link, separate from the CG-hosted listing) was firing a 404
+     favicon request every load and had nothing useful to show if the link got shared. -->
+<meta name="description" content="Kung fu counter-brawler: strike toward them, or counter the red flash and throw them into the rest. Four districts, daily trials, run-only scrolls, an endless LEGEND mode.">
+<meta property="og:title" content="Jade Fist">
+<meta property="og:description" content="A kung fu counter-brawler — two moves, real depth. Fell the bosses, reclaim the jade.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230a0d12'/%3E%3Ctext x='50' y='68' font-size='60' text-anchor='middle'%3E%F0%9F%A5%8B%3C/text%3E%3C/svg%3E">
 <!-- SDK:HEAD:BEGIN (JF-#024: make-alt-builds.ps1 swaps this block per platform) -->
 <!-- JF-#013: CrazyGames SDK v3 (verify against current docs before submitting) -->
 <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
@@ -233,7 +240,8 @@ const CG = {
   // module (adStarted fires, then nothing) must not soft-lock the menu
   // forever either — same timeout-and-continue pattern as CG.init.
   interstitial(cb){
-    let done = false;
+    this.checkAdblock();   // JF-#038: re-check right before the first real ad request —
+    let done = false;      // adblock detectors can populate late, so the one-shot check
     const fire = () => { if (done) return; done = true; cb&&cb(); };
     setTimeout(fire, 8000);
     try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
@@ -244,6 +252,7 @@ const CG = {
     fire();
   },
   rewarded(onReward){
+    this.checkAdblock();   // JF-#038: see interstitial() above
     let done = false;
     const fire = () => { if (done) return; done = true; onReward&&onReward(); };
     setTimeout(fire, 8000);   // JF-#037: same hang guard as interstitial
