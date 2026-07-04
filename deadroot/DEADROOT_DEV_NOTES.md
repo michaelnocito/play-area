@@ -262,6 +262,60 @@ ring uses tower color; node range ring now shown.
   right (can't verify by ear headlessly); does the reduced-motion path actually
   feel calmer (can't force prefers-reduced-motion in headless testing either).
 
+## DR-#018 — Drastic graphical upgrade: environment, story frame, cartoon pop (2026-07-04)
+Mike: "needs a drastic graphical upgrade... too sparse... align with the story (humans
+from wooded borders), real objects like trees + permanent structures, must pop and be a
+little goofy." Researched 2D depth technique (layered parallax, contact shadows as the
+AO analog, vignette + warm color grading, cartoon cel outlines + wobble). 20 upgrades,
+10 of them environment/level (non-enemy, non-player):
+
+**Environment / level (10):**
+1. **Wooded border treeline** — ~108 lumpy cel-outlined cartoon trees hug all four edges
+   + denser corner thickets. This is the treeline the extermination squads emerge from.
+2. **Ground radial gradient** — warm cultivated soil near the Hive fading to cold dark at
+   the wooded rim (depth + "underground clearing" read; replaced the flat #0b0e10 fill).
+3. **Abandoned human structures** — 5 hand-placed ruins telling the invasion story: leaning
+   watchtower, tilted ☣ quarantine sign, sandbag barricade, wrecked army jeep (fungus
+   reclaiming it), floodlight pole w/ cone.
+4. **Bioluminescent mushrooms** — teal/violet glowing 'shroom clusters ringing the Hive's
+   cultivated territory.
+5. **Bone piles** — skulls + crossed bones from past sieges, count grows with lifetime
+   plays (graveyard-fortress flavor; `save.plays`).
+6. **Ambient spore motes** — 26 drifting glowing motes (live foreground parallax layer).
+7. **Low drifting fog** — 7 soft fog banks creeping along the edges (background parallax).
+8. **Invasion trails** — worn dirt paths marching in from the *currently open* spawn sides
+   toward the Hive (reads live from waveIdx, so it escalates with the flanking waves).
+9. **Contact shadows** — soft ground shadows under trees/structs/shrooms/corpses/towers/
+   enemies (the 2D ambient-occlusion analog; grounds everything + adds pop).
+10. **Painter's depth sort** — all ground decor y-sorted so nearer objects overlap farther.
+
+**Enemy / player / effects (10):**
+11. Enemy contact shadows. 12. Cel outlines on every enemy silhouette. 13. Walk-bob
+squash-&-stretch shamble (gentler for bosses; motion-gated). 14. **Googly eyes** on the
+humanoid grunts, pupils nervously tracking the Hive. 15. **Hive overhaul** — breathing
+bioluminescent glow, writhing tendrils, pulsing core sacs, a big cyclops eye that tracks
+the nearest enemy and occasionally blinks, cel outline, reddens when hurt. 16. Tower
+contact shadows. 17. Spawn poof (grunt shoves out through the treeline). 18. Projectile
+glow + comet trail + highlight. 19. Goofy death: deflate-puff ring on kill. 20. Corpse
+redesign — an actual sprawled body (torso + splayed arm + head + X-eyes) that greens as
+it rots into biomass.
+
+**Perf (important):** the 20-item-heavy environment initially cost ~43ms/frame under the
+preview's software renderer (would hurt Mike's weak UHD620 + mobile). Fixed by **baking
+the static decor** (trees/structs/shrooms/bones) to an offscreen canvas once per run and
+blitting it — dropped drawEnvironment to 0.06ms and full-frame draw from 77ms → ~1ms. The
+bake freezes tree sway / shroom-glow pulse, but live motion is carried by motes, fog, the
+Hive, trails, projectiles, and enemy bob, so the scene still moves plenty. `contactShadow`
++ the four decor draws take an optional target-context arg so they can render to either the
+main canvas or the bake buffer.
+
+**Verification note:** preview_screenshot AND canvas→dataURL image return were both broken
+this whole session (repeated 30s timeouts / API-rejected image). Verified instead by (a)
+draw() running clean across a 15k-tick regression covering every game state + entity type,
+and (b) direct canvas pixel-sampling: trees confirmed framing all edges, Hive-glow center
+brighter than the vignetted corners, warm gradient soil. **Mike should eyeball the live URL**
+— the "does it actually pop / feel goofy" judgment can't be made headlessly.
+
 ## DR-#017 — CrazyGames-acceptance hardening batch #3 (2026-07-04)
 Third guideline audit pass. By this point the easy/obvious gaps from DR-#015/#016
 were gone, so this batch skews toward: closing the last Category C backlog item

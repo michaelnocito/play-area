@@ -475,6 +475,8 @@ function spawnEnemy(type){
   const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
     col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0 });
+  // spawn poof — the human shoves out through the treeline
+  burst(x,y,"#4a5a3a",6); rings.push({x,y,r:0,maxR:e.r+10,maxT:0.3,t:0.3,col:"rgba(120,150,100,0.5)"});
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they steal your mutate"); }
 }
 function dropCorpse(x,y){
@@ -575,6 +577,7 @@ function newRun(){
   stains=[]; rings=[]; seenSweeper=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
   rotTipT=0; evolveTipT=0;
   save.plays=(save.plays|0)+1; persist();
+  genDecor(); // fresh treeline + growing bone piles each run
   // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
   dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
@@ -918,6 +921,8 @@ function kill(e){
   // ground stain
   stains.push({x:e.x,y:e.y,t:5,col:e.col}); if(stains.length>20) stains.shift();
   burst(e.x,e.y,e.col,10);
+  // goofy death pop: a comedic puff ring (the grunt deflates)
+  rings.push({x:e.x,y:e.y,r:0,maxR:e.r+16,maxT:0.3,t:0.3,col:"rgba(220,230,200,0.6)"});
   if(e.type==="boss"){ SFX.boom(); shakeIt(10); setHitStop(4); bigBurst(e.x,e.y,"#c9d3dd",32); bigBurst(e.x,e.y,"#e0c0ff",18); for(let i=0;i<3;i++) dropCorpse(e.x+(i-1)*CFG.tile, e.y); }
   else if(e.type==="butcher"){ SFX.boom(); shakeIt(7); setHitStop(3); bigBurst(e.x,e.y,"#b04a4a",24); popup(e.x,e.y,"THE BUTCHER FALLS","#b04a4a"); for(let i=0;i<2;i++) dropCorpse(e.x+(i*2-1)*CFG.tile*0.5, e.y); }
   else dropCorpse(e.x,e.y);
@@ -1314,12 +1319,182 @@ function drawBossBar(){
   ctx.fillText(Math.ceil(Math.max(0,boss.hp))+" HP",W/2,by+26);
 }
 
+/* ===== Environment decor (generated once; purely cosmetic, never touches sim) =====
+   Story frame: the Hive is a clearing in the woods; the extermination squads march
+   in from the treeline past abandoned quarantine gear. Goofy, lumpy, bioluminescent. */
+const DECOR = { trees:[], structs:[], shrooms:[], bones:[], motes:[], fog:[] };
+function drnd(a,b){ return a+Math.random()*(b-a); }
+function genDecor(){
+  for(const k in DECOR) DECOR[k].length=0;
+  const cx=W/2, cy=(TOP+H)/2;
+  const nearHiveCore=(x,y,rad)=>((x-cx)**2+(y-cy)**2) < rad*rad;
+  const TREECOL = ["#2f4a30","#375737","#2b3f2c","#40603f","#33523a","#2e4636"];
+  const tree=(x,y,s)=>DECOR.trees.push({ x,y,s, col:TREECOL[(Math.random()*TREECOL.length)|0], sway:Math.random()*6.283, tint:Math.random()<0.22 });
+  // wooded fringe hugging all four edges (the treeline the humans emerge from)
+  for(let x=6; x<W-6; x+=drnd(30,48)){ tree(x+drnd(-8,8), TOP+drnd(0,18), drnd(0.7,1.25)); tree(x+drnd(-8,8), H-drnd(0,20), drnd(0.75,1.3)); }
+  for(let y=TOP+14; y<H-14; y+=drnd(32,50)){ tree(drnd(0,18), y+drnd(-8,8), drnd(0.7,1.25)); tree(W-drnd(0,20), y+drnd(-8,8), drnd(0.75,1.3)); }
+  // denser corner thickets
+  for(const [ccx,ccy] of [[24,TOP+18],[W-24,TOP+18],[24,H-22],[W-24,H-22]]) for(let i=0;i<5;i++) tree(ccx+drnd(-22,22), ccy+drnd(-14,22), drnd(0.9,1.5));
+  // abandoned human structures (hand-placed near edges, off the central lanes)
+  DECOR.structs.push({ kind:"tower", x:96,      y:TOP+74 });
+  DECOR.structs.push({ kind:"sign",  x:W-116,   y:TOP+62 });
+  DECOR.structs.push({ kind:"barricade", x:74,  y:(TOP+H)*0.60 });
+  DECOR.structs.push({ kind:"truck", x:W-118,   y:H-92 });
+  DECOR.structs.push({ kind:"flood", x:118,     y:H-84 });
+  // cultivated bioluminescent mushrooms ringing the Hive's territory
+  for(let i=0;i<11;i++){ const a=i*(6.283/11)+drnd(-0.2,0.2), rad=drnd(96,158); const x=cx+Math.cos(a)*rad, y=cy+Math.sin(a)*rad*0.8;
+    if(!nearHiveCore(x,y,66)) DECOR.shrooms.push({ x,y, s:drnd(0.7,1.4), hue:Math.random()<0.5?"#7fe0c0":"#c9a0f0", ph:Math.random()*6.283 }); }
+  // bone piles from past sieges — grows a little with lifetime plays (graveyard fortress)
+  const boneN = 6 + Math.min(save.plays|0, 12);
+  for(let i=0;i<boneN;i++){ const a=Math.random()*6.283, rad=drnd(58,176); const x=cx+Math.cos(a)*rad, y=cy+Math.sin(a)*rad*0.8;
+    if(!nearHiveCore(x,y,54) && y>TOP+18 && y<H-14) DECOR.bones.push({ x,y, s:drnd(0.7,1.25), rot:drnd(-0.6,0.6), skull:Math.random()<0.55 }); }
+  // ambient drifting spores + low fog (parallax depth layers)
+  for(let i=0;i<26;i++) DECOR.motes.push({ x:Math.random()*W, y:TOP+Math.random()*(H-TOP), r:drnd(1,2.6), ph:Math.random()*6.283, spd:drnd(0.15,0.5), amp:drnd(6,22) });
+  for(let i=0;i<7;i++) DECOR.fog.push({ x:Math.random()*W, y:TOP+drnd(10,H-TOP-10), r:drnd(90,190), ph:Math.random()*6.283, spd:drnd(3,9) });
+  bakeDecor();
+}
+// soft contact shadow (the 2D ambient-occlusion analog that grounds objects + adds pop)
+function contactShadow(x,y,rx,ry,a,g){ g=g||ctx; g.save(); g.globalAlpha=a==null?0.28:a; g.fillStyle="#000"; g.beginPath(); g.ellipse(x,y,rx,ry,0,0,6.283); g.fill(); g.restore(); }
+function drawTree(t,g){ g=g||ctx;
+  const sway=0; // baked static (motes/fog/hive carry the live motion)
+  const s=t.s;
+  contactShadow(t.x, t.y+2, 15*s, 5*s, 0.32, g);
+  // trunk
+  g.fillStyle="#3a2b22"; g.fillRect(t.x-3*s, t.y-14*s, 6*s, 16*s);
+  g.strokeStyle="#2a1e18"; g.lineWidth=1; g.strokeRect(t.x-3*s, t.y-14*s, 6*s, 16*s);
+  // lumpy canopy (overlapping blobs) with cel outline + top highlight
+  const bx=t.x+sway, by=t.y-24*s;
+  const blobs=[[0,0,15],[-11,4,11],[11,4,11],[0,-9,11]];
+  g.strokeStyle="rgba(15,25,15,0.9)"; g.lineWidth=2.5*s;
+  g.fillStyle=t.col;
+  for(const [dx,dy,r] of blobs){ g.beginPath(); g.arc(bx+dx*s, by+dy*s, r*s, 0, 6.283); g.fill(); g.stroke(); }
+  // highlight + optional sickly fungal tint
+  g.globalAlpha=0.5; g.fillStyle="#7fae6a"; g.beginPath(); g.arc(bx-5*s, by-8*s, 6*s, 0, 6.283); g.fill(); g.globalAlpha=1;
+  if(t.tint){ g.globalAlpha=0.35; g.fillStyle="#8a6ab0"; g.beginPath(); g.arc(bx+6*s, by+4*s, 7*s, 0, 6.283); g.fill(); g.globalAlpha=1; }
+}
+function drawStruct(o,g){ g=g||ctx;
+  g.save(); g.translate(o.x,o.y);
+  contactShadow(0, 4, 24, 7, 0.3, g);
+  g.lineWidth=2; g.strokeStyle="rgba(10,12,14,0.85)";
+  if(o.kind==="tower"){ // leaning ruined watchtower
+    g.strokeStyle="#4a3f33"; g.lineWidth=3;
+    g.beginPath(); g.moveTo(-12,4); g.lineTo(-6,-34); g.moveTo(12,4); g.lineTo(6,-34); g.stroke();
+    g.beginPath(); g.moveTo(-12,-8); g.lineTo(12,-14); g.stroke();
+    g.fillStyle="#5a4d3d"; g.strokeStyle="rgba(10,12,14,0.85)"; g.lineWidth=2;
+    g.beginPath(); g.rect(-14,-48,26,16); g.fill(); g.stroke();
+    g.fillStyle="#7a3030"; g.beginPath(); g.arc(4,-40,2.5,0,6.283); g.fill(); // dead searchlight
+  } else if(o.kind==="sign"){ // tilted biohazard/quarantine sign
+    g.fillStyle="#3a3228"; g.fillRect(-2,-2,4,26);
+    g.save(); g.rotate(-0.12);
+    g.fillStyle="#c9a83f"; g.strokeStyle="rgba(10,12,14,0.85)"; g.lineWidth=2;
+    g.beginPath(); g.rect(-16,-30,32,22); g.fill(); g.stroke();
+    g.fillStyle="#1a1a14"; g.font="bold 13px monospace"; g.textAlign="center"; g.fillText("☣",0,-14);
+    g.restore();
+  } else if(o.kind==="barricade"){ // stacked sandbags
+    g.fillStyle="#6a5c44"; g.strokeStyle="rgba(10,12,14,0.7)"; g.lineWidth=1.5;
+    const bag=(x,y)=>{ g.beginPath(); g.ellipse(x,y,10,7,0,0,6.283); g.fill(); g.stroke(); };
+    bag(-11,2); bag(0,3); bag(11,2); bag(-6,-8); bag(6,-8); bag(0,-17);
+  } else if(o.kind==="truck"){ // wrecked army jeep
+    g.fillStyle="#42513a"; g.strokeStyle="rgba(10,12,14,0.85)"; g.lineWidth=2;
+    g.beginPath(); g.rect(-22,-16,44,18); g.fill(); g.stroke();
+    g.beginPath(); g.rect(-22,-28,20,14); g.fill(); g.stroke(); // cab
+    g.fillStyle="#1a1e18"; g.beginPath(); g.arc(-12,4,7,0,6.283); g.fill(); g.beginPath(); g.arc(13,4,7,0,6.283); g.fill();
+    g.fillStyle="#8fd9a8"; g.globalAlpha=0.5; g.beginPath(); g.arc(6,-6,5,0,6.283); g.fill(); g.globalAlpha=1; // fungal takeover
+  } else if(o.kind==="flood"){ // floodlight pole + faint cone (baked static)
+    g.strokeStyle="#4a4438"; g.lineWidth=3; g.beginPath(); g.moveTo(0,4); g.lineTo(-4,-36); g.stroke();
+    g.fillStyle="#5a5240"; g.strokeStyle="rgba(10,12,14,0.85)"; g.lineWidth=2;
+    g.beginPath(); g.rect(-14,-46,20,10); g.fill(); g.stroke();
+    g.save(); g.globalAlpha=0.07; g.fillStyle="#e8e0b0";
+    g.beginPath(); g.moveTo(-4,-40); g.lineTo(-46,20); g.lineTo(24,20); g.closePath(); g.fill(); g.restore();
+  }
+  g.restore();
+}
+function drawShroom(m,g){ g=g||ctx;
+  const s=m.s;
+  contactShadow(m.x, m.y+2, 7*s, 2.5*s, 0.28, g);
+  g.strokeStyle="rgba(15,20,20,0.8)"; g.lineWidth=1.5;
+  g.fillStyle="#d8d0c0"; g.fillRect(m.x-2*s, m.y-6*s, 4*s, 8*s); // stem
+  g.fillStyle=m.hue; g.beginPath(); g.ellipse(m.x, m.y-6*s, 8*s, 5*s, 0, Math.PI, 2*Math.PI); g.fill(); g.stroke();
+  // glowing spots (baked)
+  g.save(); g.globalAlpha=0.7; g.fillStyle="#f0ffe0";
+  g.beginPath(); g.arc(m.x-3*s, m.y-8*s, 1.5*s, 0, 6.283); g.arc(m.x+3*s, m.y-7*s, 1.2*s, 0, 6.283); g.fill(); g.restore();
+}
+function drawBone(o,g){ g=g||ctx;
+  g.save(); g.translate(o.x,o.y); g.rotate(o.rot); g.scale(o.s,o.s);
+  g.fillStyle="#cfc7b4"; g.strokeStyle="rgba(20,20,16,0.6)"; g.lineWidth=1;
+  if(o.skull){ g.beginPath(); g.arc(0,0,6,0,6.283); g.fill(); g.stroke();
+    g.fillStyle="#2a2620"; g.beginPath(); g.arc(-2.2,-0.5,1.6,0,6.283); g.arc(2.2,-0.5,1.6,0,6.283); g.fill();
+    g.fillStyle="#cfc7b4"; g.fillRect(-3,4,6,3);
+  } else { // crossed bones
+    g.fillRect(-8,-1.4,16,2.8); g.beginPath(); g.arc(-8,0,2.4,0,6.283); g.arc(8,0,2.4,0,6.283); g.fill();
+    g.save(); g.rotate(1.05); g.fillRect(-8,-1.4,16,2.8); g.beginPath(); g.arc(-8,0,2.4,0,6.283); g.arc(8,0,2.4,0,6.283); g.fill(); g.restore();
+  }
+  g.restore();
+}
+// bake static ground decor (trees/structs/shrooms/bones) to an offscreen canvas ONCE,
+// then blit it each frame — turns ~140 path-heavy items into a single drawImage (perf)
+let decorBaked = null;
+function bakeDecor(){
+  try{
+    if(!decorBaked){ decorBaked = document.createElement("canvas"); decorBaked.width=W; decorBaked.height=H; }
+    const g = decorBaked.getContext("2d");
+    g.clearRect(0,0,W,H);
+    const items=[];
+    for(const b of DECOR.bones) items.push({y:b.y, d:()=>drawBone(b,g)});
+    for(const m of DECOR.shrooms) items.push({y:m.y, d:()=>drawShroom(m,g)});
+    for(const s of DECOR.structs) items.push({y:s.y, d:()=>drawStruct(s,g)});
+    for(const t of DECOR.trees) items.push({y:t.y, d:()=>drawTree(t,g)});
+    items.sort((a,b)=>a.y-b.y);
+    for(const it of items) it.d();
+  }catch(e){ decorBaked=null; }
+}
+function drawEnvironment(){
+  // back fog layer (parallax depth)
+  ctx.save();
+  for(const f of DECOR.fog){ const fx=(f.x+perfNow*f.spd)%(W+f.r*2)-f.r; ctx.globalAlpha=0.05+0.02*Math.sin(perfNow*0.4+f.ph);
+    ctx.fillStyle="#9fd0b0"; ctx.beginPath(); ctx.ellipse(fx, f.y, f.r, f.r*0.4, 0, 0, 6.283); ctx.fill(); }
+  ctx.restore();
+  // invasion trails: worn dirt marching in from the open spawn sides toward the Hive
+  const cx=W/2, cy=(TOP+H)/2;
+  ctx.save(); ctx.lineCap="round";
+  const openSides = (!endless && waveIdx===0)?[3] : (!endless && waveIdx<4)?[2,3] : [0,1,2,3];
+  const sideAnchor={0:[cx,TOP+4],1:[cx,H-4],2:[4,cy],3:[W-4,cy]};
+  for(const sd of openSides){ const [sx,sy]=sideAnchor[sd];
+    ctx.strokeStyle="rgba(70,55,40,0.22)"; ctx.lineWidth=26;
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.quadraticCurveTo((sx+cx)/2,(sy+cy)/2+18,cx,cy); ctx.stroke();
+    ctx.strokeStyle="rgba(50,38,28,0.18)"; ctx.lineWidth=13;
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.quadraticCurveTo((sx+cx)/2,(sy+cy)/2+18,cx,cy); ctx.stroke();
+  }
+  ctx.restore();
+  // static ground decor: one blit of the pre-baked layer (perf)
+  if(decorBaked) ctx.drawImage(decorBaked, 0, 0, W, H);
+  else { const items=[];
+    for(const b of DECOR.bones) items.push({y:b.y, d:()=>drawBone(b)});
+    for(const m of DECOR.shrooms) items.push({y:m.y, d:()=>drawShroom(m)});
+    for(const s of DECOR.structs) items.push({y:s.y, d:()=>drawStruct(s)});
+    for(const t of DECOR.trees) items.push({y:t.y, d:()=>drawTree(t)});
+    items.sort((a,b)=>a.y-b.y); for(const it of items) it.d();
+  }
+}
+function drawMotes(){
+  ctx.save();
+  for(const m of DECOR.motes){
+    const mx=m.x+Math.sin(perfNow*m.spd+m.ph)*m.amp, my=m.y+Math.cos(perfNow*m.spd*0.7+m.ph)*m.amp*0.6;
+    ctx.globalAlpha=0.18+0.16*Math.sin(perfNow*1.5+m.ph);
+    ctx.fillStyle="#bfe8a0"; ctx.beginPath(); ctx.arc(mx,my,m.r,0,6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+
 /* ===== Render ===== */
 function draw(){
   ctx.save();
   if(shake>0){ ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); }
-  // ground
-  ctx.fillStyle = "#0b0e10"; ctx.fillRect(0,0,W,H);
+  // ground: radial gradient (warm cultivated soil near the Hive, cold dark at the wooded rim)
+  const cxg=W/2, cyg=(TOP+H)/2;
+  const gg = ctx.createRadialGradient(cxg,cyg,40, cxg,cyg,W*0.62);
+  gg.addColorStop(0,"#161a24"); gg.addColorStop(0.5,"#101319"); gg.addColorStop(1,"#080a0c");
+  ctx.fillStyle = gg; ctx.fillRect(0,0,W,H);
   // soil texture: sparse root veins
   ctx.strokeStyle = "rgba(90,120,90,0.06)"; ctx.lineWidth=2;
   for(let i=0;i<14;i++){
@@ -1329,12 +1504,13 @@ function draw(){
     ctx.stroke();
   }
   // grid whisper
-  ctx.strokeStyle = "rgba(140,160,140,0.045)"; ctx.lineWidth=1;
+  ctx.strokeStyle = "rgba(140,160,140,0.04)"; ctx.lineWidth=1;
   for(let c=0;c<=CFG.cols;c++){ ctx.beginPath(); ctx.moveTo(c*CFG.tile,TOP); ctx.lineTo(c*CFG.tile,H); ctx.stroke(); }
   for(let r=0;r<=CFG.rows;r++){ ctx.beginPath(); ctx.moveTo(0,TOP+r*CFG.tile); ctx.lineTo(W,TOP+r*CFG.tile); ctx.stroke(); }
 
   if(mode==="title"){ drawTitle(); ctx.restore(); return; }
 
+  drawEnvironment();
   drawHive();
   // ground stains (fading death marks)
   for(const s of stains){
@@ -1348,19 +1524,33 @@ function draw(){
     ctx.beginPath(); ctx.arc(cl.x,cl.y,cl.r,0,6.283); ctx.fill();
     ctx.strokeStyle="rgba(150,220,120,0.25)"; ctx.stroke();
   }
-  // corpses
+  // corpses: a sprawled fallen human (body + splayed arm + head), greening as it rots
   for(const k of corpses){
     const [x,y]=tileToXY(k.c,k.r);
+    const rotP = k.t/k.maxT;            // 1 = fresh, 0 = fully decayed
     const fade = Math.min(1, k.t/3);
-    ctx.save(); ctx.globalAlpha = 0.4+0.6*fade;
-    ctx.fillStyle = "#5d6670";
-    ctx.beginPath(); ctx.ellipse(x,y,15,9,0.5,0,6.283); ctx.fill();
-    ctx.fillStyle="#454d55"; ctx.beginPath(); ctx.arc(x+9,y-4,5,0,6.283); ctx.fill();
+    contactShadow(x, y+3, 15, 5, 0.28*fade);
+    ctx.save(); ctx.globalAlpha = 0.45+0.55*fade;
+    // greening tint as it rots into biomass
+    const g = Math.floor(102 + (1-rotP)*70);
+    ctx.strokeStyle="rgba(15,20,18,0.7)"; ctx.lineWidth=2;
+    ctx.fillStyle = "rgb("+Math.floor(70+ (1-rotP)*10)+","+g+",90)";
+    // torso
+    ctx.beginPath(); ctx.ellipse(x,y,13,8,0.5,0,6.283); ctx.fill(); ctx.stroke();
+    // splayed arm
+    ctx.lineWidth=4; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(x-4,y+1); ctx.lineTo(x-15,y+7); ctx.stroke(); ctx.lineCap="butt";
+    // head
+    ctx.lineWidth=2; ctx.fillStyle="rgb("+Math.floor(90+(1-rotP)*10)+","+Math.floor(g+8)+",96)";
+    ctx.beginPath(); ctx.arc(x+10,y-5,5,0,6.283); ctx.fill(); ctx.stroke();
+    // X-eyes (dead + goofy)
+    ctx.strokeStyle="rgba(20,25,20,0.8)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x+8.5,y-6.5); ctx.lineTo(x+10,y-5); ctx.moveTo(x+10,y-6.5); ctx.lineTo(x+8.5,y-5); ctx.stroke();
     // rot ring
-    ctx.strokeStyle = "rgba(143,217,168,0.8)"; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(x,y,18,-Math.PI/2,-Math.PI/2 + 6.283*(k.t/k.maxT)); ctx.stroke();
+    ctx.strokeStyle = "rgba(143,217,168,0.85)"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,18,-Math.PI/2,-Math.PI/2 + 6.283*rotP); ctx.stroke();
     if(k.stack>1){ ctx.fillStyle="#9be07f"; ctx.font="bold 11px monospace"; ctx.textAlign="center"; ctx.fillText("x"+k.stack,x,y-22); }
-    if(k.name && k.t/k.maxT > 0.55){ ctx.fillStyle="rgba(180,160,130,0.85)"; ctx.font="9px monospace"; ctx.textAlign="center"; ctx.fillText(k.name,x,y-28); }
+    if(k.name && rotP > 0.55){ ctx.fillStyle="rgba(180,160,130,0.85)"; ctx.font="9px monospace"; ctx.textAlign="center"; ctx.fillText(k.name,x,y-28); }
     ctx.restore();
   }
   // one-time rot-ring teaching nudge: anchor to the lower starter corpse, point at its ring
@@ -1400,6 +1590,7 @@ function draw(){
   ctx.globalAlpha=1;
   // towers
   for(const t of towers){
+    contactShadow(t.x, t.y+16, 16, 6, 0.3);
     ctx.save(); ctx.translate(t.x,t.y);
     const p = 1+0.05*Math.sin(t.pulse*3);
     ctx.scale(p,p);
@@ -1428,8 +1619,22 @@ function draw(){
   }
   ctx.setLineDash([]); ctx.globalAlpha=1; ctx.restore();
   // enemies
+  const hxE=W/2, hyE=(TOP+H)/2;
   for(const e of enemies){
+    // contact shadow grounds the enemy (drawn in world space, under the bob)
+    contactShadow(e.x, e.y+e.r*0.72, e.r*0.85, e.r*0.34, 0.3);
     ctx.save(); ctx.translate(e.x,e.y);
+    // goofy shamble: walk-bob + squash-stretch (calmer for the big bosses)
+    if(!REDUCED_MOTION){
+      const amp = (e.type==="boss"||e.type==="butcher") ? 0.5 : 1;
+      const hop = Math.sin(perfNow*9 + e.id*1.7)*amp;
+      ctx.translate(0, -Math.abs(hop)*e.r*0.13);
+      ctx.scale(1+hop*0.05, 1-hop*0.05);
+    }
+    // cel outline silhouette (pops against the busier environment)
+    ctx.strokeStyle="rgba(8,10,12,0.9)"; ctx.lineWidth=2.5;
+    if(e.type==="sweeper"){ ctx.strokeRect(-e.r,-e.r,e.r*2,e.r*2); }
+    else { ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.stroke(); }
     // speed streak for scavengers
     if(e.type==="scav" && flow){
       const [ec2,er2]=xyToTile(e.x,e.y);
@@ -1463,6 +1668,17 @@ function draw(){
     } else {
       ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
     }
+    // googly eyes on the humanoid grunts — pupils nervously eye the Hive they're marching at
+    if(e.type==="scav"||e.type==="troop"||e.type==="incin"){
+      const dx=hxE-e.x, dy=hyE-e.y, dm=Math.hypot(dx,dy)||1, px=dx/dm, py=dy/dm;
+      const er=e.r, ex=er*0.34, ey=-er*0.12, ew=er*0.30, pr=er*0.14;
+      ctx.fillStyle="#f4f2ea";
+      ctx.beginPath(); ctx.arc(-ex,ey,ew,0,6.283); ctx.arc(ex,ey,ew,0,6.283); ctx.fill();
+      ctx.strokeStyle="rgba(8,10,12,0.85)"; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.arc(-ex,ey,ew,0,6.283); ctx.stroke(); ctx.beginPath(); ctx.arc(ex,ey,ew,0,6.283); ctx.stroke();
+      ctx.fillStyle="#15130f";
+      ctx.beginPath(); ctx.arc(-ex+px*ew*0.5, ey+py*ew*0.5, pr, 0, 6.283); ctx.arc(ex+px*ew*0.5, ey+py*ew*0.5, pr, 0, 6.283); ctx.fill();
+    }
     // status tells: shape-coded (not color-only) for colorblind accessibility
     if(e.snared){ ctx.strokeStyle="#8a6a3f"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,e.r*0.6,e.r*0.8,0,3.14); ctx.stroke(); }
     if(e.drench>0){ // droplet triangle, top-right
@@ -1489,16 +1705,22 @@ function draw(){
       ctx.beginPath(); ctx.arc(e.x,e.y,e.r+6+lp*3,0,6.283); ctx.stroke(); ctx.lineWidth=1;
     }
   }
-  // projectiles
-  ctx.fillStyle="#c8f050";
+  // projectiles: glowing acid globs with a comet trail
   for(const p of projectiles){
-    if(p.charged){ ctx.save(); ctx.shadowColor="#c8f050"; ctx.shadowBlur=8; }
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.charged?8:4,0,6.283); ctx.fill();
-    if(p.charged) ctx.restore();
+    const rad = p.charged?8:4;
+    let dx=0,dy=0; if(p.tgt){ dx=p.tgt.x-p.x; dy=p.tgt.y-p.y; } const dm=Math.hypot(dx,dy)||1;
+    ctx.save(); ctx.globalAlpha=0.35; ctx.fillStyle="#a8e030";
+    ctx.beginPath(); ctx.arc(p.x-dx/dm*rad*1.4, p.y-dy/dm*rad*1.4, rad*0.7, 0, 6.283); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.shadowColor="#c8f050"; ctx.shadowBlur=p.charged?12:6;
+    ctx.fillStyle="#dfff70"; ctx.beginPath(); ctx.arc(p.x,p.y,rad,0,6.283); ctx.fill();
+    ctx.fillStyle="#8fbf20"; ctx.globalAlpha=0.7; ctx.beginPath(); ctx.arc(p.x+rad*0.3,p.y+rad*0.3,rad*0.45,0,6.283); ctx.fill();
+    ctx.restore();
   }
   // particles
   for(const p of particles){ ctx.globalAlpha=p.big?Math.min(1,p.t*1.4):Math.min(1,p.t*2.5); ctx.fillStyle=p.col; const ps=p.big?7:3; ctx.fillRect(p.x-ps/2,p.y-ps/2,ps,ps); }
   ctx.globalAlpha=1;
+  // ambient drifting spores (light foreground parallax layer)
+  drawMotes();
   // popups
   ctx.textAlign="center"; ctx.font="bold 18px monospace";
   for(const p of popups){ ctx.globalAlpha=Math.min(1,p.t); ctx.fillStyle=p.col; ctx.fillText(p.txt,p.x,p.y); }
@@ -1544,18 +1766,48 @@ function draw(){
 function drawHive(){
   const [x0,y0]=tileToXY(CFG.hive.c0,CFG.hive.r0), [x1,y1]=tileToXY(CFG.hive.c1,CFG.hive.r1);
   const cx=(x0+x1)/2, cy=(y0+y1)/2;
-  const pulse = 1+0.04*Math.sin(perfNow*(hiveHP/hiveMax<0.25?7:2.2));
-  // roots radiating
-  ctx.strokeStyle="rgba(150,100,180,0.25)"; ctx.lineWidth=3;
-  for(let i=0;i<8;i++){ const a=i*0.785+0.3; ctx.beginPath(); ctx.moveTo(cx,cy);
-    ctx.quadraticCurveTo(cx+Math.cos(a)*60, cy+Math.sin(a)*60, cx+Math.cos(a+0.4)*95, cy+Math.sin(a+0.4)*95); ctx.stroke(); }
-  ctx.save(); ctx.translate(cx,cy); ctx.scale(pulse,pulse);
-  ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(0,0,52,42,0,0,6.283); ctx.fill();
-  ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(0,0,38,30,0,0,6.283); ctx.fill();
-  ctx.fillStyle="#b088e0"; ctx.beginPath(); ctx.ellipse(0,0,18,14,0,0,6.283); ctx.fill();
   const hurt = hiveHP/hiveMax;
-  if(hurt<0.5){ ctx.strokeStyle="rgba(224,80,80,"+(0.5-hurt)+")"; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(-30,-10); ctx.lineTo(-5,8); ctx.lineTo(15,-14); ctx.stroke(); }
+  const beat = REDUCED_MOTION ? 2.2 : (hurt<0.25?7:2.2);
+  const pulse = 1+0.04*Math.sin(perfNow*beat);
+  // bioluminescent ground glow (soft, breathing)
+  const glowR = 92*pulse;
+  const gr = ctx.createRadialGradient(cx,cy,10, cx,cy,glowR);
+  const gcol = hurt<0.35 ? "224,90,90" : "150,110,210";
+  gr.addColorStop(0,"rgba("+gcol+","+(0.30+0.08*Math.sin(perfNow*beat))+")");
+  gr.addColorStop(1,"rgba("+gcol+",0)");
+  ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(cx,cy,glowR,0,6.283); ctx.fill();
+  // writhing tendrils radiating outward (animated)
+  ctx.strokeStyle="rgba(150,100,180,0.30)"; ctx.lineWidth=3;
+  for(let i=0;i<10;i++){ const a=i*0.628+0.3+Math.sin(perfNow*0.6+i)*0.08, w=Math.sin(perfNow*1.1+i)*10;
+    ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.quadraticCurveTo(cx+Math.cos(a)*60+w, cy+Math.sin(a)*60, cx+Math.cos(a+0.4)*98, cy+Math.sin(a+0.4)*98); ctx.stroke(); }
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(pulse,pulse);
+  // body with cel outline
+  ctx.strokeStyle="rgba(20,10,30,0.85)"; ctx.lineWidth=3;
+  ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(0,0,52,42,0,0,6.283); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(0,0,38,30,0,0,6.283); ctx.fill();
+  // pulsing bioluminescent core sacs
+  for(const [ox,oy,r] of [[-20,-8,6],[18,-12,5],[-8,16,5],[22,10,4]]){
+    ctx.save(); ctx.globalAlpha=0.5+0.4*Math.sin(perfNow*2.2+ox); ctx.fillStyle="#c9f0a8";
+    ctx.beginPath(); ctx.arc(ox,oy,r,0,6.283); ctx.fill(); ctx.restore();
+  }
+  // big cyclops eye — blinks, and glares at the nearest threat
+  const eyeR=15;
+  ctx.fillStyle="#e8dcf5"; ctx.beginPath(); ctx.ellipse(0,-2,eyeR,eyeR*0.82,0,0,6.283); ctx.fill();
+  ctx.strokeStyle="rgba(20,10,30,0.7)"; ctx.lineWidth=2; ctx.stroke();
+  // pupil tracks the nearest enemy
+  let tgt=null, bd=Infinity;
+  for(const e of enemies){ const d=(e.x-cx)**2+(e.y-cy)**2; if(d<bd){ bd=d; tgt=e; } }
+  let lx=0, ly=0;
+  if(tgt){ const dx=tgt.x-cx, dy=tgt.y-cy, dm=Math.hypot(dx,dy)||1; lx=dx/dm*6; ly=dy/dm*5; }
+  const blink = (!REDUCED_MOTION && Math.sin(perfNow*0.9)>0.97) ? 0.12 : 1; // occasional blink
+  ctx.save(); ctx.scale(1, blink);
+  ctx.fillStyle = hurt<0.35 ? "#e05050" : "#3a1a5a";
+  ctx.beginPath(); ctx.arc(lx,(-2+ly)/blink,7,0,6.283); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.globalAlpha=0.8; ctx.beginPath(); ctx.arc(lx-2,(-4+ly)/blink,2,0,6.283); ctx.fill();
+  ctx.restore();
+  if(hurt<0.5){ ctx.globalAlpha=1; ctx.strokeStyle="rgba(224,80,80,"+(0.5-hurt)+")"; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(-30,18); ctx.lineTo(-8,26); ctx.lineTo(6,18); ctx.stroke(); }
   ctx.restore();
 }
 function drawHUD(){
@@ -1945,6 +2197,7 @@ function frame(t){
   if((mode==="play"||mode==="prep") && !paused) updateDrone();
   draw();
 }
+genDecor();
 CG.init(()=>{});
 requestAnimationFrame(frame);
 </script>
