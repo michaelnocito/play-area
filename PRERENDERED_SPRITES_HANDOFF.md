@@ -103,16 +103,21 @@ game"). First action in the new chat = propose 2-3 candidate packs for deadroot 
 Ready-made 2D sprite packs that are BOTH genuinely 3D-pre-rendered AND have a full 4-tier
 enemy roster (weak/mid/tanky/boss) with a clean commercial license turned out to be rare.
 **Two-phase plan Mike chose:**
-- **Phase 1 (prototype, now):** RetroStyle Games "SWAT vs Zombies" free pack
-  (retrostylegames.com/portfolio/free-isometric-sprites-swat-vs-zombies/). Confirmed genuinely
-  pre-rendered from rigged 3D models. Only 3 character types (SWAT Soldier, Zombie Brute,
-  Female Zombie), 4 animation states each — enough to prove the pipeline (drawSprite, atlas,
-  color-tint) on the scav enemy, NOT enough for the full roster.
-  **License is Discord-gated with no stated commercial terms — prototype/internal use only,
-  do NOT ship this pack in the CG/itch.io release.** Swap to Phase 2 before shipping.
-  Mike downloads (may require joining their Discord per the page), drops files in
-  `deadroot/assets/raw/`, Claude wires the vertical slice (scav enemy first, behind a flag)
-  to prove the pipeline before spending on Synty.
+- **Phase 1 (prototype, NOW — do this first in the new chat):** Engvee "Animated Isometric
+  Zombies" (itch.io: engvee.itch.io/animated-isometric-zombie). **Free / name-your-price.**
+  Confirmed genuinely pre-rendered from 3D models (3D artist credited; "no generative AI used").
+  3 zombie skins, 13 animations each (attack x4, death x2, hit L/R, idle, roar, walk, run),
+  16 directions (22.5 deg steps), separate shadow layers, 256px + 512px frames.
+  **License is CLEAN and explicit: commercial use allowed, unlimited projects, modification
+  allowed, no attribution required, NO Discord gate.** Because the license is clean this pack
+  can survive past the prototype for the enemy tiers it covers — not just internal.
+  Roster is still only 3 zombie types, so it proves the pipeline (drawSprite, atlas, color-tint)
+  on the scav enemy but NOT the full 4-tier roster — Synty (Phase 2) still needed for variety.
+  Mike downloads, drops files in `deadroot/assets/raw/`, Claude wires the vertical slice (scav
+  enemy first, behind a flag). **Next action — check if Mike has dropped files in
+  `deadroot/assets/raw/` yet; if not, wait for him.**
+  (Rejected RetroStyle "SWAT vs Zombies" — also 3D-rendered but Discord-gated with no stated
+  commercial license; Engvee is a strict upgrade: cleaner license, more animations, no gate.)
 - **Phase 2 (once deadroot is tight/polished):** Synty POLYGON City Zombies pack
   (syntystore.com/products/polygon-city-zombies-pack, $49.99) — 50 distinct character types,
   much stronger variety/quality, clean one-time commercial license. Sold as 3D FBX models only
@@ -120,5 +125,6 @@ enemy roster (weak/mid/tanky/boss) with a clean commercial license turned out to
   rendering (the fallback pipeline step already documented above). Mike never touches Blender.
 - Rejected: Kenney (vector, not 3D), CraftPix/GameDeveloperStudio zombie packs (vector/Spriter,
   not 3D despite topdown-zombie branding), monogon's itch pack (real 3D/voxel but only 3
-  characters, no anim, props-only), RetroStyle SWAT vs Zombies (real 3D-rendered, only 3 chars,
-  Discord-gated license with no stated commercial terms — too risky to build on).
+  characters, no anim, props-only), RetroStyle SWAT vs Zombies (real 3D-rendered but
+  Discord-gated, no stated commercial license — Engvee beats it on every axis), SmallScaleInt
+  HD 8-Directional pack (35+ variants but render method unconfirmed and >$10).
