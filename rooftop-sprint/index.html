@@ -685,6 +685,9 @@
   const GUARD_HIT_DX = 15, GUARD_CLEAR_DY = 22; // feet must be this far above guard.y to jump clear
   // Staff reach grows with run speed so the reaction window stays humanly possible (~300ms)
   // at any pace — at base range 36px and 4px/frame closing the window was only ~80ms.
+  // RS-#043: tried shrinking this to make spam riskier — even a small cut tanked survival at
+  // every reaction tier (slow-tier median fell from ~800m to ~200m), because it's the ONE thing
+  // keeping guards killable outside their own hit range. Left as-is; see strikeCd below instead.
   function strikeRangeX() { return 42 + speed * 14; }
   function alertRangeX() { return (60 + speed * 25) * (boonFlags.look ? 1.5 : 1); } // marker heads-up (LONG LOOK boon widens it)
   // Timing windows (defined in TIME via closing speed, so they feel identical at any pace):
@@ -831,7 +834,9 @@
         // anti-streak keeps three of the same read from landing back to back (falls back to a
         // plain guard rather than force a variant the district hasn't unlocked yet)
         const vRoll = rnd();
-        let vKind = dI >= 2 && vRoll < 0.28 ? (vRoll < 0.14 ? 1 : 2) : dI === 1 && vRoll < 0.14 ? 1 : 0; // 0 guard, 1 feint, 2 archer
+        // RS-#043: slightly raised variant odds (0.28→0.32, feint entry 0.14→0.16) — a bit more
+        // feint/archer variety without pushing past what the anti-streak/formation logic was tuned for.
+        let vKind = dI >= 2 && vRoll < 0.32 ? (vRoll < 0.16 ? 1 : 2) : dI === 1 && vRoll < 0.16 ? 1 : 0; // 0 guard, 1 feint, 2 archer
         if (vKind !== 0 && lastEnemyKinds.length === 2 && lastEnemyKinds[0] === vKind && lastEnemyKinds[1] === vKind) vKind = 0;
         lastEnemyKinds.push(vKind); if (lastEnemyKinds.length > 2) lastEnemyKinds.shift();
         gslot.feint = vKind === 1; gslot.archer = vKind === 2;
@@ -1066,7 +1071,7 @@
       const trailFrom = player.x;
       player.x = Math.max(player.x, nearest.x - player.w/2 + 8);
       for (let tx = trailFrom; tx < player.x; tx += 9) spawnParticle(tx, player.y - 14, -0.5, 0, 10, '#e8c878');
-      graceT = 12;
+      graceT = 12; strikeCd = 6; // tiny recovery beat — mashing the button back-to-back isn't perfectly free, but formation chains still clear
       nearest.alive = false; nearest.deathT = 1;
       feathers += 1;
       spawnStream(nearest.x, nearest.y - 40, 6); // the warden's lamp-light streams into yours
