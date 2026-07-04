@@ -4,6 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Rooftop Sprint</title>
+<!-- RS-#056: no description/favicon at all before this — bible calls for an honest, original
+     name + thumbnail; a bare <title> with no meta description reads as unfinished to a reviewer. -->
+<meta name="description" content="A kung-fu lamplighter races the rooftops of a lantern-lit city, striking down wardens and relighting the beacon district by district.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23241a2e'/%3E%3Ccircle cx='16' cy='13' r='7' fill='%23f5e7c8'/%3E%3Crect x='14' y='20' width='4' height='9' fill='%23e8c878'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23241a2e'/%3E%3Ccircle cx='16' cy='13' r='7' fill='%23f5e7c8'/%3E%3Crect x='14' y='20' width='4' height='9' fill='%23e8c878'/%3E%3C/svg%3E">
+<!-- RS-#060: social-preview + home-screen metadata — this is a standalone page (also hosted at
+     michaelnocito.github.io/play-area/rooftop-sprint/) beyond just the CG iframe embed. -->
+<meta property="og:title" content="Rooftop Sprint">
+<meta property="og:description" content="A kung-fu lamplighter races the rooftops of a lantern-lit city, striking down wardens and relighting the beacon district by district.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0d0d12">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- Verify against current CrazyGames SDK docs before submitting -->
 <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <style>
@@ -58,6 +73,10 @@
   #touchControls {
     position: absolute; bottom: 0; left: 0; right: 0; height: 30%;
     display: flex; pointer-events: none;
+    /* RS-#062: viewport-fit=cover lets the canvas run into notch/home-indicator territory on
+       iPhones, but nothing was reserving that space for the touch buttons — a real tap could
+       land under the gesture bar. Reserve it without shrinking the actual tap targets. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .tbtn {
     flex: 1; display: flex; align-items: center; justify-content: center;
@@ -142,7 +161,9 @@
   <div id="overlay">
     <h1>ROOFTOP SPRINT</h1>
     <p>Run the rooftops. Take back the light.</p>
-    <p id="controlsLine"><span class="key">SPACE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X</span> strike / slide</p>
+    <!-- RS-#061: M/P were fully working but never listed anywhere on the start screen — a
+         desktop player had no way to discover them short of guessing or reading dev notes. -->
+    <p id="controlsLine"><span class="key">SPACE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X</span> strike / slide &nbsp;&middot;&nbsp; <span class="key">M</span> mute &nbsp;&middot;&nbsp; <span class="key">P</span> pause</p>
     <div id="scoreLine"></div>
     <div id="tally"></div>
     <div id="newBest">&#10022; NEW BEST &#10022;</div>
@@ -634,7 +655,8 @@
   function runScore() { return Math.floor(distance) * PTS_PER_M + killPts + dominoBonus + feathers * PTS_LIGHT; }
 
   // ---------- Fixed-size pools (perf contract: no per-frame allocation) ----------
-  const MAX_PARTICLES = 80;
+  const MAX_PARTICLES = 120; // RS-#059: headroom bump — a big domino/captain moment stacks several
+  // 10-18-particle bursts in the same few frames; matches the brazier/guard pool fixes.
   const particles = Array.from({length: MAX_PARTICLES}, () => ({active:false,x:0,y:0,vx:0,vy:0,life:0,color:'#fff'}));
   function spawnParticle(x,y,vx,vy,life,color){
     for(const p of particles){ if(!p.active){ p.active=true;p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.color=color; return; } }
@@ -643,7 +665,8 @@
     for(let i=0;i<n;i++) spawnParticle(x,y,(rnd()-0.5)*3.2,(rnd()-1.2)*3.2,18+rnd()*12,color);
   }
 
-  const MAX_MESSAGES = 6;
+  const MAX_MESSAGES = 10; // RS-#059: a stacked STAGGERED/quip/hype-line moment could silently
+  // drop later flavor text at the old cap of 6 — cosmetic-only, but still worth the headroom.
   const messages = Array.from({length: MAX_MESSAGES}, () => ({active:false,x:0,y:0,t:0,t0:26,text:''}));
   function spawnMessage(x,y,text,dur){
     for(const m of messages){ if(!m.active){ m.active=true;m.x=x;m.y=y;m.t=dur||26;m.t0=m.t;m.text=text; return; } }
@@ -659,7 +682,7 @@
   // Shield up 60 / open 90 of a 150-frame cycle: in an auto-runner you can't stop and wait, so
   // steel X = leap over him, gold diamond = strike. Both answers always live on the same button set.
   function shieldUp(g) { return g.feint && (g.shT % 150) < 60; }
-  const MAX_ARROWS = 4;
+  const MAX_ARROWS = 6; // RS-#059: headroom parity with the other pool fixes this session
   const arrows = Array.from({length: MAX_ARROWS}, () => ({active:false,x:0,y:0,vx:0}));
   const MAX_BRAZIERS = 9; // RS-#051: qa sweep flagged the old cap of 6 sitting at peak (6/6) during
   // long endless runs — spawns could silently drop once the pool was exhausted; headroom now.
@@ -1170,6 +1193,12 @@
   // Jump keys include Z/W for AZERTY keyboards (CG guideline)
   const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyZ', 'KeyW'];
   window.addEventListener('keydown', (e) => {
+    // RS-#055: a blanket preventDefault() on every jump/action key press was blocking browser
+    // shortcuts that share the same physical key — Ctrl/Cmd+W (KeyW, jump's AZERTY bind) closes
+    // the tab, Ctrl+F (KeyF, one of the action binds) opens page-find. The bible explicitly calls
+    // out "no Ctrl/Cmd+W" as a hard technical requirement; skip our own handling whenever a
+    // modifier is held so the browser/OS shortcut underneath still fires.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (JUMP_KEYS.includes(e.code)) {
       e.preventDefault();
       if (e.repeat) return;
@@ -1852,6 +1881,11 @@
     // rewarded-ad offers (never gating, real value): one revive per run + one Light doubling
     adReviveBtn.classList.toggle('hiddenBtn', adReviveUsed);
     adDoubleBtn.classList.toggle('hiddenBtn', adDoubleUsed || lightEarned <= 0);
+    // RS-#063: the reward is honored even when an adblocker is detected (CG.adblocked() short-
+    // circuits straight to it) — but the button still said "watch an ad", which is a small
+    // misrepresentation (bible: "no misdirection"). Relabel honestly instead of pretending.
+    adReviveBtn.textContent = CG.adblocked() ? '▶ Rise again (bonus)' : '▶ Rise again (watch an ad)';
+    adDoubleBtn.textContent = CG.adblocked() ? '▶ Double this run\'s Light (bonus)' : '▶ Double this run\'s Light (ad)';
     scoreLine.textContent = '';
     showTally(finalScore, isBest, lightEarned);
     bestEl.textContent = `Best score: ${best}`;
@@ -2263,7 +2297,10 @@
       ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(sx0 - 22, sy0 - 9); ctx.stroke();
       shootStarT--;
     }
-    const moonCx = W - 148 - (camX*0.02)%20 + 55, moonCy = 8 + 55;
+    // RS-#057: the old `(camX*0.02)%20` sawtooth snapped 20px sideways every ~1000 world-units
+    // (a real, visible glitch on any run long enough to wrap) — a bounded sine drift instead,
+    // so the moon parallax is continuous no matter how long the run goes.
+    const moonCx = W - 148 - 10 - Math.sin(camX*0.0004)*10 + 55, moonCy = 8 + 55;
     ctx.drawImage(moonImg, moonCx - 55, moonCy - 55, 110, 110);
     // reactive moon (silly seasoning): a sleepy blink normally, wide-eyed startle on big moments
     if (moonReactT > 0) {
@@ -2378,6 +2415,19 @@
         ctx.font = 'bold 20px Georgia'; ctx.fillText('PAUSED', W/2, H/2 - 4);
         ctx.font = '10px Georgia'; ctx.globalAlpha = 0.8;
         ctx.fillText(isTouch ? 'tap to resume' : 'P or tap to resume', W/2, H/2 + 16);
+        // RS-#058: pause used to show nothing but "PAUSED" — now a quick glance also gives the
+        // controls recap and the same goal-gradient nudge the tally screen shows (Law 8: the
+        // player always knows what's next), plus the daily streak so it isn't menu-only (Law 11).
+        const rI = rankIdx(save.kills + cleanK + heavyK + perfK + dominoK + captainK);
+        ctx.font = '9px Georgia';
+        const lines = [];
+        if (rI < RANKS.length - 1) {
+          const need = RANKS[rI + 1].at - (save.kills + cleanK + heavyK + perfK + dominoK + captainK);
+          lines.push(need + ' more to ' + RANKS[rI + 1].name);
+        }
+        if (save.streak > 1) lines.push('day ' + save.streak + ' streak');
+        lines.push(isTouch ? 'JUMP / STRIKE' : 'SPACE jump · X strike/slide · M mute');
+        lines.forEach((t, i) => ctx.fillText(t, W/2, H/2 + 32 + i * 12));
         ctx.globalAlpha = 1;
       } else {
         ctx.font = 'bold 34px Georgia';
