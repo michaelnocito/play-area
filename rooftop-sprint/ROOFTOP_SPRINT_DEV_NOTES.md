@@ -1,7 +1,21 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-03, RS-LEVELDESIGN shipped — ALL 30 gap-report items done): Next =
-> MIKE'S FULL PLAYTEST, then B7 SHIP WAVE** (perf audit on his i5, cover art + clips, store
+> **⚡ RESUME HERE (2026-07-03, deep QA sweep done — ALL 30 gap-report items done + 3 real
+> bugs found/fixed): Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE**
+>
+> **🔬 QA SWEEP DONE 2026-07-03 (HEAD `715290f`):** new `tools/rs_qa_sweep.js` — checks attack
+> timing + spacing beyond the fairness suite: guard/hazard-off-roof containment, formation
+> overlap, consecutive-gap, pool-exhaustion peaks, per-tier kill-timing tallies, feint
+> blocked/open ratio, and short Night Shift + Daily Trial coverage runs. Found and fixed 3
+> real bugs: **Captain knockback** (`nearest.x += 30 + speed*6` on a non-lethal hit) had zero
+> bounds check and could shove him off his own roof into gap airspace — now clamped to the
+> segment he's standing on; **domino chains could one-shot a Captain**, skipping his intended
+> 3-hit stagger/break/fell sequence — captains now explicitly excluded from the missile-chain
+> check; **guard-line formation members** (RS-LEVELDESIGN's showcase 3-wide beat) shared a
+> patrol range wide enough that they could eventually walk into each other — fixed by putting
+> the whole line on a fixed post (patrolMin=patrolMax=own spot), like archers already had, so
+> there's no drift to reason about regardless of roof length. Fairness suite + QA sweep both
+> green after the fixes (verified: every tier but slow now wins the campaign outright). (perf audit on his i5, cover art + clips, store
 > copy, GM/GD gameIds, regenerate `builds/` — wire `window.Snd.duck` into their `__adPause` —
 > CG QA tool, submit all portals). Read the gap-report status block at the top of
 > `ROOFTOP_SPRINT_ROADMAP.md` for exactly what shipped.
