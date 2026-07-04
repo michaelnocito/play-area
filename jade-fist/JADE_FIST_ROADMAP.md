@@ -34,6 +34,8 @@ One quality bar, one submission wave. Status as of JF-#026 (2026-07-03).
       squash, comic-font pop-in popups, star hits, brighter palette, sleepy moon
 - [x] JF-#028 Duck/jump dodge axis + spearman throws (high=duck/low=jump, telegraphed) +
       difficulty bump; bot re-validated fair (11/12 wins, 0% unreactable)
+- [x] JF-#029 Real duck/jump poses (deep crouch + tucked-leg leap) + ground shadow;
+      full test battery 17/17 (dodge windows, timing, spacing, integrity) + bot 12/12 fair
 
 ## Left (in order)
 - [ ] **Mike re-playtest** — the harder build + new dodge axis + cartoon look; notes feed JF-#029
