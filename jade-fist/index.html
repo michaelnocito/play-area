@@ -12,7 +12,7 @@
   html,body{margin:0;padding:0;background:#0a0d12;height:100%;overflow:hidden;touch-action:none;
     -webkit-user-select:none;user-select:none;font-family:Georgia,'Times New Roman',serif}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
-  canvas{display:block;background:#0a0d12}
+  canvas{display:block;background:#0a0d12;opacity:0;transition:opacity .15s}
 </style>
 </head>
 <body>
@@ -32,9 +32,19 @@ let scale = 1;
 // JF-#015: back the canvas at devicePixelRatio so it stays crisp on hi-dpi
 // displays (CG requirement). All game code keeps drawing in 960x540 logical
 // coords — the base transform maps them to physical pixels.
+// JF-#036: on a touch device held portrait, fit() pins to width and the
+// canvas shrinks to a thin strip (measured: 375x211 inside an 812-tall
+// viewport — ~74% of the screen is unused black bars) with no way to tell
+// the player why. portraitBlock freezes the run and draw() shows a rotate
+// prompt instead until the device is turned; matchMedia is used directly
+// here since TOUCH isn't defined until later in the file.
+// (state/pauseGame don't exist yet at this point in the file — the actual
+// auto-pause-on-portrait wiring lives further down, once they're declared.)
+let portraitBlock = false;
 function fit(){
   const ww = innerWidth, wh = innerHeight;
   const dpr = window.devicePixelRatio || 1;
+  portraitBlock = matchMedia('(pointer:coarse)').matches && wh > ww;
   scale = Math.min(ww / W, wh / H);
   cv.width = Math.round(W * scale * dpr);
   cv.height = Math.round(H * scale * dpr);
@@ -187,19 +197,33 @@ const Snd = (() => {
 // actually resolved (only true on the CG platform); every game/ad call is gated
 // on it — calling the SDK pre-init or off-platform just logs errors and is dropped.
 let sdkLive = false;
+// JF-#036: CG's own SDK throttles gameplayStart/Stop/happytime to 1/sec and
+// logs a console error past that — a player double-tapping pause inside a
+// second (or a quick death/restart) can trip it. Gate all three behind a
+// shared min-interval so we never re-fire faster than the SDK allows.
+let lastGP = 0;
+function gpGate(fn){ const now = Date.now(); if (now - lastGP < 1100) return; lastGP = now; fn(); }
 const CG = {
   init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>{ sdkLive = true; cb&&cb(); }).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
   loadingStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStart(); }catch(e){} },
   loadingStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStop(); }catch(e){} },
-  gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
-  gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
-  happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
+  gameplayStart(){ gpGate(() => { try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} }); },
+  gameplayStop(){ gpGate(() => { try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} }); },
+  happytime(){ gpGate(() => { try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} }); },
   // JF-#026: CG leaderboards are INVITE-ONLY (one board/game, weekly seasons).
   // Local Hall of Legends ships now; when invited, wire the score submit here.
   submitScore(s){},
-  interstitial(){ try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {
-    adStarted(){}, adFinished(){}, adError(){},
-  }); }catch(e){} },
+  // JF-#036: never resolve until the ad module actually reports done/errored —
+  // callers must NOT call gameplayStart() until this fires, so an ad never
+  // overlaps a run the SDK thinks is already "playing".
+  interstitial(cb){
+    try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
+      window.CrazyGames.SDK.ad.requestAd("midgame", {
+        adStarted(){}, adFinished(){ cb&&cb(); }, adError(){ cb&&cb(); },
+      }); return;
+    } }catch(e){}
+    cb&&cb();
+  },
   rewarded(onReward){
     try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
       window.CrazyGames.SDK.ad.requestAd("rewarded", {
@@ -208,10 +232,18 @@ const CG = {
     } }catch(e){}
     onReward&&onReward();
   },
+  // JF-#036: QA-only adblock visibility (debug=1) — silent try/catch swallowed
+  // this before, so there was no way to tell "adblocked" from "ad just didn't fire".
+  adblockDetected: false,
+  checkAdblock(){ try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.hasAdblock !== undefined) this.adblockDetected = !!window.CrazyGames.SDK.ad.hasAdblock; }catch(e){} },
 };
 // Single-file game: everything is already parsed by init time, so loading
-// start/stop bracket only the SDK handshake itself.
-CG.init(() => { CG.loadingStart(); CG.loadingStop(); });
+// start/stop bracket only the SDK handshake itself. Canvas stays hidden until
+// this fires so the CG loading bracket matches what the player can actually
+// see/touch (JF-#036 — previously the game was rendering/interactive before
+// loadingStart/Stop ever ran, since the script's synchronous parse finishes
+// long before the async SDK.init() promise resolves).
+CG.init(() => { CG.loadingStart(); CG.loadingStop(); CG.checkAdblock(); cv.style.opacity = 1; });
 // SDK:ADAPTER:END
 
 // ----------------------------------------------------------------- state ----
@@ -546,7 +578,7 @@ const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, ju
 // JF-#028: vertical dodge axis. Jump = airborne (dodges LOW throws); duck = crouch
 // (dodges HIGH throws). Brief action windows, not held stances, so the fight stays
 // snappy and you commit to a read the same way a counter commits.
-const JUMP_DUR = 32, JUMP_H = 76, DUCK_DUR = 26;
+const JUMP_DUR = 32, JUMP_H = 76, DUCK_DUR = 30;   // JF-#036: was 26 — bot suite showed duck (high-windup) eating most hits
 let darts = [];   // in-flight thrown spears: {x, vx, high, y0, life}
 function jump(){
   if (state === S_PAUSE){ resumeGame(); return; }
@@ -660,7 +692,10 @@ function onWaveClear(){
   if (bossWave){
     jadeRun += 25;
     if (D.legend){       // JF-#012: LEGEND never ends — the master returns, stronger
-      banner('THE TALE CONTINUES  ·  +25◆', '#e8c76a', 190);
+      // JF-#036: name the loop — difficulty/boss HP already scale with wave
+      // count (see spawnBoss below) but nothing gave the player-facing
+      // identity Bible law #2 asks for ("named milestones", not just a number)
+      banner('THE TALE CONTINUES  ·  LOOP ' + (wave / WAVES_PER_DISTRICT) + '  ·  +25◆', '#e8c76a', 190);
     } else {
       won = true;
       banner(D.boss + ' FALLS  ·  +25◆', '#7ce8a8', 190);
@@ -975,6 +1010,10 @@ function endRun(victory){
 // the pause per CG guidelines; any input resumes.
 function pauseGame(){ if (state !== S_PLAY) return; state = S_PAUSE; CG.gameplayStop(); }
 function resumeGame(){ if (state !== S_PAUSE) return; state = S_PLAY; CG.gameplayStart(); }
+// JF-#036: fit() (defined near the top, before state/pauseGame exist) only
+// tracks portraitBlock; the actual auto-pause has to be wired here, once
+// pauseGame/state are real. Resize/orientationchange re-run fit() first.
+addEventListener('resize', () => { if (portraitBlock && state === S_PLAY) pauseGame(); });
 
 // ----------------------------------------------------------------- input ----
 function press(dir){
@@ -1037,8 +1076,10 @@ cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / scale, y = (e.clientY - r.top) / scale;
   if (x > W - 60 && y < 50){ Snd.toggleMute(); return; }   // mute button hitbox
-  // JF-#011: omen toggle hitbox (top-right offer card)
-  if (state === S_MENU && x > W - 260 && y > 80 && y < 148){ omenOn = !omenOn; Snd.tick(); return; }
+  // JF-#011/#036: omen toggle hitbox (top-right offer card) — matches the
+  // JF-#035 panel bounds (y 76-136); the old y<148 spilled into the Hall of
+  // Legends panel just below it, wrongly toggling Omen on a tap there.
+  if (state === S_MENU && x > W - 266 && y > 76 && y < 136){ omenOn = !omenOn; Snd.tick(); return; }
   // JF-#023: wardrobe hitboxes — tap the block to browse, tap BUY to purchase
   if (state === S_MENU && styleBuyRect && x >= styleBuyRect.x && x <= styleBuyRect.x + styleBuyRect.w &&
       y >= styleBuyRect.y && y <= styleBuyRect.y + styleBuyRect.h){ styleBuy(); return; }
@@ -1075,9 +1116,17 @@ cv.addEventListener('pointermove', e => {
 });
 
 function startRun(){
+  // JF-#036: request the midgame ad BEFORE gameplayStart fires, and don't
+  // start the run until the ad module actually resolves — previously
+  // gameplayStart() fired in the same tick as the ad request, so the SDK
+  // briefly thought gameplay was "active" while an ad was also in flight.
+  // We're still in the menu (SDK gameplay already reported stopped from the
+  // previous run's end) so it's safe to sit here until the ad callback fires.
+  if (ranOnce && Date.now() - adT > 180000){ adT = Date.now(); CG.interstitial(beginRun); }
+  else beginRun();
+}
+function beginRun(){
   state = S_PLAY;
-  // JF-#016: midgame ad between runs, never before the first, 3-min cooldown
-  if (ranOnce && Date.now() - adT > 180000){ adT = Date.now(); CG.interstitial(); }
   CG.gameplayStart();   // JF-#013: SDK brackets every run
   score = 0; combo = 0; comboT = 0; kills = 0; counters = 0; bestCombo = 0;
   jadeRun = 0;
@@ -1678,6 +1727,19 @@ function drawWorld(){
 }
 
 function draw(){
+  // JF-#036: portrait on a touch device — the canvas would otherwise letterbox
+  // to a sliver (measured 375x211 in an 812-tall viewport). Game is already
+  // auto-paused by the resize hook; just show why instead of a tiny fight.
+  if (portraitBlock){
+    cx.fillStyle = '#0a0d12'; cx.fillRect(0, 0, W, H);
+    cx.textAlign = 'center'; cx.fillStyle = '#e8dcc0'; cx.font = 'bold 30px Georgia';
+    cx.fillText('🔄', W/2, H/2 - 30);
+    cx.font = 'bold 22px Georgia';
+    cx.fillText('Rotate your device to play', W/2, H/2 + 16);
+    cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia';
+    cx.fillText('Jade Fist plays in landscape', W/2, H/2 + 44);
+    return;
+  }
   cx.save();
   if (shake > 0.5) cx.translate((Math.random()-0.5) * shake, (Math.random()-0.5) * shake);
   drawWorld();
@@ -1959,33 +2021,40 @@ function draw(){
     cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
       (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
       (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 482);
-    // JF-#035: today's trials (left) and the omen offer (right) — condensed to one line each
-    // + a solid panel behind them, kept to a single muted info color (gold reserved for CTA/highlights)
-    panel(16, 76, 250, 34, 'left');
+    // JF-#035/#036: today's trials (left) and the omen offer (right), panels behind
+    // them, one muted info color (gold reserved for CTA/highlights). JF-#036 restores
+    // which trials are still open (condensing to a bare count lost "what to do now").
+    const trio = todayTrio(), tdone = trio.filter((ti, i) => save.tdone[i]).length;
+    panel(16, 76, 250, 54, 'left');
     cx.textAlign = 'left'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
-    const tdone = todayTrio().filter((ti, i) => save.tdone[i]).length;
-    cx.fillText('TRIALS  ' + tdone + '/3 done', 26, 96);
-    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
+    cx.fillText('TRIALS  ' + tdone + '/3', 26, 96);
+    cx.font = '14px Georgia'; cx.fillStyle = '#8a94a6';
     cx.fillText('+15◆ each', 150, 96);
-    // JF-#023: wardrobe (left, under the trials) — condensed to one line + buy button
+    cx.font = '12px Georgia'; cx.fillStyle = '#8a94a6';
+    const remaining = trio.filter((ti, i) => !save.tdone[i]).map(ti => TRIALS[ti].name);
+    cx.fillText(remaining.length ? remaining.join(' · ') : 'all done today', 26, 117);
+    // JF-#023/#036: wardrobe (left, under the trials) — pushed down to clear the
+    // taller trials panel; buy row given real clearance from the name row and a
+    // bigger touch target (was 130x20, easy to miss or fat-finger the cycle above it)
     {
       const S = STYLES[styleSel], owned = !!save.cos.own[styleSel];
-      styleRect = { x: 16, y: 118, w: 250, h: owned ? 34 : 58 };
+      const wY = 140;
+      styleRect = { x: 16, y: wY, w: 250, h: owned ? 40 : 78 };
       panel(styleRect.x, styleRect.y, styleRect.w, styleRect.h, 'left');
       cx.textAlign = 'left'; cx.font = 'bold 13px Georgia'; cx.fillStyle = '#c8bfa8';
-      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 26, 136);
+      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 26, wY + 18);
       cx.fillStyle = S.col; cx.font = 'bold 13px Georgia';
-      cx.fillText(S.name + (save.cos.wear === styleSel ? ' — worn' : owned ? ' — owned' : ''), 26, 154);
+      cx.fillText(S.name + (save.cos.wear === styleSel ? ' — worn' : owned ? ' — owned' : ''), 26, wY + 36);
       styleBuyRect = null;
       if (!owned){
         const can = save.jade >= S.cost;
-        styleBuyRect = { x: 26, y: 160, w: 130, h: 20 };
+        styleBuyRect = { x: 26, y: wY + 48, w: 150, h: 26 };
         cx.fillStyle = can ? 'rgba(124,232,168,0.28)' : 'rgba(140,148,166,0.14)';
         cx.fillRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
         cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
         cx.strokeRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
-        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 13px Georgia';
-        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, 34, 174);
+        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 14px Georgia';
+        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, 34, wY + 66);
       }
     }
     const OM = todayOmen();
@@ -1993,16 +2062,16 @@ function draw(){
     cx.textAlign = 'right'; cx.font = 'bold 14px Georgia';
     cx.fillStyle = omenOn ? '#c8a8e8' : '#c8bfa8';
     cx.fillText("OMEN  " + (omenOn ? '— ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 26, 96);
-    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
+    cx.font = '14px Georgia'; cx.fillStyle = '#8a94a6';
     cx.fillText(OM.b + '  /  ' + OM.c, W - 26, 118);
     // JF-#026: Hall of Legends — condensed to just #1 (right, under the omen)
     {
       const H = save.hall[sel];
       if (H && H.length){
         panel(W - 16, 144, 250, 34, 'right');
-        cx.textAlign = 'right'; cx.font = 'bold 13px Georgia'; cx.fillStyle = '#c8bfa8';
+        cx.textAlign = 'right'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
         cx.fillText('BEST — ' + DISTRICTS[sel].name, W - 26, 162);
-        cx.font = 'bold 13px Georgia'; cx.fillStyle = '#e8c76a';
+        cx.font = 'bold 14px Georgia'; cx.fillStyle = '#e8c76a';
         cx.fillText('#1  ' + H[0].s + '  · wave ' + H[0].w, W - 26, 178);
       }
     }
@@ -2013,7 +2082,8 @@ function draw(){
     cx.fillText(won ? 'DISTRICT CLEARED' : 'FELLED', W/2, 150);
     // line-item tally reveal
     const lines = [
-      won ? ['Cleared', DISTRICTS[fought].name] : ['Felled on', 'WAVE ' + wave + '  ·  ' + DISTRICTS[fought].name],
+      won ? ['Cleared', DISTRICTS[fought].name] : ['Felled on', 'WAVE ' + wave + '  ·  ' + DISTRICTS[fought].name +
+        (DISTRICTS[fought].legend ? '  (loop ' + Math.max(1, Math.ceil(wave / WAVES_PER_DISTRICT)) + ')' : '')],
       ['Foes dropped', kills + ''],
       ['Counters', counters + ''],
       ['Best combo', '×' + bestCombo],

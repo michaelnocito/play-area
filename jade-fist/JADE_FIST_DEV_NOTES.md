@@ -319,3 +319,56 @@ lane, and dismisses the S_END ending screen. Body-blocking itself is BY DESIGN.
     OR a black cat trots across; cleared at beginWave.
 VALIDATION: 600-frame all-silly smoke (every joke scroll + cosmetic + Butcher boss) no throw;
 bot fairness ?bot=3&react=12 = 12/12 wins, 7 hits all dodgeable throws, 0% unreactable, 0% pincer.
+
+## JF-#035 — menu legibility pass (2026-07-04, Mike: overlay too transparent/busy)
+Menu overlay 0.55→0.82 alpha + radial vignette; solid rounded panels behind every corner
+text cluster (trials/wardrobe/omen/hall); real filled "SPACE TO FIGHT" CTA button instead of
+blinking bare text; trials/omen/hall condensed to fewer lines; techniques-known line dropped
+(pure clutter). Traded some information density for legibility — JF-#036 below had to walk
+part of that back (trials detail) once it broke "player always knows what to do now".
+
+## JF-#036 — full CG-guidelines audit, 12 fixes (2026-07-04)
+Ran GAME_BIBLE.md Part 1/4 checklist against the code, the 12-run headless bot suite, live
+console with the real SDK script loaded, and mobile portrait/landscape resize — then fixed
+everything found:
+1. **Ad/gameplay bracketing was backwards**: `startRun` fired `CG.interstitial()` and
+   `CG.gameplayStart()` in the same tick. Split into `startRun` (decides whether an ad is due)
+   → `beginRun` (the actual run setup + `gameplayStart()`), and `CG.interstitial(cb)` now only
+   calls back once the ad module resolves (adFinished/adError) — gameplayStart never overlaps
+   an in-flight ad.
+2. **No debounce on SDK gameplay calls**: confirmed live — the real SDK logged 56 "call
+   throttled, delay 1000" errors during a compressed bot run. Added `gpGate()`, a shared
+   1100ms min-interval gate wrapping gameplayStart/Stop/happytime in the CG adapter.
+3. **Portrait mobile had no rotate prompt**: canvas was measured shrinking to 375×211 inside
+   an 812-tall viewport (74% black bars). Added `portraitBlock` (checked in `fit()`), an
+   auto-pause on entering portrait (wired after `pauseGame`/`state` exist, since `fit()` runs
+   before those are declared), and a rotate-device screen in `draw()`.
+4. **Omen-toggle click hitbox drifted from its JF-#035 panel**: was `y<148`, panel now ends at
+   y=136 — a sliver of the Hall of Legends panel below it wrongly toggled Omen. Fixed to match.
+5. **Duck dodge was measurably harder than jump**: `DUCK_DUR` 26 vs `JUMP_DUR` 32 frames, and
+   bot-suite hits skewed hard toward high-windup (duck) misses. Bumped `DUCK_DUR` to 30.
+6. **loadingStart/loadingStop fired after the game was already visible/interactive**: both
+   only fire once the async `SDK.init()` promise resolves, by which point the synchronous
+   script had already parsed and the RAF loop was running. Canvas now starts at `opacity:0`
+   and only fades in inside the `CG.init` callback, so the SDK loading bracket matches what
+   the player can actually see/touch.
+7. **Trials panel lost per-trial detail in JF-#035**: condensed to a bare "2/3 done" count,
+   regressing "player always knows what to do now". Restored a line listing which trials are
+   still open (or "all done today"), panel resized to fit.
+8. **LEGEND endless mode had no player-facing loop identity** (difficulty/boss HP already
+   scale with `wave` via `spawnBoss`, just nothing showed it): added "LOOP N" to the boss-fall
+   banner and "(loop N)" to the death tally when felled in LEGEND.
+9. **Wardrobe BUY touch target was 130×20 logical** — under common touch-target minimums.
+   Bumped to 150×26 and pushed the whole wardrobe block down to clear the taller trials panel.
+10. **Wardrobe label-row and buy-row sat ~6px apart** — real mis-tap risk on touch (cycling
+    style instead of buying). Given real clearance in the new layout (item 9).
+11. **13px logical panel text scales under 10 CSS px on mobile landscape** (960-logical canvas
+    at ~0.69 scale on a typical phone). Bumped the smallest panel fonts to 14px.
+12. **No adblock-detection signal for QA**: ad calls were silent try/catch with nothing to
+    tell "adblock suppressed" from "ad just didn't fire". Added `CG.checkAdblock()` (reads
+    `SDK.ad.hasAdblock` once init resolves) into `CG.adblockDetected` for QA visibility.
+
+VALIDATION: `node --check` on the extracted script; bot suite re-run 10/12 wins (duck:jump hit
+ratio improved from ~5:1 to 2:1); zero SDK-throttle console errors on the same bot run that
+previously produced 56; portrait-mode auto-pause + rotate screen verified via forced resize
+events in the preview harness; wardrobe/omen click rects sanity-checked post-layout-change.
