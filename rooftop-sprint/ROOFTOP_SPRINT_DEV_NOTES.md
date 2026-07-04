@@ -1,7 +1,25 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-04, RS-#042 feel-pass shipped on top of RS-SILLY): Next = MIKE'S
-> FULL PLAYTEST, then B7 SHIP WAVE**
+> **⚡ RESUME HERE (2026-07-04, RS-#044 difficulty rework shipped on top of RS-#042/#043/RS-SILLY):
+> Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE**
+>
+> **⚔️ RS-#044 DONE 2026-07-04 (HEAD `7215ee0`) — guards brace/lunge, full difficulty rework,
+> from Mike reporting the game trivializes to "spam attack":** root cause was that a FAR-range
+> press was an unconditional free kill — mashing the action button the instant a guard entered
+> the (wide, intentionally-generous) strike range was exactly as safe as timing a real strike, so
+> the CLEAN/HEAVY/PERFECT tiers only ever affected score, never survival. Tried shrinking
+> `strikeRangeX()` first (RS-#043) to force real timing — reverted, it collapsed slow-reaction
+> survival (~800m→~200m) because that generous reach is the one thing keeping guards killable
+> outside their own hit box. Landed on real aggression instead: a first swing at FAR range no
+> longer kills — the guard braces (marker flashes red, `g.lunge`/`g.lungeT`) and surges ~1.6px/
+> frame toward the player for 26 frames instead of dying. Only a genuine follow-up finishes it,
+> and because the guard closed distance that follow-up naturally lands MID/PERFECT (better
+> points, not CLEAN) — ignore the brace and the guard's surge + your own forward run closes the
+> gap fast enough to cost a real hit. Feint (once open)/archers pass through the same path;
+> Captains untouched (separate 3-hit gate). Also RS-#043 (same session, HEAD `0cf4d5e`): 6-frame
+> post-kill `strikeCd` so chaining the button through a formation isn't perfectly free, slightly
+> higher feint/archer variant odds (0.28→0.32). Verified: `rs_playtest.js` + `rs_qa_sweep.js`
+> green on default seed, tier separation intact throughout all three changes.
 >
 > **🎛️ RS-#042 DONE 2026-07-04 (HEAD `3df1962`) — camera shake + pace tuning, from Mike
 > reporting shake felt like stutter:** shake was raw per-frame `(rnd()-0.5)*shake` jitter with
