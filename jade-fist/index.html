@@ -591,6 +591,7 @@ function spawnEnemy(forceSide){
   });
   const ne = enemies[enemies.length - 1];
   ne.windup0 = ne.windup;                     // base windup (brute rage floors off this)
+  mutter(ne);                                 // JF-#030: the odd approach one-liner
   if (ne.guard && combo >= 8 && !adaptShown){
     adaptShown = true;
     popup(W/2, 220, 'THE CROWD WISES UP', '#a8b4c8', true);
@@ -679,10 +680,42 @@ function burst(x, y, col, n, pow){
 // JF-#020: a touch of absurdity — occasional comedy send on perfect counters,
 // wall bonks, and the odd felled-foe yelp. Rare on purpose: seasoning, not a tone change.
 const SENDS = ['SEE YOU NEXT SPRING', "HE'LL WALK THAT OFF", 'STRAIGHT TO THE HEALER',
-               'OVER THE NOODLE CART', 'TELL THE OTHERS'];
-const YELPS = ['my sandals…', 'not the face', 'I quit', 'who hired him?', 'ow.'];
+               'OVER THE NOODLE CART', 'TELL THE OTHERS', 'AND STAY OUT', 'INTO NEXT WEEK'];
+const YELPS = ['my sandals…', 'not the face', 'I quit', 'who hired him?', 'ow.',
+               'worth it', 'nap time', 'tell my mother', 'I felt that', 'unfair'];
 function yelp(x, y){
   if (Math.random() < 0.12) popup(x, y, YELPS[(Math.random() * YELPS.length) | 0], '#c8bfa8');
+}
+// JF-#030: enemy chatter — type-flavored mutters as they approach. Cocky vipers,
+// dim monks, twitchy spearmen, rank-and-file bravado. Rare so it stays a garnish.
+const MUTTERS = {
+  [T_NORM]:  ['get him!', 'for the guild', 'easy money', 'you again?', 'surround him'],
+  [T_FAST]:  ['too slow', 'catch me', 'blink and miss', 'hah!', 'over here~'],
+  [T_BRUTE]: ['me smash', 'hnngh', 'big hands', 'squish', '...'],
+  [T_SPEAR]: ['stay back!', "don't look at me", 'from waaay over here', 'nervous laugh', 'eep']
+};
+function mutter(e){
+  if (state !== S_PLAY || Math.random() > 0.14) return;
+  const bank = MUTTERS[e.type] || MUTTERS[T_NORM];
+  popup(e.x, e.y - 108, bank[(Math.random() * bank.length) | 0], '#9aa2b0');
+}
+// JF-#030: hype announcer — cheeky bad-kung-fu-dub callouts as combos climb.
+// Escalates from encouraging to "okay, calm down". One line per threshold per run.
+const HYPE = [
+  { at: 3,  txt: 'Nice.' }, { at: 5, txt: 'Show off.' }, { at: 8, txt: 'UNBELIEVABLE!' },
+  { at: 12, txt: 'Okay, calm down.' }, { at: 16, txt: 'THE CROWD GOES WILD' },
+  { at: 22, txt: 'save some for the rest of us' }, { at: 30, txt: 'legally, this is too cool' }
+];
+let hypeShown = -1;
+let longestSend = 0;   // JF-#030: farthest yeet this run (px), bragged on the tally
+function hype(c){
+  for (const H of HYPE){
+    if (c >= H.at && H.at > hypeShown){
+      hypeShown = H.at;
+      popup(W/2, 108, H.txt, '#ffd98a', true);
+      break;
+    }
+  }
 }
 
 // ----------------------------------------------------------------- verbs ----
@@ -721,6 +754,7 @@ function strike(dir){
     if (e.type === T_BRUTE) award('monk');
     if (e.type === T_SPEAR) award('spear');
     e.st = E_THROWN; e.stT = 0;
+    e.sendX0 = e.x;                    // JF-#030: launch point, for the longest-yeet stat
     // JF-#010: DRAGON SWEEP — perfect throws fly farther and pierce deeper
     const sweep = hasTech(0);
     e.vx = dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1);   // JF-#025: TIGER
@@ -753,6 +787,12 @@ function strike(dir){
       score += 500; jadeRun += 2;
       popup(W/2, 220, 'SWEEP +500', '#e8c76a', true);
       bumpTrial('sweep');
+    }
+    // JF-#030: BOWLING — one throw toppling 3+ is a STRIKE, with the pins to prove it
+    if (felled >= 3){
+      score += 500 * (felled - 2);
+      banner('☗ STRIKE!! ' + felled + ' PINS', '#ffd98a', 100);
+      Snd.block(); Snd.best(); shake = Math.max(shake, 14); slowMo = Math.max(slowMo, 24);
     }
     // JF-#010: PALM WAVE — 3 consecutive perfects release a wave that fells both sides
     if (perfect && hasTech(2)){
@@ -813,6 +853,7 @@ function strike(dir){
     burst(e.x, e.y - 45, '#d8d0c0', 10, 3);
   }
   if (combo > bestCombo) bestCombo = combo;
+  hype(combo);                           // JF-#030: cheeky announcer as the chain climbs
   if (combo >= 5) award('chain5');
   // live belt promotion: banner the moment lifetime kills cross a threshold
   const nb = beltOf(save.kills + kills);
@@ -1027,6 +1068,7 @@ function startRun(){
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
+  hypeShown = -1; longestSend = 0;   // JF-#030: reset silly-run trackers
   dBase = DISTRICTS[sel].dBase;
   beginWave(1);
   // JF-#012: veterans get the district's line instead of the controls lesson
@@ -1212,6 +1254,11 @@ function update(){
               burst(o.x, o.y - 40, '#e8c76a', 10, 3);
             }
           }
+        }
+        // JF-#030: record the farthest yeet (thrown bodies only)
+        if (e.st === E_THROWN && e.sendX0 !== undefined){
+          const d = Math.abs(e.x - e.sendX0);
+          if (d > longestSend) longestSend = d;
         }
         if (e.y > 470) e.dead = true;
         break;
@@ -1782,6 +1829,12 @@ function draw(){
       ['Promoted', BELTS[promoted].name + ' BELT']);
     if (hallRank) lines.splice(lines.length - 1, 0,
       ['Hall of Legends', '#' + hallRank + ' · ' + DISTRICTS[fought].name]);   // JF-#026
+    // JF-#030: longest-yeet brag with an escalating provincial title
+    if (longestSend > 60){
+      const m = Math.round(longestSend);
+      const title = m > 900 ? 'National Record' : m > 600 ? 'Provincial Record' : m > 350 ? 'Village Legend' : 'a decent toss';
+      lines.splice(lines.length - 1, 0, ['Longest yeet', m + 'px · ' + title]);
+    }
     const shown = Math.min(lines.length, Math.floor(tallyT / 24));
     if (shown > tallyStep){ tallyStep = shown; Snd.tick(); if (shown === lines.length && newBest) Snd.best(); }
     cx.font = '20px Georgia';
