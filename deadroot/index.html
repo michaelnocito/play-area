@@ -313,6 +313,43 @@ let gameSpeed = 1; // 1x / 2x fast-forward
 const DEV = new URLSearchParams(location.search).has('dev') || location.hostname==='localhost' || location.hostname==='127.0.0.1';
 let godMode = false, showRanges = false;
 // DR-#019 DEV:END
+
+// SPR-#001: pre-rendered-3D sprite pipeline, vertical slice on the scav enemy.
+// Atlas + JSON load async; procedural draw is the fallback if they 404 or before
+// they're ready, so the game always runs even if assets/ is missing.
+let useSprites = true;
+const SPR = { scav: { img: new Image(), meta: null, ready: false } };
+(function loadSprite(key, pngPath, jsonPath){
+  const s = SPR[key];
+  fetch(jsonPath).then(r=>r.ok?r.json():null).then(meta=>{
+    if(!meta) return;
+    s.img.onload = ()=>{ s.meta = meta; s.ready = true; };
+    s.img.onerror = ()=>{};
+    s.img.src = pngPath;
+  }).catch(()=>{});
+})('scav', 'assets/scav_atlas.png', 'assets/scav_atlas.json');
+function drawSprite(key, e, hxE, hyE, flowVal){
+  const s = SPR[key];
+  if(!s.ready) return false;
+  let ang;
+  if(flowVal){ ang = Math.atan2(-flowVal[1], -flowVal[0]); } // flowVal points toward hive; sprite dir should face travel = -flow
+  else { ang = Math.atan2(hyE-e.y, hxE-e.x); }
+  let deg = (ang*180/Math.PI + 360) % 360;
+  const dirs = s.meta.dirs;
+  let dir = dirs[0], best = 999;
+  for(const d of dirs){ const diff = Math.min(Math.abs(deg-d), 360-Math.abs(deg-d)); if(diff<best){ best=diff; dir=d; } }
+  const fpd = s.meta.framesPerDir;
+  const frame = Math.floor(perfNow*8 + e.id*1.3) % fpd;
+  const f = s.meta.frames[dir+'_'+frame];
+  if(!f) return false;
+  const drawSize = e.r*2.7; // sprite model doesn't fill the full hit-circle; scale up to match established enemy footprint
+  ctx.save();
+  if(e.flash>0) ctx.globalAlpha = 0.55;
+  ctx.drawImage(s.img, f.x, f.y, f.w, f.h, -drawSize/2, -drawSize/2, drawSize, drawSize);
+  if(e.flash>0){ ctx.globalCompositeOperation='source-atop'; ctx.fillStyle='#ffffff'; ctx.fillRect(-drawSize/2,-drawSize/2,drawSize,drawSize); }
+  ctx.restore();
+  return true;
+}
 // DR-#010 juice
 let hitStop = 0, slowMoT = 0, timeScale = 1; // hit-stop + wave-clear slow-mo
 let edgePulseT = 0;                           // screen-edge red flash on hive damage
@@ -1641,19 +1678,25 @@ function draw(){
       ctx.translate(0, -Math.abs(hop)*e.r*0.13);
       ctx.scale(1+hop*0.05, 1-hop*0.05);
     }
+    // speed streak for scavengers (drawn under everything, sprite or procedural)
+    let scavFv = null;
+    if(e.type==="scav" && flow){
+      const [ec2,er2]=xyToTile(e.x,e.y);
+      scavFv=(inGrid(ec2,er2)&&flow[er2]&&flow[er2][ec2])?flow[er2][ec2]:null;
+      if(scavFv){ ctx.save(); ctx.globalAlpha=0.2; ctx.fillStyle=e.col;
+        ctx.beginPath(); ctx.arc(-scavFv[0]*10,-scavFv[1]*10,e.r*0.65,0,6.283); ctx.fill();
+        ctx.beginPath(); ctx.arc(-scavFv[0]*16,-scavFv[1]*16,e.r*0.35,0,6.283); ctx.fill();
+        ctx.restore(); }
+    }
+    // SPR-#001: scav renders from the pre-rendered-3D atlas when it's loaded; the
+    // full procedural outline+fill+eyes block below is the fallback (still runs
+    // for every other type, and for scav if the atlas hasn't loaded/A-B'd off).
+    const spriteDrawn = e.type==="scav" && useSprites && drawSprite('scav', e, hxE, hyE, scavFv);
+    if(!spriteDrawn){
     // cel outline silhouette (pops against the busier environment)
     ctx.strokeStyle="rgba(8,10,12,0.9)"; ctx.lineWidth=2.5;
     if(e.type==="sweeper"){ ctx.strokeRect(-e.r,-e.r,e.r*2,e.r*2); }
     else { ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.stroke(); }
-    // speed streak for scavengers
-    if(e.type==="scav" && flow){
-      const [ec2,er2]=xyToTile(e.x,e.y);
-      const fv=(inGrid(ec2,er2)&&flow[er2]&&flow[er2][ec2])?flow[er2][ec2]:null;
-      if(fv){ ctx.save(); ctx.globalAlpha=0.2; ctx.fillStyle=e.col;
-        ctx.beginPath(); ctx.arc(-fv[0]*10,-fv[1]*10,e.r*0.65,0,6.283); ctx.fill();
-        ctx.beginPath(); ctx.arc(-fv[0]*16,-fv[1]*16,e.r*0.35,0,6.283); ctx.fill();
-        ctx.restore(); }
-    }
     ctx.fillStyle = e.flash>0 ? "#ffffff" : e.col;
     if(e.type==="sweeper"){
       ctx.fillRect(-e.r,-e.r,e.r*2,e.r*2);
@@ -1689,6 +1732,7 @@ function draw(){
       ctx.fillStyle="#15130f";
       ctx.beginPath(); ctx.arc(-ex+px*ew*0.5, ey+py*ew*0.5, pr, 0, 6.283); ctx.arc(ex+px*ew*0.5, ey+py*ew*0.5, pr, 0, 6.283); ctx.fill();
     }
+    } // end !spriteDrawn procedural fallback
     // status tells: shape-coded (not color-only) for colorblind accessibility
     if(e.snared){ ctx.strokeStyle="#8a6a3f"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,e.r*0.6,e.r*0.8,0,3.14); ctx.stroke(); }
     if(e.drench>0){ // droplet triangle, top-right
@@ -2234,6 +2278,7 @@ if(DEV){
   html += '<div style="margin:8px 0 3px;color:#c8e0a8">Game speed</div><div id="spd"></div>';
   html += `<label style="display:block;margin:8px 0 2px"><input type="checkbox" id="god"> Hive god mode</label>`;
   html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="rng"> Show tower ranges</label>`;
+  html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="spr"> Scav sprite (vs procedural)</label>`;
   html += `<button id="dBio" style="${bs}">+100 biomass</button>`;
   html += `<button id="dSpawn" style="${bs}">spawn a scav</button>`;
   html += `<button id="dSkip" style="${bs}">skip wave (clear enemies)</button>`;
@@ -2245,13 +2290,14 @@ if(DEV){
   addEventListener('keydown', e=>{ if(e.key==='`'||e.key==='~'){ e.preventDefault(); toggle(); } });
   function refresh(){
     knobs.forEach((k,i)=>{ const s=wrap.querySelector('#ks'+i), v=wrap.querySelector('#kv'+i); s.value=k.get(); v.textContent=(+k.get()).toFixed(k.step<1?1:0); });
-    wrap.querySelector('#god').checked=godMode; wrap.querySelector('#rng').checked=showRanges;
+    wrap.querySelector('#god').checked=godMode; wrap.querySelector('#rng').checked=showRanges; wrap.querySelector('#spr').checked=useSprites;
     const spd=wrap.querySelector('#spd'); spd.innerHTML='';
     [1,2,4].forEach(mult=>{ const b=document.createElement('button'); b.textContent=mult+'x'; b.style.cssText='padding:5px 12px;margin-right:5px;font:11px ui-monospace,monospace;border-radius:6px;cursor:pointer;border:1px solid #4a6a42;color:#dfeada;background:'+(gameSpeed===mult?'#3a6a30':'#20301c'); b.onclick=()=>{ gameSpeed=mult; refresh(); }; spd.appendChild(b); });
   }
   knobs.forEach((k,i)=>{ wrap.querySelector('#ks'+i).oninput=e=>{ k.set(+e.target.value); wrap.querySelector('#kv'+i).textContent=(+e.target.value).toFixed(k.step<1?1:0); }; });
   wrap.querySelector('#god').onchange=e=>godMode=e.target.checked;
   wrap.querySelector('#rng').onchange=e=>showRanges=e.target.checked;
+  wrap.querySelector('#spr').onchange=e=>useSprites=e.target.checked;
   const inGame = ()=> mode==='play' || mode==='prep';
   wrap.querySelector('#dBio').onclick=()=>{ if(inGame()) biomass+=100; };
   wrap.querySelector('#dSpawn').onclick=()=>{ if(mode==='play') spawnEnemy('scav'); };

@@ -548,3 +548,33 @@ web path) specifically to fix enemy identification. NOTE for whoever picks this 
 is an art/silhouette/color problem, not inherently an engine problem — top-down 2D is usually
 the MOST readable for TD (Bloons/Kingdom Rush). Engine choice pending Mike's decision; see the
 engine handoff being drafted this session.
+
+## SPR-#001 — pre-rendered-3D sprite pipeline, scav vertical slice (2026-07-04)
+Answers the readability driver above without an engine rebuild: pre-render 3D models to 2D
+sprite sheets, keep the existing web game. Engvee "Animated Isometric Zombies" pack (free,
+clean commercial license, genuinely 3D-rendered) dropped in `assets/raw/` (gitignored, source
+only, not shipped).
+- `scripts/pack_atlas.py`: one-off packer (Pillow). Crops the Walk spritesheet's 4x5 frame
+  grid, keeps 8 of 20 frames x 8 of 16 directions (the 45-degree steps), downsamples
+  256px->96px, tints each frame toward the enemy's existing `col` (blend alpha 0.55, alpha
+  channel preserved) so the pack doubles as the readability color-code. Outputs
+  `assets/scav_atlas.png` (~172KB) + `assets/scav_atlas.json` (grid frame map).
+- `index.html`: loads the atlas async (fetch+Image, non-blocking); `drawSprite()` picks the
+  nearest of the 8 directions from the enemy's flow-field movement vector and an animation
+  frame from elapsed time. Wired into the enemy render loop for `scav` only, gated by
+  `useSprites` (dev-menu checkbox "Scav sprite (vs procedural)", default on) so procedural and
+  sprite can be A/B'd live. Procedural circle+eyes fallback is untouched and still runs for
+  every other enemy type, and for scav if the atlas 404s or the toggle is off — game never
+  breaks if `assets/` is missing.
+- Status tells (snared/drench/corroded), HP redden, HP bar, speed streak, and the last-enemy
+  pulse ring are unchanged and layer on top of either draw path.
+- Verified via preview_eval (headless): atlas fetch/image both 200, no console errors with
+  sprites on or off, `drawSprite` renders non-blank pixels at the enemy's world position.
+  Screenshot tooling still times out on this canvas (known issue) so the actual *look* at real
+  in-game scale has NOT been eyeballed yet — that's the next step, per the handoff: Mike checks
+  it live before any more enemies/towers get the sprite treatment.
+- Next: Mike plays `?dev=1` locally or on a deploy, toggles the dev-menu checkbox to compare
+  sprite vs procedural scav, judges readability at real scale. If it lands, Phase 1 (Engvee)
+  extends to the other deadroot enemies it can cover; Phase 2 (Synty, needs Blender scripting)
+  covers the rest of the roster. If it doesn't land, tune tint/scale/frame-count in
+  `pack_atlas.py` and re-run.
