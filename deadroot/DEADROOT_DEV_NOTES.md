@@ -256,6 +256,61 @@ ring uses tower color; node range ring now shown.
   boss bar positioning, damage number spam threshold, tower readability QA.
 - Remaining Category C: mobile QA full playthrough on live URL, corpse rot timer /
   Sweeper sanitize tooltip.
+- Human eyes still needed: does the portrait rotate-hint read well; is squeezed
+  mobile play (viewScale≈0.36 on a 375px phone) actually comfortable now that
+  touch targets are padded — a bigger fix (portrait camera/pan) is still open.
+
+## DR-#015 — CrazyGames-acceptance hardening batch, 12 fixes (2026-07-04)
+Re-ran the guideline audit (GAME_BIBLE Parts 1/2/4) and built all 12 findings in one
+pass. Verified via preview_eval (headless; screenshot tooling unavailable again this
+session) — parse-check, full playthrough loops, mocked-SDK adblock/error/success
+paths, and a 375×812 mobile-viewport hit-target check.
+
+1. **Adblock detection wired** — `CG.hasAdblock()` checks `SDK.ad.hasAdblock` before
+   any rewarded-ad request; if blocked, skips straight to the fail callback instead
+   of calling an ad that can't show.
+2. **`loadingStart`/`loadingStop` now actually called** — bracketed around
+   `CG.init()`'s success path (previously defined but dead code).
+3. **Rewarded-ad failure is explained, not silent** — `takeSecondWind`'s fail
+   callback now carries a reason ("adblock" vs "error"); the death screen appends
+   "(Second Wind ad unavailable...)" instead of just vanishing the option.
+4. **Second Wind HUD tell** — small pulsing shield glyph next to the Hive HP bar
+   during play/prep whenever a revive is still banked this run (law #9: every
+   mechanic needs a visible tell, not a surprise).
+5. **Daily streak + return bonus** — `save.dailyStreak`/`lastDailyDay` track
+   consecutive calendar days; `dailyStreakMult()` adds +5%/day up to +30% DNA on
+   top of the existing ×1.5, shown on the title screen's Daily Trial button
+   ("🔥 N-day streak"). Closes the "retention hooks need a streak" gap (law #11).
+6. **Colorblind-safe status tells** — drench is now a droplet triangle (was a
+   plain dot), corrode is a ring **plus radiating crack ticks** (was a plain ring)
+   so acid/corrosion read by silhouette, not just hue, alongside the existing
+   snared half-arc.
+7. **Portrait rotate hint** — non-blocking bottom banner ("↻ rotate for a bigger
+   view") appears for 5s whenever the viewport is portrait and narrow (<700px);
+   never gates play, just nudges. Paired with an `orientationchange` listener
+   (previously only bare `resize` was wired) so it also fires on device rotation.
+8. **Minimum touch-target floor** — new `hitPad(size)` pads a button's hit box in
+   logical space so its on-screen tap target never drops below ~44 real px,
+   applied to mute/pause/speed/ability buttons. Verified: at 375px-wide mobile
+   (viewScale≈0.36) a 56px button's effective on-screen tap area is now the full
+   44px instead of ~20px.
+9. **End-screen Second Wind transparency** — death screen now notes "🛡 Second
+   Wind used" when it was, alongside the ad-unavailable note when it wasn't.
+10. **Endless boss variety** — every 3rd endless wave alternates Purifier/Butcher
+    (`Math.floor(n/3)%2`) instead of always spawning the Purifier, so long endless
+    sessions don't repeat one silhouette forever.
+11. **Boon variety on long sessions** — `run.boonsUsed` tracks picked boon ids;
+    `offerBoons()` prefers boons not yet seen this run (falls back to the full
+    pool once exhausted), and endless waves past `endlessN>=9` offer **3** choices
+    instead of 2. `boonCards()`/`drawBoons()` made card-count-agnostic to support it.
+12. **Fixed a dead scaling bug + spawn-count cap in endless** — `endlessWave()`
+    computed a difficulty multiplier `s` that was never actually applied anywhere;
+    endless was scaling danger purely through enemy *count*, which both trivializes
+    per-enemy difficulty and risks runaway spawn-queue growth at high endlessN.
+    Now: enemy counts are capped at `n=40` for spawn-queue/perf safety, and
+    `run.endlessHpMult`/`endlessSpdMult` (set in `queueWave`, +15%/+5% per
+    endlessN) apply real per-enemy stat scaling instead, matching bible law #6
+    (difficulty is drama, not a treadmill of pure numbers).
 
 ## DR-#014 — Rewarded ad SECOND WIND (2026-07-04)
 On Hive death (hiveHP<=0), if not a daily run and not yet used this run: instead of

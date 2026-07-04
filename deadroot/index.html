@@ -25,14 +25,30 @@
 /* ===== CrazyGames SDK adapter (no-op offline) ===== */
 let sdkLive = false;
 const CG = {
-  init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>{ sdkLive=true; cb&&cb(); }).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
+  init(cb){
+    try{ if(window.CrazyGames?.SDK){
+      window.CrazyGames.SDK.init().then(()=>{ sdkLive=true; CG.loadingStart(); CG.loadingStop(); cb&&cb(); }).catch(()=>cb&&cb());
+      return;
+    } }catch(e){}
+    cb&&cb();
+  },
   loadingStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStart(); }catch(e){} },
   loadingStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStop(); }catch(e){} },
   gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
   gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
   happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
+  hasAdblock(){ try{ return !!(sdkLive && window.CrazyGames.SDK.ad.hasAdblock); }catch(e){ return false; } },
   interstitial(done){ try{ if(sdkLive){ window.CrazyGames.SDK.ad.requestAd("midgame",{adFinished:done,adError:done,adStarted:()=>{}}); return; } }catch(e){} done&&done(); },
-  rewarded(done,fail){ try{ if(sdkLive){ window.CrazyGames.SDK.ad.requestAd("rewarded",{adFinished:()=>done&&done(),adError:()=>fail&&fail(),adStarted:()=>{}}); return; } }catch(e){} done&&done(); }
+  rewarded(done,fail){
+    try{
+      if(sdkLive){
+        if(CG.hasAdblock()){ fail&&fail("adblock"); return; }
+        window.CrazyGames.SDK.ad.requestAd("rewarded",{adFinished:()=>done&&done(),adError:()=>fail&&fail("error"),adStarted:()=>{}});
+        return;
+      }
+    }catch(e){}
+    done&&done();
+  }
 };
 
 /* ===== Config (all tuning lives here) ===== */
@@ -113,13 +129,17 @@ const WAVES = [
 function phaseOf(w){ for(const p of PHASES) if(p.waves.includes(w)) return p.name; return "THE LONG NIGHT"; }
 /* Endless (post-victory unlock): scale wave 11 upward */
 function endlessWave(n){
-  const s = 1 + n*0.15;
-  return [["scav",Math.floor(10+n*2),0.7],["troop",Math.floor(5+n),1.8],["incin",Math.floor(3+n*0.7),2.5],["sweeper",Math.floor(3+n*0.5),4]].map(g=>[g[0],g[1],g[2]]).concat(n%3===2?[["boss",1,1]]:[]);
+  // count growth is capped (spawn-queue/perf safeguard); difficulty past the cap
+  // keeps rising via run.endlessHpMult/endlessSpdMult (set in queueWave) instead
+  const cn = Math.min(n, 40);
+  const grunts = [["scav",Math.floor(10+cn*2),0.7],["troop",Math.floor(5+cn),1.8],["incin",Math.floor(3+cn*0.7),2.5],["sweeper",Math.floor(3+cn*0.5),4]];
+  if(n%3===2) grunts.push([Math.floor(n/3)%2===0 ? "boss" : "butcher", 1, 1]);
+  return grunts;
 }
 
 /* ===== Save (versioned, defensive) ===== */
 const SAVE_KEY = "deadroot_save_v1";
-let save = { dna:0, tiers:{}, bestWave:0, won:false, endlessBest:0, muted:false, dailyBest:{} };
+let save = { dna:0, tiers:{}, bestWave:0, won:false, endlessBest:0, muted:false, dailyBest:{}, dailyStreak:0, lastDailyDay:-1 };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if(s && typeof s==="object") save = Object.assign(save, s); } catch(e){}
 function persist(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }catch(e){} }
 function tier(id){ return save.tiers[id]|0; }
@@ -140,6 +160,7 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const W = CFG.cols*CFG.tile, H = CFG.rows*CFG.tile + 72; // +72 top HUD band
 let viewScale = 1, offX = 0, offY = 0;
+let rotateHintT = 0;
 function resize(){
   const dpr = Math.min(window.devicePixelRatio||1, 2);
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -149,8 +170,12 @@ function resize(){
   canvas.width = Math.floor(W*viewScale*dpr);
   canvas.height = Math.floor(H*viewScale*dpr);
   ctx.setTransform(viewScale*dpr,0,0,viewScale*dpr,0,0);
+  // portrait phones squeeze this landscape-shaped board hard — nudge, never block
+  rotateHintT = (vw<vh && vw<700) ? 5 : 0;
 }
-window.addEventListener("resize", resize); resize();
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", ()=>setTimeout(resize,50));
+resize();
 const TOP = 72; // gameplay area starts below HUD
 function tileToXY(c,r){ return [c*CFG.tile+CFG.tile/2, TOP + r*CFG.tile+CFG.tile/2]; }
 function xyToTile(x,y){ return [Math.floor(x/CFG.tile), Math.floor((y-TOP)/CFG.tile)]; }
@@ -256,7 +281,7 @@ let noHitWaves = 0, waveStartHP = 0, waveT = 0, waveFlashT = 0;
 // world effects
 let stains = [], rings = [];
 // first-time flags + pointer
-let seenSweeper = false, lastSurvivorShown = false, secondWindUsed = false;
+let seenSweeper = false, lastSurvivorShown = false, secondWindUsed = false, adFailReason = null;
 let ptrX = 0, ptrY = 0;
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
@@ -273,6 +298,14 @@ const DAILY_HELPFUL = [
 let daily = false;
 function dayIndex(){ return Math.floor(Date.now()/86400000); }
 function dailyMods(){ const d=dayIndex(); return [DAILY_HOSTILE[d%3], DAILY_HELPFUL[(d>>2)%3]]; }
+function bumpDailyStreak(){
+  const d = dayIndex();
+  if(save.lastDailyDay===d) return; // already played today, don't double-count
+  save.dailyStreak = (save.lastDailyDay===d-1) ? save.dailyStreak+1 : 1;
+  save.lastDailyDay = d;
+  persist();
+}
+function dailyStreakMult(){ return 1 + Math.min(save.dailyStreak-1, 6)*0.05; } // +5%/day, capped +30%
 
 const BOONS = [
   { id:"acid",   txt:"ACID GLANDS",     sub:"+30% Spitter damage",        apply:r=>r.spitDmg+=0.30 },
@@ -306,14 +339,17 @@ const END_QUIPS_LOSE = ["they brought bleach. this time it worked.","death is ju
 
 function newRunMods(){
   return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
-    enemyHp:1, enemySpd:1,
+    enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[],
     abil: ["overgrowth","bloom","pheromone"].filter(id=>tier(id)>0).map(id=>({id, cd:0})) };
 }
 function offerBoons(){
-  const pool = BOONS.slice();
-  const a = pool.splice(Math.floor(Math.random()*pool.length),1)[0];
-  const b = pool.splice(Math.floor(Math.random()*pool.length),1)[0];
-  boonChoice = [a,b];
+  // prefer boons not yet seen this run so long sessions (deep endless) feel fresher;
+  // fall back to the full pool once everything's been offered
+  const unseen = BOONS.filter(b=>!run.boonsUsed.includes(b.id));
+  const pool = (unseen.length>=2 ? unseen : BOONS).slice();
+  const count = (endless && endlessN>=9) ? 3 : 2;
+  boonChoice = [];
+  for(let i=0;i<count && pool.length;i++) boonChoice.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
 }
 function showBanner(txt,sub){ banner = {txt, sub, t:2.6}; }
 
@@ -381,7 +417,7 @@ function spawnEnemy(type){
     tries++;
   } while((blocked[r][c] || flowDist[r][c]===Infinity) && tries<40);
   const [x,y] = tileToXY(c,r);
-  const eHp=e.hp*(run?run.enemyHp:1), eSpd=e.spd*(run?run.enemySpd:1);
+  const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
     col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0 });
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they steal your mutate"); }
@@ -475,7 +511,7 @@ function newRun(){
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  stains=[]; rings=[]; seenSweeper=false; lastSurvivorShown=false; secondWindUsed=false;
+  stains=[]; rings=[]; seenSweeper=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null;
   // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
   dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
@@ -485,6 +521,7 @@ function newRun(){
   CG.gameplayStart();
 }
 function queueWave(){
+  if(endless){ run.endlessHpMult = 1+endlessN*0.15; run.endlessSpdMult = 1+endlessN*0.05; }
   const def = endless ? endlessWave(endlessN) : WAVES[waveIdx];
   spawnQ = [];
   for(const [type,count,intv] of def){
@@ -508,7 +545,7 @@ function queueWave(){
 function waveCleared(){
   const wn = endless ? 12+endlessN+1 : waveIdx+1;
   const baseGain = endless ? Math.ceil(Math.max(3,wn)*1.2) : Math.max(3,wn);
-  const gain = daily ? Math.ceil(baseGain*1.5) : baseGain;
+  const gain = daily ? Math.ceil(baseGain*1.5*dailyStreakMult()) : baseGain;
   save.dna += gain; dnaEarned += gain;
   save.bestWave = Math.max(save.bestWave, wn);
   if(daily){ if(!save.dailyBest)save.dailyBest={}; save.dailyBest[dayIndex()]=Math.max(save.dailyBest[dayIndex()]||0,wn); }
@@ -550,7 +587,7 @@ function takeSecondWind(){
     popup(W/2, H/2-40, "SECOND WIND", "#8fd9a8");
     edgePulseT = 1.0;
     CG.gameplayStart();
-  }, ()=>{ gameOver(); });
+  }, (reason)=>{ adFailReason = reason||"error"; gameOver(); });
 }
 
 /* ===== Update (fixed 60Hz) ===== */
@@ -822,11 +859,13 @@ function canvasPos(ev){
   const py = (ev.touches?ev.touches[0].clientY:ev.clientY) - rect.top;
   return [px/viewScale, py/viewScale];
 }
+// pad a logical-space hit box so its ON-SCREEN size never drops below ~44 real px
+function hitPad(size){ return Math.max(0, (44/Math.max(viewScale,0.01) - size)/2); }
 function onTap(x,y){
   audio();
   if(mode==="title"){
     const db=dailyBtnRect();
-    if(x>=db.x&&x<=db.x+db.w&&y>=db.y&&y<=db.y+db.h){ daily=true; newRun(); }
+    if(x>=db.x&&x<=db.x+db.w&&y>=db.y&&y<=db.y+db.h){ daily=true; bumpDailyStreak(); newRun(); }
     else { daily=false; newRun(); }
     return;
   }
@@ -834,10 +873,10 @@ function onTap(x,y){
   if(mode==="secondwind"){ handleSecondWind(x,y); return; }
   if(paused){ paused=false; CG.gameplayStart(); return; }
 
-  // mute button (top-right)
-  if(x>W-64 && x<W-8 && y>8 && y<64){ muted=!muted; save.muted=muted; persist(); SFX.ui(); return; }
+  // mute button (top-right) — 56px logical box, padded to a real 44px min tap target
+  { const p=hitPad(56); if(x>W-64-p && x<W-8+p && y>8-p && y<64+p){ muted=!muted; save.muted=muted; persist(); SFX.ui(); return; } }
   // pause button
-  if(x>W-128 && x<W-72 && y>8 && y<64){ paused=true; CG.gameplayStop(); return; }
+  { const p=hitPad(56); if(x>W-128-p && x<W-72+p && y>8-p && y<64+p){ paused=true; CG.gameplayStop(); return; } }
   // boon pick blocks everything else
   if(boonChoice){
     const cards = boonCards();
@@ -845,21 +884,23 @@ function onTap(x,y){
       const o = cards[i];
       if(x>=o.x&&x<=o.x+o.w&&y>=o.y&&y<=o.y+o.h){
         boonChoice[i].apply(run);
+        if(boonChoice[i].id) run.boonsUsed.push(boonChoice[i].id);
         popup(W/2,H/2-90,boonChoice[i].txt,"#c9a0f0"); SFX.ui();
         boonChoice = null; return;
       }
     }
     return;
   }
-  // speed toggle (bottom-right)
-  if(x>W-78 && x<W-10 && y>H-78 && y<H-10){ gameSpeed = gameSpeed===1?2:1; SFX.ui(); return; }
+  // speed toggle (bottom-right) — 68px logical box, padded to a real 44px min tap target
+  { const p=hitPad(68); if(x>W-78-p && x<W-10+p && y>H-78-p && y<H-10+p){ gameSpeed = gameSpeed===1?2:1; SFX.ui(); return; } }
   // prep skip button
   if(mode==="prep" && firstMutateDone && x>W/2-120 && x<W/2+120 && y>TOP+8 && y<TOP+66){
     biomass += 15; popup(W/2,TOP+90,"+15","#8fd9a8"); queueWave(); return;
   }
-  // hive mind ability buttons (bottom-left)
+  // hive mind ability buttons (bottom-left) — padded to a real 44px min tap target
   for(const b of abilBtns()){
-    if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){ activateAbility(b.a); return; }
+    const p=hitPad(b.w);
+    if(x>=b.x-p&&x<=b.x+b.w+p&&y>=b.y-p&&y<=b.y+b.h+p){ activateAbility(b.a); return; }
   }
 
   // mutate menu open?
@@ -1060,8 +1101,11 @@ function abilBtns(){
   return run.abil.map((a,i)=>({a, x:10+i*76, y:H-78, w:68, h:68}));
 }
 function boonCards(){
+  const n = boonChoice ? boonChoice.length : 2;
   const w=290,h=150,gap=30;
-  return [{x:W/2-w-gap/2,y:H/2-h/2,w,h},{x:W/2+gap/2,y:H/2-h/2,w,h}];
+  const total = n*w+(n-1)*gap, startX = W/2-total/2;
+  const cards=[]; for(let i=0;i<n;i++) cards.push({x:startX+i*(w+gap),y:H/2-h/2,w,h});
+  return cards;
 }
 function activateAbility(a){
   if(a.cd>0 || (mode!=="play" && mode!=="prep")){ SFX.deny(); return; }
@@ -1272,9 +1316,20 @@ function draw(){
     } else {
       ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
     }
+    // status tells: shape-coded (not color-only) for colorblind accessibility
     if(e.snared){ ctx.strokeStyle="#8a6a3f"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,e.r*0.6,e.r*0.8,0,3.14); ctx.stroke(); }
-    if(e.drench>0){ ctx.fillStyle="rgba(180,240,80,0.5)"; ctx.beginPath(); ctx.arc(e.r*0.5,-e.r*0.5,3,0,6.283); ctx.fill(); }
-    if(e.corroded>0){ ctx.strokeStyle="rgba(200,240,80,0.85)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,e.r+4,0,6.283); ctx.stroke(); ctx.lineWidth=1; }
+    if(e.drench>0){ // droplet triangle, top-right
+      ctx.fillStyle="rgba(180,240,80,0.85)";
+      const dx=e.r*0.5, dy=-e.r*0.5;
+      ctx.beginPath(); ctx.moveTo(dx,dy-4); ctx.lineTo(dx+3.5,dy+3); ctx.lineTo(dx-3.5,dy+3); ctx.closePath(); ctx.fill();
+    }
+    if(e.corroded>0){ // full ring + radiating crack ticks (distinct silhouette from a plain ring)
+      ctx.strokeStyle="rgba(200,240,80,0.85)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(0,0,e.r+4,0,6.283); ctx.stroke();
+      for(let ti=0;ti<5;ti++){ const ta=ti*(6.283/5)+perfNow*1.5; const rx=Math.cos(ta)*(e.r+4), ry=Math.sin(ta)*(e.r+4);
+        ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx+Math.cos(ta)*5,ry+Math.sin(ta)*5); ctx.stroke(); }
+      ctx.lineWidth=1;
+    }
     // HP tint: redden at low health
     if(e.hp/e.max<0.5 && e.flash<=0){ const dmgF=Math.min(1,(1-e.hp/e.max)*2); ctx.save(); ctx.globalAlpha=dmgF*0.38; ctx.fillStyle="#cc2020"; ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill(); ctx.restore(); }
     ctx.restore();
@@ -1314,6 +1369,14 @@ function draw(){
   if(mode==="over") drawEnd(false);
   if(mode==="victory") drawEnd(true);
   if(mode==="secondwind") drawSecondWind();
+  if(rotateHintT>0){
+    ctx.save(); ctx.globalAlpha=Math.min(1,rotateHintT);
+    ctx.fillStyle="rgba(14,18,20,0.88)";
+    ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(W/2-140,H-40,280,32,8);else ctx.rect(W/2-140,H-40,280,32); ctx.fill();
+    ctx.fillStyle="#dfe6ec"; ctx.textAlign="center"; ctx.font="12px monospace";
+    ctx.fillText("↻ rotate for a bigger view", W/2, H-19);
+    ctx.restore();
+  }
   ctx.restore();
   // vignette
   const g = ctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,H*0.75);
@@ -1364,6 +1427,14 @@ function drawHUD(){
   ctx.fillStyle = hiveHP/hiveMax>0.35 ? "#b088e0" : "#e06060";
   ctx.fillRect(234,25,210*Math.max(0,hiveHP/hiveMax),22);
   ctx.strokeStyle="rgba(255,255,255,0.25)"; ctx.strokeRect(234,25,210,22);
+  // second wind availability tell (small shield by the hive bar)
+  if(!daily && !secondWindUsed && (mode==="play"||mode==="prep")){
+    const sx=234+210+16, sy=36, sp=0.85+0.15*Math.sin(perfNow*2.4);
+    ctx.save(); ctx.globalAlpha=sp; ctx.fillStyle="#8fd9a8";
+    ctx.beginPath(); ctx.moveTo(sx,sy-10); ctx.lineTo(sx+8,sy-6); ctx.lineTo(sx+8,sy+3);
+    ctx.quadraticCurveTo(sx+8,sy+10,sx,sy+13); ctx.quadraticCurveTo(sx-8,sy+10,sx-8,sy+3);
+    ctx.lineTo(sx-8,sy-6); ctx.closePath(); ctx.fill(); ctx.restore();
+  }
   // wave: big fraction + phase under it
   ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 26px monospace";
   const wn = endless ? "∞ "+(endlessN+1) : (waveIdx+1)+"/"+WAVES.length;
@@ -1536,7 +1607,7 @@ function drawPaused(){
   ctx.font="14px monospace"; ctx.fillStyle="#8a94a0";
   ctx.fillText("tap or press P to resume", W/2, H/2+20);
 }
-function dailyBtnRect(){ return {x:W/2-140,y:398,w:280,h:80}; }
+function dailyBtnRect(){ return {x:W/2-140,y:398,w:280,h:96}; }
 function drawTitle(){
   ctx.textAlign="center";
   // animated root network
@@ -1565,9 +1636,11 @@ function drawTitle(){
   ctx.fillText("DAILY TRIAL", db.x+db.w/2, db.y+26);
   const [dh,dhp]=dailyMods();
   ctx.fillStyle="#e06060"; ctx.font="11px monospace"; ctx.fillText(dh.sub, db.x+db.w/2, db.y+44);
-  ctx.fillStyle="#8fd9a8"; ctx.fillText(dhp.sub+"  ·  DNA ×1.5", db.x+db.w/2, db.y+60);
+  ctx.fillStyle="#8fd9a8"; ctx.fillText(dhp.sub+"  ·  DNA ×"+(1.5*dailyStreakMult()).toFixed(2), db.x+db.w/2, db.y+60);
   const todayBest=save.dailyBest&&save.dailyBest[dayIndex()];
-  if(todayBest){ ctx.fillStyle="#e3d34e"; ctx.font="11px monospace"; ctx.fillText("today: wave "+todayBest, db.x+db.w/2, db.y+74); }
+  let ry=db.y+74;
+  if(todayBest){ ctx.fillStyle="#e3d34e"; ctx.font="11px monospace"; ctx.fillText("today: wave "+todayBest, db.x+db.w/2, ry); ry+=14; }
+  if(save.dailyStreak>1){ ctx.fillStyle="#e0a0f0"; ctx.font="11px monospace"; ctx.fillText("🔥 "+save.dailyStreak+"-day streak", db.x+db.w/2, ry); }
   // little hive
   const cx=W/2, cy=520;
   ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(cx,cy,60,46,0,0,6.283); ctx.fill();
@@ -1615,7 +1688,10 @@ function drawEnd(won){
   ctx.fillText('"'+quips[killsThisRun % quips.length]+'"', W/2, 196);
   // run stats
   ctx.fillStyle="#6a7480"; ctx.font="11px monospace"; ctx.textAlign="center";
-  ctx.fillText("⚡ "+killsThisRun+" eliminated  ·  🏗 "+towersBuiltThisRun+" towers built  ·  ◈ "+Math.floor(peakBiomass)+" peak biomass", W/2, 214);
+  let statsLine = "⚡ "+killsThisRun+" eliminated  ·  🏗 "+towersBuiltThisRun+" towers built  ·  ◈ "+Math.floor(peakBiomass)+" peak biomass";
+  if(!won && adFailReason) statsLine += "  ·  (Second Wind ad unavailable"+(adFailReason==="adblock"?", adblocker detected":"")+")";
+  else if(!won && secondWindUsed) statsLine += "  ·  🛡 Second Wind used";
+  ctx.fillText(statsLine, W/2, 214);
   // Mycelial Network
   ctx.fillStyle="#b088e0"; ctx.font="bold 18px monospace";
   ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 230);
@@ -1660,6 +1736,7 @@ function frame(t){
   if(dt>0.25) dt = 0.25;
   perfNow += dt;
   if(edgePulseT>0) edgePulseT = Math.max(0, edgePulseT - dt*2.5);
+  if(rotateHintT>0) rotateHintT = Math.max(0, rotateHintT - dt);
   if(waveFlashT>0) waveFlashT = Math.max(0, waveFlashT - dt);
   if(slowMoT>0){ slowMoT -= dt; if(slowMoT<=0) timeScale=1; }
   if(hitStop>0){ hitStop--; draw(); return; }
