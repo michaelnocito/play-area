@@ -372,3 +372,61 @@ VALIDATION: `node --check` on the extracted script; bot suite re-run 10/12 wins 
 ratio improved from ~5:1 to 2:1); zero SDK-throttle console errors on the same bot run that
 previously produced 56; portrait-mode auto-pause + rotate screen verified via forced resize
 events in the preview harness; wardrobe/omen click rects sanity-checked post-layout-change.
+
+## JF-#037 — second CG-guidelines audit, 12 more fixes — several were regressions in #035/#036 (2026-07-04)
+Same test methodology as JF-#036 (bot suite, live SDK console, resize), turned on itself: found
+several of JF-#036's own fixes had introduced new problems. Fixed all 12:
+1. **`gpGate` (JF-#036) shared ONE timestamp across gameplayStart/Stop/happytime — proven live
+   to silently eat happytime() on every single victory**, since `gameplayStop()` and
+   `happytime()` fire back-to-back in the same tick on a win and the shared gate treats the
+   second call as a repeat of the first. Split into independent `gpLast.start/stop/happy`
+   timestamps — each still throttles repeats of itself, no longer cross-blocks a different call.
+2. **No `window.blur` pause listener** — only `visibilitychange`. CG hosts games in an iframe;
+   clicking elsewhere on the CG page (comments, related games) blurs this window without the
+   tab itself becoming hidden. Added a `blur` listener alongside visibilitychange.
+3. **`adT` started at `0`**, so the first interstitial's "3-min cooldown" was trivially already
+   satisfied the instant `ranOnce` flipped — could fire on run #2, seconds into a session.
+   `adT` now starts at `Date.now()` so the clock actually begins at session load.
+4. **Paused screen drew the pause overlay OVER the mute button** (invisible) but the mute
+   click-hitbox check ran first regardless of state — a tap in that corner during pause
+   silently toggled mute instead of the promised "tap anywhere to resume". Mute button now
+   draws AFTER the pause overlay, so visible = clickable again.
+5. **`CG.adblockDetected` (added in #036) was computed but never displayed anywhere.** Added
+   `?debug=1` — a corner readout of `sdkLive` / `adblockDetected` / `portraitBlock` for QA on
+   the CG preview environment without opening devtools.
+6. **`make-alt-builds.ps1`'s GameMonetize/GameDistribution stub adapters used the OLD
+   `interstitial()` signature (no callback)** — since #036 changed `startRun()` to call
+   `CG.interstitial(beginRun)` and wait for it, building for those platforms would have
+   permanently soft-locked the menu the first time an ad was due (beginRun() never called).
+   Both stubs now accept `cb` and invoke it once their ad call resolves.
+7. **No timeout safety net on the interstitial ad callback** — if CG's ad module never calls
+   adStarted/adFinished/adError (a hang), the player could never start another run. Added an
+   8s timeout-and-continue to `CG.interstitial`.
+8. **`rewardUsed` flipped to `true` BEFORE the rewarded ad confirmed anything** — a hung ad
+   (no finish, no error) would have permanently disabled the double-jade offer without ever
+   granting it. Added `adPending` (blocks re-clicks while a request is in flight, same 8s
+   timeout as #7 on `CG.rewarded`); `rewardUsed` — the permanent one-per-tally lock — now
+   only sets inside the actual callback.
+9. **A hung `SDK.init()` promise would leave the canvas invisible forever** — #036's fix
+   (hide the canvas until loadingStart/Stop fire, so the SDK bracket matches what's visible)
+   had no timeout, so an SDK hang now blanked the whole game instead of just delaying reveal.
+   Added a 6s timeout-and-reveal around `CG.init`.
+10. **New "remaining trials" text (added in #036 item 7) overflowed its panel** — confirmed via
+    `measureText`: 354px of ' · '-joined text in a 250px-wide panel, spilling ~115px into the
+    CTA area. Switched to one trial name per line, panel height now sized to the actual list.
+11. **Race condition: no re-entrancy guard on `startRun()` while an ad was pending.** The menu
+    stays fully interactive during the ad-wait window and `adT` is already updated the instant
+    the ad is requested, so a second tap during that window skipped the (already-consumed)
+    cooldown check and called `beginRun()` immediately — then the original ad's callback fired
+    later and called `beginRun()` AGAIN, clobbering the run already in progress. Added
+    `adPendingRun` guard.
+12. **Alt-build output files were stale** (last regenerated a full day earlier, missing all of
+    #035/#036/#037). Regenerated both after the script fix (item 6).
+
+VALIDATION: `node --check` on the extracted script for both the master and both regenerated alt
+builds (had to fix the extraction to grab the LAST `<script>...</script>` block, not a naive
+first-to-last greedy match, since the alt builds' injected SDK head blocks are also bare
+`<script>` tags); happytime() confirmed firing independently of gameplayStop() via a direct
+`gpLast` check; trials-panel line widths confirmed under the 230px inner panel width via
+`measureText`; bot suite re-run 11/12 wins, zero console errors; debug=1 overlay confirmed
+rendering without error.

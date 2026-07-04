@@ -197,40 +197,62 @@ const Snd = (() => {
 // actually resolved (only true on the CG platform); every game/ad call is gated
 // on it — calling the SDK pre-init or off-platform just logs errors and is dropped.
 let sdkLive = false;
-// JF-#036: CG's own SDK throttles gameplayStart/Stop/happytime to 1/sec and
-// logs a console error past that — a player double-tapping pause inside a
-// second (or a quick death/restart) can trip it. Gate all three behind a
-// shared min-interval so we never re-fire faster than the SDK allows.
-let lastGP = 0;
-function gpGate(fn){ const now = Date.now(); if (now - lastGP < 1100) return; lastGP = now; fn(); }
+// JF-#037: CG's own SDK throttles gameplayStart/Stop/happytime to 1/sec and
+// logs a console error past that. JF-#036 gated all three behind ONE shared
+// timestamp — proven live to be wrong: gameplayStop() and happytime() fire
+// back-to-back in the same tick on every victory (see line ~990), so the
+// shared gate silently ate happytime() on 100% of wins, and a fast player
+// restarting within 1.1s of a run ending could just as easily have their
+// next gameplayStart() dropped too. Each call now gets its own timestamp —
+// still throttles repeats of ITSELF, no longer cross-blocks a different call.
+const gpLast = { start: 0, stop: 0, happy: 0 };
+function gpGate(key, fn){ const now = Date.now(); if (now - gpLast[key] < 1100) return; gpLast[key] = now; fn(); }
+// JF-#037: a hung SDK.init() promise (network/CDN issue) must not blank the
+// whole game forever — JF-#036 hid the canvas until this callback fires, so
+// give it a hard timeout and reveal regardless if the SDK never answers.
+let cgReady = false;
+function cgReadyOnce(cb){ if (cgReady) return; cgReady = true; cb(); }
 const CG = {
-  init(cb){ try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>{ sdkLive = true; cb&&cb(); }).catch(()=>cb&&cb()); return; } }catch(e){} cb&&cb(); },
+  init(cb){
+    const done = () => cgReadyOnce(cb);
+    setTimeout(done, 6000);   // JF-#037: safety net — see cgReadyOnce above
+    try{ if(window.CrazyGames?.SDK){ window.CrazyGames.SDK.init().then(()=>{ sdkLive = true; done(); }).catch(done); return; } }catch(e){}
+    done();
+  },
   loadingStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStart(); }catch(e){} },
   loadingStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.loadingStop(); }catch(e){} },
-  gameplayStart(){ gpGate(() => { try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} }); },
-  gameplayStop(){ gpGate(() => { try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} }); },
-  happytime(){ gpGate(() => { try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} }); },
+  gameplayStart(){ gpGate('start', () => { try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} }); },
+  gameplayStop(){ gpGate('stop', () => { try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} }); },
+  happytime(){ gpGate('happy', () => { try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} }); },
   // JF-#026: CG leaderboards are INVITE-ONLY (one board/game, weekly seasons).
   // Local Hall of Legends ships now; when invited, wire the score submit here.
   submitScore(s){},
   // JF-#036: never resolve until the ad module actually reports done/errored —
   // callers must NOT call gameplayStart() until this fires, so an ad never
-  // overlaps a run the SDK thinks is already "playing".
+  // overlaps a run the SDK thinks is already "playing". JF-#037: a hung ad
+  // module (adStarted fires, then nothing) must not soft-lock the menu
+  // forever either — same timeout-and-continue pattern as CG.init.
   interstitial(cb){
+    let done = false;
+    const fire = () => { if (done) return; done = true; cb&&cb(); };
+    setTimeout(fire, 8000);
     try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
       window.CrazyGames.SDK.ad.requestAd("midgame", {
-        adStarted(){}, adFinished(){ cb&&cb(); }, adError(){ cb&&cb(); },
+        adStarted(){}, adFinished: fire, adError: fire,
       }); return;
     } }catch(e){}
-    cb&&cb();
+    fire();
   },
   rewarded(onReward){
+    let done = false;
+    const fire = () => { if (done) return; done = true; onReward&&onReward(); };
+    setTimeout(fire, 8000);   // JF-#037: same hang guard as interstitial
     try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
       window.CrazyGames.SDK.ad.requestAd("rewarded", {
-        adStarted(){}, adFinished(){ onReward&&onReward(); }, adError(){ onReward&&onReward(); },
+        adStarted(){}, adFinished: fire, adError: fire,
       }); return;
     } }catch(e){}
-    onReward&&onReward();
+    fire();
   },
   // JF-#036: QA-only adblock visibility (debug=1) — silent try/catch swallowed
   // this before, so there was no way to tell "adblocked" from "ad just didn't fire".
@@ -310,6 +332,11 @@ const BOT = BOTQ.has('bot')
       run: 0, stats: [], cur: null, done: false }
   : null;
 if (BOT){ save.dist = 4; save.intro = 1; persist = () => {}; }
+// JF-#037: QA-only SDK/adblock visibility — CG.adblockDetected was computed
+// (JF-#036) but never displayed anywhere. ?debug=1 shows it plus sdkLive
+// state in a corner readout so Mike can verify on the CG preview environment
+// without opening devtools.
+const DEBUG = BOTQ.has('debug');
 function botThink(){
   // JF-#028: survival first — dodge an incoming spear before anything else
   if (P.jumpT <= 0 && P.duckT <= 0){
@@ -567,7 +594,11 @@ let btnRects = [];                    // tally upgrade-button hitboxes (rebuilt 
 let tallyDone = false;                // all tally lines revealed (drawn at least once)
 // JF-#016: ad state — interstitial between runs on a 3-min cooldown (CG guidance),
 // rewarded DOUBLE JADE offer once per tally
-let adT = 0, ranOnce = false, rewardUsed = false, adRect = null;
+// JF-#037: adT used to start at 0, so "Date.now() - adT > 180000" was
+// trivially true the instant ranOnce flipped — the very first interstitial
+// could fire on run #2, seconds into a session. Starting the clock at
+// session load means the first ad can't show before a real 3-minute wait.
+let adT = Date.now(), ranOnce = false, rewardUsed = false, adPendingRun = false, adRect = null;
 const TOUCH = matchMedia('(pointer:coarse)').matches;
 let tallyStep = 0, tallyT = 0, newBest = false;
 let hallRank = 0;                     // JF-#026: rank earned by the last run (0 = none)
@@ -968,7 +999,7 @@ function endRun(victory){
   state = S_DEAD; tallyStep = 0; tallyT = 0; tallyDone = false;
   CG.gameplayStop();    // JF-#013
   if (victory) CG.happytime();
-  ranOnce = true; rewardUsed = false;   // JF-#016: fresh DOUBLE JADE offer each tally
+  ranOnce = true; rewardUsed = false; adPending = false;   // JF-#016/#037: fresh DOUBLE JADE offer each tally
   walletShown = save.jade;   // wallet animates up from pre-run balance as jade banks
   newBest = !BOT && score > best;
   if (newBest){ best = score; localStorage.setItem('jf_best', best); }
@@ -1032,10 +1063,16 @@ function press(dir){
   strike(dir);
 }
 // JF-#016: rewarded ad = bank the run's jade twice (once per tally)
+// JF-#037: rewardUsed used to flip true BEFORE the ad confirmed anything — a
+// hung ad module (adStarted fires, then nothing ever does) would have
+// permanently disabled the offer without ever granting it. adPending now
+// blocks re-clicks while a request is in flight; rewardUsed (the permanent
+// one-per-tally lock) only sets once CG.rewarded's callback actually fires.
+let adPending = false;
 function doubleJade(){
-  if (rewardUsed || jadeRun <= 0) return;
-  rewardUsed = true;
-  CG.rewarded(() => { save.jade += jadeRun; persist(); Snd.best(); });
+  if (rewardUsed || adPending || jadeRun <= 0) return;
+  adPending = true;
+  CG.rewarded(() => { adPending = false; rewardUsed = true; save.jade += jadeRun; persist(); Snd.best(); });
 }
 function buyUp(i){
   const u = UPS[i], tier = save.up[u.k];
@@ -1122,8 +1159,17 @@ function startRun(){
   // briefly thought gameplay was "active" while an ad was also in flight.
   // We're still in the menu (SDK gameplay already reported stopped from the
   // previous run's end) so it's safe to sit here until the ad callback fires.
-  if (ranOnce && Date.now() - adT > 180000){ adT = Date.now(); CG.interstitial(beginRun); }
-  else beginRun();
+  // JF-#037: adPendingRun guards a real race — the menu stays fully
+  // interactive during the ad-wait window, and adT is already updated the
+  // instant the ad is requested, so a second tap/press while waiting used to
+  // skip the (already-consumed) cooldown check and call beginRun()
+  // immediately; then the first ad's callback would fire later and call
+  // beginRun() AGAIN, clobbering the run already in progress.
+  if (adPendingRun) return;
+  if (ranOnce && Date.now() - adT > 180000){
+    adT = Date.now(); adPendingRun = true;
+    CG.interstitial(() => { adPendingRun = false; beginRun(); });
+  } else beginRun();
 }
 function beginRun(){
   state = S_PLAY;
@@ -2025,20 +2071,24 @@ function draw(){
     // them, one muted info color (gold reserved for CTA/highlights). JF-#036 restores
     // which trials are still open (condensing to a bare count lost "what to do now").
     const trio = todayTrio(), tdone = trio.filter((ti, i) => save.tdone[i]).length;
-    panel(16, 76, 250, 54, 'left');
+    const remaining = trio.filter((ti, i) => !save.tdone[i]).map(ti => TRIALS[ti].name);
+    // JF-#037: one trial name per line instead of ' · '-joined on one line —
+    // measured 354px of text landing in a 250px-wide panel (confirmed via
+    // measureText), spilling ~115px past the right edge into the CTA area.
+    const trialLines = remaining.length ? remaining : ['all done today'];
+    const trialsH = 34 + trialLines.length * 15;
+    panel(16, 76, 250, trialsH, 'left');
     cx.textAlign = 'left'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
     cx.fillText('TRIALS  ' + tdone + '/3', 26, 96);
     cx.font = '14px Georgia'; cx.fillStyle = '#8a94a6';
     cx.fillText('+15◆ each', 150, 96);
     cx.font = '12px Georgia'; cx.fillStyle = '#8a94a6';
-    const remaining = trio.filter((ti, i) => !save.tdone[i]).map(ti => TRIALS[ti].name);
-    cx.fillText(remaining.length ? remaining.join(' · ') : 'all done today', 26, 117);
-    // JF-#023/#036: wardrobe (left, under the trials) — pushed down to clear the
-    // taller trials panel; buy row given real clearance from the name row and a
-    // bigger touch target (was 130x20, easy to miss or fat-finger the cycle above it)
+    trialLines.forEach((line, i) => cx.fillText(line, 26, 113 + i * 15));
+    // JF-#023/#036/#037: wardrobe (left, under the trials) — pushed down to
+    // clear the trials panel (now variable-height since #037's per-line fix)
     {
       const S = STYLES[styleSel], owned = !!save.cos.own[styleSel];
-      const wY = 140;
+      const wY = 76 + trialsH + 10;
       styleRect = { x: 16, y: wY, w: 250, h: owned ? 40 : 78 };
       panel(styleRect.x, styleRect.y, styleRect.w, styleRect.h, 'left');
       cx.textAlign = 'left'; cx.font = 'bold 13px Georgia'; cx.fillStyle = '#c8bfa8';
@@ -2221,9 +2271,11 @@ function draw(){
     cx.fillText(BOT.done ? 'FAIRNESS SUITE DONE — see console' :
       'BOT ' + (BOT.run + 1) + '/' + (BOT.runs * 4) + ' · react ' + BOT.react + 'f', 20, H - 14);
   }
-  // mute button
-  cx.fillStyle = 'rgba(232,220,192,0.6)'; cx.font = '20px Georgia'; cx.textAlign = 'right';
-  cx.fillText(Snd.muted ? '🔇' : '🔊', W - 18, 34);
+  // JF-#037: QA-only SDK readout (?debug=1)
+  if (DEBUG){
+    cx.fillStyle = '#8a94a6'; cx.font = 'bold 13px Georgia'; cx.textAlign = 'left';
+    cx.fillText('sdkLive:' + sdkLive + '  adblock:' + CG.adblockDetected + '  portrait:' + portraitBlock, 20, H - 30);
+  }
   // JF-#014: pause overlay on top of the frozen world
   if (state === S_PAUSE){
     cx.fillStyle = 'rgba(10,13,18,0.72)'; cx.fillRect(0, 0, W, H);
@@ -2233,6 +2285,11 @@ function draw(){
     cx.fillStyle = '#e8dcc0'; cx.font = '19px Georgia';
     cx.fillText(TOUCH ? 'Tap to resume' : 'P or any key to resume', W/2, H/2 + 34);
   }
+  // JF-#037: mute button drawn AFTER the pause overlay (was before — the
+  // overlay hid it while its click hitbox stayed live, so a tap in that
+  // corner during pause silently muted instead of resuming as promised)
+  cx.fillStyle = 'rgba(232,220,192,0.6)'; cx.font = '20px Georgia'; cx.textAlign = 'right';
+  cx.fillText(Snd.muted ? '🔇' : '🔊', W - 18, 34);
 }
 
 // ------------------------------------------------------------------ loop ----
@@ -2258,6 +2315,11 @@ document.addEventListener('visibilitychange', () => {
   last = 0; acc = 0;
   if (document.hidden) pauseGame();   // JF-#014: CG requires auto-pause on blur
 });
+// JF-#037: CG hosts games inside an iframe. A player clicking elsewhere on the
+// CG page (comments, related games) blurs this window WITHOUT the tab itself
+// becoming hidden, so visibilitychange alone misses it — window.blur catches
+// the iframe-focus case visibilitychange can't see.
+addEventListener('blur', () => { last = 0; acc = 0; pauseGame(); });
 </script>
 </body>
 </html>

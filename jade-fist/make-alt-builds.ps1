@@ -20,11 +20,16 @@ $gmAdapter = @'
 // SDK:ADAPTER:BEGIN
 // ------------------------------------------ GameMonetize adapter (JF-#024) --
 // Same CG facade the game calls everywhere; graceful no-op off-platform.
+// JF-#037: interstitial(cb) MUST invoke cb once the ad resolves — the master
+// game's startRun() now waits on this callback before starting the run
+// (CG.interstitial(beginRun)). This stub used to take no callback at all,
+// which would have permanently soft-locked the menu on this platform the
+// first time an ad was due, since beginRun() would never be called.
 let sdkLive = false;
 const CG = {
   init(cb){ sdkLive = !!window.sdk; cb && cb(); },
   loadingStart(){}, loadingStop(){}, gameplayStart(){}, gameplayStop(){}, happytime(){}, submitScore(s){},
-  interstitial(){ try{ if (window.sdk && window.sdk.showBanner) window.sdk.showBanner(); }catch(e){} },
+  interstitial(cb){ try{ if (window.sdk && window.sdk.showBanner) window.sdk.showBanner(); }catch(e){} cb && cb(); },
   rewarded(onReward){
     try{ if (window.sdk && window.sdk.showRewardedBanner){
       window.__gmReward = onReward; window.sdk.showRewardedBanner(); return;
@@ -52,11 +57,17 @@ $gdAdapter = @'
 // SDK:ADAPTER:BEGIN
 // -------------------------------------- GameDistribution adapter (JF-#024) --
 // Same CG facade the game calls everywhere; graceful no-op off-platform.
+// JF-#037: interstitial(cb) MUST invoke cb once the ad resolves — see the
+// matching note in the GameMonetize adapter above for why (the master
+// game's startRun() blocks on this callback before starting the run).
 let sdkLive = false;
 const CG = {
   init(cb){ sdkLive = !!window.gdsdk; cb && cb(); },
   loadingStart(){}, loadingStop(){}, gameplayStart(){}, gameplayStop(){}, happytime(){}, submitScore(s){},
-  interstitial(){ try{ if (window.gdsdk && window.gdsdk.showAd) window.gdsdk.showAd().catch(function(){}); }catch(e){} },
+  interstitial(cb){
+    try{ if (window.gdsdk && window.gdsdk.showAd){ window.gdsdk.showAd().then(function(){ cb && cb(); }).catch(function(){ cb && cb(); }); return; } }catch(e){}
+    cb && cb();
+  },
   rewarded(onReward){
     try{ if (window.gdsdk && window.gdsdk.showAd){
       window.gdsdk.showAd("rewarded").then(function(){ onReward && onReward(); })
