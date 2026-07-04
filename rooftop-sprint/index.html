@@ -90,6 +90,7 @@
     text-shadow: 0 0 12px rgba(255,233,176,0.8); }
   #newBest.show { opacity: 1; transition: opacity 0.2s; }
   #statsLine { font-size: 10px; opacity: 0.6; margin-top: 6px; }
+  #tallyJoke { font-size: 10px; opacity: 0.55; font-style: italic; margin-top: 3px; }
   #walletLine { font-size: 13px; margin-top: 8px; color: #ffe9b0; opacity: 0; }
   #walletLine.show { opacity: 1; transition: opacity 0.15s; }
   #shop { margin-top: 8px; min-width: 270px; }
@@ -146,6 +147,7 @@
     <div id="tally"></div>
     <div id="newBest">&#10022; NEW BEST &#10022;</div>
     <div id="statsLine"></div>
+    <div id="tallyJoke"></div>
     <div id="walletLine"></div>
     <div id="shop"></div>
     <div id="firstBuy">&#9670; your first training is affordable</div>
@@ -199,6 +201,7 @@
   const tallyEl = document.getElementById('tally');
   const newBestEl = document.getElementById('newBest');
   const statsLine = document.getElementById('statsLine');
+  const tallyJokeEl = document.getElementById('tallyJoke');
   const pauseBtn = document.getElementById('pauseBtn');
   const walletLine = document.getElementById('walletLine');
   const shopEl = document.getElementById('shop');
@@ -311,6 +314,32 @@
   let dailyX2 = false;    // first run of the day = ×2 Light
   const AD_COOLDOWN_MS = 150000; // interstitial min-interval (CG policy: not every death)
   let lastAdT = Date.now(); // seeded at boot — no ad on the first death of a session
+
+  // ---------- Silly seasoning (Law 12: broad appeal, art-first — flavor only, never a new
+  // hitbox or a mismatched art style; every line here is a bonus, nothing gates on it) ----------
+  const WARDEN_QUIPS = ["OI!", "MY LAMP!", "NOT THE FACE", "WORTH IT", "TELL MY LANTERN...", "OW", "RUDE", "I HAD PLANS"];
+  const CAPTAIN_QUIPS = [
+    ["OH COME ON", "THAT TICKLED", "IS THAT ALL?"],
+    ["OKAY OW", "MY DIGNITY", "NOT MY HELMET"],
+    ["WORTH EVERY LUMEN", "TELL THE OTHERS I—", "*dramatic gasp*"],
+  ];
+  const HYPE_LINES = {
+    perfect: ["CHEF'S KISS", "LAMP-TASTIC", "OH THAT'S NICE", "CLEAN AS A WHISTLE"],
+    domino: ["BOWLING NIGHT", "TIMBER!", "THAT'S A CHAIN REACTION", "DOMINO DELIGHT"],
+    captain: ["LIGHTS OUT, PAL", "GATE'S OPEN", "THAT'S A WRAP", "BEACON APPROVES"],
+  };
+  const TALLY_JOKES = [
+    "Style points: incalculable.",
+    "Wardens felled while looking fabulous: most of them.",
+    "The lamp forgives you. Eventually.",
+    "Rooftops harmed in the making of this run: several.",
+    "Your form has been noted by the pigeons.",
+    "The Beacon is, at minimum, mildly impressed.",
+    "Certified: 100% lamp, 0% chill.",
+  ];
+  const CAMEO_LINES = ["GET A LADDER!", "MIND THE LAUNDRY!", "IS THAT LEGAL?", "SHOW OFF.", "MY CABBAGES!"];
+  const SILLY_QUIPS = ["WHY DID I WEAR THIS TO WORK", "THE HAT DID NOTHING WRONG", "AT LEAST I LOOKED GOOD", "TELL THE PARTY I'M SORRY"];
+  let moonReactT = 0; // reactive moon: brief wide-eyed blink on big moments (STAGE 4 of the sweep — cosmetic only)
 
   /* ===== Procedural audio (Batch 3) — light-reactive score + layered SFX =====
      Speaker-scaling architecture (ROADMAP §7): every voice = parallel layers into one bus —
@@ -600,7 +629,7 @@
   const MAX_SEGMENTS = 14; // spawn window ÷ min roof length can hit ~11 live segments — 10 exhausted the pool and punched holes in the world
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0,alley:false,dist:0,gapBefore:0}));
   const MAX_GUARDS = 12;
-  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit)
+  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only)
   // feint wardens block behind a raised shield (read: wait for the opening);
   // archers hold far roofs and fire deflectable arrows (read: timed strike, or slide/leap)
   // Shield up 60 / open 90 of a 150-frame cycle: in an auto-runner you can't stop and wait, so
@@ -611,7 +640,7 @@
   const MAX_BRAZIERS = 6; // dark braziers: strike to rekindle — the strike verb used on the world
   const braziers = Array.from({length: MAX_BRAZIERS}, () => ({active:false,lit:false,x:0,y:0}));
   const MAX_FEATHERS = 14;
-  const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0}));
+  const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0,fancy:false})); // fancy = rare top-hat mote, +100 instead of +50
   const MAX_LOWOBS = 8; // low hazards: slide under the hanging band, or clear the whole thing with a full leap
   const lowObs = Array.from({length: MAX_LOWOBS}, () => ({active:false,x:0,y:0,w:0,kind:0})); // kind: 0=clothesline 1=beam 2=sign
   // light-streams: motes that fly from a killed warden's lamp into the player's — arrival feeds lampLight
@@ -623,6 +652,8 @@
   }
   const MAX_BIRDS = 5;
   const birds = Array.from({length: MAX_BIRDS}, () => ({active:false,perched:true,x:0,y:0,vx:0,vy:0,flap:0}));
+  const MAX_CAMEOS = 2; // rare background passerby — purely decorative, no hitbox, one reaction line each
+  const cameos = Array.from({length: MAX_CAMEOS}, () => ({active:false,x:0,y:0,shown:false}));
   // cloak verlet chain (world-space points; index 0 anchors at the shoulders)
   const cloak = Array.from({length: 6}, () => ({x:0,y:0}));
   let emberT = 0;
@@ -686,6 +717,7 @@
     for(const p of particles) p.active=false;
     for(const m of messages) m.active=false;
     for(const b of birds) b.active=false;
+    for(const c of cameos) c.active=false;
     for(const st of streams) st.active=false;
     for(const a of arrows) a.active=false;
     for(const bz of braziers) bz.active=false;
@@ -694,7 +726,7 @@
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
     distance = 0; feathers = 0; speed = baseSpeed; shake = 0; graceT = 0;
     killPts = 0; dominoBonus = 0; cleanK = 0; heavyK = 0; perfK = 0; dominoK = 0; bestChain = 0;
-    captainK = 0; bannerT = 0; curD = 0; revived = false;
+    captainK = 0; bannerT = 0; curD = 0; revived = false; moonReactT = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
     player.onGround = true; player.coyoteT = 0; player.jumpBufT = 0; player.jumpHeld = false;
     player.sliding = false; player.slideT = 0; player.dead = false; player.strikeFlash=0;
@@ -770,7 +802,7 @@
         cslot.patrolDir=-1; cslot.patrolMin=capX-1; cslot.patrolMax=capX+1;
         cslot.alerted=false; cslot.deathT=0; cslot.fly=0; cslot.vx=0; cslot.vy=0; cslot.spin=0; cslot.chain=0; cslot.stunT=0;
         cslot.cap=true; cslot.hp=3; cslot.capD=Math.round(nextCaptainD / DISTRICT_LEN) - 1;
-        cslot.feint=false; cslot.archer=false; cslot.shT=0; cslot.bowT=0;
+        cslot.feint=false; cslot.archer=false; cslot.shT=0; cslot.bowT=0; cslot.silly=false;
         nextCaptainD += DISTRICT_LEN;
         placedCap = true;
       }
@@ -788,6 +820,7 @@
         gslot.patrolDir = rnd()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
         gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1; gslot.stunT=0;
+        gslot.silly = rnd() < 0.08; // rare party-hat warden — cosmetic only, same stats/hitbox
         // enemy variants (Law 7: new reads, same buttons) — feints from district 2, archers from 3;
         // anti-streak keeps three of the same read from landing back to back (falls back to a
         // plain guard rather than force a variant the district hasn't unlocked yet)
@@ -816,7 +849,7 @@
             if (!g2) break;
             Object.assign(g2, { active:true, alive:true, x:lx, y, patrolDir:gslot.patrolDir,
               patrolMin:lx, patrolMax:lx, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
-              cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0 });
+              cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0, silly:rnd()<0.08 });
             prevX = lx;
           }
           if (prevX > gx) { gslot.patrolMin = gx; gslot.patrolMax = gx; } // leader holds its post too
@@ -851,17 +884,21 @@
       const fx = gap>0 ? lastX2+gap/2 : x1 + len*rnd();
       const fy = y - 36 - rnd()*30;
       const fslot = featherList.find(f => !f.active);
-      if (fslot) { fslot.active=true; fslot.taken=false; fslot.x=fx; fslot.y=fy; fslot.bob=rnd()*Math.PI*2; }
+      if (fslot) { fslot.active=true; fslot.taken=false; fslot.x=fx; fslot.y=fy; fslot.bob=rnd()*Math.PI*2; fslot.fancy=rnd()<0.06; }
     }
     if (gap > 40 && rnd() < 0.4) { // mote arc over a wide gap — the jump line, drawn in light
       for (let i = 0; i < 3; i++) {
         const fs = featherList.find(f => !f.active);
-        if (fs) { fs.active=true; fs.taken=false; fs.x=lastX2 + gap*(0.25+i*0.25); fs.y=y - 52 + Math.abs(i-1)*10; fs.bob=i; }
+        if (fs) { fs.active=true; fs.taken=false; fs.x=lastX2 + gap*(0.25+i*0.25); fs.y=y - 52 + Math.abs(i-1)*10; fs.bob=i; fs.fancy=false; }
       }
     }
     if (!first && !placedCap && !placedLow && len > 100 && rnd() < 0.18) { // dark brazier to rekindle
       const bz = braziers.find(b => !b.active);
       if (bz) { bz.active=true; bz.lit=false; bz.x=x1 + len*(0.55 + rnd()*0.3); bz.y=y; }
+    }
+    if (!first && !placedCap && !placedLow && len > 130 && rnd() < 0.06) { // rare cameo passerby, purely cosmetic
+      const cslot2 = cameos.find(c => !c.active);
+      if (cslot2) { cslot2.active=true; cslot2.shown=false; cslot2.x=x1+len*(0.3+rnd()*0.4); cslot2.y=y; }
     }
     if (!first && rnd() < 0.3) { // perched bird on the roof edge — flees as you close in
       const bslot = birds.find(b => !b.active);
@@ -991,6 +1028,8 @@
         nearest.x = capSeg ? Math.min(nearest.x + 30 + speed * 6, capSeg.x2 - 16) : nearest.x + 30 + speed * 6;
         spawnBurst(nearest.x, nearest.y-18, 10, '#f0a04a');
         spawnMessage(nearest.x, nearest.y-56, nearest.hp === 2 ? 'STAGGERED' : 'GUARD BROKEN', 28);
+        spawnMessage(nearest.x, nearest.y-70, CAPTAIN_QUIPS[nearest.hp === 2 ? 0 : 1][(rnd()*3)|0], 34); // silly seasoning — flavor only
+        moonReactT = 60;
         Snd.kill(1); shake = 8; slowmoT = Math.max(slowmoT, 160);
         return;
       }
@@ -999,6 +1038,8 @@
       spawnStream(nearest.x, nearest.y - 44, 12);
       spawnBurst(nearest.x, nearest.y-18, 18, '#ffffff');
       spawnMessage(nearest.x, nearest.y-56, 'CAPTAIN FELLED +' + PTS_CAPTAIN, 40);
+      spawnMessage(nearest.x, nearest.y-70, CAPTAIN_QUIPS[2][(rnd()*3)|0], 40);
+      moonReactT = 130;
       Snd.kill(2); Snd.domino(); shake = 13; slowmoT = Math.max(slowmoT, 500);
       showBanner(DISTRICTS[nearest.capD % DISTRICTS.length].name + ' RELIT', 150);
       if (mode === 'campaign') {
@@ -1023,6 +1064,9 @@
       nearest.alive = false; nearest.deathT = 1;
       feathers += 1;
       spawnStream(nearest.x, nearest.y - 40, 6); // the warden's lamp-light streams into yours
+      // warden chatter (silly seasoning): guaranteed for the rare party-hat variant, occasional otherwise
+      if (nearest.silly) spawnMessage(nearest.x, nearest.y-68, SILLY_QUIPS[(rnd()*SILLY_QUIPS.length)|0], 34);
+      else if (rnd() < 0.3) spawnMessage(nearest.x, nearest.y-68, WARDEN_QUIPS[(rnd()*WARDEN_QUIPS.length)|0], 30);
       // Timing tiers by how close you let them get (closer = riskier = bigger payoff)
       const w = strikeWindows();
       const tierDx = nearest.x - (trailFrom + player.w/2); // range at the moment of the press (pre-lunge)
@@ -1043,6 +1087,8 @@
             }
           }
         }
+        if (rnd() < 0.4) spawnMessage(nearest.x, nearest.y-60, HYPE_LINES.perfect[(rnd()*HYPE_LINES.perfect.length)|0], 34);
+        moonReactT = 60;
         Snd.kill(2);
         shake = 12;
         slowmoT = Math.max(slowmoT, 300); // brief dip so the launch reads
@@ -1145,7 +1191,7 @@
 
   function beginGame() {
     clearTally();
-    tallyEl.innerHTML = ''; newBestEl.classList.remove('show'); statsLine.textContent = '';
+    tallyEl.innerHTML = ''; newBestEl.classList.remove('show'); statsLine.textContent = ''; tallyJokeEl.textContent = '';
     walletLine.textContent = ''; walletLine.classList.remove('show');
     shopEl.innerHTML = ''; firstBuyEl.classList.remove('show');
     adReviveBtn.classList.add('hiddenBtn'); adDoubleBtn.classList.add('hiddenBtn');
@@ -1289,6 +1335,11 @@
                 spawnStream(o.x, o.y - 40, 6);
                 spawnBurst(o.x, o.y-16, 12, '#ffffff');
                 spawnMessage(o.x, o.y-42, 'FELLED +' + felledPts, 32);
+                if (g.chain >= 3) { // bowling-night beat: cartoon stars + a hype callout on a big chain
+                  spawnBurst(o.x, o.y-16, 8, '#ffe97a');
+                  spawnMessage(o.x, o.y-58, (g.chain >= 4 ? 'STRIKE! ' : '') + HYPE_LINES.domino[(rnd()*HYPE_LINES.domino.length)|0], 40);
+                  moonReactT = Math.max(moonReactT, 90);
+                }
                 Snd.domino(); // the sub-garnish moment
                 shake = Math.max(shake, 8);
                 slowmoT = Math.max(slowmoT, SLOWMO_MS); // the money shot — let the domino land in slow motion
@@ -1385,9 +1436,12 @@
       const dy = Math.abs((f.y + Math.sin(f.bob)*4) - (player.y - 16));
       if (dx < 16 + magnetR && dy < 18 + magnetR) {
         f.taken = true; f.active = false;
-        const gain = (boonFlags.motes2 || modIdx === 2) ? 2 : 1; // GLEAMING MOTES boon / BRIGHT MOTES night
+        let gain = (boonFlags.motes2 || modIdx === 2) ? 2 : 1; // GLEAMING MOTES boon / BRIGHT MOTES night
+        if (f.fancy) gain *= 2; // rare top-hat mote — doubly dapper, doubly generous
         feathers += gain;
-        spawnBurst(f.x, f.y, 6, '#f1e3c6'); spawnMessage(f.x, f.y-10, '+' + PTS_LIGHT * gain, 20); Snd.sparkle();
+        spawnBurst(f.x, f.y, 6, f.fancy ? '#ffe97a' : '#f1e3c6');
+        spawnMessage(f.x, f.y-10, (f.fancy ? 'FANCY MOTE +' : '+') + PTS_LIGHT * gain, f.fancy ? 30 : 20);
+        Snd.sparkle();
       }
     }
 
@@ -1411,6 +1465,15 @@
         if (b.y < -30) b.active = false;
       }
       if (b.x < player.x - 260) b.active = false;
+    }
+
+    for (const c of cameos) { // background passerby: one silly reaction line as you draw near
+      if (!c.active) continue;
+      if (!c.shown && c.x - player.x < 70 && c.x - player.x > -20) {
+        c.shown = true;
+        spawnMessage(c.x, c.y - 40, CAMEO_LINES[(rnd()*CAMEO_LINES.length)|0], 60);
+      }
+      if (c.x < player.x - 260) c.active = false;
     }
 
     // light-streams home toward the lamp head; each arrival feeds lampLight (kills = power made visible)
@@ -1612,6 +1675,7 @@
     statsLine.textContent = 'Kills ' + (cleanK + heavyK + perfK + dominoK + captainK) +
       (bestChain > 1 ? ' · Best chain ' + bestChain : '') +
       (rI < RANKS.length - 1 ? ' · ' + (RANKS[rI + 1].at - lifeKills) + ' wardens to ' + RANKS[rI + 1].name : '');
+    tallyJokeEl.textContent = TALLY_JOKES[(rnd()*TALLY_JOKES.length)|0]; // silly seasoning — a fresh one-liner every run
   }
 
   // The ending (Law 1/10): the campaign is beatable, and beating it means something
@@ -1911,6 +1975,10 @@
     // helmet with a nose guard
     ctx.fillStyle = '#6b6b78'; ctx.fillRect(-7,-36,14,6); ctx.fillRect(-1,-33,2,5);
     if (g.cap) { ctx.fillStyle = '#e84a4a'; ctx.fillRect(-2,-42,4,7); } // captain's plume
+    if (g.silly && g.alive) { // rare party-hat variant — purely cosmetic, same hitbox/stats
+      ctx.fillStyle = '#e05ab8'; ctx.beginPath(); ctx.moveTo(-5,-36); ctx.lineTo(5,-36); ctx.lineTo(0,-50); ctx.fill();
+      ctx.fillStyle = '#ffe97a'; ctx.beginPath(); ctx.arc(0,-50,2,0,Math.PI*2); ctx.fill();
+    }
     ctx.fillStyle = '#4a3a2a'; ctx.fillRect(-6,-7,5,8); ctx.fillRect(1,-7,5,8);
     ctx.restore();
     if (g.cap && g.alive) { // hp pips — the three-strike read is always legible
@@ -1985,6 +2053,11 @@
     ctx.drawImage(glowImg, sx - 11, sy - 11, 22, 22);
     ctx.fillStyle = '#ffe9b0';
     ctx.beginPath(); ctx.arc(sx, sy, 2.4 + Math.sin(f.bob*2)*0.5, 0, Math.PI*2); ctx.fill();
+    if (f.fancy) { // a very dapper little top hat — cosmetic only, same pickup radius
+      ctx.fillStyle = '#241a2e';
+      ctx.fillRect(sx - 2.5, sy - 8, 5, 4);
+      ctx.fillRect(sx - 3.5, sy - 4.5, 7, 1.2);
+    }
   }
   function drawStreams(camX) {
     for (const st of streams) {
@@ -2091,7 +2164,21 @@
       ctx.fillRect(st.x, st.y, 1.4, 1.4);
     }
     ctx.globalAlpha = 1;
-    ctx.drawImage(moonImg, W - 148 - (camX*0.02)%20, 8, 110, 110);
+    const moonCx = W - 148 - (camX*0.02)%20 + 55, moonCy = 8 + 55;
+    ctx.drawImage(moonImg, moonCx - 55, moonCy - 55, 110, 110);
+    // reactive moon (silly seasoning): a sleepy blink normally, wide-eyed startle on big moments
+    if (moonReactT > 0) {
+      moonReactT--;
+      const t = Math.min(1, moonReactT / 20);
+      ctx.fillStyle = '#241a2e';
+      ctx.beginPath(); ctx.arc(moonCx - 7, moonCy - 4, 2.6 * t + 0.4, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(moonCx + 7, moonCy - 4, 2.6 * t + 0.4, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(moonCx, moonCy + 6, 2 * t + 0.6, 3 * t + 0.6, 0, 0, Math.PI*2); ctx.fill();
+    } else {
+      ctx.strokeStyle = '#241a2e'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(moonCx - 9, moonCy - 4); ctx.lineTo(moonCx - 5, moonCy - 4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(moonCx + 5, moonCy - 4); ctx.lineTo(moonCx + 9, moonCy - 4); ctx.stroke();
+    }
     // clouds drift slowly, slight parallax
     for (let i = 0; i < 3; i++) {
       const cx = ((i*210 + 40 - drawT*0.08 - camX*0.05) % (W + 180)) - 140;
@@ -2123,6 +2210,14 @@
       ctx.strokeStyle = '#d8cdb0'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(ax, a.y); ctx.lineTo(ax + (a.vx > 0 ? -9 : 9), a.y); ctx.stroke();
       ctx.fillStyle = '#f1e3c6'; ctx.fillRect(ax - 1.5, a.y - 1.5, 3, 3);
+    }
+    for (const c of cameos) { // background passerby — small cloaked silhouette, purely decorative
+      if (!c.active) continue;
+      const cx = c.x - camX;
+      if (cx < -20 || cx > W + 20) continue;
+      ctx.fillStyle = '#241a2e';
+      ctx.fillRect(cx - 4, c.y - 20, 8, 16);
+      ctx.beginPath(); ctx.arc(cx, c.y - 22, 3.5, 0, Math.PI*2); ctx.fill();
     }
     for (const b of birds) drawBird(b, camX);
     for (const o of lowObs) drawLowOb(o, camX);
