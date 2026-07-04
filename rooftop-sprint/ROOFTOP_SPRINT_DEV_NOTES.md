@@ -1,7 +1,27 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-04, RS-#055..#063 second CG-acceptance batch shipped): Next = MIKE'S
-> FULL PLAYTEST, then B7 SHIP WAVE**
+> **⚡ RESUME HERE (2026-07-04, RS-#064..#088 third CG-acceptance batch — 50 improvements — shipped):
+> Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE**
+>
+> **🛠️ RS-#064..#088 DONE 2026-07-04 (HEAD `df13e8b`) — 50-item batch from THREE parallel audits
+> (code robustness / accessibility+UX+juice / content+retention laws).** Content: +lines to every
+> quip array, +2 boons (LIGHT FOOTED=fewer hazards, STEADY LAMP=faster whiff recovery), +2 night
+> mods (RESTLESS NIGHT, CALM EVENING), +2 cloaks. Retention: beat-your-last-run delta on death
+> screen (`save.lastRunScore`), "N foes to <next unlock>" menu nudge, district name in HUD, run
+> score on pause screen. Juice: district-colored banners + brighter tints (0.06-0.09→0.11-0.15,
+> DISTRICTS gained a `col` field), per-tier combat-text colors (spawnMessage gained a `col` arg),
+> captain gold/district burst layers, speed lines near plateau, red death vignette (`hurtFlashT`),
+> captain hp-pip contrast ring. UX: shop/chip hover states, maxed-track style, buff ✓ marker,
+> `Snd.deny()` on unaffordable buys, Daily button color, clearer copy. A11y: prefers-reduced-motion
+> (`reduceMotion`) scales shake ×0.25 + drops speed lines + softens death flash; aria-labels/roles/
+> keyboard-activation on mute/pause/touch btns; focus-visible outlines; canvas aria-label. Bugs:
+> `placeOnNextRoof()` no longer strands an ad/Second-Flame revive mid-air over a gap (falls back to
+> nearest active roof); `buyTrack()` index guard. **IMPORTANT — many audit findings were STALE/WRONG
+> and skipped after code check:** event-listener "leaks" (innerHTML='' clears them), an out-of-bounds
+> that's actually guarded, guard-slump/slide-dust/menu-backdrop/live-sash all ALREADY implemented,
+> and the boon/pause "mobile overlap/tiny font" claims are false (canvas is fixed 480×270 logical,
+> uniformly scaled). Verified: parse clean, both suites green on default seed, and seeds 2/3/6/7/11
+> ALL pass fairness now (2 & 7 previously showed the documented bot-timing flake).
 >
 > **🛠️ RS-#055..#063 DONE 2026-07-04 (HEAD `2aae12d`) — second 12-item polish batch, fresh audit
 > explicitly excluding the prior batch:** two real bugs found and fixed — (1) a blanket
