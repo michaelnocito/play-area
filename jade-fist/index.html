@@ -1881,7 +1881,20 @@ function draw(){
       cx.fillText(TOUCH ? 'tap LEFT or RIGHT to take one' : 'strike LEFT or RIGHT to take one', W/2, 316);
     }
   } else if (state === S_MENU){
-    cx.fillStyle = 'rgba(8,10,14,0.55)'; cx.fillRect(0, 0, W, H);
+    // JF-#035: darker vignette (was flat 0.55 alpha, too see-through vs CG legibility bar)
+    cx.fillStyle = 'rgba(6,8,11,0.82)'; cx.fillRect(0, 0, W, H);
+    const vg = cx.createRadialGradient(W/2, H*0.42, H*0.15, W/2, H*0.42, H*0.75);
+    vg.addColorStop(0, 'rgba(6,8,11,0)'); vg.addColorStop(1, 'rgba(4,5,7,0.55)');
+    cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
+    // helper: solid rounded panel so corner text has real contrast, not floating on art
+    const panel = (px, py, pw, ph, align) => {
+      cx.save(); cx.fillStyle = 'rgba(14,17,22,0.72)'; cx.strokeStyle = 'rgba(255,255,255,0.08)'; cx.lineWidth = 1;
+      const r = 10, x2 = align === 'right' ? px - pw : px;
+      cx.beginPath(); cx.moveTo(x2 + r, py);
+      cx.arcTo(x2 + pw, py, x2 + pw, py + ph, r); cx.arcTo(x2 + pw, py + ph, x2, py + ph, r);
+      cx.arcTo(x2, py + ph, x2, py, r); cx.arcTo(x2, py, x2 + pw, py, r); cx.closePath();
+      cx.fill(); cx.stroke(); cx.restore();
+    };
     // JF-#027: chunky outlined comic title with a lil bounce
     cx.textAlign = 'center';
     cx.save();
@@ -1927,9 +1940,15 @@ function draw(){
       (save.dist > 0 ? '   ▶' : ''), W/2, 378);
     cx.font = 'italic 16px Georgia'; cx.fillStyle = '#8a94a6';
     cx.fillText(MD.line + '   ·   ' + (sel < save.dist ? 'CLEARED' : sel === 3 && save.dist === 3 ? 'the last district' : 'boss: ' + MD.boss), W/2, 400);
-    if ((t / 30 | 0) % 2 === 0){
-      cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia';
-      cx.fillText(TOUCH ? '— tap to fight —' : '— Space to fight —', W/2, 426);
+    // JF-#035: real filled CTA button (was blinking bare text) — one obvious click-to-play target
+    {
+      const bw = 220, bh = 40, bx = W/2 - bw/2, by = 408, pulse = 0.85 + Math.sin(t * 0.12) * 0.15;
+      cx.fillStyle = `rgba(124,232,168,${0.22 * pulse})`; cx.strokeStyle = '#7ce8a8'; cx.lineWidth = 2;
+      cx.beginPath(); cx.moveTo(bx + 8, by); cx.arcTo(bx + bw, by, bx + bw, by + bh, 8);
+      cx.arcTo(bx + bw, by + bh, bx, by + bh, 8); cx.arcTo(bx, by + bh, bx, by, 8); cx.arcTo(bx, by, bx + bw, by, 8);
+      cx.closePath(); cx.fill(); cx.stroke();
+      cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia'; cx.textAlign = 'center';
+      cx.fillText(TOUCH ? 'TAP TO FIGHT' : 'SPACE TO FIGHT', W/2, by + 27);
     }
     const mb = beltOf(save.kills);
     cx.fillStyle = BELTS[mb].col === '#3a3f48' ? '#e8dcc0' : BELTS[mb].col;
@@ -1940,61 +1959,54 @@ function draw(){
     cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
       (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
       (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 482);
-    // JF-#011: today's trials (left) and the omen offer (right)
-    cx.textAlign = 'left'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
-    cx.fillText("TODAY'S TRIALS", 24, 96);
-    cx.font = '14px Georgia';
-    todayTrio().forEach((ti, i) => {
-      cx.fillStyle = save.tdone[i] ? '#7ce8a8' : '#8a94a6';
-      cx.fillText((save.tdone[i] ? '✓ ' : '· ') + TRIALS[ti].name + '  +15◆', 24, 118 + i * 20);
-    });
-    // JF-#023: wardrobe (left, under the trials)
+    // JF-#035: today's trials (left) and the omen offer (right) — condensed to one line each
+    // + a solid panel behind them, kept to a single muted info color (gold reserved for CTA/highlights)
+    panel(16, 76, 250, 34, 'left');
+    cx.textAlign = 'left'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
+    const tdone = todayTrio().filter((ti, i) => save.tdone[i]).length;
+    cx.fillText('TRIALS  ' + tdone + '/3 done', 26, 96);
+    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
+    cx.fillText('+15◆ each', 150, 96);
+    // JF-#023: wardrobe (left, under the trials) — condensed to one line + buy button
     {
       const S = STYLES[styleSel], owned = !!save.cos.own[styleSel];
-      styleRect = { x: 16, y: 184, w: 240, h: 58 };
-      cx.textAlign = 'left'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
-      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 24, 200);
-      cx.fillStyle = S.col; cx.font = 'bold 14px Georgia';
-      cx.fillText(S.name + (save.cos.wear === styleSel ? '  — worn' : owned ? '  — owned' : ''), 24, 220);
+      styleRect = { x: 16, y: 118, w: 250, h: owned ? 34 : 58 };
+      panel(styleRect.x, styleRect.y, styleRect.w, styleRect.h, 'left');
+      cx.textAlign = 'left'; cx.font = 'bold 13px Georgia'; cx.fillStyle = '#c8bfa8';
+      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 26, 136);
+      cx.fillStyle = S.col; cx.font = 'bold 13px Georgia';
+      cx.fillText(S.name + (save.cos.wear === styleSel ? ' — worn' : owned ? ' — owned' : ''), 26, 154);
       styleBuyRect = null;
       if (!owned){
         const can = save.jade >= S.cost;
-        styleBuyRect = { x: 24, y: 226, w: 130, h: 20 };
-        cx.fillStyle = can ? 'rgba(124,232,168,0.22)' : 'rgba(140,148,166,0.12)';
+        styleBuyRect = { x: 26, y: 160, w: 130, h: 20 };
+        cx.fillStyle = can ? 'rgba(124,232,168,0.28)' : 'rgba(140,148,166,0.14)';
         cx.fillRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
         cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
         cx.strokeRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
-        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = '13px Georgia';
-        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, 32, 240);
+        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 13px Georgia';
+        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, 34, 174);
       }
     }
     const OM = todayOmen();
-    cx.textAlign = 'right'; cx.font = 'bold 15px Georgia';
+    panel(W - 16, 76, 250, 60, 'right');
+    cx.textAlign = 'right'; cx.font = 'bold 14px Georgia';
     cx.fillStyle = omenOn ? '#c8a8e8' : '#c8bfa8';
-    cx.fillText("TODAY'S OMEN  " + (omenOn ? '— ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 24, 96);
-    cx.font = '14px Georgia'; cx.fillStyle = omenOn ? '#c8a8e8' : '#8a94a6';
-    cx.fillText('boon: ' + OM.b, W - 24, 118);
-    cx.fillText('curse: ' + OM.c, W - 24, 138);
-    // JF-#026: Hall of Legends — selected district's top 3 (right, under the omen)
+    cx.fillText("OMEN  " + (omenOn ? '— ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 26, 96);
+    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
+    cx.fillText(OM.b + '  /  ' + OM.c, W - 26, 118);
+    // JF-#026: Hall of Legends — condensed to just #1 (right, under the omen)
     {
       const H = save.hall[sel];
       if (H && H.length){
-        cx.textAlign = 'right'; cx.font = 'bold 15px Georgia'; cx.fillStyle = '#c8bfa8';
-        cx.fillText('HALL OF LEGENDS — ' + DISTRICTS[sel].name, W - 24, 172);
-        cx.font = '14px Georgia';
-        H.slice(0, 3).forEach((h, i) => {
-          cx.fillStyle = i === 0 ? '#e8c76a' : '#8a94a6';
-          cx.fillText('#' + (i + 1) + '  ' + h.s + '  · wave ' + h.w, W - 24, 192 + i * 18);
-        });
+        panel(W - 16, 144, 250, 34, 'right');
+        cx.textAlign = 'right'; cx.font = 'bold 13px Georgia'; cx.fillStyle = '#c8bfa8';
+        cx.fillText('BEST — ' + DISTRICTS[sel].name, W - 26, 162);
+        cx.font = 'bold 13px Georgia'; cx.fillStyle = '#e8c76a';
+        cx.fillText('#1  ' + H[0].s + '  · wave ' + H[0].w, W - 26, 178);
       }
     }
     cx.textAlign = 'center';
-    // JF-#010: techniques known + the next one your belt will teach
-    const known = TECH.filter(T => mb >= T.belt).map(T => T.name).join(' · ');
-    const next = TECH.find(T => mb < T.belt);
-    cx.fillStyle = '#7a8494'; cx.font = '14px Georgia';
-    cx.fillText((known ? 'techniques: ' + known + (next ? '   ·   ' : '') : '') +
-      (next ? BELTS[next.belt].name + ' belt teaches ' + next.name : ''), W/2, 504);
   } else if (state === S_DEAD){
     cx.fillStyle = 'rgba(8,10,14,0.7)'; cx.fillRect(0, 0, W, H);
     cx.fillStyle = won ? '#7ce8a8' : '#e86a6a'; cx.font = 'bold 44px Georgia'; cx.textAlign = 'center';
