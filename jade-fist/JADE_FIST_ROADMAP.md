@@ -53,6 +53,17 @@ One quality bar, one submission wave. Status as of JF-#037 (2026-07-04).
       visible during pause again, debug=1 QA overlay, GM/GD alt-build callback fix, timeout
       safety nets on ad/init callbacks, non-optimistic reward flag, trials-panel text
       overflow fix, startRun() re-entrancy guard, alt-builds regenerated
+- [x] JF-#038 Combat rebalance (counter-throw was OP, skipped real fighting): T_NORM/
+      T_FAST/T_SPEAR now take 2+ hits to fell (scales with difficulty), T_BRUTE unchanged
+      (already softened by shove/rage). The wide screen-clearing throw + neighbor-fell +
+      SWEEP/STRIKE bonuses now only fire once combo reaches FINISH_AT (4) consecutive
+      good hits — every counter still damages/staggers, but the crowd-clearing payoff is
+      earned, not automatic. Below that, a kill just fells the one enemy. Enemy density
+      cut ~30-40% (toSpawn formula + duo-spawn cap) since fights run longer per enemy.
+      One-time "ONE MORE — THROW READY" cue at combo=3. Verified via direct function
+      calls in preview (hp decrement/stagger/lethal/empowered paths, brute shove-chain
+      unaffected, no console errors) — bot suite not re-run (real-time only, no fast-
+      forward); Mike playtest should sanity-check feel/difficulty before QA.
 
 ## Left (in order)
 - [ ] **Mike playtest** the current build (post #035–#037: legibility + two compliance

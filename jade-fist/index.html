@@ -509,6 +509,7 @@ let t = 0;                       // global frame clock
 let shake = 0, hitStop = 0, slowMo = 0;
 let score = 0, best = +(localStorage.getItem('jf_best') || 0);
 let combo = 0, comboT = 0;       // combo count + decay timer
+const FINISH_AT = 4;             // JF-#038: consecutive good hits to unlock the empowered throw
 let kills = 0, counters = 0, bestCombo = 0;
 let hearts = 3, hurtFlash = 0;
 let popups = [], parts = [], enemies = [];
@@ -549,6 +550,7 @@ let bannerCol = '#e8dcc0';
 let bufDir = 0, bufT = 0;        // input buffer across hit-stop
 let whiffT = 0;                  // whiff recovery: striking air locks strikes briefly (JF-#006)
 let adaptShown = false;          // "crowd wises up" banner shown once per run (JF-#007)
+let finisherCue = false;         // JF-#038: "next hit throws" cue shown once per run
 let perfChain = 0;               // consecutive perfect counters (PALM WAVE fuel, JF-#010)
 let lastSpawnSide = 1;
 // JF-#025: scrolls — within-run escalation (top-100 gap G1). Clearing a wave
@@ -672,7 +674,13 @@ function spawnEnemy(forceSide){
     vx: 0, vy: 0, y: 420, rot: 0,
     // JF-#028: a spearman hurls ONE spear from range before closing to melee.
     // high throw -> DUCK, low throw -> JUMP. After it throws, it fights normally.
-    willThrow: type === T_SPEAR, projHigh: Math.random() < 0.5
+    willThrow: type === T_SPEAR, projHigh: Math.random() < 0.5,
+    // JF-#038: multi-hit toughness — brute stays a 1-counter fell (already softened by
+    // shoves/rage first); everyone else needs 2+ good hits, more as waves climb.
+    hp: type === T_BRUTE ? 1
+      : type === T_FAST  ? (1 + (difficulty > 8 ? 1 : 0))
+      : type === T_SPEAR ? (2 + (difficulty > 9 ? 1 : 0))
+      : (2 + (difficulty > 7 ? 1 : 0))   // T_NORM
   });
   const ne = enemies[enemies.length - 1];
   ne.windup0 = ne.windup;                     // base windup (brute rage floors off this)
@@ -720,7 +728,7 @@ function beginWave(n){
     if (bz.flavor) popup(W/2, 210, '“' + bz.flavor.taunt + '”', '#e8b06a', true);   // taunt on entry
     Snd.windup(60);
   } else {
-    toSpawn = 5 + wave * 2;
+    toSpawn = 3 + Math.round(wave * 1.3);   // JF-#038: fewer bodies, each one tougher
     banner('WAVE ' + wave, '#e8dcc0', 90);
   }
   spawnT = 40;
@@ -873,46 +881,77 @@ function strike(dir){
     award('counter');
     if (e.type === T_BRUTE) award('monk');
     if (e.type === T_SPEAR) award('spear');
+
+    // JF-#038: multi-hit toughness + combo-gated finisher. A counter always damages;
+    // it only FELLS once hp hits 0, and only becomes the big wide throw once the
+    // player has strung together FINISH_AT good hits in a row.
+    e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
+    const lethal = e.hp <= 0;
+    const empowered = lethal && (combo + 1 >= FINISH_AT);
+
+    if (!lethal){                              // ---- STAGGER: foe is hurt, not felled ----
+      e.st = E_STAGGER; e.stT = 0; e.vx = dir * 5; e.guard = 0;
+      combo++; comboT = CW;
+      const pts = (perfect ? 150 : 100) * Math.min(combo, 5);
+      score += pts;
+      popup(e.x, e.y - 90, (perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8');
+      Snd.counter(); hitStop = 5; shake = perfect ? 8 : 6; slowMo = 18;
+      burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4);
+      if (perfect && hasTech(2)){ perfChain++; } else if (!perfect) perfChain = 0;
+      if (combo > bestCombo) bestCombo = combo;
+      if (combo === FINISH_AT - 1 && !finisherCue){
+        finisherCue = true;
+        popup(W/2, 190, 'ONE MORE — THROW READY', '#e8c76a', true);
+      }
+      return;
+    }
+
     e.st = E_THROWN; e.stT = 0;
     e.sendX0 = e.x;                    // JF-#030: launch point, for the longest-yeet stat
     // JF-#010: DRAGON SWEEP — perfect throws fly farther and pierce deeper
     const sweep = hasTech(0);
     e.vx = slip(dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1));   // JF-#025 TIGER, JF-#032 slip
     e.vy = perfect ? -8 : -7;
-    // JF-#020: ~1 in 6 perfect counters is a comedy send — twice the arc, wild spin
-    if (perfect && e.type !== T_BOSS && Math.random() < 0.18){
+    // JF-#020: ~1 in 6 perfect EMPOWERED counters is a comedy send — twice the arc, wild spin
+    if (empowered && perfect && e.type !== T_BOSS && Math.random() < 0.18){
       e.vx *= 1.7; e.vy = -11; e.bigSend = true;
       popup(e.x, e.y - 130, SENDS[(Math.random() * SENDS.length) | 0], '#e8c76a', true);
     }
     combo++; comboT = CW;
+    if (!empowered && combo === FINISH_AT - 1 && !finisherCue){
+      finisherCue = true;
+      popup(W/2, 190, 'ONE MORE — THROW READY', '#e8c76a', true);
+    }
     const baseC = e.type === T_BOSS ? 2000 : e.type === T_BRUTE ? 750 : e.type === T_SPEAR ? 600 : 500;
     const pts = Math.round(baseC * (perfect ? 1.5 : 1)) * Math.min(combo, 5);
     score += pts;
     popup(e.x, e.y - 90, (ironCatch ? 'IRON CATCH +' : perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8', true);
-    Snd.counter(); hitStop = 7; shake = perfect ? 13 : 10; slowMo = 26;
-    burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', perfect ? 30 : 22, perfect ? 6 : 5);
-    // thrown body knocks down neighbors in its path (more mid-flight — see E_THROWN)
-    let felled = 0;
-    for (const o of enemies){
-      if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
-      if (o.type !== T_BOSS && Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < (perfect ? (sweep ? 260 : 220) : 150) + (run.tiger ? 50 : 0)){
-        o.st = E_DOWN; o.stT = 0; o.vx = dir * 5; o.vy = -4;
-        score += 250; kills++; jadeRun++; felled++;
-        popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a'); yelp(o.x, o.y - 104);
-        burst(o.x, o.y - 40, '#e8c76a', 10, 3);
+    Snd.counter(); hitStop = empowered ? 7 : 5; shake = empowered ? (perfect ? 13 : 10) : 6; slowMo = empowered ? 26 : 18;
+    burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4);
+    if (empowered){
+      // ---- EMPOWERED THROW: the payoff — thrown body knocks down neighbors in its path ----
+      let felled = 0;
+      for (const o of enemies){
+        if (o === e || o.st === E_DOWN || o.st === E_THROWN) continue;
+        if (o.type !== T_BOSS && Math.sign(o.x - e.x) === dir && Math.abs(o.x - e.x) < (perfect ? (sweep ? 260 : 220) : 150) + (run.tiger ? 50 : 0)){
+          o.st = E_DOWN; o.stT = 0; o.vx = dir * 5; o.vy = -4; o.hp = 0;
+          score += 250; kills++; jadeRun++; felled++;
+          popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a'); yelp(o.x, o.y - 104);
+          burst(o.x, o.y - 40, '#e8c76a', 10, 3);
+        }
       }
-    }
-    // JF-#007: SWEEP — one throw felling 2+ pays a bonus
-    if (felled >= 2){
-      score += 500; jadeRun += 2;
-      popup(W/2, 220, 'SWEEP +500', '#e8c76a', true);
-      bumpTrial('sweep');
-    }
-    // JF-#030: BOWLING — one throw toppling 3+ is a STRIKE, with the pins to prove it
-    if (felled >= 3){
-      score += 500 * (felled - 2);
-      banner('☗ STRIKE!! ' + felled + ' PINS', '#ffd98a', 100);
-      Snd.block(); Snd.best(); shake = Math.max(shake, 14); slowMo = Math.max(slowMo, 24); moonWake(90);
+      // JF-#007: SWEEP — one throw felling 2+ pays a bonus
+      if (felled >= 2){
+        score += 500; jadeRun += 2;
+        popup(W/2, 220, 'SWEEP +500', '#e8c76a', true);
+        bumpTrial('sweep');
+      }
+      // JF-#030: BOWLING — one throw toppling 3+ is a STRIKE, with the pins to prove it
+      if (felled >= 3){
+        score += 500 * (felled - 2);
+        banner('☗ STRIKE!! ' + felled + ' PINS', '#ffd98a', 100);
+        Snd.block(); Snd.best(); shake = Math.max(shake, 14); slowMo = Math.max(slowMo, 24); moonWake(90);
+      }
     }
     // JF-#010: PALM WAVE — 3 consecutive perfects release a wave that fells both sides
     if (perfect && hasTech(2)){
@@ -925,7 +964,7 @@ function strike(dir){
         for (const o of enemies){
           if (o === e || o.st === E_DOWN || o.st === E_THROWN || o.type === T_BOSS) continue;
           if (Math.abs(o.x - P.x) < 260){
-            o.st = E_DOWN; o.stT = 0; o.vx = Math.sign(o.x - P.x) * 6; o.vy = -5;
+            o.st = E_DOWN; o.stT = 0; o.vx = Math.sign(o.x - P.x) * 6; o.vy = -5; o.hp = 0;
             score += 250; kills++; jadeRun++;
             popup(o.x, o.y - 80, 'FELLED +250', '#e8c76a'); yelp(o.x, o.y - 104);
             burst(o.x, o.y - 40, '#e8c76a', 10, 3);
@@ -963,9 +1002,30 @@ function strike(dir){
     Snd.hit(combo + 3); hitStop = 5; shake = 6;
     burst(e.x, e.y - 45, '#e8c76a', 14, 4);
   } else {                                       // ---- CLEAN STRIKE ----
+    // JF-#038: also multi-hit — a strike that doesn't finish the foe just staggers it
+    e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
+    if (e.hp > 0){
+      e.st = E_STAGGER; e.stT = 0; e.vx = dir * 3; e.guard = 0;
+      combo++; comboT = CW;
+      const pts = 60 * Math.min(combo, 5);
+      score += pts;
+      popup(e.x, e.y - 80, 'HIT +' + pts, '#d8d0c0');
+      Snd.hit(combo); hitStop = 2; shake = 2;
+      burst(e.x, e.y - 40, '#d8d0c0', 6, 2);
+      if (combo > bestCombo) bestCombo = combo;
+      if (combo === FINISH_AT - 1 && !finisherCue){
+        finisherCue = true;
+        popup(W/2, 190, 'ONE MORE — THROW READY', '#e8c76a', true);
+      }
+      return;
+    }
     e.st = E_DOWN; e.stT = 0;
     e.vx = dir * 4.5; e.vy = -4.5;
     combo++; comboT = CW;
+    if (combo === FINISH_AT - 1 && !finisherCue){
+      finisherCue = true;
+      popup(W/2, 190, 'ONE MORE — THROW READY', '#e8c76a', true);
+    }
     const pts = 100 * Math.min(combo, 5);
     score += pts; kills++; jadeRun++;
     popup(e.x, e.y - 80, (combo > 1 ? '×' + Math.min(combo,5) + ' ' : '') + '+' + pts, '#e8dcc0');
@@ -1211,7 +1271,7 @@ function beginRun(){
     save.streak = save.day === yest.toDateString() ? save.streak + 1 : 1;
     save.day = today; persist();
   }
-  hearts = Math.max(1, 3 + save.up.body + omen.heart); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false;
+  hearts = Math.max(1, 3 + save.up.body + omen.heart); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false; finisherCue = false;
   if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
   enemies.length = 0; popups.length = 0; parts.length = 0; darts.length = 0;
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
@@ -1298,7 +1358,7 @@ function update(){
     if (spawnT <= 0 && toSpawn > 0){
       toSpawn--; spawnEnemy();
       // duo rush scales with difficulty; late duos may split to opposite sides
-      if (toSpawn > 0 && difficulty > 2 && Math.random() < Math.min(0.24 + difficulty * 0.055, 0.62)){   // JF-#028: more duos
+      if (toSpawn > 0 && difficulty > 2 && Math.random() < Math.min(0.16 + difficulty * 0.035, 0.4)){   // JF-#038: fewer duos, fights stay 1-2 deep
         toSpawn--;
         spawnEnemy(difficulty > 7 && Math.random() < 0.4 ? -lastSpawnSide : lastSpawnSide);
       }
