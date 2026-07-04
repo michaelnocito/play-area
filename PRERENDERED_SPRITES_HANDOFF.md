@@ -23,24 +23,33 @@ below serves: can the player instantly tell each enemy/tower apart at real in-ga
 - Live games: deadroot https://michaelnocito.github.io/play-area/deadroot/ , jade-fist
   https://michaelnocito.github.io/play-area/jade-fist/ . Local: `C:\Users\Mike\Projects\GAMES\play-area\<game>\index.html`.
 
-## The pipeline (asset → render → pack → integrate)
-1. **Model/source the unit in 3D.** Mike is a 2D artist (charcoal/pencil), not a 3D modeler,
-   so favor these over hand-modeling:
-   - **Low-poly asset packs** (fastest start): Kenney (free, CC0), Synty, itch.io packs. Pick
-     a consistent art family so all units read as one game.
-   - **AI image-to-3D** for custom units: Meshy, Tripo, Rodin (2026 tools; feed Mike's own
-     concept art or a text prompt → 3D model). Good for bespoke enemies/bosses.
-   - **Blender** to rig/pose/animate and to render (free). This is the renderer regardless of
-     where the model comes from.
-2. **Render to frames.** Blender add-ons automate this: **Sprite 2D** (kameloov.itch.io/sprite-2d)
-   or **Pre Render Creator** render the same animation from N angles and output sheets directly.
-   - Camera: match the game's view. Deadroot = top-down-ish (render from a high angle, ~4 or 8
-     movement directions per enemy). Jade Fist = side view (render left-facing, flip in canvas
-     for right; anim states idle/walk/strike/counter/hit).
-   - Lighting: ONE consistent rig across every unit (a key + rim light). Rim light / a subtle
-     outline is what makes units pop off the background — critical for readability.
-   - Output: transparent PNG, fixed source size (e.g. 256px, downscale in-engine), same for all.
-3. **Pack into an atlas.** TexturePacker (free tier) or the add-on's own sheet output. Produce
+## ASSET SOURCE — DECIDED: ready-made packs, Mike does ZERO art
+**Mike is NOT a game/digital/3D artist and has no desire to learn 3D tools (Blender etc.).
+Do not propose any path that asks him to model, rig, or render.** He picks packs and eyeballs
+the result; **Claude Code does all the integration (and any rendering scripting) itself.**
+- **Prefer packs that already ship 2D SPRITE SHEETS pre-rendered from 3D** (top-down /
+  isometric character sprite packs on Kenney and itch.io). This is the whole shortcut: if the
+  pack is already 2D sprites, there is **NO Blender / no rendering step at all** — just pick,
+  license-check, and integrate. This is the default.
+- Only if a needed unit exists solely as a 3D model (GLTF/FBX) and not as sprites: Claude
+  scripts **Blender headless** (Python API, `blender -b -P render.py`) to render it to sprite
+  sheets. Claude writes/runs the script; Mike never touches Blender. Treat this as the fallback.
+- **NOT AI-generated** (Mike's explicit constraint — GameMonetize rejected Flipline as an "AI
+  game"; do not use Meshy/Tripo/Rodin or any AI-gen assets for shipped units).
+- **Originality note (CG wants original assets):** stock packs carry an "asset-flip" risk. Cheap
+  mitigations Claude can do in CODE, no art skill needed: per-enemy-type runtime color tint (a
+  canvas/globalCompositeOperation or offscreen recolor) — this doubles as the readability
+  color-coding, so it earns its keep; prefer less-ubiquitous packs over the most-recognizable
+  Synty sets; kitbash/recombine. Always verify each pack's license allows commercial web use.
+
+## The pipeline (pick pack → [render only if needed] → pack atlas → integrate)
+1. **Pick a pack** (above). Default = a 2D sprite pack with the pre-rendered-3D look.
+2. **Render to frames — ONLY if the pack is 3D-model-only** (fallback). Claude scripts Blender
+   headless: match the game view (deadroot top-down ~4-8 dirs; jade-fist side view, flip for
+   facing, anim states idle/walk/strike/counter/hit), ONE consistent light rig + rim light,
+   transparent PNG, fixed source size. Add-ons like **Sprite 2D** (kameloov.itch.io/sprite-2d)
+   automate directional sheets if Blender is available. Skip this whole step for 2D-sprite packs.
+3. **Pack into an atlas.** TexturePacker (free tier) or a free packer / script. Produce
    a PNG atlas + a JSON frame map (name → {x,y,w,h}). Keep total atlas weight small (aim a few
    hundred KB — CG penalizes slow load; this is the main constraint vs. Godot).
 4. **Integrate into the web game.** Add a small sprite module:
@@ -62,10 +71,13 @@ below serves: can the player instantly tell each enemy/tower apart at real in-ga
   failed. Deadroot enemies render around 20-40px on screen.
 
 ## Scope & order — do a VERTICAL SLICE first (de-risk before volume)
-1. **One deadroot enemy, end to end:** take the `scav`, source/model it, render 4-dir walk,
-   pack, wire `drawSprite` into deadroot's enemy draw for scavs only. Ship it behind a flag so
+0. **FIRST: propose 2-3 candidate packs to Mike** (with preview images/links) that fit
+   deadroot's tone and cover the enemy roster; let him pick. He does zero art; he only chooses.
+1. **One deadroot enemy, end to end:** take the `scav`, grab its sprites from the chosen pack
+   (render via headless Blender only if the pack is 3D-model-only), pack, wire `drawSprite` into
+   deadroot's enemy draw for scavs only, add the per-type color tint. Ship it behind a flag so
    procedural + sprite can be A/B'd. **Get Mike's eyes on the look at real scale before doing
-   more.** This proves the pipeline and the art bar in ~1 unit of work.
+   more.** Proves the pipeline + the look in ~1 unit of work.
 2. If the slice lands: the other deadroot enemies + towers, then the Hive.
 3. Then jade-fist (side-view fighters: player + 3 enemy types + bosses).
 - **Feedback rides the playtest tracker** (games "deadroot" / "jade-fist" in the Supabase-backed
@@ -81,6 +93,8 @@ below serves: can the player instantly tell each enemy/tower apart at real in-ga
 - Task numbering per game continues (`DR-#NNN`, `JF-#NNN`); this initiative can tag `SPR-` in
   commit bodies if useful.
 
-## Open question for Mike (answer in the new chat)
-Where do the 3D assets come from? (a) free low-poly packs to start fast, (b) AI image-to-3D from
-your own concept sketches, (c) you model in Blender. This decides the very first step.
+## Decided (2026-07-04)
+Asset source = **ready-made packs** (prefer pre-rendered-2D-sprite packs so no Blender needed).
+**Mike does zero art and won't learn 3D tools** — Claude picks/proposes packs, does all
+integration and any rendering scripting. NOT AI-generated (Flipline was rejected as an "AI
+game"). First action in the new chat = propose 2-3 candidate packs for deadroot for Mike to pick.
