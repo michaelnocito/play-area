@@ -255,7 +255,7 @@ let noHitWaves = 0, waveStartHP = 0, waveT = 0, waveFlashT = 0;
 // world effects
 let stains = [], rings = [];
 // first-time flags + pointer
-let seenSweeper = false;
+let seenSweeper = false, lastSurvivorShown = false;
 let ptrX = 0, ptrY = 0;
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
@@ -297,6 +297,11 @@ const LORE = [
   "Each fallen human becomes a guardian.",
   "The underground does not forget. It grows.",
 ];
+const HUMAN_NAMES = ["JEFF","KAREN","DAVE","SGT. PIKE","DR. HAYES","TORRES","PVT. MIKE","CHEN","ROSS","YANG","MCCREADY","BAKER","UNIT-7","VOLUNTEER","GRAVES","PATEL","KIM","RODRIGUEZ","WHITMORE","BRIGGS"];
+const YELPS = ["WAIT—","NOT THE VIRUS—","IT'S SPREADING!","ABORT MISSION!","THEY'RE ADAPTING!","FALL BACK!","SEND MORE UNITS","CONTAMINATION CONFIRMED","...I CAN FEEL IT","WASN'T IN THE BRIEFING"];
+const HIVE_TALK = ["their sanitation protocol is adorable.","the rot thanks them for visiting.","more. bring more.","THE HIVE APPROVES.","they will feed us for weeks.","their fear smells like biomass.","the earth remembers.","not one left standing. good.","the corpses say hello.","adequate. barely."];
+const END_QUIPS_WIN = ["the surface is yours. it smells awful. good.","they brought bleach. the hive brought rot. rot wins.","twelve waves. zero survivors. perfect attendance.","somewhere a general is writing a very bad report.","the extermination was exterminated."];
+const END_QUIPS_LOSE = ["they brought bleach. this time it worked.","death is just the beginning. unfortunately, it was yours.","the hive remembers your sacrifice. fondly.","the virus learns from every defeat.","somewhere, a janitor is very relieved."];
 
 function newRunMods(){
   return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
@@ -377,7 +382,7 @@ function spawnEnemy(type){
   const [x,y] = tileToXY(c,r);
   const eHp=e.hp*(run?run.enemyHp:1), eSpd=e.spd*(run?run.enemySpd:1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
-    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0 });
+    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0 });
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they steal your mutate"); }
 }
 function dropCorpse(x,y){
@@ -386,9 +391,10 @@ function dropCorpse(x,y){
   // stack onto existing corpse tile -> just refresh & bonus
   const rot = meta.rot + (run?run.rotBonus:0);
   const ex = corpses.find(k=>k.c===c&&k.r===r);
-  if(ex){ ex.t = rot; ex.maxT = rot; ex.stack++; popup(x,y,"+STACKED","#9be07f"); return; }
+  if(ex){ ex.t = rot; ex.maxT = rot; ex.stack++; popup(x,y,ex.stack>=3?"MASS GRAVE x"+ex.stack:"+STACKED","#9be07f"); return; }
   const walk = !blocked[r][c] ? tryBlock(c,r) : false;
-  corpses.push({ c, r, t: rot, maxT: rot, trampled: !walk, stack:1 });
+  const cName = HUMAN_NAMES[Math.floor(Math.random()*HUMAN_NAMES.length)];
+  corpses.push({ c, r, t: rot, maxT: rot, trampled: !walk, stack:1, name:cName });
 }
 function mutate(k, type){
   const t = CFG.towers[type];
@@ -405,10 +411,13 @@ function mutate(k, type){
   if(!firstMutateDone){ firstMutateDone = true; }
   menu = null;
 }
+const WARDEN_NAMES = ["GRUNT","MOLAR","SPLICE","FESTER"];
 function spawnWarden(c,r){
   if(!tryBlock(c,r)) return;
   const [x,y] = tileToXY(c,r);
-  towers.push({ type:"warden", c, r, x, y, cd:0, hp:150, max:150, flash:0, pulse:Math.random()*6, swing:0, tier:0 });
+  const usedNames = towers.filter(t=>t.name).map(t=>t.name);
+  const wName = WARDEN_NAMES.find(n=>!usedNames.includes(n)) || null;
+  towers.push({ type:"warden", c, r, x, y, cd:0, hp:150, max:150, flash:0, pulse:Math.random()*6, swing:0, tier:0, name:wName });
 }
 function applyTier2(t){
   const t2 = CFG.tier2[t.type];
@@ -465,7 +474,7 @@ function newRun(){
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  stains=[]; rings=[]; seenSweeper=false;
+  stains=[]; rings=[]; seenSweeper=false; lastSurvivorShown=false;
   // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
   dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
@@ -482,7 +491,7 @@ function queueWave(){
     for(let i=0;i<count;i++){ spawnQ.push({type, at:t}); t += intv; }
   }
   spawnQ.sort((a,b)=>a.at-b.at);
-  spawnT = 0; waveT = 0; waveStartHP = hiveHP; waveFlashT = 0.15;
+  spawnT = 0; waveT = 0; waveStartHP = hiveHP; waveFlashT = 0.15; lastSurvivorShown = false;
   mode = "play";
   SFX.wave();
   // drama: name the moments
@@ -516,6 +525,7 @@ function waveCleared(){
   if(endless){ endlessN++; save.endlessBest=Math.max(save.endlessBest,endlessN); persist(); }
   else waveIdx++;
   mode = "prep"; prepT = CFG.prepTime;
+  popup(W/2, H/2-40, '"'+HIVE_TALK[wn % HIVE_TALK.length]+'"', "#5a9068");
   // boon choice: the Hive adapts — every run differs
   if((!endless && CFG.boonWaves.includes(waveIdx)) || (endless && endlessN%3===1)) offerBoons();
 }
@@ -570,6 +580,7 @@ function update(){
     const e = enemies[i];
     if(e.flash>0) e.flash-=DT;
     if(e.drench>0) e.drench-=DT;
+    if(e.panicT>0) e.panicT-=DT;
     // spore coat DoT
     if(e.coat>0){ e.coat-=DT; e.hp -= 6*DT*meta.dmg; }
     if(e.corroded>0) e.corroded -= DT;
@@ -579,7 +590,7 @@ function update(){
     if(strangled) e.hp -= 8*DT*meta.dmg;
     let spd = e.spd * CFG.tile * (e.snared?1-CFG.towers.rootmass.slow:1);
     if(overgrowthT>0) spd *= 0.15;
-    if(e.type==="sweeper") spd *= (1-run.sweepSlow);
+    if(e.type==="sweeper") spd *= (1-run.sweepSlow) * (e.panicT>0 ? 1.8 : 1);
 
     if(e.type==="sweeper"){
       // find nearest corpse
@@ -654,6 +665,12 @@ function update(){
     }
     if(e.hp<=0){ kill(e); }
   }
+  // last survivor drama — one banner per wave
+  if(mode==="play" && spawnQ.length===0 && enemies.length===1 && !lastSurvivorShown){
+    lastSurvivorShown = true;
+    const sType = {scav:"THE LAST SCOUT",troop:"THE LAST TROOPER",incin:"THE LAST INCINERATOR",sweeper:"THE LAST SWEEPER",butcher:"THE BUTCHER STANDS ALONE",boss:"THE PURIFIER WILL NOT YIELD"};
+    showBanner(sType[enemies[0].type]||"THE LAST ONE STANDING","finish it");
+  }
 
   /* towers */
   for(let i=towers.length-1;i>=0;i--){
@@ -688,8 +705,12 @@ function update(){
           for(const e of enemies){ if(dist2(t,e)<sq(def.range*CFG.tile)) damage(e, def.dmg*meta.dmg*dmgMult, false); }
           SFX.hit(); noise(0.1,0.18,false);
           burst(t.x,t.y-6,"#c9ced4",6);
+          if(t.name && Math.random()<0.22) popup(t.x,t.y-26,t.name+"!",TCOL.warden.acc);
         } else if(t.type==="spitter"){
-          projectiles.push({x:t.x,y:t.y,tgt,spd:340,dmg:def.dmg*meta.dmg*(1+run.spitDmg)*dmgMult,splash:t.tier===1});
+          t.shotN = (t.shotN||0) + 1;
+          const charged = t.shotN % 8 === 0;
+          projectiles.push({x:t.x,y:t.y,tgt,spd:charged?220:340,dmg:def.dmg*meta.dmg*(1+run.spitDmg)*dmgMult*(charged?2.5:1),splash:t.tier===1,charged});
+          if(charged){ popup(t.x,t.y-18,"PTOOW!","#c8f050"); burst(t.x,t.y,"#c8f050",8); }
           SFX.shot();
         } else if(t.type==="spore"){
           const cr=(t.tier===1?def.cloudR*1.5:def.cloudR)*CFG.tile;
@@ -750,13 +771,22 @@ function kill(e){
   const idx = enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
   biomass += CFG.killBounty + run.killBonus;
   killsThisRun++;
-  // kill combo
+  // death yelp (dark comedy — 1 in 5 non-bosses)
+  if(e.type!=="boss" && e.type!=="butcher" && Math.random()<0.2)
+    popup(e.x, e.y-36, YELPS[Math.floor(Math.random()*YELPS.length)], "#b0a090");
+  // kill combo — escalating outbreak names
   comboN++; comboT = 1.5;
-  if(comboN >= 3) popup(e.x, e.y-20, "×"+comboN+" FRENZY!", "#ffe060");
+  if(comboN >= 3){
+    const cTxt = comboN>=12?"EXTINCTION EVENT!":comboN>=8?"PANDEMIC!":comboN>=5?"EPIDEMIC!":"OUTBREAK!";
+    const cCol = comboN>=12?"#ff4040":comboN>=8?"#ff8020":comboN>=5?"#ffa040":"#ffe060";
+    popup(e.x, e.y-20, "×"+comboN+" "+cTxt, cCol);
+  }
   // kill milestone every 25
   if(killsThisRun % 25 === 0) showBanner(killsThisRun+" ELIMINATED","the hive grows stronger");
   // sweeper interception bonus
   if(e.type==="sweeper" && e.chanT>0){ biomass+=30; popup(e.x,e.y,"INTERCEPTED! +30","#e3d34e"); }
+  // sweeper panic: nearby sweepers flee faster
+  if(e.type==="sweeper"){ for(const ne of enemies){ if(ne!==e && ne.type==="sweeper" && dist2(ne,e)<sq(CFG.tile*6)){ ne.panicT=2.5; popup(ne.x,ne.y-14,"RETREAT!","#e3d34e"); } } }
   // ground stain
   stains.push({x:e.x,y:e.y,t:5,col:e.col}); if(stains.length>20) stains.shift();
   burst(e.x,e.y,e.col,10);
@@ -1139,6 +1169,7 @@ function draw(){
     ctx.strokeStyle = "rgba(143,217,168,0.8)"; ctx.lineWidth=2;
     ctx.beginPath(); ctx.arc(x,y,18,-Math.PI/2,-Math.PI/2 + 6.283*(k.t/k.maxT)); ctx.stroke();
     if(k.stack>1){ ctx.fillStyle="#9be07f"; ctx.font="bold 11px monospace"; ctx.textAlign="center"; ctx.fillText("x"+k.stack,x,y-22); }
+    if(k.name && k.t/k.maxT > 0.55){ ctx.fillStyle="rgba(180,160,130,0.85)"; ctx.font="9px monospace"; ctx.textAlign="center"; ctx.fillText(k.name,x,y-28); }
     ctx.restore();
   }
   // expanding rings (Warden impact, corpse tap)
@@ -1230,7 +1261,11 @@ function draw(){
   }
   // projectiles
   ctx.fillStyle="#c8f050";
-  for(const p of projectiles){ ctx.beginPath(); ctx.arc(p.x,p.y,4,0,6.283); ctx.fill(); }
+  for(const p of projectiles){
+    if(p.charged){ ctx.save(); ctx.shadowColor="#c8f050"; ctx.shadowBlur=8; }
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.charged?8:4,0,6.283); ctx.fill();
+    if(p.charged) ctx.restore();
+  }
   // particles
   for(const p of particles){ ctx.globalAlpha=p.big?Math.min(1,p.t*1.4):Math.min(1,p.t*2.5); ctx.fillStyle=p.col; const ps=p.big?7:3; ctx.fillRect(p.x-ps/2,p.y-ps/2,ps,ps); }
   ctx.globalAlpha=1;
@@ -1512,7 +1547,7 @@ function drawTitle(){
   ctx.fillStyle="#565f68"; ctx.font="11px monospace";
   ctx.fillText("tap corpses to mutate defenders · M mute · P pause", W/2, H-30);
 }
-function endLayout(){ return { bx: W/2-280, bw: 560, rowH: 48, by: 224 }; }
+function endLayout(){ return { bx: W/2-280, bw: 560, rowH: 48, by: 248 }; }
 function drawEnd(won){
   ctx.fillStyle="rgba(5,7,9,0.88)"; ctx.fillRect(0,0,W,H);
   ctx.textAlign="center";
@@ -1530,12 +1565,16 @@ function drawEnd(won){
     ctx.fillText("Overrun on wave "+wn+" — "+(endless?"THE LONG NIGHT":phaseOf(Math.min(waveIdx,11))), W/2, 148);
     ctx.fillStyle="#c9a0f0"; ctx.fillText("+"+dnaEarned+" DNA harvested this run", W/2, 172);
   }
+  // hive quip
+  const quips = won ? END_QUIPS_WIN : END_QUIPS_LOSE;
+  ctx.fillStyle="#4a7058"; ctx.font="italic 13px Georgia, serif"; ctx.textAlign="center";
+  ctx.fillText('"'+quips[killsThisRun % quips.length]+'"', W/2, 196);
   // run stats
   ctx.fillStyle="#6a7480"; ctx.font="11px monospace"; ctx.textAlign="center";
-  ctx.fillText("⚡ "+killsThisRun+" eliminated  ·  🏗 "+towersBuiltThisRun+" towers built  ·  ◈ "+Math.floor(peakBiomass)+" peak biomass", W/2, 192);
+  ctx.fillText("⚡ "+killsThisRun+" eliminated  ·  🏗 "+towersBuiltThisRun+" towers built  ·  ◈ "+Math.floor(peakBiomass)+" peak biomass", W/2, 214);
   // Mycelial Network
   ctx.fillStyle="#b088e0"; ctx.font="bold 18px monospace";
-  ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 208);
+  ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 230);
   const {bx,bw,rowH,by} = endLayout();
   ctx.font="12px monospace";
   for(let i=0;i<CFG.meta.length;i++){
