@@ -31,7 +31,8 @@ const CG = {
   gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
   gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
   happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
-  interstitial(done){ try{ if(sdkLive){ window.CrazyGames.SDK.ad.requestAd("midgame",{adFinished:done,adError:done,adStarted:()=>{}}); return; } }catch(e){} done&&done(); }
+  interstitial(done){ try{ if(sdkLive){ window.CrazyGames.SDK.ad.requestAd("midgame",{adFinished:done,adError:done,adStarted:()=>{}}); return; } }catch(e){} done&&done(); },
+  rewarded(done,fail){ try{ if(sdkLive){ window.CrazyGames.SDK.ad.requestAd("rewarded",{adFinished:()=>done&&done(),adError:()=>fail&&fail(),adStarted:()=>{}}); return; } }catch(e){} done&&done(); }
 };
 
 /* ===== Config (all tuning lives here) ===== */
@@ -255,7 +256,7 @@ let noHitWaves = 0, waveStartHP = 0, waveT = 0, waveFlashT = 0;
 // world effects
 let stains = [], rings = [];
 // first-time flags + pointer
-let seenSweeper = false, lastSurvivorShown = false;
+let seenSweeper = false, lastSurvivorShown = false, secondWindUsed = false;
 let ptrX = 0, ptrY = 0;
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
@@ -474,7 +475,7 @@ function newRun(){
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  stains=[]; rings=[]; seenSweeper=false; lastSurvivorShown=false;
+  stains=[]; rings=[]; seenSweeper=false; lastSurvivorShown=false; secondWindUsed=false;
   // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
   dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
@@ -530,17 +531,32 @@ function waveCleared(){
   if((!endless && CFG.boonWaves.includes(waveIdx)) || (endless && endlessN%3===1)) offerBoons();
 }
 function gameOver(){
+  if(!secondWindUsed && !daily){ mode = "secondwind"; menu = null; CG.gameplayStop(); return; }
   mode = "over"; menu = null; stopDrone();
   if(daily){ if(!save.dailyBest)save.dailyBest={}; save.dailyBest[dayIndex()]=Math.max(save.dailyBest[dayIndex()]||0,waveIdx+1); }
   persist();
   CG.gameplayStop();
   CG.interstitial();
 }
+function declineSecondWind(){
+  secondWindUsed = true;
+  gameOver();
+}
+function takeSecondWind(){
+  secondWindUsed = true;
+  CG.rewarded(()=>{
+    hiveHP = Math.ceil(hiveMax*0.25);
+    mode = "play";
+    popup(W/2, H/2-40, "SECOND WIND", "#8fd9a8");
+    edgePulseT = 1.0;
+    CG.gameplayStart();
+  }, ()=>{ gameOver(); });
+}
 
 /* ===== Update (fixed 60Hz) ===== */
 const DT = 1/60;
 function update(){
-  if(mode==="title"||mode==="over"||mode==="victory") return;
+  if(mode==="title"||mode==="over"||mode==="victory"||mode==="secondwind") return;
   if(shake>0) shake = Math.max(0, shake-20*DT);
   if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
   if(overgrowthT>0) overgrowthT -= DT;
@@ -815,6 +831,7 @@ function onTap(x,y){
     return;
   }
   if(mode==="over"||mode==="victory"){ handleEndScreen(x,y); return; }
+  if(mode==="secondwind"){ handleSecondWind(x,y); return; }
   if(paused){ paused=false; CG.gameplayStart(); return; }
 
   // mute button (top-right)
@@ -1094,6 +1111,17 @@ function handleEndScreen(x,y){
     newRun();
   }
 }
+function secondWindRects(){
+  return {
+    watch: { x:W/2-170, y:H/2+30, w:340, h:56 },
+    skip:  { x:W/2-110, y:H/2+96, w:220, h:40 }
+  };
+}
+function handleSecondWind(x,y){
+  const {watch,skip} = secondWindRects();
+  if(x>watch.x&&x<watch.x+watch.w&&y>watch.y&&y<watch.y+watch.h){ SFX.ui(); takeSecondWind(); return; }
+  if(x>skip.x&&x<skip.x+skip.w&&y>skip.y&&y<skip.y+skip.h){ SFX.ui(); declineSecondWind(); return; }
+}
 canvas.addEventListener("mousedown", ev=>{ const [x,y]=canvasPos(ev); onTap(x,y); });
 canvas.addEventListener("mousemove", ev=>{ const [x,y]=canvasPos(ev); ptrX=x; ptrY=y; });
 canvas.addEventListener("touchstart", ev=>{ ev.preventDefault(); const [x,y]=canvasPos(ev); onTap(x,y); }, {passive:false});
@@ -1285,6 +1313,7 @@ function draw(){
   if(paused) drawPaused();
   if(mode==="over") drawEnd(false);
   if(mode==="victory") drawEnd(true);
+  if(mode==="secondwind") drawSecondWind();
   ctx.restore();
   // vignette
   const g = ctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,H*0.75);
@@ -1548,6 +1577,21 @@ function drawTitle(){
   ctx.fillText("tap corpses to mutate defenders · M mute · P pause", W/2, H-30);
 }
 function endLayout(){ return { bx: W/2-280, bw: 560, rowH: 48, by: 248 }; }
+function drawSecondWind(){
+  ctx.fillStyle="rgba(5,7,9,0.9)"; ctx.fillRect(0,0,W,H);
+  ctx.textAlign="center";
+  ctx.fillStyle="#e06060"; ctx.font="bold 34px Georgia, serif";
+  ctx.fillText("THE HIVE FALTERS", W/2, H/2-90);
+  ctx.fillStyle="#dfe6ec"; ctx.font="15px monospace";
+  ctx.fillText("Watch a short video to revive the Hive at 25% HP", W/2, H/2-54);
+  const {watch,skip} = secondWindRects();
+  ctx.fillStyle="#1f3524"; ctx.fillRect(watch.x,watch.y,watch.w,watch.h);
+  ctx.strokeStyle="#8fd9a8"; ctx.lineWidth=2; ctx.strokeRect(watch.x,watch.y,watch.w,watch.h); ctx.lineWidth=1;
+  ctx.fillStyle="#8fd9a8"; ctx.font="bold 18px monospace";
+  ctx.fillText("▶ WATCH AD — SECOND WIND", W/2, watch.y+35);
+  ctx.fillStyle="#8a94a0"; ctx.font="13px monospace";
+  ctx.fillText("NO THANKS", W/2, skip.y+26);
+}
 function drawEnd(won){
   ctx.fillStyle="rgba(5,7,9,0.88)"; ctx.fillRect(0,0,W,H);
   ctx.textAlign="center";

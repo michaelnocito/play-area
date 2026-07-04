@@ -252,7 +252,25 @@ ring uses tower color; node range ring now shown.
 - `drawTowerIcon` is now a thin wrapper around `drawTowerArt`
 
 ## Backlog / next (v1.1 → submission)
-- **Category C (before submission):** rewarded ad SECOND WIND hook, CG SDK verify,
-  mobile QA full playthrough on live URL, corpse rot timer / Sweeper sanitize tooltip.
 - Playtest pass on DR-#011/012: salvage balance, UNSCATHED frequency, combo feel,
   boss bar positioning, damage number spam threshold, tower readability QA.
+- Remaining Category C: mobile QA full playthrough on live URL, corpse rot timer /
+  Sweeper sanitize tooltip.
+
+## DR-#014 — Rewarded ad SECOND WIND (2026-07-04)
+On Hive death (hiveHP<=0), if not a daily run and not yet used this run: instead of
+ending, mode="secondwind" pauses sim and shows "THE HIVE FALTERS" overlay with two
+buttons — WATCH AD (revives at 25% max HP, resumes "play", CG.gameplayStart()) or NO
+THANKS (proceeds to normal gameOver()). Once per run (secondWindUsed flag, reset in
+newRun()). Daily runs excluded to keep the leaderboard/best-wave comparison clean.
+- CG adapter: added `CG.rewarded(done,fail)` → `SDK.ad.requestAd("rewarded",...)`;
+  offline/no-SDK fallback calls `done()` immediately (same no-op-succeeds pattern as
+  interstitial) so local testing exercises the full revive flow.
+- If the rewarded ad errors, falls through to gameOver() as if declined.
+- Verified via preview_eval (headless, since preview_screenshot was unavailable this
+  session): forced hiveHP=1→gameOver() routed to "secondwind"; WATCH tap → hiveHP=25,
+  mode="play", secondWindUsed=true; second death after use → routes straight to
+  "over"; NO THANKS tap → routes straight to "over".
+- Added `deadroot` entry to global `.claude/launch.json` (port 4216, serves the
+  deadroot folder directly) since play-area's dev-server port was occupied by
+  another session.
