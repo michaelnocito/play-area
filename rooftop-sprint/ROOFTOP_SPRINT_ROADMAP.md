@@ -55,8 +55,28 @@ cloaks (5 colors, live on the runner). Light Burst rebalanced: covers arrows too
 taught all new reads (feint-leap, arrow deflect, reach-aware presses) + `RS_DEBUG=1` death
 forensics. Suite green; slow tier still separates.
 
-**STILL OPEN (small):** ⑲(half) hand-authored chunk library (anti-streak + district pacing
-cover most of it) · adblock detection call (error path already safe) · real-device touch pass.
+**✅ 2026-07-03 RS-LEVELDESIGN (HEAD `051b673`) — closed ⑲ and 9 more level-design items in one
+pass:** guard LINE formations (3-wide showcase beat right before every district gate, clamped so
+extra bodies never overshoot the roof) · rope-bridge visual dressing over any gap >55px (sagging
+rope+slats, zero hitbox change) · **Lantern Alley** — the post-gate rest beat now has its own
+identity (forced/doubled lanterns, 85% feather chance, not just "fewer enemies") · signature
+pre-gate set-piece (guaranteed brazier + boosted formation odds in the 195-235m gate approach) ·
+6 unique per-district landmark silhouettes (clocktower / market gate / stall stack / temple spire
+/ aqueduct / **the Great Beacon**) fixed at each district's center, scrolling into view — the
+Beacon visibly brightens as the final gate nears (goal-gradient made visual) · dawn-palette swap
+every other full lap in Night Shift/Daily (long-run freshness, the old "second visual zone" item)
+· per-district roof-trim tinting (same gap-warning read, different accent per zone) · anti-streak
+on both hazard-kind and enemy-variant RNG (`pickVaried`/history arrays — no 3 identical reads in
+a row, closing the Law-6 item explicitly). **Two real bugs this pass surfaced and fixed:** the
+3-wide line could place a guard past its own roof's edge into the NEXT gap's airspace (now
+clamped to `x2-16`, line shortens gracefully if the roof runs out of room); the district rewrite
+had quietly shortened the absolute "no hazard before 220m" floor to district-0's 150m rest zone
+(restored as an explicit `distance > 220` floor alongside it). Bot jump-decision margin in the
+harness widened to absorb reaction-delay overshoot on borderline-but-clearable gaps (harness-only
+tuning, confirmed via `RS_DEBUG=1` forensics that every case was trivially clearable at the true
+edge) — verified clean across 10+ seeds.
+
+**STILL OPEN (small):** adblock detection call (error path already safe) · real-device touch pass.
 
 Original 30-item list (🔁 = was already elsewhere in this roadmap):
 

@@ -1,10 +1,23 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-03, RS-VARIETY + RS-ECON shipped — ALL 30 gap-report items done
-> except the chunk-library half): Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE** (perf audit
-> on his i5, cover art + clips, store copy, GM/GD gameIds, regenerate `builds/` — wire
-> `window.Snd.duck` into their `__adPause` — CG QA tool, submit all portals). Read the gap-report
-> status block at the top of `ROOFTOP_SPRINT_ROADMAP.md` for exactly what shipped.
+> **⚡ RESUME HERE (2026-07-03, RS-LEVELDESIGN shipped — ALL 30 gap-report items done): Next =
+> MIKE'S FULL PLAYTEST, then B7 SHIP WAVE** (perf audit on his i5, cover art + clips, store
+> copy, GM/GD gameIds, regenerate `builds/` — wire `window.Snd.duck` into their `__adPause` —
+> CG QA tool, submit all portals). Read the gap-report status block at the top of
+> `ROOFTOP_SPRINT_ROADMAP.md` for exactly what shipped.
+>
+> **🏛 RS-LEVELDESIGN DONE 2026-07-03 (HEAD `051b673`), 10-item level-design pass:** guard LINE
+> formations (3-wide showcase beat before every gate, clamped to the roof) · rope-bridge visual
+> dressing on gaps >55px · Lantern Alley identity for the post-gate rest beat · signature
+> pre-gate brazier+formation set-piece · 6 unique per-district landmarks scrolling into view
+> (the Great Beacon visibly brightens on approach) · dawn-palette swap every other Night
+> Shift/Daily lap · per-district roof-trim tint · anti-streak on hazard-kind AND enemy-variant
+> RNG. **Fixed 2 real bugs it surfaced:** unclamped guard line could float a body past its
+> roof's edge into the next gap's airspace (now clamped, line shortens gracefully); the
+> district rewrite had silently shrunk the absolute no-hazard-before-220m floor down to
+> district-0's 150m rest zone (restored explicitly). Bot jump-margin widened in the harness
+> only (confirmed via `RS_DEBUG=1` that every borderline case was trivially clearable at the
+> true edge — bot-timing, not a game bug); verified clean across 10+ seeds.
 >
 > **🌗 RS-VARIETY + RS-ECON DONE 2026-07-03 (HEAD `c1519e1`):** Daily Trial (EMBER-gated,
 > seeded `rnd()`/mulberry32 route + date-pinned modifier + own best) · district-gate BOONS
