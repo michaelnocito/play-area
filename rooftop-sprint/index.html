@@ -799,19 +799,27 @@
         gslot.shT = (rnd() * 150) | 0; gslot.bowT = 90;
         if (gslot.archer) { gslot.patrolMin = gslot.patrolMax = gx; gslot.patrolDir = -1; } // archers hold their spot, facing you
         // gauntlet formation — feeds domino jackpots; showcase beat before a gate goes 3-wide.
-        // Clamp every extra body to x2-16 (the roof's own patrol bound) — an unclamped offset
-        // could place the 2nd/3rd guard past the roof edge, floating over the NEXT gap's airspace.
+        // Each extra body is spaced from the PREVIOUS placed body (not the original gx) and
+        // clamped to x2-16 — spacing from gx alone let two guards clamp to the identical ceiling
+        // and land on top of each other when the roof ran short (QA sweep caught this). The whole
+        // line HOLDS ITS POST (patrolMin=patrolMax=own spot, like an archer) rather than patrol —
+        // a small ± patrol radius per member looked safe on paper but a short roof could still
+        // clamp two neighbors' zones down to a couple of px apart (sweep caught this too); a
+        // fixed post has zero drift, so it can't ever happen regardless of roof length.
         if (!gslot.archer && !gslot.feint && (pressure || showcase) && len > 150 && rnd() < (showcase ? 0.85 : 0.5)) {
           const lineLen = showcase && len > 210 ? 3 : 2;
+          let prevX = gx;
           for (let li = 1; li < lineLen; li++) {
-            const lx = Math.min(gx + 34 * li, x2 - 16);
-            if (lx - gx < 20) break; // no room left on this roof — stop the line rather than stack guards
+            const lx = Math.min(prevX + 34, x2 - 16);
+            if (lx - prevX < 20) break; // no room left on this roof — stop the line rather than stack guards
             const g2 = guards.find(g => !g.active);
             if (!g2) break;
             Object.assign(g2, { active:true, alive:true, x:lx, y, patrolDir:gslot.patrolDir,
-              patrolMin:x1+16, patrolMax:x2-16, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
+              patrolMin:lx, patrolMax:lx, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
               cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0 });
+            prevX = lx;
           }
+          if (prevX > gx) { gslot.patrolMin = gx; gslot.patrolMax = gx; } // leader holds its post too
         }
       }
     } else if (!first && !placedCap && !restZone && distance > 220 && gap === 0 && !lastRoofHadLow && len > 110 && occRoll < hazP) {
@@ -977,7 +985,10 @@
       graceT = 16;
       nearest.hp--;
       if (nearest.hp > 0) {
-        nearest.x += 30 + speed * 6; // driven back toward the gate
+        // driven back toward the gate — clamped to his OWN roof (QA sweep caught this: an
+        // unclamped shove at high speed could push him clean off the edge into gap airspace)
+        const capSeg = segments.find(s => s.active && nearest.x >= s.x1 - 4 && nearest.x <= s.x2 + 4);
+        nearest.x = capSeg ? Math.min(nearest.x + 30 + speed * 6, capSeg.x2 - 16) : nearest.x + 30 + speed * 6;
         spawnBurst(nearest.x, nearest.y-18, 10, '#f0a04a');
         spawnMessage(nearest.x, nearest.y-56, nearest.hp === 2 ? 'STAGGERED' : 'GUARD BROKEN', 28);
         Snd.kill(1); shake = 8; slowmoT = Math.max(slowmoT, 160);
@@ -1267,7 +1278,7 @@
           if (g.fly === 2) { // missile dominoes any guard it touches (Lamp Arts T3: wider chain)
             const dR = save.arts >= 3 ? 24 : 15;
             for (const o of guards) {
-              if (!o.active || !o.alive || o === g) continue;
+              if (!o.active || !o.alive || o === g || o.cap) continue; // Captains hold their gate — no domino skip past the 3-hit sequence
               if (Math.abs(o.x - g.x) < dR && Math.abs(o.y - g.y) < 24) {
                 o.alive = false; o.deathT = 1; o.fly = 1; o.vx = g.vx * 0.6; o.vy = -2.2; o.spin = 0.35;
                 feathers += 1;
