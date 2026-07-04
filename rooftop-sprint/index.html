@@ -32,8 +32,8 @@
     color: #f1e3c6; pointer-events: none;
     text-shadow: 0 2px 6px rgba(0,0,0,0.8);
   }
-  #hud .label { font-size: 10px; letter-spacing: 1.5px; opacity: 0.75; text-transform: uppercase; }
-  #hud .value { font-size: 18px; font-weight: bold; }
+  #hud .label { font-size: 11px; letter-spacing: 1.5px; opacity: 0.75; text-transform: uppercase; }
+  #hud .value { font-size: 19px; font-weight: bold; }
   #overlay {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -62,8 +62,8 @@
   .tbtn {
     flex: 1; display: flex; align-items: center; justify-content: center;
     pointer-events: auto;
-    font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
-    color: rgba(241,227,198,0.55); text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    font-size: 14px; letter-spacing: 2px; text-transform: uppercase;
+    color: rgba(241,227,198,0.6); text-shadow: 0 1px 4px rgba(0,0,0,0.8);
   }
   #btnJump { border-right: 1px solid rgba(241,227,198,0.08); }
   .tbtn:active { background: rgba(232,200,120,0.08); }
@@ -226,12 +226,20 @@
     gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
     gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
     happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
-    interstitial(){ try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {
-      adStarted(){ try{ Snd.duck(true); }catch(e){} },
-      adFinished(){ try{ Snd.duck(false); }catch(e){} },
-      adError(){ try{ Snd.duck(false); }catch(e){} },
-    }); }catch(e){} },
+    // RS-#047: skip the round-trip entirely when the SDK already knows an adblocker is active
+    // (name TBD against current docs — optional-chained so a missing/renamed flag just no-ops
+    // into the normal request path, same graceful-degrade posture as everything else here).
+    adblocked(){ try{ return !!window.CrazyGames?.SDK?.ad?.hasAdblock; }catch(e){ return false; } },
+    interstitial(){
+      if (CG.adblocked()) return; // a skipped midgame ad isn't worth surfacing to the player
+      try{ if(sdkLive) window.CrazyGames.SDK.ad.requestAd("midgame", {
+        adStarted(){ try{ Snd.duck(true); }catch(e){} },
+        adFinished(){ try{ Snd.duck(false); }catch(e){} },
+        adError(){ try{ Snd.duck(false); }catch(e){} },
+      }); }catch(e){}
+    },
     rewarded(onReward){
+      if (CG.adblocked()) { onReward&&onReward(); return; } // reward honored — a rewarded ad must never gate play
       try{ if(sdkLive && window.CrazyGames?.SDK?.ad?.requestAd){
         window.CrazyGames.SDK.ad.requestAd("rewarded", {
           adStarted(){ try{ Snd.duck(true); }catch(e){} },
@@ -291,6 +299,10 @@
     { n: 'Jade',         col: '#2f6a4a', cost: 60  },
     { n: 'Gold Thread',  col: '#8a6a2f', cost: 90  },
     { n: 'Midnight',     col: '#22202e', cost: 120 },
+    // RS-#052: cosmetic-only depth for the highest-Light spenders (roadmap backlog) — no mechanical
+    // change, just further Light sinks past the ones any early run can already afford.
+    { n: 'Violet Dusk',  col: '#5a3a7a', cost: 150 },
+    { n: 'Beacon White', col: '#c9c0a8', cost: 200 },
   ];
   // Lantern ranks: lifetime wardens felled → visible rank (the player's sash renders in rank color)
   const RANKS = [
@@ -355,7 +367,7 @@
     if (!AC) return { muted: true, resume: noop, tick: noop, setTs: noop, duck: noop, setMuted: noop,
       toggleMute(){ return true; }, qaHighpass: noop, jump: noop, land: noop, swing: noop, kill: noop,
       chime: noop, domino: noop, sparkle: noop, death: noop, slide: noop, bird: noop,
-      uiTick: noop, newBest: noop };
+      uiTick: noop, newBest: noop, brace: noop };
     let ac = null, bus, qaHP, lpf, master, musicG, sfxG, padG, noiseBuf;
     let muted = false;
     try { muted = localStorage.getItem('rooftopSprintMuted') === '1'; } catch(e){}
@@ -478,6 +490,9 @@
       uiTick(i) { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sine', 880 + (i || 0) * 70, 0, 0.003, 0.05, 0.07); click(sfxG, t, 2800, 0.03, 0.02); },
       newBest() { if (!ok()) return; const t = ac.currentTime; [523.25, 659.25, 784, 1046.5].forEach((f, i) => { tone(sfxG, t + i * 0.09, 'sine', f, 0, 0.004, 0.09, 0.30); }); bassHit(sfxG, t + 0.27, 65, 0.5, 0.30); },
       sparkle(){ if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sine', 1568, 0, 0.003, 0.05, 0.12); tone(sfxG, t + 0.05, 'sine', 2093, 0, 0.003, 0.045, 0.14); },
+      // RS-#048: a distinct low double-tick for a braced/lunging guard — an audio tell to match
+      // the visual one, so the warning reads even with sound as the only channel a player notices.
+      brace()  { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'square', 180, 0, 0.002, 0.05, 0.10); tone(sfxG, t + 0.07, 'square', 140, 0, 0.002, 0.06, 0.10); },
       death()  { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sawtooth', 220, 45, 0.01, 0.12, 0.70); noiseSweep(sfxG, t, 1800, 220, 1.2, 0.02, 0.10, 0.50); bassHit(sfxG, t + 0.05, 48, 0.6, 0.40); },
       slide()  { if (!ok()) return; noiseSweep(sfxG, ac.currentTime, 700, 380, 1.0, 0.03, 0.07, 0.30); },
       bird()   { if (!ok()) return; const t = ac.currentTime; for (let i = 0; i < 3; i++) noiseSweep(sfxG, t + i * 0.06, 1500, 2400, 2.5, 0.01, 0.04, 0.05); },
@@ -536,6 +551,7 @@
   // deterministic star field (twinkle is draw-side only)
   const stars = Array.from({length: 36}, (_, i) => ({ x: (i*97.3)%W, y: ((i*61.7)%86)+4, tw: (i*37)%100 }));
   let drawT = 0; // visual-only clock (advances every rendered frame, even on menus)
+  let shootStarT = 0; // RS-#050: occasional shooting star countdown, driven off drawT only
 
   // Device-adaptive prompts (CG §9: touch zones only on touch devices, key hints only on desktop)
   const isTouch = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
@@ -578,6 +594,7 @@
   let curD = 0;            // district the player is in right now
   let nextCaptainD = DISTRICT_LEN; // distance of the next district gate
   let bannerText = '', bannerT = 0;
+  let buffUsedMsg = '', buffUsedMsgT = 0; // RS-#045: confirms which run-start buff got spent
   function showBanner(text, frames) { bannerText = text; bannerT = frames; }
   const PTS_CAPTAIN = 1000;
   let captainK = 0;        // captains felled this run
@@ -634,7 +651,8 @@
 
   const MAX_SEGMENTS = 14; // spawn window ÷ min roof length can hit ~11 live segments — 10 exhausted the pool and punched holes in the world
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0,alley:false,dist:0,gapBefore:0}));
-  const MAX_GUARDS = 12;
+  const MAX_GUARDS = 15; // RS-#054: qa sweep peaked this at 11/12 across runs — one heavy formation
+  // beat away from the same silent-drop risk the brazier pool had; matching headroom fix.
   const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false,lunge:0,lungeT:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only); lunge = RS-#044 aggression (see strike())
   // feint wardens block behind a raised shield (read: wait for the opening);
   // archers hold far roofs and fire deflectable arrows (read: timed strike, or slide/leap)
@@ -643,7 +661,8 @@
   function shieldUp(g) { return g.feint && (g.shT % 150) < 60; }
   const MAX_ARROWS = 4;
   const arrows = Array.from({length: MAX_ARROWS}, () => ({active:false,x:0,y:0,vx:0}));
-  const MAX_BRAZIERS = 6; // dark braziers: strike to rekindle — the strike verb used on the world
+  const MAX_BRAZIERS = 9; // RS-#051: qa sweep flagged the old cap of 6 sitting at peak (6/6) during
+  // long endless runs — spawns could silently drop once the pool was exhausted; headroom now.
   const braziers = Array.from({length: MAX_BRAZIERS}, () => ({active:false,lit:false,x:0,y:0}));
   const MAX_FEATHERS = 14;
   const featherList = Array.from({length: MAX_FEATHERS}, () => ({active:false,taken:false,x:0,y:0,bob:0,fancy:false})); // fancy = rare top-hat mote, +100 instead of +50
@@ -667,7 +686,7 @@
   // ---------- Player ----------
   const player = {
     x: 80, y: GROUND_Y, w: 18, h: 28,
-    vy: 0, onGround: true,
+    vy: 0, onGround: true, minAirY: GROUND_Y, // RS-#049: tracks apex height for fall-scaled landing dust
     coyoteT: 0, jumpBufT: 0, jumpHeld: false,
     sliding: false, slideT: 0,
     strikeFlash: 0,
@@ -1083,7 +1102,7 @@
         player.strikeFlash = 8;
         spawnMessage(nearest.x, nearest.y - 40, 'BRACED!', 26);
         spawnBurst(nearest.x, nearest.y - 16, 5, '#8fb4d8');
-        Snd.swing();
+        Snd.brace();
         return;
       }
       // Lunge-dash: blink through the target — turns each kill into forward momentum
@@ -1141,8 +1160,10 @@
   // Pause (CG QA checks this): P or ⏸ pauses; resume runs a 3-2-1 countdown so re-entry is fair.
   // Auto-pauses when the tab is hidden. SDK gameplayStart/Stop bracket the pause per CG guidelines.
   let resumeMs = 0, deathAtT = 0;
-  function pauseGame() { if (state !== 'playing') return; state = 'paused'; CG.gameplayStop(); }
-  function resumeGame() { if (state !== 'paused') return; state = 'resuming'; resumeMs = 2400; }
+  // RS-#053: pause now ducks the mix the same way an ad does — it was odd for the score
+  // sequencer to keep playing at full volume while the game itself was frozen.
+  function pauseGame() { if (state !== 'playing') return; state = 'paused'; CG.gameplayStop(); try{ Snd.duck(true); }catch(e){} }
+  function resumeGame() { if (state !== 'paused') return; state = 'resuming'; resumeMs = 2400; try{ Snd.duck(false); }catch(e){} }
   function togglePause() { if (state === 'playing') pauseGame(); else if (state === 'paused') resumeGame(); }
   document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 
@@ -1238,12 +1259,18 @@
     // world spawns so district population and captain gates line up with the starting distance.
     // The Daily Trial ignores both: everyone runs the identical route.
     // consume the equipped buff (banked inventory; the Daily Trial allows none — same night for everyone)
-    runBuff = ''; wardUsed = false;
+    runBuff = ''; wardUsed = false; buffUsedMsgT = 0;
     if (mode !== 'daily' && save.buffEq && (save.buffs[save.buffEq] || 0) > 0) {
       runBuff = save.buffEq;
-      save.buffs[runBuff]--;
-      if (save.buffs[runBuff] <= 0) save.buffEq = '';
+      const usedName = (BUFFS.find(b => b.k === runBuff) || {}).n || runBuff;
+      const left = save.buffs[runBuff] - 1;
+      save.buffs[runBuff] = left;
+      if (left <= 0) save.buffEq = '';
       saveNow();
+      // RS-#045: the buff silently vanished from inventory before — now it says what got spent
+      // and what's left, so a run-ending mistake doesn't read as "where did that go?"
+      buffUsedMsg = usedName.toUpperCase() + ' USED' + (left > 0 ? ' — ' + left + ' LEFT' : ' — LAST ONE');
+      buffUsedMsgT = 200;
     }
     distanceSeed = mode === 'daily' ? 0
       : (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + Math.min(save.wick, 2) * 50 // wick T3 is the revive, not more meters
@@ -1325,12 +1352,18 @@
       const justLanded = !player.onGround;
       player.onGround = true; player.coyoteT = COYOTE_FRAMES;
       if (justLanded) {
-        spawnBurst(player.x+player.w/2, player.y, 2, '#cfd6e6');
+        // RS-#049: landing dust now scales with how far the fall actually was — a short hop
+        // barely kicks up dust, a full-height leap earns a real puff (roadmap item, cosmetic only)
+        const fallH = Math.max(0, player.y - player.minAirY);
+        const n = Math.round(2 + Math.min(fallH / 12, 6));
+        spawnBurst(player.x+player.w/2, player.y, n, '#cfd6e6');
         Snd.land();
         if (player.jumpBufT > 0) doJump(); // buffered press fires the moment we touch down
       }
+      player.minAirY = player.y;
     } else {
       player.onGround = false;
+      player.minAirY = Math.min(player.minAirY, player.y);
       if (player.coyoteT > 0) player.coyoteT--;
       if (player.sliding) { player.sliding = false; player.slideT = 0; } // slid off the edge
     }
@@ -2046,15 +2079,24 @@
       ctx.moveTo(-4, -48+pu); ctx.lineTo(4, -40+pu);
       ctx.moveTo(4, -48+pu); ctx.lineTo(-4, -40+pu);
       ctx.stroke();
+    } else if (g.lunge === 1 && g.alive) {
+      // RS-#046: the brace/lunge tell used to be color-only (red flash) — invisible to
+      // colorblind players. Now it's also a different SHAPE (upward spike, not a diamond) and
+      // MOTION (an expanding ring that shrinks back down each flash cycle), so the read survives
+      // even with color stripped out.
+      const cyc = g.lungeT % 12, flashOn = cyc < 6;
+      const ringR = 5 + (6 - Math.abs(cyc - 6)) * 1.6;
+      ctx.strokeStyle = flashOn ? '#ff5a4a' : '#ffffff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, -44, ringR, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = flashOn ? '#ff5a4a' : '#ffffff';
+      ctx.beginPath(); ctx.moveTo(0, -54); ctx.lineTo(5, -40); ctx.lineTo(-5, -40); ctx.fill();
     } else if (g.alerted && g.alive) { // marker color = current timing window: gold FAR → orange MID → white PERFECT
       const w = strikeWindows();
       const dxNow = g.x - (player.x + player.w/2);
       const perfect = dxNow <= w.perfect, mid = !perfect && dxNow <= w.mid;
       const r = perfect ? 6 : mid ? 5 : 4;
       const pulse = 3 + Math.sin(player.runT*0.4)*1.5;
-      // RS-#044: a braced/lunging guard flashes red — the tell that this one already got a
-      // warning swing and is actively closing in, distinct from the normal gold/orange/white read.
-      ctx.fillStyle = g.lunge === 1 ? ((g.lungeT & 6) ? '#ff5a4a' : '#ffffff') : perfect ? '#ffffff' : mid ? '#f0a04a' : '#e8c878';
+      ctx.fillStyle = perfect ? '#ffffff' : mid ? '#f0a04a' : '#e8c878';
       ctx.beginPath(); ctx.moveTo(0,-44-r+pulse); ctx.lineTo(r,-44+pulse); ctx.lineTo(0,-44+r+pulse); ctx.lineTo(-r,-44+pulse); ctx.fill();
       if (perfect) { ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(0,-44+pulse,r+4,0,Math.PI*2); ctx.stroke(); }
     }
@@ -2211,6 +2253,16 @@
       ctx.fillRect(st.x, st.y, 1.4, 1.4);
     }
     ctx.globalAlpha = 1;
+    // RS-#050: occasional shooting star — cheap ambient delight (roadmap item). Deterministic on
+    // the visual-only drawT clock (never rnd()) so it can't perturb the seeded gameplay RNG stream
+    // that the fairness suite depends on.
+    if (shootStarT <= 0 && (drawT % 2600) === 0) shootStarT = 40;
+    if (shootStarT > 0) {
+      const st = 40 - shootStarT, sx0 = 40 + st * 9, sy0 = 20 + st * 3.6;
+      ctx.strokeStyle = 'rgba(245,231,200,' + Math.max(0, 1 - st/34) + ')'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(sx0 - 22, sy0 - 9); ctx.stroke();
+      shootStarT--;
+    }
     const moonCx = W - 148 - (camX*0.02)%20 + 55, moonCy = 8 + 55;
     ctx.drawImage(moonImg, moonCx - 55, moonCy - 55, 110, 110);
     // reactive moon (silly seasoning): a sleepy blink normally, wide-eyed startle on big moments
@@ -2297,6 +2349,14 @@
       ctx.shadowColor = 'rgba(255,190,110,0.8)'; ctx.shadowBlur = 14;
       ctx.fillText(bannerText, W/2, 62);
       ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    }
+    if (buffUsedMsgT > 0) { // RS-#045: small, separate line so it never collides with the district/mode banner
+      buffUsedMsgT--;
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = Math.min(1, buffUsedMsgT / 30, (200 - buffUsedMsgT) / 12 + 0.2);
+      ctx.font = '12px Georgia'; ctx.fillStyle = '#cfe8c8';
+      ctx.fillText(buffUsedMsg, W/2, 80);
+      ctx.globalAlpha = 1;
     }
     if (state === 'boon') { // 1-of-2 boon choice at the gate — JUMP left, STRIKE right
       ctx.fillStyle = 'rgba(8,6,14,0.62)'; ctx.fillRect(0, 0, W, H);

@@ -211,7 +211,7 @@ function runSweep({ label, seed, tier, mode, maxFrames }) {
   };
 }
 
-const POOL_MAX = { segments: 14, guards: 12, lowObs: 8, braziers: 6, arrows: 4 };
+const POOL_MAX = { segments: 14, guards: 15, lowObs: 8, braziers: 9, arrows: 4 };
 const SEEDS = [20260703, 2, 3, 6, 7];
 const results = [];
 
