@@ -1,7 +1,25 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-04, RS-#045..#054 CG-acceptance polish batch shipped): Next = MIKE'S
+> **⚡ RESUME HERE (2026-07-04, RS-#055..#063 second CG-acceptance batch shipped): Next = MIKE'S
 > FULL PLAYTEST, then B7 SHIP WAVE**
+>
+> **🛠️ RS-#055..#063 DONE 2026-07-04 (HEAD `2aae12d`) — second 12-item polish batch, fresh audit
+> explicitly excluding the prior batch:** two real bugs found and fixed — (1) a blanket
+> `preventDefault()` on every jump/action keydown was blocking Ctrl/Cmd+W and Ctrl+F, a direct
+> violation of the bible's explicit "no Ctrl/Cmd+W" requirement, now skipped when any modifier is
+> held; (2) moon parallax used a `%20` sawtooth that snapped 20px sideways every ~1000 world-units
+> on a long run — replaced with a bounded sine drift. Plus: favicon/meta description/OG tags/
+> mobile-home-screen meta cluster (there was none at all before); pause screen now shows a
+> goal-gradient rank nudge + daily streak + controls recap instead of just "PAUSED"; start-screen
+> controls line now mentions M/P (both worked, neither was discoverable); safe-area-inset-bottom
+> padding on touch controls (viewport-fit=cover reaches under the notch but nothing reserved that
+> space for the buttons); ad-revive/double buttons relabel honestly when adblocked (reward was
+> always honored, but the text implied an ad always plays); messages/particles/arrows pool
+> headroom (6→10, 80→120, 4→6) matching last round's guard/brazier fixes. Several audit findings
+> were verified STALE before touching anything (menu-world-behind-overlay, slide dust, pool
+> null-guards all already correct) — don't re-flag those without checking the code first. Verified:
+> parse-check clean, both suites green on default seed, re-ran seeds 2/3/6/7/11 with identical
+> results to pre-batch (confirms nothing gameplay-side moved).
 >
 > **🛠️ RS-#045..#054 DONE 2026-07-04 (HEAD `7decac0`) — 12-item polish batch, from a full
 > GAME_BIBLE.md audit + rs_playtest.js/rs_qa_sweep.js run across seeds:** buff-consumed
