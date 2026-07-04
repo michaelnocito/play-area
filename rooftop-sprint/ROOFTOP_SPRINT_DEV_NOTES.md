@@ -1,7 +1,20 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-04, RS-SILLY seasoning shipped on top of the QA-hardened build):
-> Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE**
+> **⚡ RESUME HERE (2026-07-04, RS-#042 feel-pass shipped on top of RS-SILLY): Next = MIKE'S
+> FULL PLAYTEST, then B7 SHIP WAVE**
+>
+> **🎛️ RS-#042 DONE 2026-07-04 (HEAD `3df1962`) — camera shake + pace tuning, from Mike
+> reporting shake felt like stutter:** shake was raw per-frame `(rnd()-0.5)*shake` jitter with
+> no ceiling and inconsistent overwrite-vs-`Math.max` across triggers — the hard per-frame
+> random snap (not the decay rate) was the actual stutter culprit. Replaced with `addShake()`
+> (max-not-overwrite, `SHAKE_CAP` 9, global `SHAKE_MULT` 0.6×), exponential decay, and an eased
+> `shakeX/shakeY` that lerps toward a new random target each step instead of teleporting to it.
+> Speed: added a 30m runway holding base speed before the climb starts, gentler ramp
+> coefficient, plateau trimmed 6.6→6.2 so top speed doesn't outrun strike-window readability.
+> Tried also widening `strikeWindows()` for more high-speed forgiveness — **reverted**: it
+> flipped the default-seed fairness suite to 2 elite gap deaths (bot AI keys off those same
+> windows for its jump/strike decision). Verified clean on the speed+shake-only version:
+> `rs_playtest.js` and `rs_qa_sweep.js` both green on default seed.
 >
 > **🎉 RS-SILLY DONE 2026-07-04 (HEAD `702d558`), 10 lighter-touch fun items — cosmetic only,
 > zero new hitboxes (Law 12: broad appeal, art-first, never pandering):** warden death quips
