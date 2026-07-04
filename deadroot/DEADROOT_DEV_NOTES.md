@@ -170,7 +170,57 @@ AudioContext is ready. Gain = 0 above 60% HP; rises linearly to 0.12 at 0 HP (se
 with 0.8s time constant for smooth interpolation). Stops on gameOver/victory via stopDrone().
 Silent when muted (gain target = 0). Recreates itself on next run via lazy init.
 
-## Backlog / next
-- Mike playtest pass on DR-#010 juice: hit-stop timing feel, drone audibility, edge pulse intensity.
-- Category C (do before submission): rewarded ad SECOND WIND hook, SDK verify, mobile QA,
-  corpse rot/Sweeper sanitize first-time tooltip.
+## DR-#011 — 30-improvement completeness pass / v1.1 (2026-07-03)
+v1.0 tagged in git at DR-#010 HEAD. DR-#011 is v1.1.
+
+### Feel & Juice
+- **Tower cooldown arc** — white reload arc on shooter towers (Spitter/Spore/Warden)
+- **Warden impact ring** — expanding yellow ring pulse on chain swing
+- **Wave-start flash** — 0.15s white screen flash when a wave begins (waveFlashT)
+- **Corpse tap ring** — expanding green ring + burst on corpse tap before menu opens
+- **Acid projectile trail** — 45% chance per frame of yellow-green trail particle on Spitter shots
+- **Tier-2 tower glow** — soft purple aura (pulsing alpha) behind evolved towers
+- **Enemy speed streaks** — Scavengers draw two ghost circles behind them along the flow vector
+- **Tension drone layer** — second oscillator (sine 110Hz) joins below 25% HP, fades to 0.05 gain
+
+### Gameplay / Depth
+- **Last enemy pulse** — red pulsing ring around the final enemy when spawn queue is empty
+- **Boss HP bar** — full-width labeled bar at bottom of screen during boss/butcher waves
+- **Enemy HP tint** — dark-red overlay tint builds as enemy HP falls below 50%
+- **Node link lines** — pulsing purple dashes from Node towers to all buffed towers in range
+- **Kill combo FRENZY** — 3+ kills in 1.5s shows "×N FRENZY!" popup (comboT/comboN)
+- **Ground death stains** — fading enemy-colored ellipses where kills happen (max 20, 5s lifetime)
+- **Sweeper interception** — killing a Sweeper mid-sanitize (chanT>0) gives +30 biomass + "INTERCEPTED!"
+- **Tower salvage** — tap an evolved (tier-1) tower: SALVAGE button returns 40% of tier-2 cost
+- **Big hit damage numbers** — floating yellow number popup on hits dealing ≥30 damage
+
+### Retention / Depth
+- **UNSCATHED bonus** — if Hive takes 0 damage in a wave: +3 DNA + "UNSCATHED" popup
+- **UNBROKEN streak** — noHitWaves counter; at 3+ consecutive no-damage waves: banner + note
+- **Kill milestone banners** — every 25 kills this run shows "N ELIMINATED" banner
+- **First-sweeper banner** — first Sweeper spawned shows "SWEEPERS SANITIZE CORPSES — KILL THEM"
+- **Prep screen lore** — LORE[] array of 12 flavor lines rotating slowly on prep screen bottom
+- **Boon card hover highlight** — card brightens + border thickens when pointer is over it
+- **Endless DNA ×1.2** — endless wave gains now Math.ceil(wn×1.2) instead of flat wn
+
+### Stats / Info
+- **Wave clear time** — seconds appended to wave-clear popup ("WAVE 5 REPELLED +5 DNA  12s")
+- **Kill counter HUD** — small ⚡N count below biomass number during play/prep
+- **Run stats on end screen** — kills / towers built / peak biomass shown above Mycelial Network
+- **Biomass spend popup** — "-X◈" popup on mutate and tier-2 evolve
+
+### Polish
+- **Hive throb acceleration** — hive pulses 7× faster when HP < 25% (from 2.2×)
+- **Enhanced title animation** — 22 animated root vein curves on the title screen
+- **Pointer tracking** — mousemove + touchmove update ptrX/ptrY for hover effects
+
+### New state variables added
+comboT, comboN, noHitWaves, waveStartHP, waveT, waveFlashT, stains[], rings[],
+killsThisRun, towersBuiltThisRun, peakBiomass, seenSweeper, ptrX, ptrY,
+droneNode2, droneGain2
+
+## Backlog / next (v1.1 → submission)
+- **Category C (before submission):** rewarded ad SECOND WIND hook, CG SDK verify,
+  mobile QA full playthrough on live URL, corpse rot timer / Sweeper sanitize tooltip.
+- Playtest pass on DR-#011: salvage balance (40% ok?), UNSCATHED frequency, combo feel,
+  boss bar positioning (check it doesn't overlap ability buttons), damage number spam threshold.
