@@ -1,7 +1,23 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-03, deep QA sweep done — ALL 30 gap-report items done + 3 real
-> bugs found/fixed): Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE**
+> **⚡ RESUME HERE (2026-07-04, RS-SILLY seasoning shipped on top of the QA-hardened build):
+> Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE**
+>
+> **🎉 RS-SILLY DONE 2026-07-04 (HEAD `702d558`), 10 lighter-touch fun items — cosmetic only,
+> zero new hitboxes (Law 12: broad appeal, art-first, never pandering):** warden death quips
+> (`WARDEN_QUIPS`, ~30% of kills) · Captain personality lines per stage (`CAPTAIN_QUIPS[0-2]`
+> for stagger/break/fell) · bowling-night STRIKE callout + cartoon-star burst on 3+ domino
+> chains · reactive moon (sleepy-blink idle → wide-eyed startle on PERFECT/domino-3+/captain
+> hits, `moonReactT`) · rare fancy top-hat mote (6% of pickups, +100 instead of +50, doubly
+> dapper) · rare party-hat warden variant (8%, own quip bank `SILLY_QUIPS`, same stats/hitbox)
+> · hype-announcer lines on PERFECT/domino/captain-felled (`HYPE_LINES`) · a fresh joke
+> one-liner under every tally (`TALLY_JOKES`, new `#tallyJoke` div) · rare cameo passerby
+> (`cameos` pool, MAX 2, purely decorative, one `CAMEO_LINES` reaction as you pass). Verified:
+> parse OK, fairness suite green on default seed, deep QA sweep (`rs_qa_sweep.js`) zero
+> violations across campaign/endless/daily. One seed (2) flipped to a gap-death FAIL purely
+> from the added cosmetic `rnd()` calls shifting the deterministic stream — confirmed via
+> `RS_DEBUG=1` the gap (78px) is well inside the speed-scaled clearable cap (129px), same
+> bot-timing-margin noise class documented in §6, not a new mechanic bug.
 >
 > **🔬 QA SWEEP DONE 2026-07-03 (HEAD `715290f`):** new `tools/rs_qa_sweep.js` — checks attack
 > timing + spacing beyond the fairness suite: guard/hazard-off-roof containment, formation
