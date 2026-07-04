@@ -1,4 +1,4 @@
-# HANDOFF — JADE FIST (2026-07-04, at JF-#034)
+# HANDOFF — JADE FIST (2026-07-04, at JF-#038)
 
 **YOU (the assistant reading this) ARE RECEIVING THE HANDOFF.** Mike pasted this to start a
 new chat. Do not re-summarize it back to him or write a new handoff — read it, load the
@@ -7,7 +7,7 @@ listed memories/docs, and start on the next task below.
 **What this is:** Jade Fist, a kung fu counter-brawler targeting CrazyGames acceptance.
 Single-file canvas + vanilla JS, no build step.
 Local: `C:\Users\Mike\Projects\GAMES\play-area\jade-fist\index.html` (public play-area monorepo).
-Live: https://michaelnocito.github.io/play-area/jade-fist/. Commits `JF-#NNN`; at **JF-#034**.
+Live: https://michaelnocito.github.io/play-area/jade-fist/. Commits `JF-#NNN`; at **JF-#038**.
 Read first: memory `project_jade_fist_state` + `reference_crazygames_requirements`, repo-root
 `GAME_BIBLE.md`, and `jade-fist/JADE_FIST_DEV_NOTES.md` (full design log) + `JADE_FIST_ROADMAP.md`.
 
@@ -49,10 +49,15 @@ Mike found it too easy before; validate any further changes with the bot.
   `drawImage` a crop to a temp canvas and `toDataURL('image/jpeg',...)`; decode + Read it.
   (Mike also just checks the live URL — see memory `feedback_no_local_preview_for_deployed_sites`.)
 
+**Since JF-#034 (all shipped):** JF-#035 menu legibility pass; JF-#036 first CG-guidelines
+audit (12 fixes); JF-#037 second audit (12 more, several were #036 regressions); JF-#038
+combat rebalance (counter-throw was OP — normal/fast/spear now take 2+ hits, the wide
+screen-clearing throw gated behind combo≥4/FINISH_AT) + roadmap/submission doc sync. All in
+JADE_FIST_DEV_NOTES.md. Bot suite 12/12 fair. Playtest tracker shows all-pass (historical).
+
 **Next work, in order (JADE_FIST_ROADMAP.md):**
-1. **Mike re-playtests** the silly/harder/cartoon build → notes become the **JF-#035 tuning pass**
-   (dials: mutter 14% / comedy-send 18% / yelp 12% rates, joke-scroll strengths, boss cleaver
-   cadence, difficulty numbers, dodge windows jump 32 / duck 26).
+1. **Mike full playtest** of the current build (post #035–#038: legibility + two compliance
+   audits + rebalance). Feedback rides the playtest tracker (game "jade-fist").
 2. **Manual QA** (JADE_FIST_SUBMISSION.md): 144Hz speed, mobile portrait/landscape, adblock-on
    load, rewarded-once, CG preview-environment SDK check.
 3. **Submit to CrazyGames**: cover from thumbnail.html, listing copy from the submission doc,

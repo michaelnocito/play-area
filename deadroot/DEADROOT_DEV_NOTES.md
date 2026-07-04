@@ -533,3 +533,18 @@ wardens to reliably answer normal mobs, keeping perimeter awareness on the playe
 - Verified in preview (?dev=1): DEV=true, sliders write CFG live (warden rate → 2.5),
   god/ranges toggle, +100 biomass works, no console errors. Screenshot tooling still times
   out on the canvas (known), verified functionally via eval.
+
+## Readability driver — why a graphics move is on the table (2026-07-04, playtest-tracker feedback)
+Three separate DR-#001 checklist fails all trace to ONE root Mike named directly: the 2D look
+makes enemies (and towers/ranges) too hard to identify.
+- "redo [zero-instructions test] after graphics upgrade. graphics are so basic right now we
+  can't identify the gaps"
+- "not easy to know what to do at first or what each tower does or its range"
+- "the lack of clarity in tower design and placement makes it hard to put towers together at
+  the right time"
+Gut rating 3/5. DR-#018's graphics overhaul added atmosphere but did NOT solve enemy/tower
+READABILITY. Mike is weighing a "same build, better graphics" rebuild (Godot or an easier
+web path) specifically to fix enemy identification. NOTE for whoever picks this up: readability
+is an art/silhouette/color problem, not inherently an engine problem — top-down 2D is usually
+the MOST readable for TD (Bloons/Kingdom Rush). Engine choice pending Mike's decision; see the
+engine handoff being drafted this session.
