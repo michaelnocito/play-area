@@ -624,6 +624,14 @@ function spawnBoss(hp){
   });
 }
 
+// JF-#034: boss personalities — a taunt on the name-card, a jab when staggered,
+// and one silly signature. The Butcher hurls cleavers you DUCK/JUMP (reuses darts).
+const BOSS_FLAVOR = {
+  'THE IRON MASTER': { taunt: 'Show me the school still teaches something.', jab: 'Hmph. Lucky.' },
+  'THE BUTCHER':     { taunt: 'Fresh cuts today! Hah!', jab: 'You dented my cleaver!', cleaver: true },
+  'THE ABBOT':       { taunt: 'Violence solves nothing. Observe.', jab: 'Inner peace… interrupted.' },
+  'THE JADE THIEF':  { taunt: 'Pbbbt! Too slow, monk.', jab: 'Okay okay — rude!' }
+};
 // wave lifecycle
 function beginWave(n){
   wave = n; wavePhase = 0;
@@ -634,7 +642,10 @@ function beginWave(n){
   if (bossWave){
     toSpawn = 0;
     spawnBoss(D.bossHp + Math.floor(wave / WAVES_PER_DISTRICT) - 1);  // +1 hp per extra cycle (Legend)
+    const bz = enemies[enemies.length - 1];
+    bz.flavor = BOSS_FLAVOR[D.boss]; bz.throwCd = 220;   // JF-#034: personality + cleaver cadence
     banner(D.boss, '#e86a6a', 140);
+    if (bz.flavor) popup(W/2, 210, '“' + bz.flavor.taunt + '”', '#e8b06a', true);   // taunt on entry
     Snd.windup(60);
   } else {
     toSpawn = 5 + wave * 2;
@@ -769,6 +780,7 @@ function strike(dir){
     counters++; jadeRun += 3; combo++; comboT = CW;
     score += 1000;
     popup(e.x, e.y - 110, 'MASTER STAGGERED +1000', '#7ce8a8', true);
+    if (e.flavor) popup(e.x, e.y - 140, '“' + e.flavor.jab + '”', '#e8b06a');   // JF-#034: boss grumbles
     Snd.counter(); hitStop = 8; shake = 14; slowMo = 30;
     burst(e.x, e.y - 50, '#e86a6a', 26, 6);
     banner('HE CALLS HIS STUDENTS', '#e8b06a', 80);
@@ -1194,6 +1206,17 @@ function update(){
 
   for (const e of enemies){
     e.stT += dt;
+    // JF-#034: THE BUTCHER lobs a cleaver from range — a high or low throw you
+    // duck/jump like a spearman's (reuses the dart system, boss keeps fighting).
+    if (e.type === T_BOSS && e.flavor && e.flavor.cleaver && e.st !== E_DOWN && e.st !== E_THROWN){
+      e.throwCd -= dt;
+      if (e.throwCd <= 0 && Math.abs(e.x - P.x) > 150){
+        const dir = Math.sign(P.x - e.x) || 1, high = Math.random() < 0.5;
+        darts.push({ x: e.x + dir * 24, vx: dir * 8, high, y0: high ? P.y - 78 : P.y - 20, life: 120, cleaver: true });
+        popup(e.x, e.y - 150, high ? 'HIGH!' : 'LOW!', high ? '#f0b24a' : '#5fd0e0');
+        Snd.hurt(); e.throwCd = 200 + Math.random() * 90;
+      }
+    }
     switch (e.st){
       case E_WALK: {
         const d = Math.abs(e.x - P.x);
@@ -1723,13 +1746,22 @@ function draw(){
     const dir = Math.sign(d.vx) || 1, tip = d.x + dir * 22, tc = d.high ? '#f0b24a' : '#5fd0e0';
     cx.strokeStyle = 'rgba(200,190,170,0.3)'; cx.lineWidth = 2;   // motion streak
     cx.beginPath(); cx.moveTo(d.x - dir * 26, d.y0); cx.lineTo(d.x, d.y0); cx.stroke();
-    cx.strokeStyle = OUT; cx.lineWidth = 6; cx.lineCap = 'round';
-    cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
-    cx.strokeStyle = '#a8906a'; cx.lineWidth = 3;
-    cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
-    cx.fillStyle = tc;
-    cx.beginPath(); cx.moveTo(tip, d.y0 - 5); cx.lineTo(tip + dir * 12, d.y0); cx.lineTo(tip, d.y0 + 5); cx.closePath(); cx.fill();
-    cx.strokeStyle = OUT; cx.lineWidth = 1.5; cx.stroke();
+    if (d.cleaver){                    // JF-#034: the Butcher's spinning cleaver
+      cx.save(); cx.translate(d.x, d.y0); cx.rotate(d.spin || 0);
+      cx.fillStyle = '#cdd4dc'; cx.strokeStyle = OUT; cx.lineWidth = 2;
+      cx.beginPath(); cx.rect(-9, -8, 18, 13); cx.fill(); cx.stroke();
+      cx.strokeStyle = OUT; cx.lineWidth = 4; cx.beginPath(); cx.moveTo(9, 5); cx.lineTo(16, 9); cx.stroke();
+      cx.strokeStyle = tc; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(-9, 6); cx.lineTo(9, 6); cx.stroke();
+      cx.restore();
+    } else {                           // spearman's thrown spear
+      cx.strokeStyle = OUT; cx.lineWidth = 6; cx.lineCap = 'round';
+      cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
+      cx.strokeStyle = '#a8906a'; cx.lineWidth = 3;
+      cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
+      cx.fillStyle = tc;
+      cx.beginPath(); cx.moveTo(tip, d.y0 - 5); cx.lineTo(tip + dir * 12, d.y0); cx.lineTo(tip, d.y0 + 5); cx.closePath(); cx.fill();
+      cx.strokeStyle = OUT; cx.lineWidth = 1.5; cx.stroke();
+    }
   }
 
   // player
