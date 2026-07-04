@@ -98,3 +98,23 @@ Asset source = **ready-made packs** (prefer pre-rendered-2D-sprite packs so no B
 **Mike does zero art and won't learn 3D tools** — Claude picks/proposes packs, does all
 integration and any rendering scripting. NOT AI-generated (Flipline was rejected as an "AI
 game"). First action in the new chat = propose 2-3 candidate packs for deadroot for Mike to pick.
+
+## Sprite pack decision (2026-07-04, after research)
+Ready-made 2D sprite packs that are BOTH genuinely 3D-pre-rendered AND have a full 4-tier
+enemy roster (weak/mid/tanky/boss) with a clean commercial license turned out to be rare.
+**Two-phase plan Mike chose:**
+- **Phase 1 (prototype, now):** SmallScaleInt "HD 8-Directional Top-Down Zombie Pack"
+  (itch.io: smallscaleint.itch.io/hd-8-directional-top-down-zombie-pack, ~$15-30). 35+ character
+  variants incl. tanky "Hulk"/radiated/cop/soldier types, 15 anims x 8 directions. Render
+  method (3D vs pixel art) wasn't fully confirmed in research — verify by eye once purchased.
+  Mike buys, drops files in `deadroot/assets/raw/`, Claude wires the vertical slice (scav enemy
+  first, behind a flag) to prove the pipeline cheaply before spending more.
+- **Phase 2 (once deadroot is tight/polished):** Synty POLYGON City Zombies pack
+  (syntystore.com/products/polygon-city-zombies-pack, $49.99) — 50 distinct character types,
+  much stronger variety/quality, clean one-time commercial license. Sold as 3D FBX models only
+  (no sprite-sheet deliverable exists), so this requires Claude to script headless Blender
+  rendering (the fallback pipeline step already documented above). Mike never touches Blender.
+- Rejected: Kenney (vector, not 3D), CraftPix/GameDeveloperStudio zombie packs (vector/Spriter,
+  not 3D despite topdown-zombie branding), monogon's itch pack (real 3D/voxel but only 3
+  characters, no anim, props-only), RetroStyle SWAT vs Zombies (real 3D-rendered, only 3 chars,
+  Discord-gated license with no stated commercial terms — too risky to build on).
