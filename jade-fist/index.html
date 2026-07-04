@@ -487,7 +487,12 @@ const SCROLLS = [
   { k: 'ox',     name: 'OX SCROLL',      desc: '+1 heart, now and for this run' },
   { k: 'serpent',name: 'SERPENT SCROLL', desc: 'combos linger far longer' },
   { k: 'dragon', name: 'DRAGON SCROLL',  desc: 'jade ×1.5 at the tally' },
-  { k: 'monkey', name: 'MONKEY SCROLL',  desc: 'whiffs recover twice as fast' }
+  { k: 'monkey', name: 'MONKEY SCROLL',  desc: 'whiffs recover twice as fast' },
+  // JF-#032: joke scrolls — silly, all player-favourable, opt-in per run
+  { k: 'grease',  name: 'GREASE SCROLL',  desc: 'everyone you hit slides WAY too far' },
+  { k: 'drunken', name: 'DRUNKEN SCROLL', desc: 'you sway like a noodle — but read counters easier' },
+  { k: 'bighead', name: 'BIG-HEAD SCROLL',desc: 'everybody gets a comically huge head' },
+  { k: 'tiny',    name: 'TINY-FISTS SCROLL', desc: 'itty-bitty arms, absurd knockback' }
 ];
 let run = {};                         // run-scoped scroll flags (k: 1)
 let scrollOffer = null;               // {a, b} SCROLLS indices while choosing
@@ -510,8 +515,10 @@ function pickScroll(i){
   burst(P.x, P.y - 55, '#e8c76a', 20, 4);
   Snd.best();
 }
-// effective perfect-counter threshold: CRANE opens the window earlier
-function perfTh(){ return run.crane ? Math.min(omen.perfTh, 0.55) : omen.perfTh; }
+// effective perfect-counter threshold: CRANE (and tipsy DRUNKEN) open it earlier
+function perfTh(){ let th = omen.perfTh; if (run.crane) th = Math.min(th, 0.55); if (run.drunken) th = Math.min(th, 0.5); return th; }
+// JF-#032: GREASE / TINY-FISTS pump every knockback velocity
+function slip(v){ return v * (run.grease ? 1.9 : 1) * (run.tiny ? 1.6 : 1); }
 let jadeRun = 0, windAvail = false;   // jade earned this run; Second Wind charge
 let dailyBonus = false;               // first fight of the day = double jade
 let promoted = -1;                    // belt reached mid-run (-1 = none)
@@ -777,7 +784,7 @@ function strike(dir){
     e.sendX0 = e.x;                    // JF-#030: launch point, for the longest-yeet stat
     // JF-#010: DRAGON SWEEP — perfect throws fly farther and pierce deeper
     const sweep = hasTech(0);
-    e.vx = dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1);   // JF-#025: TIGER
+    e.vx = slip(dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1));   // JF-#025 TIGER, JF-#032 slip
     e.vy = perfect ? -8 : -7;
     // JF-#020: ~1 in 6 perfect counters is a comedy send — twice the arc, wild spin
     if (perfect && e.type !== T_BOSS && Math.random() < 0.18){
@@ -1236,7 +1243,7 @@ function update(){
         if (e.stT >= (e.type === T_SPEAR ? 44 : 30)){ e.st = E_WALK; e.stT = 0; }
         break;
       case E_STAGGER:
-        e.x += e.vx * dt; e.vx *= 0.86;
+        e.x += e.vx * dt; e.vx *= run.grease ? 0.95 : 0.86;   // JF-#032: GREASE = long comic slide
         // a shoved body stumbles whoever it slides into
         if (!e.chained && Math.abs(e.vx) > 1.5){
           for (const o of enemies){
@@ -1355,6 +1362,9 @@ function fighter(x, y, face, opts){
   // sash
   cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 5;
   cx.beginPath(); cx.moveTo(-12, -44); cx.quadraticCurveTo(0, -40, 12, -48); cx.stroke();
+  // head + face group — JF-#032: BIG-HEAD scroll inflates it around the neck
+  cx.save();
+  if (run.bighead){ cx.translate(0, -70); cx.scale(1.65, 1.65); cx.translate(0, 70); }
   // head: BIG (cartoon proportion), outlined
   cx.fillStyle = c;
   cx.beginPath(); cx.arc(0, -84, 15, 0, 7); cx.fill();
@@ -1386,6 +1396,7 @@ function fighter(x, y, face, opts){
       cx.beginPath(); cx.moveTo(0.5, -90.5); cx.lineTo(8, -87.5); cx.moveTo(15.5, -90.5); cx.lineTo(9, -87.5); cx.stroke();
     }
   }
+  cx.restore();   // JF-#032: end big-head group
   // arms: chunky, with round fists; lead arm extends on punch
   const arm = (x1, y1, x2, y2) => {
     cx.strokeStyle = OUT; cx.lineWidth = 9;
@@ -1396,7 +1407,8 @@ function fighter(x, y, face, opts){
     cx.beginPath(); cx.arc(x2, y2, 6, 0, 7); cx.fill();
     cx.strokeStyle = OUT; cx.lineWidth = 2.5; cx.stroke();
   };
-  const ext = punch > 0 ? 34 + punch * 3 : 15;
+  let ext = punch > 0 ? 34 + punch * 3 : 15;
+  if (run.tiny) ext *= 0.5;             // JF-#032: TINY-FISTS — itty-bitty arms
   if (pose === 'duck'){                 // arms tuck in tight to the crouch
     arm(-8, -58, -15, -46);
     arm(8, -58, 8 + ext * 0.8, -52 - (punch > 0 ? 2 : -4));
@@ -1704,7 +1716,7 @@ function draw(){
   cx.ellipse(P.x, GROUND_Y + 4, (pPose === 'duck' ? 34 : 22) * (1 - airFrac * 0.4), 6 * (1 - airFrac * 0.5), 0, 0, 7);
   cx.fill();
   fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
-    punch: P.punchT, pose: pPose,
+    punch: P.punchT, pose: pPose, rot: run.drunken ? Math.sin(t * 0.14) * 0.1 : 0,   // JF-#032: DRUNKEN sway
     eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
   // particles
