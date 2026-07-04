@@ -635,7 +635,7 @@
   const MAX_SEGMENTS = 14; // spawn window ÷ min roof length can hit ~11 live segments — 10 exhausted the pool and punched holes in the world
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0,alley:false,dist:0,gapBefore:0}));
   const MAX_GUARDS = 12;
-  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only)
+  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false,lunge:0,lungeT:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only); lunge = RS-#044 aggression (see strike())
   // feint wardens block behind a raised shield (read: wait for the opening);
   // archers hold far roofs and fire deflectable arrows (read: timed strike, or slide/leap)
   // Shield up 60 / open 90 of a 150-frame cycle: in an auto-runner you can't stop and wait, so
@@ -811,7 +811,7 @@
         cslot.patrolDir=-1; cslot.patrolMin=capX-1; cslot.patrolMax=capX+1;
         cslot.alerted=false; cslot.deathT=0; cslot.fly=0; cslot.vx=0; cslot.vy=0; cslot.spin=0; cslot.chain=0; cslot.stunT=0;
         cslot.cap=true; cslot.hp=3; cslot.capD=Math.round(nextCaptainD / DISTRICT_LEN) - 1;
-        cslot.feint=false; cslot.archer=false; cslot.shT=0; cslot.bowT=0; cslot.silly=false;
+        cslot.feint=false; cslot.archer=false; cslot.shT=0; cslot.bowT=0; cslot.silly=false; cslot.lunge=0; cslot.lungeT=0;
         nextCaptainD += DISTRICT_LEN;
         placedCap = true;
       }
@@ -829,6 +829,7 @@
         gslot.patrolDir = rnd()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
         gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1; gslot.stunT=0;
+        gslot.lunge=0; gslot.lungeT=0;
         gslot.silly = rnd() < 0.08; // rare party-hat warden — cosmetic only, same stats/hitbox
         // enemy variants (Law 7: new reads, same buttons) — feints from district 2, archers from 3;
         // anti-streak keeps three of the same read from landing back to back (falls back to a
@@ -860,7 +861,7 @@
             if (!g2) break;
             Object.assign(g2, { active:true, alive:true, x:lx, y, patrolDir:gslot.patrolDir,
               patrolMin:lx, patrolMax:lx, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
-              cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0, silly:rnd()<0.08 });
+              cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0, silly:rnd()<0.08, lunge:0, lungeT:0 });
             prevX = lx;
           }
           if (prevX > gx) { gslot.patrolMin = gx; gslot.patrolMax = gx; } // leader holds its post too
@@ -1067,20 +1068,35 @@
       return;
     }
     if (nearest) {
+      // Timing tiers by how close you let them get (closer = riskier = bigger payoff)
+      const w = strikeWindows();
+      const tierDx = nearest.x - (player.x + player.w/2); // range at the moment of the press, BEFORE any lunge-dash
+      // RS-#044 difficulty rework: a FAR-range press used to be an unconditional free kill —
+      // mashing the button the instant a guard came into view was strictly safe, no different
+      // from timing a real strike. Now the first FAR-range swing only lands a warning graze:
+      // the guard surges at the player instead of dying, and only a genuine follow-up (which
+      // naturally lands as MID/PERFECT once the guard has closed in) finishes it. Standing on
+      // the button no longer substitutes for actually watching the encounter.
+      if (tierDx > w.mid && nearest.lunge !== 1) {
+        nearest.lunge = 1; nearest.lungeT = 26;
+        strikeCd = 6;
+        player.strikeFlash = 8;
+        spawnMessage(nearest.x, nearest.y - 40, 'BRACED!', 26);
+        spawnBurst(nearest.x, nearest.y - 16, 5, '#8fb4d8');
+        Snd.swing();
+        return;
+      }
       // Lunge-dash: blink through the target — turns each kill into forward momentum
       const trailFrom = player.x;
       player.x = Math.max(player.x, nearest.x - player.w/2 + 8);
       for (let tx = trailFrom; tx < player.x; tx += 9) spawnParticle(tx, player.y - 14, -0.5, 0, 10, '#e8c878');
       graceT = 12; strikeCd = 6; // tiny recovery beat — mashing the button back-to-back isn't perfectly free, but formation chains still clear
-      nearest.alive = false; nearest.deathT = 1;
+      nearest.alive = false; nearest.deathT = 1; nearest.lunge = 0;
       feathers += 1;
       spawnStream(nearest.x, nearest.y - 40, 6); // the warden's lamp-light streams into yours
       // warden chatter (silly seasoning): guaranteed for the rare party-hat variant, occasional otherwise
       if (nearest.silly) spawnMessage(nearest.x, nearest.y-68, SILLY_QUIPS[(rnd()*SILLY_QUIPS.length)|0], 34);
       else if (rnd() < 0.3) spawnMessage(nearest.x, nearest.y-68, WARDEN_QUIPS[(rnd()*WARDEN_QUIPS.length)|0], 30);
-      // Timing tiers by how close you let them get (closer = riskier = bigger payoff)
-      const w = strikeWindows();
-      const tierDx = nearest.x - (trailFrom + player.w/2); // range at the moment of the press (pre-lunge)
       if (tierDx <= w.perfect) {          // PERFECT — staff shot: guard rockets across the screen, dominoes others
         nearest.fly = 2; nearest.vx = 16; nearest.vy = -1.2; nearest.spin = 0.5;
         nearest.chain = 1; // domino chain starts here — each FELLED body escalates it
@@ -1368,6 +1384,14 @@
       if (g.stunT > 0) { // stunned wardens stand dazed — free pass or free kill
         g.stunT--;
         if ((g.stunT & 7) === 0) spawnParticle(g.x, g.y - 40, (rnd()-0.5)*0.8, -0.5, 10, '#ffffff');
+      } else if (g.lunge === 1) {
+        // RS-#044: braced after an early swing — surges toward the player instead of patrolling.
+        // Closes fast enough to matter but stays inside a jumpable/strikeable reaction window;
+        // expires back to a normal patrol read if it never actually reaches the player.
+        g.x -= 1.6;
+        g.lungeT--;
+        if ((g.lungeT & 3) === 0) spawnParticle(g.x + 8, g.y - 20, 0.4, -0.3, 8, '#8fb4d8');
+        if (g.lungeT <= 0) g.lunge = 0;
       } else {
         g.x += g.patrolDir * 0.55;
         if (g.x < g.patrolMin || g.x > g.patrolMax) g.patrolDir *= -1;
@@ -2028,7 +2052,9 @@
       const perfect = dxNow <= w.perfect, mid = !perfect && dxNow <= w.mid;
       const r = perfect ? 6 : mid ? 5 : 4;
       const pulse = 3 + Math.sin(player.runT*0.4)*1.5;
-      ctx.fillStyle = perfect ? '#ffffff' : mid ? '#f0a04a' : '#e8c878';
+      // RS-#044: a braced/lunging guard flashes red — the tell that this one already got a
+      // warning swing and is actively closing in, distinct from the normal gold/orange/white read.
+      ctx.fillStyle = g.lunge === 1 ? ((g.lungeT & 6) ? '#ff5a4a' : '#ffffff') : perfect ? '#ffffff' : mid ? '#f0a04a' : '#e8c878';
       ctx.beginPath(); ctx.moveTo(0,-44-r+pulse); ctx.lineTo(r,-44+pulse); ctx.lineTo(0,-44+r+pulse); ctx.lineTo(-r,-44+pulse); ctx.fill();
       if (perfect) { ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(0,-44+pulse,r+4,0,Math.PI*2); ctx.stroke(); }
     }
