@@ -598,7 +598,7 @@
   }
 
   const MAX_SEGMENTS = 14; // spawn window ÷ min roof length can hit ~11 live segments — 10 exhausted the pool and punched holes in the world
-  const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0}));
+  const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0,alley:false,dist:0,gapBefore:0}));
   const MAX_GUARDS = 12;
   const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit)
   // feint wardens block behind a raised shield (read: wait for the opening);
@@ -667,6 +667,15 @@
   let lastGapEndX = 0;        // landing edge of the most recent gap — hazards must sit beyond any jump-arc landing
   let winAt = -1;             // beacon lit → short breath → ending screen
   let lastSegHadGap = false;  // anti-streak: one roof of recovery between gaps, always
+  // Anti-streak on formation RNG (Law 6: no 3 identical challenges in a row) — tracks the last
+  // two placed hazard kinds and enemy-variant kinds; a third repeat is rerolled once.
+  let lastHazKinds = [], lastEnemyKinds = [];
+  function pickVaried(roll, n, history) {
+    let k = Math.floor(roll * n);
+    if (history.length === 2 && history[0] === history[1] && history[0] === k) k = (k + 1 + Math.floor(roll * (n - 1))) % n;
+    history.push(k); if (history.length > 2) history.shift();
+    return k;
+  }
   function distAtX(x) { return distanceSeed + (x - 80) / 10; } // world-x → run distance (m)
 
   function resetWorld() {
@@ -690,6 +699,7 @@
     player.onGround = true; player.coyoteT = 0; player.jumpBufT = 0; player.jumpHeld = false;
     player.sliding = false; player.slideT = 0; player.dead = false; player.strikeFlash=0;
     nextSpawnX = 0; lastRoofHadLow = false; lastGapEndX = 0; lastSegHadGap = false;
+    lastHazKinds = []; lastEnemyKinds = [];
     spawnSegment(true);
   }
 
@@ -722,6 +732,11 @@
     if (!slot) return false; // pool exhausted — NEVER advance nextSpawnX past a roof that doesn't exist
     slot.active=true; slot.x1=x1; slot.x2=x2; slot.y=y;
     if (gap > 0) lastGapEndX = x1;
+    slot.dist = distAtX(x1 + len / 2); // stamped for draw-time per-district color/landmark lookups
+    slot.alley = false; // set true below once lanternAlley is known
+    // rope-bridge dressing (visual only — same jump, same hitbox): a wide gap reads as a
+    // crossable structure instead of an empty void. Widest gaps only, so it stays a rare sight.
+    slot.gapBefore = gap > 55 ? gap : 0;
 
     // District-driven population (Laws 2/6: rest → pressure → gate, not a monotone stream).
     // rest = relief stretch after every gate (long gentle intro in district 1);
@@ -731,7 +746,14 @@
     const dPos = ((dMid % DISTRICT_LEN) + DISTRICT_LEN) % DISTRICT_LEN;
     const restZone = dPos < (dI === 0 && mode === 'campaign' && distanceSeed < DISTRICT_LEN ? 150 : 40);
     const pressure = dPos > 110 && dPos < 190;
-    let guardP = DISTRICTS[dI].guardP * (pressure ? 1.5 : 1);
+    // Lantern Alley: the rest beat right after every gate gets its own identity — denser
+    // lanterns + pickups instead of just "fewer enemies" (Law 2: named milestones, not silence).
+    const lanternAlley = restZone && dPos > 5;
+    slot.alley = lanternAlley;
+    // Signature pre-gate beat: a guaranteed formation + a rekindled brazier right before the
+    // Captain's roof — the payoff spikes on approach instead of the gate arriving cold.
+    const showcase = dPos >= 195 && dPos < 235;
+    let guardP = DISTRICTS[dI].guardP * (pressure || showcase ? 1.5 : 1);
     let hazP = DISTRICTS[dI].hazP;
     if (boonFlags.quiet) guardP *= 0.65;                    // QUIET ROOFS boon
     if (modIdx === 1) guardP *= 1.4;                        // DOUBLE WATCH night
@@ -766,22 +788,36 @@
         gslot.patrolDir = rnd()<0.5?1:-1;
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
         gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1; gslot.stunT=0;
-        // enemy variants (Law 7: new reads, same buttons) — feints from district 2, archers from 3
+        // enemy variants (Law 7: new reads, same buttons) — feints from district 2, archers from 3;
+        // anti-streak keeps three of the same read from landing back to back (falls back to a
+        // plain guard rather than force a variant the district hasn't unlocked yet)
         const vRoll = rnd();
-        gslot.feint = dI >= 1 && vRoll < 0.14;
-        gslot.archer = !gslot.feint && dI >= 2 && vRoll >= 0.14 && vRoll < 0.28;
+        let vKind = dI >= 2 && vRoll < 0.28 ? (vRoll < 0.14 ? 1 : 2) : dI === 1 && vRoll < 0.14 ? 1 : 0; // 0 guard, 1 feint, 2 archer
+        if (vKind !== 0 && lastEnemyKinds.length === 2 && lastEnemyKinds[0] === vKind && lastEnemyKinds[1] === vKind) vKind = 0;
+        lastEnemyKinds.push(vKind); if (lastEnemyKinds.length > 2) lastEnemyKinds.shift();
+        gslot.feint = vKind === 1; gslot.archer = vKind === 2;
         gslot.shT = (rnd() * 150) | 0; gslot.bowT = 90;
         if (gslot.archer) { gslot.patrolMin = gslot.patrolMax = gx; gslot.patrolDir = -1; } // archers hold their spot, facing you
-        if (!gslot.archer && !gslot.feint && pressure && len > 150 && rnd() < 0.5) { // gauntlet pair — feeds domino jackpots
-          const g2 = guards.find(g => !g.active);
-          if (g2) {
-            Object.assign(g2, { active:true, alive:true, x:gx+34, y, patrolDir:gslot.patrolDir,
+        // gauntlet formation — feeds domino jackpots; showcase beat before a gate goes 3-wide.
+        // Clamp every extra body to x2-16 (the roof's own patrol bound) — an unclamped offset
+        // could place the 2nd/3rd guard past the roof edge, floating over the NEXT gap's airspace.
+        if (!gslot.archer && !gslot.feint && (pressure || showcase) && len > 150 && rnd() < (showcase ? 0.85 : 0.5)) {
+          const lineLen = showcase && len > 210 ? 3 : 2;
+          for (let li = 1; li < lineLen; li++) {
+            const lx = Math.min(gx + 34 * li, x2 - 16);
+            if (lx - gx < 20) break; // no room left on this roof — stop the line rather than stack guards
+            const g2 = guards.find(g => !g.active);
+            if (!g2) break;
+            Object.assign(g2, { active:true, alive:true, x:lx, y, patrolDir:gslot.patrolDir,
               patrolMin:x1+16, patrolMax:x2-16, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
               cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0 });
           }
         }
       }
-    } else if (!first && !placedCap && !restZone && gap === 0 && !lastRoofHadLow && len > 110 && occRoll < hazP) {
+    } else if (!first && !placedCap && !restZone && distance > 220 && gap === 0 && !lastRoofHadLow && len > 110 && occRoll < hazP) {
+      // Absolute floor (restored — the district rewrite briefly dropped it): no hazard within
+      // the first 220m of ANY fresh run, on top of the district-0 restZone. A checkpoint start
+      // mid-campaign already has distance > 220 trivially, so this only guards a true run 1 start.
       // gap === 0: a hazard on the far side of a forced gap-jump would catch the player
       // mid-arc where sliding is impossible — low hazards only appear on contiguous roofs
       const oslot = lowObs.find(o => !o.active);
@@ -790,13 +826,20 @@
       // A full-hold gap jump lands up to ~42 frames of travel past the gap edge (it can overfly
       // a short roof entirely) — the bar needs to clear that arc plus reaction+slide room.
       if (oslot && ox - lastGapEndX > 46 * (speed + 0.6)) {
-        oslot.active = true; oslot.kind = (rnd()*3)|0;
+        oslot.active = true;
+        oslot.kind = pickVaried(rnd(), 3, lastHazKinds); // anti-streak: never 3 identical hazards running
         oslot.w = ow; oslot.x = ox; oslot.y = y;
         placedLow = true;
       }
     }
+    // Signature pre-gate brazier: strike it on the way to the Captain — a small ready-beat, not
+    // a surprise (never on the Captain's own roof, never stealing the press from the formation).
+    if (!first && showcase && !placedCap && len > 120 && rnd() < 0.6) {
+      const bz = braziers.find(b => !b.active);
+      if (bz) { bz.active = true; bz.lit = false; bz.x = x1 + len * 0.2; bz.y = y; }
+    }
     lastRoofHadLow = placedLow;
-    if (!placedLow && rnd() < 0.5) { // no feathers on hazard roofs — a high feather would bait a jump into the band
+    if (!placedLow && rnd() < (lanternAlley ? 0.85 : 0.5)) { // no feathers on hazard roofs — a high feather would bait a jump into the band; the Alley is generous
       const fx = gap>0 ? lastX2+gap/2 : x1 + len*rnd();
       const fy = y - 36 - rnd()*30;
       const fslot = featherList.find(f => !f.active);
@@ -1711,12 +1754,28 @@
     drawSkylineLayer(camX, 0.18, 84, 40, 'rgba(26,17,40,0.85)', 0.12, GROUND_Y + 14);
     drawSkylineLayer(camX, 0.38, 62, 26, 'rgba(17,11,28,0.95)', 0.20, GROUND_Y + 26);
   }
+  // Per-district roof trim (Law 9/read-variety): a consistent style, a different accent per
+  // zone — the same read (gold edge = gap warning) stays legible everywhere.
+  const DISTRICT_TRIM = ['#c9913f', '#e0824a', '#5fae7a', '#8a6ad8', '#5f9ad8', '#e0524a'];
   function drawSegments(camX) {
     for (const s of segments) {
       if (!s.active) continue;
       const sx1=s.x1-camX, sx2=s.x2-camX;
-      if (sx2 < -30 || sx1 > W+30) continue;
+      if (sx2 < -60 || sx1 > W+60) continue;
       const wSeg = sx2 - sx1;
+      // rope bridge over the wide gap just behind this roof — sagging rope + slats, birds land on it
+      if (s.gapBefore > 0) {
+        const bx1 = sx1 - s.gapBefore, bx2 = sx1;
+        ctx.strokeStyle = '#4a3826'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(bx1, s.y - 2); ctx.quadraticCurveTo((bx1+bx2)/2, s.y + 10, bx2, s.y - 2); ctx.stroke();
+        ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(bx1, s.y + 4); ctx.quadraticCurveTo((bx1+bx2)/2, s.y + 15, bx2, s.y + 4); ctx.stroke();
+        for (let sx = bx1 + 6; sx < bx2 - 4; sx += 9) {
+          const sag = Math.sin(((sx - bx1) / s.gapBefore) * Math.PI) * 10;
+          ctx.fillStyle = '#3a2c20'; ctx.fillRect(sx - 2, s.y + sag - 1, 5, 3);
+        }
+      }
+      const dI = districtIdx(Math.max(0, s.dist));
       // building body below the roofline, with faint lit windows of its own
       ctx.fillStyle = '#3d2b47'; ctx.fillRect(sx1, s.y, wSeg, H - s.y + 30);
       // windows rekindle in the Lamplighter's wake: behind the player, more of them light
@@ -1736,15 +1795,68 @@
       ctx.fillStyle = 'rgba(0,0,0,0.22)';
       for (let tx = 10; tx < wSeg - 4; tx += 14) ctx.fillRect(sx1 + tx, s.y + 1, 1, 4);
       ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx1, s.y + 5, wSeg, 3);
-      // gold edge trim (gap warning stays)
-      ctx.fillStyle = '#c9913f'; ctx.fillRect(sx1, s.y, 4, 5); ctx.fillRect(sx2-4, s.y, 4, 5);
-      // lantern on some roofs (deterministic) — pole, flame, pooled warm glow
-      if (((s.x1 | 0) % 5) < 2 && wSeg > 70) {
-        const lx = sx1 + 14;
-        ctx.drawImage(glowImg, lx - 24, s.y - 40, 48, 48);
-        ctx.fillStyle = '#241a2e'; ctx.fillRect(lx - 1, s.y - 14, 2, 14);
-        ctx.fillStyle = '#ffbe6e'; ctx.fillRect(lx - 2.5, s.y - 19, 5, 6);
+      // edge trim tinted per district (gap-warning read stays identical, just a different accent)
+      ctx.fillStyle = DISTRICT_TRIM[dI]; ctx.fillRect(sx1, s.y, 4, 5); ctx.fillRect(sx2-4, s.y, 4, 5);
+      // lantern on some roofs — the Alley forces one on every roof (its whole identity is light)
+      if (s.alley || ((s.x1 | 0) % 5) < 2) {
+        if (wSeg > 70) {
+          const lx = sx1 + 14;
+          ctx.drawImage(glowImg, lx - 24, s.y - 40, 48, 48);
+          ctx.fillStyle = '#241a2e'; ctx.fillRect(lx - 1, s.y - 14, 2, 14);
+          ctx.fillStyle = '#ffbe6e'; ctx.fillRect(lx - 2.5, s.y - 19, 5, 6);
+        }
+        if (s.alley && wSeg > 150) { // second lantern near the far end — the Alley reads dense
+          const lx2 = sx2 - 20;
+          ctx.drawImage(glowImg, lx2 - 24, s.y - 40, 48, 48);
+          ctx.fillStyle = '#241a2e'; ctx.fillRect(lx2 - 1, s.y - 14, 2, 14);
+          ctx.fillStyle = '#ffbe6e'; ctx.fillRect(lx2 - 2.5, s.y - 19, 5, 6);
+        }
       }
+    }
+  }
+  // District landmark: one unique silhouette per zone, fixed at its district's midpoint so it
+  // scrolls into view on approach and passes overhead — "somewhere to go" made visible (Law 8/10).
+  const LANDMARK_X = DISTRICTS.map((d, i) => i * DISTRICT_LEN * 10 + DISTRICT_LEN * 5); // world-x, district center
+  function drawLandmark(i, lx, camX, glow) {
+    const sx = lx - camX;
+    if (sx < -140 || sx > W + 140) return;
+    const base = GROUND_Y + 20;
+    ctx.fillStyle = 'rgba(20,14,30,0.9)';
+    if (i === 0) { // THE OLD QUARTER — a leaning clocktower
+      ctx.save(); ctx.translate(sx, 0); ctx.rotate(0.03);
+      ctx.fillRect(-9, base - 150, 18, 150);
+      ctx.beginPath(); ctx.arc(0, base - 150, 13, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,210,140,0.5)'; ctx.beginPath(); ctx.arc(0, base - 150, 7, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    } else if (i === 1) { // LANTERN ROW — a market gate arch, hung with light
+      ctx.fillRect(sx - 55, base - 90, 12, 90); ctx.fillRect(sx + 43, base - 90, 12, 90);
+      ctx.beginPath(); ctx.arc(sx, base - 90, 55, Math.PI, 0); ctx.fill();
+      ctx.drawImage(glowImg, sx - 16, base - 100, 32, 32);
+    } else if (i === 2) { // THE MARKET SHAMBLES — a stack of stalls and awnings
+      for (let k = 0; k < 4; k++) { ctx.fillStyle = 'rgba(20,14,30,'+(0.9-k*0.05)+')'; ctx.fillRect(sx - 60 + k*30, base - 40 - k*22, 26, 40 + k*22); }
+    } else if (i === 3) { // TEMPLE STEPS — a tiered spire
+      for (let k = 0; k < 5; k++) { const w = 70 - k*13; ctx.fillRect(sx - w/2, base - 40 - k*32, w, 34); }
+      ctx.beginPath(); ctx.moveTo(sx - 12, base - 200); ctx.lineTo(sx, base - 232); ctx.lineTo(sx + 12, base - 200); ctx.fill();
+    } else if (i === 4) { // THE HIGH TERRACES — an aqueduct of arches
+      for (let k = -2; k <= 2; k++) {
+        ctx.fillRect(sx + k*38 - 8, base - 120, 16, 120);
+        ctx.beginPath(); ctx.arc(sx + k*38 + 19, base - 120, 19, Math.PI, 0); ctx.fill();
+      }
+    } else { // BEACON RISE — the Great Beacon itself, glowing brighter as the gate nears
+      ctx.fillRect(sx - 14, base - 210, 28, 210);
+      ctx.fillRect(sx - 24, base - 220, 48, 14);
+      const gr = 34 + glow * 40;
+      ctx.globalAlpha = 0.4 + glow * 0.6;
+      ctx.drawImage(glowImg, sx - gr/2, base - 232 - gr/2, gr, gr);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = glow > 0.3 ? '#ffe9b0' : '#3a3145'; ctx.fillRect(sx - 6, base - 236, 12, 12);
+    }
+  }
+  function drawLandmarks(camX) {
+    const lapBase = mode === 'campaign' ? 0 : Math.floor(Math.max(0, distance) / (DISTRICT_LEN * DISTRICTS.length)) * DISTRICT_LEN * DISTRICTS.length;
+    for (let i = 0; i < DISTRICTS.length; i++) {
+      const glow = i === DISTRICTS.length - 1 ? Math.max(0, Math.min(1, 1 - (nextCaptainD - distance) / DISTRICT_LEN)) : 0;
+      drawLandmark(i, lapBase + LANDMARK_X[i], camX, glow);
     }
   }
   function drawBird(b, camX) {
@@ -1978,6 +2090,7 @@
     if (shake > 0) { sx=(rnd()-0.5)*shake; sy=(rnd()-0.5)*shake; }
     ctx.save(); ctx.translate(sx, sy);
     drawSkyline(camX);
+    drawLandmarks(camX);
     drawSegments(camX);
     for (const bz of braziers) { // dark braziers wait for the Lamplighter; lit ones burn
       if (!bz.active) continue;
@@ -2012,6 +2125,18 @@
     // district mood tint (cheap palette shift; sky sprite stays shared)
     const tint = DISTRICTS[curD].tint;
     if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); }
+    // Dawn palette swap (second visual zone, Law: long-run freshness): every other full lap
+    // through the six districts in an endless mode, the night warms toward dawn — cheap, no
+    // second sprite sheet, just a warm overlay whose strength eases in over the lap.
+    if (mode !== 'campaign') {
+      const lapLen = DISTRICT_LEN * DISTRICTS.length;
+      const lapPos = ((distance % lapLen) + lapLen) % lapLen;
+      const lap = Math.floor(Math.max(0, distance) / lapLen);
+      if (lap % 2 === 1) {
+        const dawnA = Math.min(0.22, (lapPos / lapLen) * 0.3);
+        ctx.fillStyle = 'rgba(255,150,90,' + dawnA + ')'; ctx.fillRect(0, 0, W, H * 0.7);
+      }
+    }
     ctx.drawImage(vignImg, 0, 0, W, H);
     if (bannerT > 0) { // district / relit banner
       bannerT--;

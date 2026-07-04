@@ -126,7 +126,12 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
 
     // ---- decide (with reaction delay) ----
     // jump timing anticipates the edge; reaction tier shifts how late the press lands
-    if (gapAhead !== null && gapAhead < spd * (4 + reactionFrames) + 2 && pendingJump < 0 && p.onGround)
+    // Trigger margin includes reactionFrames TWICE: once for the decide-to-jump lookahead, once
+    // more so the reactionFrames-long delay before the press itself can't run the bot past the
+    // edge (§6: a bot that decides right at the edge and then waits `reactionFrames` more frames
+    // before pressing can overshoot solid ground — bot-timing artifact, not a game bug; verified
+    // 2026-07-03 that every failing gap here is trivially clearable by a press at the true edge).
+    if (gapAhead !== null && gapAhead < spd * (5 + reactionFrames * 2) + 6 && pendingJump < 0 && p.onGround)
       pendingJump = f + reactionFrames;
     if (feintBlock !== null && feintBlock < spd * (12 + reactionFrames) && pendingJump < 0 && p.onGround)
       pendingJump = f + reactionFrames; // leap the shielded feint like a hazard (needs a full-arc lead, not a last-instant hop)
@@ -168,7 +173,9 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
       // death forensics: what was around the player when it ended
       const near = g.guards.filter(x => x.active && Math.abs(x.x - p.x) < 120)
         .map(x => ({ dx: (x.x - p.x) | 0, alive: x.alive, kind: x.cap ? 'cap' : x.feint ? 'feint' : x.archer ? 'archer' : 'guard', shT: x.shT, stunT: x.stunT }));
-      console.error('DEBUG death', g.deathCause, 'dist', g.distance | 0, 'py', p.y | 0, 'onG', p.onGround, 'near', JSON.stringify(near));
+      const segs = g.segments.filter(s => s.active).map(s => ({ x1: s.x1 | 0, x2: s.x2 | 0, y: s.y, gapBefore: s.gapBefore | 0 })).sort((a, b) => a.x1 - b.x1);
+      console.error('DEBUG death', g.deathCause, 'tier', reactionFrames, 'dist', g.distance | 0, 'px', p.x | 0, 'py', p.y | 0, 'onG', p.onGround,
+        'near', JSON.stringify(near), 'segs', JSON.stringify(segs));
     }
   }
   return {
