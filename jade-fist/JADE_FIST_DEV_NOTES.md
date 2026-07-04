@@ -275,3 +275,23 @@ lane, and dismisses the S_END ending screen. Body-blocking itself is BY DESIGN.
   * FAIRNESS (?bot=3&react=12, 200ms): 11/12 wins (was 12/12 flawless), avg wave 4.8,
     14 hits total — 13 darts + 1 melee, 0% unreactable(fast), 7% pincer. One legit
     Rooftop w3 loss (spear district). Harder + still fair. PASS.
+
+## JF-#029 — dodge poses + full test battery (2026-07-03, Mike: jump/duck need work, duck unclear)
+- fighter() rebuilt with explicit POSE (not uniform squash which only read as "short"):
+  * duck = deep horse-stance crouch — bent knees splay wide, feet planted ±25, whole
+    upper body drops via torsoDrop=30 so the head sinks low. Arms tuck in.
+  * air (jump) = knees tucked up under the body (feet high), lead arm extends for a
+    flying-kick read. Verified visually via canvas-crop render: duck now clearly crouches.
+  * player draw adds a ground shadow that shrinks+fades with jump height and goes wide
+    + flat under the crouch — sells the vertical.
+- FULL TEST BATTERY (headless via preview_eval, 17/17 pass):
+  * dodge windows: jump/duck each dodge from ~4 up to 20+ frames before impact (span
+    generous); duck(26f)/jump(32f) comfortably cover the ~7f dart pass.
+  * wrong-height correctly FAILS: jump doesn't clear a HIGH throw, duck doesn't clear LOW.
+  * reaction budget: 52f telegraph (DUCK!/JUMP! caption) + 18-32f post-release by range
+    (tightest 18f/300ms >> human ~12-15f). Fair.
+  * attack timing: windup strike=counter, late(> .66)=perfect(bigger vx), early=normal,
+    whiff sets recovery lock and blocks re-strike during it.
+  * spacing constants sane; startRun clears darts + resets jump/duck + grounds player.
+  * BOT FAIRNESS re-run (?bot=3&react=12): 12/12 wins, 3 hits (all dodgeable darts),
+    0% unreactable, 0% pincer. No regression from the pose work (pure-draw).

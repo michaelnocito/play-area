@@ -1235,15 +1235,34 @@ function fighter(x, y, face, opts){
   cx.scale(face * sz * (1 + 0.16 * sq), sz * (1 - 0.16 * sq));
   const punch = o.punch || 0;
   const c = o.col || '#e8dcc0';
+  // JF-#029: explicit dodge poses — duck = deep wide crouch (head drops low, feet
+  // splay), air = tucked knees (feet up) — instead of a uniform squash that only
+  // read as "short". torsoDrop shifts the whole upper body so the crouch is obvious.
+  const pose = o.pose || '';
   cx.lineJoin = 'round'; cx.lineCap = 'round';
-  // legs: chunky, cel-outlined, with foot blobs
-  cx.strokeStyle = OUT; cx.lineWidth = 9;
-  cx.beginPath(); cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); cx.stroke();
-  cx.strokeStyle = c; cx.lineWidth = 5.5;
-  cx.beginPath(); cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); cx.stroke();
-  cx.fillStyle = OUT;
-  cx.beginPath(); cx.ellipse(-16, 1, 6, 4, 0, 0, 7); cx.fill();
-  cx.beginPath(); cx.ellipse(18, -2, 6, 4, 0, 0, 7); cx.fill();
+  const legStroke = segs => {
+    cx.strokeStyle = OUT; cx.lineWidth = 9; cx.beginPath(); segs(); cx.stroke();
+    cx.strokeStyle = c;   cx.lineWidth = 5.5; cx.beginPath(); segs(); cx.stroke();
+  };
+  const foot = (fx, fy) => { cx.fillStyle = OUT; cx.beginPath(); cx.ellipse(fx, fy, 6, 4, 0, 0, 7); cx.fill(); };
+  let torsoDrop = 0;
+  if (pose === 'duck'){                 // deep horse-stance crouch
+    legStroke(() => { cx.moveTo(-3, -13); cx.lineTo(-19, -11); cx.lineTo(-25, 0);
+                      cx.moveTo(3, -13);  cx.lineTo(19, -11);  cx.lineTo(25, -1); });
+    foot(-26, 1); foot(26, 0);
+    torsoDrop = 30;                     // head + body sink toward the ground
+  } else if (pose === 'air'){           // knees tucked up under the body
+    legStroke(() => { cx.moveTo(-4, -30); cx.lineTo(-14, -20); cx.lineTo(-5, -13);
+                      cx.moveTo(4, -30);  cx.lineTo(14, -22);  cx.lineTo(6, -15); });
+    foot(-6, -13); foot(7, -15);
+    torsoDrop = -3;
+  } else {                              // planted stance
+    legStroke(() => { cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); });
+    foot(-16, 1); foot(18, -2);
+  }
+  // ---- upper body (torso, head, arms) rides torsoDrop so the crouch reads ----
+  cx.save();
+  cx.translate(0, torsoDrop);
   // robe: plump rounded wedge with a swishy hem
   cx.beginPath();
   cx.moveTo(-16, -28);
@@ -1298,11 +1317,20 @@ function fighter(x, y, face, opts){
     cx.beginPath(); cx.arc(x2, y2, 6, 0, 7); cx.fill();
     cx.strokeStyle = OUT; cx.lineWidth = 2.5; cx.stroke();
   };
-  arm(-7, -62, -18, -50);
   const ext = punch > 0 ? 34 + punch * 3 : 15;
-  arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7));
+  if (pose === 'duck'){                 // arms tuck in tight to the crouch
+    arm(-8, -58, -15, -46);
+    arm(8, -58, 8 + ext * 0.8, -52 - (punch > 0 ? 2 : -4));
+  } else if (pose === 'air'){           // trailing + leading (flying-kick read)
+    arm(-8, -64, -20, -58);
+    arm(8, -64, 8 + ext, -66 - (punch > 0 ? 6 : 0));
+  } else {
+    arm(-7, -62, -18, -50);
+    arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7));
+  }
   if (punch > 8){                       // starburst on the fist
-    drawStar(7 + ext + 7, -62, 10 + (12 - punch) * 2, '#ffe9a8', t * 0.3);
+    const fx = pose === 'duck' ? 8 + ext * 0.8 + 6 : 7 + ext + 7, fy = pose === 'air' ? -66 : pose === 'duck' ? -52 : -62;
+    drawStar(fx, fy, 10 + (12 - punch) * 2, '#ffe9a8', t * 0.3);
   }
   if (o.spear){                         // spearman: pole past the lead hand
     cx.strokeStyle = OUT; cx.lineWidth = 5;
@@ -1319,7 +1347,8 @@ function fighter(x, y, face, opts){
     cx.strokeStyle = '#cfe0f8'; cx.lineWidth = 4;
     cx.beginPath(); cx.arc(23, -62, 14, -1.1, 1.1); cx.stroke();
   }
-  cx.restore();
+  cx.restore();   // end torsoDrop group
+  cx.restore();   // end fighter transform
 }
 // 4-spike cartoon star
 function drawStar(x, y, r, col, rot){
@@ -1506,10 +1535,16 @@ function draw(){
 
   // player
   const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : wearCol();   // JF-#023
-  // JF-#028: duck = squash crouch, jump = slight stretch; attack pose reads off it
-  const pSquash = P.duckT > 0 ? -0.62 : P.jumpT > 0 ? 0.28 : 0;
+  // JF-#029: a ground shadow that shrinks + fades as you leave the ground sells the
+  // jump; a wide flat shadow under the crouch sells the duck.
+  const airFrac = (GROUND_Y - P.y) / JUMP_H;             // 0 grounded, ~1 at apex
+  const pPose = P.duckT > 0 ? 'duck' : P.jumpT > 0 ? 'air' : '';
+  cx.fillStyle = `rgba(8,10,14,${0.32 * (1 - airFrac * 0.7)})`;
+  cx.beginPath();
+  cx.ellipse(P.x, GROUND_Y + 4, (pPose === 'duck' ? 34 : 22) * (1 - airFrac * 0.4), 6 * (1 - airFrac * 0.5), 0, 0, 7);
+  cx.fill();
   fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
-    punch: P.punchT, squash: pSquash,
+    punch: P.punchT, pose: pPose,
     eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
   // particles
