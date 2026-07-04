@@ -295,3 +295,27 @@ lane, and dismisses the S_END ending screen. Body-blocking itself is BY DESIGN.
   * spacing constants sane; startRun clears darts + resets jump/duck + grounds player.
   * BOT FAIRNESS re-run (?bot=3&react=12): 12/12 wins, 3 hits (all dodgeable darts),
     0% unreactable, 0% pincer. No regression from the pose work (pure-draw).
+
+## JF-#030..#034 — the "make it sillier" batch (2026-07-03, all 10 built on existing systems)
+1. Enemy chatter (#030): type-flavored approach MUTTERS (cocky viper / dim monk / twitchy
+   spearman) at 14%, bigger YELPS bank.
+2. Gag props (#031): one per district (dummy/noodle-cart/gong/laundry/urn) at PROP_X=132;
+   a thrown body sailing through it crashes with a cry + burst + wakes the moon.
+3. Reactive moon (#031): moonWake(f) on STRIKE/boss-fall/flawless-wave — opens startled eyes
+   + brows + 'o' mouth + '!'; flawless wave also pops a "slow clap".
+4. Longest-yeet stat (#030): tracks farthest thrown-body travel, tally brags it with an
+   escalating title (a decent toss → Village Legend → Provincial/National Record).
+5. Joke scrolls (#032): GREASE (slip x1.9 + low stagger friction), DRUNKEN (perfTh<=.5 +
+   player sway), BIG-HEAD (head group scaled 1.65 around neck), TINY-FISTS (ext x0.5 arms +
+   slip x1.6). All player-favourable, opt-in — no fairness risk.
+6. Accessory cosmetics (#033): STYLES gained panda hood / fake mustache / chicken suit /
+   li'l dragon familiar (wornAcc()); drawn in the head group so BIG-HEAD scales them.
+7. Bowling STRIKE (#030): one throw felling 3+ = "☗ STRIKE!! N PINS" banner + shake + moon.
+8. Hype announcer (#030): HYPE thresholds (3..30) fire cheeky bad-dub combo callouts,
+   once each per run (hypeShown), "Nice." → "Show off." → "Okay, calm down." → ...
+9. Boss personalities (#034): BOSS_FLAVOR taunt on entry + jab when staggered; THE BUTCHER's
+   signature = spinning-cleaver throws (reuses the dart/dodge system, drawn as a cleaver).
+10. Between-wave cameo (#031): restGag at each wave-clear — white-flag straggler waddles off
+    OR a black cat trots across; cleared at beginWave.
+VALIDATION: 600-frame all-silly smoke (every joke scroll + cosmetic + Butcher boss) no throw;
+bot fairness ?bot=3&react=12 = 12/12 wins, 7 hits all dodgeable throws, 0% unreactable, 0% pincer.

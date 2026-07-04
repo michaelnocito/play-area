@@ -230,10 +230,16 @@ const STYLES = [
   { name: 'MOON WHITE',   col: '#f8f2e0', cost: 40  },
   { name: 'JADE ROBE',    col: '#aee8c6', cost: 60  },
   { name: 'GOLD SILK',    col: '#e8cf88', cost: 90  },
-  { name: 'NIGHT ORCHID', col: '#c8aee6', cost: 120 }
+  { name: 'NIGHT ORCHID', col: '#c8aee6', cost: 120 },
+  // JF-#033: silly accessories â€” pure jade sinks, cosmetic only
+  { name: 'PANDA HOOD',    col: '#f0ead2', acc: 'panda',    cost: 80  },
+  { name: 'FAKE MUSTACHE', col: '#e8dcc0', acc: 'mustache', cost: 50  },
+  { name: 'CHICKEN SUIT',  col: '#f4dd7a', acc: 'chicken',  cost: 160 },
+  { name: "LI'L DRAGON",   col: '#aee8c6', acc: 'dragon',   cost: 220 }
 ];
 let styleSel = save.cos.wear;      // wardrobe cursor (menu)
 function wearCol(){ return STYLES[save.cos.wear].col; }
+function wornAcc(){ return STYLES[save.cos.wear].acc || null; }
 function styleNext(){
   styleSel = (styleSel + 1) % STYLES.length;
   if (save.cos.own[styleSel]){ save.cos.wear = styleSel; persist(); }
@@ -475,7 +481,12 @@ const SCROLLS = [
   { k: 'ox',     name: 'OX SCROLL',      desc: '+1 heart, now and for this run' },
   { k: 'serpent',name: 'SERPENT SCROLL', desc: 'combos linger far longer' },
   { k: 'dragon', name: 'DRAGON SCROLL',  desc: 'jade Ã—1.5 at the tally' },
-  { k: 'monkey', name: 'MONKEY SCROLL',  desc: 'whiffs recover twice as fast' }
+  { k: 'monkey', name: 'MONKEY SCROLL',  desc: 'whiffs recover twice as fast' },
+  // JF-#032: joke scrolls â€” silly, all player-favourable, opt-in per run
+  { k: 'grease',  name: 'GREASE SCROLL',  desc: 'everyone you hit slides WAY too far' },
+  { k: 'drunken', name: 'DRUNKEN SCROLL', desc: 'you sway like a noodle â€” but read counters easier' },
+  { k: 'bighead', name: 'BIG-HEAD SCROLL',desc: 'everybody gets a comically huge head' },
+  { k: 'tiny',    name: 'TINY-FISTS SCROLL', desc: 'itty-bitty arms, absurd knockback' }
 ];
 let run = {};                         // run-scoped scroll flags (k: 1)
 let scrollOffer = null;               // {a, b} SCROLLS indices while choosing
@@ -498,8 +509,10 @@ function pickScroll(i){
   burst(P.x, P.y - 55, '#e8c76a', 20, 4);
   Snd.best();
 }
-// effective perfect-counter threshold: CRANE opens the window earlier
-function perfTh(){ return run.crane ? Math.min(omen.perfTh, 0.55) : omen.perfTh; }
+// effective perfect-counter threshold: CRANE (and tipsy DRUNKEN) open it earlier
+function perfTh(){ let th = omen.perfTh; if (run.crane) th = Math.min(th, 0.55); if (run.drunken) th = Math.min(th, 0.5); return th; }
+// JF-#032: GREASE / TINY-FISTS pump every knockback velocity
+function slip(v){ return v * (run.grease ? 1.9 : 1) * (run.tiny ? 1.6 : 1); }
 let jadeRun = 0, windAvail = false;   // jade earned this run; Second Wind charge
 let dailyBonus = false;               // first fight of the day = double jade
 let promoted = -1;                    // belt reached mid-run (-1 = none)
@@ -579,6 +592,7 @@ function spawnEnemy(forceSide){
   });
   const ne = enemies[enemies.length - 1];
   ne.windup0 = ne.windup;                     // base windup (brute rage floors off this)
+  mutter(ne);                                 // JF-#030: the odd approach one-liner
   if (ne.guard && combo >= 8 && !adaptShown){
     adaptShown = true;
     popup(W/2, 220, 'THE CROWD WISES UP', '#a8b4c8', true);
@@ -598,16 +612,28 @@ function spawnBoss(hp){
   });
 }
 
+// JF-#034: boss personalities â€” a taunt on the name-card, a jab when staggered,
+// and one silly signature. The Butcher hurls cleavers you DUCK/JUMP (reuses darts).
+const BOSS_FLAVOR = {
+  'THE IRON MASTER': { taunt: 'Show me the school still teaches something.', jab: 'Hmph. Lucky.' },
+  'THE BUTCHER':     { taunt: 'Fresh cuts today! Hah!', jab: 'You dented my cleaver!', cleaver: true },
+  'THE ABBOT':       { taunt: 'Violence solves nothing. Observe.', jab: 'Inner peaceâ€¦ interrupted.' },
+  'THE JADE THIEF':  { taunt: 'Pbbbt! Too slow, monk.', jab: 'Okay okay â€” rude!' }
+};
 // wave lifecycle
 function beginWave(n){
   wave = n; wavePhase = 0;
+  restGag = null;                     // JF-#031: cameo clears when the fight resumes
   const D = DISTRICTS[sel];
   hitsWave = 0;                       // untouched-wave trial tracking (JF-#011)
   const bossWave = wave % WAVES_PER_DISTRICT === 0;
   if (bossWave){
     toSpawn = 0;
     spawnBoss(D.bossHp + Math.floor(wave / WAVES_PER_DISTRICT) - 1);  // +1 hp per extra cycle (Legend)
+    const bz = enemies[enemies.length - 1];
+    bz.flavor = BOSS_FLAVOR[D.boss]; bz.throwCd = 220;   // JF-#034: personality + cleaver cadence
     banner(D.boss, '#e86a6a', 140);
+    if (bz.flavor) popup(W/2, 210, 'â€œ' + bz.flavor.taunt + 'â€', '#e8b06a', true);   // taunt on entry
     Snd.windup(60);
   } else {
     toSpawn = 5 + wave * 2;
@@ -627,12 +653,16 @@ function onWaveClear(){
       won = true;
       banner(D.boss + ' FALLS  Â·  +25â—†', '#7ce8a8', 190);
     }
-    restT = 210; slowMo = Math.max(slowMo, 30); Snd.best();
+    restT = 210; slowMo = Math.max(slowMo, 30); Snd.best(); moonWake(160);   // JF-#031: the moon watches the boss drop
   } else {
     banner('WAVE ' + wave + ' CLEARED', '#7ce8a8', 100);
     restT = 140; Snd.tick();
   }
-  if (hitsWave === 0) bumpTrial('nohit');
+  if (hitsWave === 0){ bumpTrial('nohit'); moonWake(120); popup(780, 150, 'ðŸ‘ slow clap', '#f0ead2'); }   // JF-#031: flawless wave earns a moon clap
+  // JF-#031: a background cameo during the breather (straggler or a passing cat)
+  restGag = Math.random() < 0.5
+    ? { kind: 'flag', x: -50, dir: 1, spd: 1.1 }
+    : { kind: 'cat',  x: W + 50, dir: -1, spd: 2.4 };
   if (!won) offerScrolls();   // JF-#025: the rest beat becomes a choice
 }
 let hitsWave = 0;
@@ -667,10 +697,57 @@ function burst(x, y, col, n, pow){
 // JF-#020: a touch of absurdity â€” occasional comedy send on perfect counters,
 // wall bonks, and the odd felled-foe yelp. Rare on purpose: seasoning, not a tone change.
 const SENDS = ['SEE YOU NEXT SPRING', "HE'LL WALK THAT OFF", 'STRAIGHT TO THE HEALER',
-               'OVER THE NOODLE CART', 'TELL THE OTHERS'];
-const YELPS = ['my sandalsâ€¦', 'not the face', 'I quit', 'who hired him?', 'ow.'];
+               'OVER THE NOODLE CART', 'TELL THE OTHERS', 'AND STAY OUT', 'INTO NEXT WEEK'];
+const YELPS = ['my sandalsâ€¦', 'not the face', 'I quit', 'who hired him?', 'ow.',
+               'worth it', 'nap time', 'tell my mother', 'I felt that', 'unfair'];
 function yelp(x, y){
   if (Math.random() < 0.12) popup(x, y, YELPS[(Math.random() * YELPS.length) | 0], '#c8bfa8');
+}
+// JF-#030: enemy chatter â€” type-flavored mutters as they approach. Cocky vipers,
+// dim monks, twitchy spearmen, rank-and-file bravado. Rare so it stays a garnish.
+const MUTTERS = {
+  [T_NORM]:  ['get him!', 'for the guild', 'easy money', 'you again?', 'surround him'],
+  [T_FAST]:  ['too slow', 'catch me', 'blink and miss', 'hah!', 'over here~'],
+  [T_BRUTE]: ['me smash', 'hnngh', 'big hands', 'squish', '...'],
+  [T_SPEAR]: ['stay back!', "don't look at me", 'from waaay over here', 'nervous laugh', 'eep']
+};
+function mutter(e){
+  if (state !== S_PLAY || Math.random() > 0.14) return;
+  const bank = MUTTERS[e.type] || MUTTERS[T_NORM];
+  popup(e.x, e.y - 108, bank[(Math.random() * bank.length) | 0], '#9aa2b0');
+}
+// JF-#030: hype announcer â€” cheeky bad-kung-fu-dub callouts as combos climb.
+// Escalates from encouraging to "okay, calm down". One line per threshold per run.
+const HYPE = [
+  { at: 3,  txt: 'Nice.' }, { at: 5, txt: 'Show off.' }, { at: 8, txt: 'UNBELIEVABLE!' },
+  { at: 12, txt: 'Okay, calm down.' }, { at: 16, txt: 'THE CROWD GOES WILD' },
+  { at: 22, txt: 'save some for the rest of us' }, { at: 30, txt: 'legally, this is too cool' }
+];
+let hypeShown = -1;
+let longestSend = 0;   // JF-#030: farthest yeet this run (px), bragged on the tally
+// JF-#031: the moon wakes up and reacts to the big moments
+let moonWakeT = 0;
+function moonWake(f){ moonWakeT = Math.max(moonWakeT, f); }
+// JF-#031: one gag prop per district â€” a thrown body sailing through it pays off
+let propHitT = 0;
+const PROPS = [
+  { kind: 'dummy',   cry: 'STUFFING EVERYWHERE', col: '#d8cba0' },
+  { kind: 'cart',    cry: 'NOODLES!!',           col: '#e8c76a' },
+  { kind: 'gong',    cry: 'GOOOONG',             col: '#e0b050' },
+  { kind: 'laundry', cry: 'TANGLED IN THE WASH', col: '#cfe0f8' },
+  { kind: 'urn',     cry: 'THE ANCESTORS ARE FURIOUS', col: '#7ce8a8' }
+];
+const PROP_X = 132;   // stands off to the left; bodies thrown that way crash it
+// JF-#031: between-wave background cameo (a straggler waves off, or a cat trots by)
+let restGag = null;
+function hype(c){
+  for (const H of HYPE){
+    if (c >= H.at && H.at > hypeShown){
+      hypeShown = H.at;
+      popup(W/2, 108, H.txt, '#ffd98a', true);
+      break;
+    }
+  }
 }
 
 // ----------------------------------------------------------------- verbs ----
@@ -691,6 +768,7 @@ function strike(dir){
     counters++; jadeRun += 3; combo++; comboT = CW;
     score += 1000;
     popup(e.x, e.y - 110, 'MASTER STAGGERED +1000', '#7ce8a8', true);
+    if (e.flavor) popup(e.x, e.y - 140, 'â€œ' + e.flavor.jab + 'â€', '#e8b06a');   // JF-#034: boss grumbles
     Snd.counter(); hitStop = 8; shake = 14; slowMo = 30;
     burst(e.x, e.y - 50, '#e86a6a', 26, 6);
     banner('HE CALLS HIS STUDENTS', '#e8b06a', 80);
@@ -709,9 +787,10 @@ function strike(dir){
     if (e.type === T_BRUTE) award('monk');
     if (e.type === T_SPEAR) award('spear');
     e.st = E_THROWN; e.stT = 0;
+    e.sendX0 = e.x;                    // JF-#030: launch point, for the longest-yeet stat
     // JF-#010: DRAGON SWEEP â€” perfect throws fly farther and pierce deeper
     const sweep = hasTech(0);
-    e.vx = dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1);   // JF-#025: TIGER
+    e.vx = slip(dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1));   // JF-#025 TIGER, JF-#032 slip
     e.vy = perfect ? -8 : -7;
     // JF-#020: ~1 in 6 perfect counters is a comedy send â€” twice the arc, wild spin
     if (perfect && e.type !== T_BOSS && Math.random() < 0.18){
@@ -741,6 +820,12 @@ function strike(dir){
       score += 500; jadeRun += 2;
       popup(W/2, 220, 'SWEEP +500', '#e8c76a', true);
       bumpTrial('sweep');
+    }
+    // JF-#030: BOWLING â€” one throw toppling 3+ is a STRIKE, with the pins to prove it
+    if (felled >= 3){
+      score += 500 * (felled - 2);
+      banner('â˜— STRIKE!! ' + felled + ' PINS', '#ffd98a', 100);
+      Snd.block(); Snd.best(); shake = Math.max(shake, 14); slowMo = Math.max(slowMo, 24); moonWake(90);
     }
     // JF-#010: PALM WAVE â€” 3 consecutive perfects release a wave that fells both sides
     if (perfect && hasTech(2)){
@@ -801,6 +886,7 @@ function strike(dir){
     burst(e.x, e.y - 45, '#d8d0c0', 10, 3);
   }
   if (combo > bestCombo) bestCombo = combo;
+  hype(combo);                           // JF-#030: cheeky announcer as the chain climbs
   if (combo >= 5) award('chain5');
   // live belt promotion: banner the moment lifetime kills cross a threshold
   const nb = beltOf(save.kills + kills);
@@ -1015,6 +1101,8 @@ function startRun(){
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
+  hypeShown = -1; longestSend = 0;   // JF-#030: reset silly-run trackers
+  moonWakeT = 0; propHitT = 0; restGag = null;   // JF-#031
   dBase = DISTRICTS[sel].dBase;
   beginWave(1);
   // JF-#012: veterans get the district's line instead of the controls lesson
@@ -1037,6 +1125,9 @@ function update(){
   if (msgT > 0) msgT--;
   if (bannerT > 0) bannerT--;
   if (P.punchT > 0) P.punchT--;
+  if (moonWakeT > 0) moonWakeT--;      // JF-#031
+  if (propHitT > 0) propHitT--;
+  if (restGag){ restGag.x += restGag.dir * restGag.spd; if (restGag.x < -60 || restGag.x > W + 60) restGag = null; }
 
   popups = popups.filter(p => (p.life--, p.y -= 0.7, p.life > 0));
   parts = parts.filter(p => {
@@ -1103,6 +1194,17 @@ function update(){
 
   for (const e of enemies){
     e.stT += dt;
+    // JF-#034: THE BUTCHER lobs a cleaver from range â€” a high or low throw you
+    // duck/jump like a spearman's (reuses the dart system, boss keeps fighting).
+    if (e.type === T_BOSS && e.flavor && e.flavor.cleaver && e.st !== E_DOWN && e.st !== E_THROWN){
+      e.throwCd -= dt;
+      if (e.throwCd <= 0 && Math.abs(e.x - P.x) > 150){
+        const dir = Math.sign(P.x - e.x) || 1, high = Math.random() < 0.5;
+        darts.push({ x: e.x + dir * 24, vx: dir * 8, high, y0: high ? P.y - 78 : P.y - 20, life: 120, cleaver: true });
+        popup(e.x, e.y - 150, high ? 'HIGH!' : 'LOW!', high ? '#f0b24a' : '#5fd0e0');
+        Snd.hurt(); e.throwCd = 200 + Math.random() * 90;
+      }
+    }
     switch (e.st){
       case E_WALK: {
         const d = Math.abs(e.x - P.x);
@@ -1158,7 +1260,7 @@ function update(){
         if (e.stT >= (e.type === T_SPEAR ? 44 : 30)){ e.st = E_WALK; e.stT = 0; }
         break;
       case E_STAGGER:
-        e.x += e.vx * dt; e.vx *= 0.86;
+        e.x += e.vx * dt; e.vx *= run.grease ? 0.95 : 0.86;   // JF-#032: GREASE = long comic slide
         // a shoved body stumbles whoever it slides into
         if (!e.chained && Math.abs(e.vx) > 1.5){
           for (const o of enemies){
@@ -1200,6 +1302,19 @@ function update(){
               burst(o.x, o.y - 40, '#e8c76a', 10, 3);
             }
           }
+        }
+        // JF-#031: a thrown body sailing through the district prop = a payoff crash
+        if (e.st === E_THROWN && !e.propCrashed && e.y < 430 && e.y > 360 && Math.abs(e.x - PROP_X) < 32){
+          e.propCrashed = true; propHitT = 14; e.vx *= 0.4;
+          const P0 = PROPS[sel];
+          popup(PROP_X, 372, P0.cry, P0.col, true);
+          burst(PROP_X, 400, P0.col, 16, 5);
+          Snd.block(); shake = Math.max(shake, 8); moonWake(70);
+        }
+        // JF-#030: record the farthest yeet (thrown bodies only)
+        if (e.st === E_THROWN && e.sendX0 !== undefined){
+          const d = Math.abs(e.x - e.sendX0);
+          if (d > longestSend) longestSend = d;
         }
         if (e.y > 470) e.dead = true;
         break;
@@ -1264,6 +1379,9 @@ function fighter(x, y, face, opts){
   // sash
   cx.strokeStyle = o.sash || '#3fae7c'; cx.lineWidth = 5;
   cx.beginPath(); cx.moveTo(-12, -44); cx.quadraticCurveTo(0, -40, 12, -48); cx.stroke();
+  // head + face group â€” JF-#032: BIG-HEAD scroll inflates it around the neck
+  cx.save();
+  if (run.bighead){ cx.translate(0, -70); cx.scale(1.65, 1.65); cx.translate(0, 70); }
   // head: BIG (cartoon proportion), outlined
   cx.fillStyle = c;
   cx.beginPath(); cx.arc(0, -84, 15, 0, 7); cx.fill();
@@ -1295,6 +1413,28 @@ function fighter(x, y, face, opts){
       cx.beginPath(); cx.moveTo(0.5, -90.5); cx.lineTo(8, -87.5); cx.moveTo(15.5, -90.5); cx.lineTo(9, -87.5); cx.stroke();
     }
   }
+  // JF-#033: worn accessory (player only) â€” sits in the head group so BIG-HEAD scales it
+  if (o.acc === 'panda'){
+    cx.fillStyle = '#22201e';
+    cx.beginPath(); cx.arc(-10, -96, 6.5, 0, 7); cx.arc(10, -96, 6.5, 0, 7); cx.fill();   // ears
+    cx.beginPath(); cx.ellipse(4, -84, 4.5, 5.5, 0.3, 0, 7); cx.ellipse(12, -84, 4.5, 5.5, -0.3, 0, 7); cx.fill();   // eye patches
+  } else if (o.acc === 'mustache'){
+    cx.fillStyle = '#2a2622'; cx.strokeStyle = '#2a2622'; cx.lineWidth = 3; cx.lineCap = 'round';
+    cx.beginPath(); cx.moveTo(8, -78); cx.quadraticCurveTo(2, -82, -2, -76); cx.moveTo(8, -78); cx.quadraticCurveTo(15, -82, 19, -76); cx.stroke();
+  } else if (o.acc === 'chicken'){
+    cx.fillStyle = '#e0503a';                                   // red comb
+    cx.beginPath(); cx.moveTo(-4, -97); cx.quadraticCurveTo(0, -104, 4, -97); cx.quadraticCurveTo(8, -104, 12, -97); cx.fill();
+    cx.fillStyle = '#f0a83a';                                   // beak
+    cx.beginPath(); cx.moveTo(16, -82); cx.lineTo(26, -80); cx.lineTo(16, -77); cx.closePath(); cx.fill();
+  } else if (o.acc === 'dragon'){
+    cx.save(); cx.translate(-18, -92 + Math.sin(t * 0.2) * 3);   // a li'l dragon familiar bobbing at the shoulder
+    cx.fillStyle = '#4fbf82'; cx.strokeStyle = OUT; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(0, 0, 7, 0, 7); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.moveTo(-4, -6); cx.lineTo(-6, -12); cx.lineTo(-1, -8); cx.fill();   // horn
+    cx.fillStyle = '#ffec9a'; cx.beginPath(); cx.arc(3, -1, 1.5, 0, 7); cx.fill();          // eye
+    cx.restore();
+  }
+  cx.restore();   // JF-#032: end big-head group
   // arms: chunky, with round fists; lead arm extends on punch
   const arm = (x1, y1, x2, y2) => {
     cx.strokeStyle = OUT; cx.lineWidth = 9;
@@ -1305,7 +1445,8 @@ function fighter(x, y, face, opts){
     cx.beginPath(); cx.arc(x2, y2, 6, 0, 7); cx.fill();
     cx.strokeStyle = OUT; cx.lineWidth = 2.5; cx.stroke();
   };
-  const ext = punch > 0 ? 34 + punch * 3 : 15;
+  let ext = punch > 0 ? 34 + punch * 3 : 15;
+  if (run.tiny) ext *= 0.5;             // JF-#032: TINY-FISTS â€” itty-bitty arms
   if (pose === 'duck'){                 // arms tuck in tight to the crouch
     arm(-8, -58, -15, -46);
     arm(8, -58, 8 + ext * 0.8, -52 - (punch > 0 ? 2 : -4));
@@ -1338,6 +1479,67 @@ function fighter(x, y, face, opts){
   cx.restore();   // end torsoDrop group
   cx.restore();   // end fighter transform
 }
+// JF-#031: district gag props â€” simple cartoon silhouettes that wobble on impact
+function drawProp(p, x, base){
+  cx.save();
+  cx.translate(x, base);
+  const wob = propHitT > 0 ? Math.sin(propHitT * 0.9) * (propHitT / 14) * 0.22 : 0;
+  cx.rotate(wob);
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
+  const out = (fill, path) => { cx.beginPath(); path(); cx.closePath(); cx.fillStyle = fill; cx.fill(); cx.strokeStyle = OUT; cx.lineWidth = 3; cx.stroke(); };
+  if (p.kind === 'dummy'){                 // training dummy: post + straw head
+    cx.strokeStyle = OUT; cx.lineWidth = 8; cx.beginPath(); cx.moveTo(0, 0); cx.lineTo(0, -46); cx.stroke();
+    out('#c9b27a', () => { cx.arc(0, -56, 12, 0, 7); });
+    cx.strokeStyle = OUT; cx.lineWidth = 6; cx.beginPath(); cx.moveTo(-16, -40); cx.lineTo(16, -40); cx.stroke();
+  } else if (p.kind === 'cart'){           // noodle cart: box, wheels, steaming bowl
+    out('#a5713e', () => { cx.rect(-30, -34, 60, 26); });
+    cx.fillStyle = OUT; cx.beginPath(); cx.arc(-18, -6, 8, 0, 7); cx.arc(18, -6, 8, 0, 7); cx.fill();
+    out('#e8dcc0', () => { cx.ellipse(0, -40, 15, 6, 0, 0, 7); });   // bowl
+    cx.strokeStyle = 'rgba(240,234,210,0.5)'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(-4, -44); cx.quadraticCurveTo(-9, -52, -3, -58); cx.moveTo(6, -44); cx.quadraticCurveTo(11, -52, 5, -58); cx.stroke();
+  } else if (p.kind === 'gong'){           // temple gong on a frame
+    cx.strokeStyle = OUT; cx.lineWidth = 6;
+    cx.beginPath(); cx.moveTo(-26, 0); cx.lineTo(-22, -60); cx.lineTo(22, -60); cx.lineTo(26, 0); cx.stroke();
+    out(p.col, () => { cx.arc(0, -40, 22, 0, 7); });
+    out('#b8923a', () => { cx.arc(0, -40, 8, 0, 7); });
+  } else if (p.kind === 'laundry'){        // laundry line with hanging clothes
+    cx.strokeStyle = OUT; cx.lineWidth = 6;
+    cx.beginPath(); cx.moveTo(-30, 0); cx.lineTo(-30, -56); cx.moveTo(34, 0); cx.lineTo(34, -56); cx.stroke();
+    cx.strokeStyle = '#8a7a5a'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(-30, -52); cx.quadraticCurveTo(2, -44, 34, -52); cx.stroke();
+    for (const [cx0, cc] of [[-16, '#cfe0f8'], [4, '#e8b0b0'], [22, '#b0e8c0']]){
+      out(cc, () => { cx.rect(cx0 - 7, -50, 14, 18); });
+    }
+  } else {                                 // urn / jade pot
+    out(p.col, () => { cx.moveTo(-14, -4); cx.quadraticCurveTo(-24, -30, -12, -50);
+      cx.lineTo(12, -50); cx.quadraticCurveTo(24, -30, 14, -4); });
+    out('#5fae88', () => { cx.ellipse(0, -50, 14, 5, 0, 0, 7); });
+  }
+  cx.restore();
+}
+// JF-#031: rest-beat cameo actors
+function drawRestGag(){
+  const gg = restGag, gx = gg.x, gy = 418;
+  cx.save(); cx.translate(gx, gy);
+  if (gg.kind === 'flag'){                 // a defeated straggler waddles off waving a flag
+    cx.scale(gg.dir, 1);
+    fighter(0, 0, 1, { col: '#9aa2b0', sash: '#6a4040', size: 0.7, eyes: 'dizzy' });
+    cx.strokeStyle = OUT; cx.lineWidth = 4; cx.beginPath(); cx.moveTo(10, -44); cx.lineTo(24, -60); cx.stroke();
+    cx.fillStyle = '#f4f0e6'; cx.beginPath();
+    cx.moveTo(24, -60); cx.lineTo(38 + Math.sin(t * 0.4) * 3, -57); cx.lineTo(24, -50); cx.closePath(); cx.fill();
+    cx.strokeStyle = OUT; cx.lineWidth = 1.5; cx.stroke();
+  } else {                                 // a cat trots across, unbothered
+    cx.scale(gg.dir, 1);
+    cx.fillStyle = '#2a2530'; cx.strokeStyle = OUT; cx.lineWidth = 2;
+    cx.beginPath(); cx.ellipse(0, -8, 16, 7, 0, 0, 7); cx.fill();                 // body
+    cx.beginPath(); cx.arc(13, -16, 7, 0, 7); cx.fill();                          // head
+    cx.beginPath(); cx.moveTo(9, -22); cx.lineTo(11, -30); cx.lineTo(15, -22); cx.fill();   // ear
+    cx.strokeStyle = '#2a2530'; cx.lineWidth = 3;
+    cx.beginPath(); cx.moveTo(-15, -6); cx.quadraticCurveTo(-26, -14 + Math.sin(t * 0.3) * 4, -24, -22); cx.stroke();  // tail
+    cx.fillStyle = '#8ee87c'; cx.beginPath(); cx.arc(15, -17, 1.6, 0, 7); cx.fill();        // eye
+  }
+  cx.restore();
+}
 // 4-spike cartoon star
 function drawStar(x, y, r, col, rot){
   cx.save(); cx.translate(x, y); cx.rotate(rot || 0);
@@ -1362,20 +1564,36 @@ function drawWorld(){
   cx.beginPath(); cx.arc(780, 90, 60, 0, 7); cx.fill();
   cx.fillStyle = '#f0ead2';
   cx.beginPath(); cx.arc(780, 90, 34, 0, 7); cx.fill();
-  cx.strokeStyle = 'rgba(24,18,32,0.35)'; cx.lineWidth = 2.5; cx.lineCap = 'round';
-  cx.beginPath();                                   // two closed eyes
-  cx.arc(771, 86, 6, 0.2, Math.PI - 0.2); cx.moveTo(795, 86); cx.arc(789, 86, 6, 0.2, Math.PI - 0.2);
-  cx.stroke();
-  cx.beginPath(); cx.arc(781, 96, 7, 0.15, Math.PI - 0.15); cx.stroke();   // little smile
-  // drifting "z z z" that resets slowly
-  cx.fillStyle = 'rgba(240,234,210,0.5)'; cx.textAlign = 'left';
-  cx.font = 'italic 14px ' + COMIC;
-  for (let i = 0; i < 3; i++){
-    const zt = (t * 0.4 + i * 40) % 120;
-    cx.globalAlpha = Math.max(0, 0.6 - zt / 200);
-    cx.fillText('z', 812 + i * 9 + zt * 0.15, 66 - zt * 0.35);
+  cx.strokeStyle = 'rgba(24,18,32,0.55)'; cx.lineWidth = 2.5; cx.lineCap = 'round';
+  if (moonWakeT > 0){                               // JF-#031: startled awake, watching
+    cx.fillStyle = '#fff';
+    cx.beginPath(); cx.arc(771, 86, 5.5, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(789, 86, 5.5, 0, 7); cx.fill();
+    cx.fillStyle = 'rgba(24,18,32,0.7)';
+    cx.beginPath(); cx.arc(772, 87, 2.4, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(790, 87, 2.4, 0, 7); cx.fill();
+    cx.strokeStyle = 'rgba(24,18,32,0.55)'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(765, 79); cx.lineTo(776, 81); cx.moveTo(795, 79); cx.lineTo(784, 81); cx.stroke();   // raised brows
+    cx.fillStyle = 'rgba(24,18,32,0.6)';                         // little 'o' of surprise
+    cx.beginPath(); cx.arc(780, 98, 4, 0, 7); cx.fill();
+    cx.fillStyle = '#ffd98a'; cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center';
+    cx.fillText('!', 824, 74);
+    cx.textAlign = 'left';
+  } else {
+    cx.beginPath();                                 // two closed sleeping eyes
+    cx.arc(771, 86, 6, 0.2, Math.PI - 0.2); cx.moveTo(795, 86); cx.arc(789, 86, 6, 0.2, Math.PI - 0.2);
+    cx.stroke();
+    cx.beginPath(); cx.arc(781, 96, 7, 0.15, Math.PI - 0.15); cx.stroke();   // little smile
+    // drifting "z z z" that resets slowly
+    cx.fillStyle = 'rgba(240,234,210,0.5)'; cx.textAlign = 'left';
+    cx.font = 'italic 14px ' + COMIC;
+    for (let i = 0; i < 3; i++){
+      const zt = (t * 0.4 + i * 40) % 120;
+      cx.globalAlpha = Math.max(0, 0.6 - zt / 200);
+      cx.fillText('z', 812 + i * 9 + zt * 0.15, 66 - zt * 0.35);
+    }
+    cx.globalAlpha = 1;
   }
-  cx.globalAlpha = 1;
   // pagoda silhouettes (count/height vary by district)
   cx.fillStyle = 'rgba(8,11,17,0.85)';
   for (let i = 0; i < D.pag; i++){
@@ -1405,6 +1623,10 @@ function drawWorld(){
   cx.fillStyle = D.ground; cx.fillRect(0, 428, W, H - 428);
   cx.strokeStyle = 'rgba(232,220,192,0.12)'; cx.lineWidth = 2;
   cx.beginPath(); cx.moveTo(0, 428); cx.lineTo(W, 428); cx.stroke();
+  // JF-#031: the district's gag prop, wobbling if it was just crashed into
+  drawProp(PROPS[sel], PROP_X, 428);
+  // JF-#031: between-wave background cameo
+  if (restGag) drawRestGag();
   // JF-#017: district ambience â€” deterministic drift from t, no particle state
   if (sel === 0){                       // COURTYARD: falling blossom petals
     cx.fillStyle = 'rgba(232,168,184,0.55)';
@@ -1512,13 +1734,22 @@ function draw(){
     const dir = Math.sign(d.vx) || 1, tip = d.x + dir * 22, tc = d.high ? '#f0b24a' : '#5fd0e0';
     cx.strokeStyle = 'rgba(200,190,170,0.3)'; cx.lineWidth = 2;   // motion streak
     cx.beginPath(); cx.moveTo(d.x - dir * 26, d.y0); cx.lineTo(d.x, d.y0); cx.stroke();
-    cx.strokeStyle = OUT; cx.lineWidth = 6; cx.lineCap = 'round';
-    cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
-    cx.strokeStyle = '#a8906a'; cx.lineWidth = 3;
-    cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
-    cx.fillStyle = tc;
-    cx.beginPath(); cx.moveTo(tip, d.y0 - 5); cx.lineTo(tip + dir * 12, d.y0); cx.lineTo(tip, d.y0 + 5); cx.closePath(); cx.fill();
-    cx.strokeStyle = OUT; cx.lineWidth = 1.5; cx.stroke();
+    if (d.cleaver){                    // JF-#034: the Butcher's spinning cleaver
+      cx.save(); cx.translate(d.x, d.y0); cx.rotate(d.spin || 0);
+      cx.fillStyle = '#cdd4dc'; cx.strokeStyle = OUT; cx.lineWidth = 2;
+      cx.beginPath(); cx.rect(-9, -8, 18, 13); cx.fill(); cx.stroke();
+      cx.strokeStyle = OUT; cx.lineWidth = 4; cx.beginPath(); cx.moveTo(9, 5); cx.lineTo(16, 9); cx.stroke();
+      cx.strokeStyle = tc; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(-9, 6); cx.lineTo(9, 6); cx.stroke();
+      cx.restore();
+    } else {                           // spearman's thrown spear
+      cx.strokeStyle = OUT; cx.lineWidth = 6; cx.lineCap = 'round';
+      cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
+      cx.strokeStyle = '#a8906a'; cx.lineWidth = 3;
+      cx.beginPath(); cx.moveTo(d.x - dir * 16, d.y0); cx.lineTo(tip, d.y0); cx.stroke();
+      cx.fillStyle = tc;
+      cx.beginPath(); cx.moveTo(tip, d.y0 - 5); cx.lineTo(tip + dir * 12, d.y0); cx.lineTo(tip, d.y0 + 5); cx.closePath(); cx.fill();
+      cx.strokeStyle = OUT; cx.lineWidth = 1.5; cx.stroke();
+    }
   }
 
   // player
@@ -1532,7 +1763,8 @@ function draw(){
   cx.ellipse(P.x, GROUND_Y + 4, (pPose === 'duck' ? 34 : 22) * (1 - airFrac * 0.4), 6 * (1 - airFrac * 0.5), 0, 0, 7);
   cx.fill();
   fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
-    punch: P.punchT, pose: pPose,
+    punch: P.punchT, pose: pPose, rot: run.drunken ? Math.sin(t * 0.14) * 0.1 : 0,   // JF-#032: DRUNKEN sway
+    acc: wornAcc(),   // JF-#033
     eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
   // particles
@@ -1668,7 +1900,7 @@ function draw(){
         ppunch = Math.max(0, 12 - ft);
         cap = 'COUNTER â€” throw them into the rest'; capCol = '#e8c76a';
       } else { ex2 = -999; cap = 'they come at you â€” strike toward them'; }
-      fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72 });   // JF-#023
+      fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72, acc: wornAcc() });   // JF-#023/#033
       if (ex2 > -200 && ex2 < W + 200)
         fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
       cx.fillStyle = capCol; cx.font = '19px Georgia'; cx.textAlign = 'center';
@@ -1770,6 +2002,12 @@ function draw(){
       ['Promoted', BELTS[promoted].name + ' BELT']);
     if (hallRank) lines.splice(lines.length - 1, 0,
       ['Hall of Legends', '#' + hallRank + ' Â· ' + DISTRICTS[fought].name]);   // JF-#026
+    // JF-#030: longest-yeet brag with an escalating provincial title
+    if (longestSend > 60){
+      const m = Math.round(longestSend);
+      const title = m > 900 ? 'National Record' : m > 600 ? 'Provincial Record' : m > 350 ? 'Village Legend' : 'a decent toss';
+      lines.splice(lines.length - 1, 0, ['Longest yeet', m + 'px Â· ' + title]);
+    }
     const shown = Math.min(lines.length, Math.floor(tallyT / 24));
     if (shown > tallyStep){ tallyStep = shown; Snd.tick(); if (shown === lines.length && newBest) Snd.best(); }
     cx.font = '20px Georgia';
