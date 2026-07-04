@@ -186,6 +186,7 @@ const SFX = {
 /* ===== Drone (persistent bass, rises as Hive HP drops) ===== */
 function stopDrone(){
   if(droneNode){ try{ droneNode.stop(); droneNode.disconnect(); }catch(e){} droneNode=null; droneGain=null; }
+  if(droneNode2){ try{ droneNode2.stop(); droneNode2.disconnect(); }catch(e){} droneNode2=null; droneGain2=null; }
 }
 function updateDrone(){
   if(!AC || AC.state==="suspended") return;
@@ -196,11 +197,22 @@ function updateDrone(){
       droneGain.gain.value = 0;
       droneNode.connect(droneGain); droneGain.connect(AC.destination);
       droneNode.start();
+      // tension layer: sine octave up, joins below 25% HP
+      droneNode2 = AC.createOscillator(); droneGain2 = AC.createGain();
+      droneNode2.type = "sine"; droneNode2.frequency.value = 110;
+      droneGain2.gain.value = 0;
+      droneNode2.connect(droneGain2); droneGain2.connect(AC.destination);
+      droneNode2.start();
     }catch(e){ droneNode=null; droneGain=null; return; }
   }
   const hpRatio = hiveMax>0 ? Math.max(0, hiveHP/hiveMax) : 1;
+  const t = AC.currentTime;
   const target = muted ? 0 : (hpRatio>0.6 ? 0 : (0.6-hpRatio)/0.6*0.12);
-  droneGain.gain.setTargetAtTime(target, AC.currentTime, 0.8);
+  droneGain.gain.setTargetAtTime(target, t, 0.8);
+  if(droneGain2){
+    const t2 = muted ? 0 : (hpRatio<0.25 ? (0.25-hpRatio)/0.25*0.05 : 0);
+    droneGain2.gain.setTargetAtTime(t2, t, 1.2);
+  }
 }
 
 /* ===== World state ===== */
@@ -224,6 +236,18 @@ let gameSpeed = 1; // 1x / 2x fast-forward
 let hitStop = 0, slowMoT = 0, timeScale = 1; // hit-stop + wave-clear slow-mo
 let edgePulseT = 0;                           // screen-edge red flash on hive damage
 let droneNode = null, droneGain = null;       // persistent bass drone
+let droneNode2 = null, droneGain2 = null;     // tension layer (joins below 25% HP)
+// run stats
+let killsThisRun = 0, towersBuiltThisRun = 0, peakBiomass = 0;
+// kill combo
+let comboT = 0, comboN = 0;
+// wave tracking
+let noHitWaves = 0, waveStartHP = 0, waveT = 0, waveFlashT = 0;
+// world effects
+let stains = [], rings = [];
+// first-time flags + pointer
+let seenSweeper = false;
+let ptrX = 0, ptrY = 0;
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
 const DAILY_HOSTILE = [
@@ -250,6 +274,21 @@ const BOONS = [
   { id:"roots",  txt:"DEEP ROOTS",      sub:"Rootmass radius +30%",       apply:r=>r.rootR+=0.30 },
   { id:"glut",   txt:"GLUT",            sub:"+50 biomass right now",      apply:r=>{ biomass+=50; } }
 ];
+const LORE = [
+  "Every corpse is a seed. Every seed is a soldier.",
+  "The virus learned. The humans forgot.",
+  "They call it contamination. We call it communion.",
+  "The rot that kills them feeds us.",
+  "There are no dead here — only waiting.",
+  "A hive that holds one wave holds the next.",
+  "Sweepers fear what they cannot sanitize.",
+  "The longer they fight, the deeper we root.",
+  "Their weapons are our walls.",
+  "Biomass remembers what the living forget.",
+  "Each fallen human becomes a guardian.",
+  "The underground does not forget. It grows.",
+];
+
 function newRunMods(){
   return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
     enemyHp:1, enemySpd:1,
@@ -330,6 +369,7 @@ function spawnEnemy(type){
   const eHp=e.hp*(run?run.enemyHp:1), eSpd=e.spd*(run?run.enemySpd:1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
     col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0 });
+  if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they steal your mutate"); }
 }
 function dropCorpse(x,y){
   const [c,r] = xyToTile(x,y);
@@ -348,6 +388,8 @@ function mutate(k, type){
   corpses.splice(corpses.indexOf(k),1);
   if(k.trampled){ if(!tryBlock(k.c,k.r)){ /* still trampled tower: allowed, stays walkable */ } }
   const [x,y] = tileToXY(k.c,k.r);
+  popup(x,y-30,"-"+t.cost+"◈","#e07f7f");
+  towersBuiltThisRun++;
   const thp = 60 + run.towerHp;
   towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0 });
   SFX.squelch(); burst(x,y,"#9be07f",14); shakeIt(2);
@@ -364,6 +406,7 @@ function applyTier2(t){
   if(!t2 || biomass<t2.cost){ SFX.deny(); popup(t.x,t.y,"NEED BIOMASS","#e07f7f"); menu=null; return; }
   biomass -= t2.cost;
   t.tier = 1;
+  popup(t.x,t.y-30,"-"+t2.cost+"◈","#e07f7f");
   SFX.squelch(); burst(t.x,t.y,"#e0a0f0",16); shakeIt(2);
   popup(t.x,t.y,"→ "+t2.name,"#e0a0f0");
   menu = null;
@@ -411,6 +454,9 @@ function newRun(){
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
+  killsThisRun=0; towersBuiltThisRun=0; peakBiomass=0;
+  comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
+  stains=[]; rings=[]; seenSweeper=false;
   // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
   dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
   dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
@@ -427,7 +473,7 @@ function queueWave(){
     for(let i=0;i<count;i++){ spawnQ.push({type, at:t}); t += intv; }
   }
   spawnQ.sort((a,b)=>a.at-b.at);
-  spawnT = 0;
+  spawnT = 0; waveT = 0; waveStartHP = hiveHP; waveFlashT = 0.15;
   mode = "play";
   SFX.wave();
   // drama: name the moments
@@ -442,12 +488,20 @@ function queueWave(){
 }
 function waveCleared(){
   const wn = endless ? 12+endlessN+1 : waveIdx+1;
-  const gain = daily ? Math.ceil(Math.max(3,wn)*1.5) : Math.max(3,wn);
+  const baseGain = endless ? Math.ceil(Math.max(3,wn)*1.2) : Math.max(3,wn);
+  const gain = daily ? Math.ceil(baseGain*1.5) : baseGain;
   save.dna += gain; dnaEarned += gain;
   save.bestWave = Math.max(save.bestWave, wn);
   if(daily){ if(!save.dailyBest)save.dailyBest={}; save.dailyBest[dayIndex()]=Math.max(save.dailyBest[dayIndex()]||0,wn); }
   persist();
-  popup(W/2, H/2-60, "WAVE "+wn+" REPELLED  +"+gain+" DNA", "#c9a0f0");
+  popup(W/2, H/2-60, "WAVE "+wn+" REPELLED  +"+gain+" DNA  "+Math.floor(waveT)+"s", "#c9a0f0");
+  // perfect wave bonus
+  if(hiveHP >= waveStartHP){
+    noHitWaves++;
+    save.dna+=3; dnaEarned+=3; persist();
+    popup(W/2, H/2-90, "UNSCATHED +3 DNA", "#c9f0c0");
+    if(noHitWaves>=3) showBanner("UNBROKEN", noHitWaves+" waves without damage");
+  } else { noHitWaves=0; }
   CG.happytime(); slowMoT=0.45; timeScale=0.15;
   if(!endless && waveIdx>=WAVES.length-1){ mode="victory"; save.won=true; persist(); stopDrone(); CG.gameplayStop(); return; }
   if(endless){ endlessN++; save.endlessBest=Math.max(save.endlessBest,endlessN); persist(); }
@@ -473,6 +527,9 @@ function update(){
   if(overgrowthT>0) overgrowthT -= DT;
   if(pherT>0) pherT -= DT;
   for(const a of run.abil) if(a.cd>0) a.cd -= DT;
+  if(comboT>0){ comboT-=DT; if(comboT<=0) comboN=0; }
+  if(mode==="play") waveT+=DT;
+  peakBiomass = Math.max(peakBiomass, biomass);
 
   if(mode==="prep"){
     if((firstMutateDone || corpses.length===0) && !boonChoice) prepT -= DT;
@@ -618,6 +675,7 @@ function update(){
         if(t.type==="warden"){
           // chain sweep: hits every human in the circle
           t.swing = 0.3;
+          rings.push({x:t.x,y:t.y,r:0,maxR:def.range*CFG.tile*1.05,maxT:0.35,t:0.35,col:"rgba(220,210,80,0.55)"});
           for(const e of enemies){ if(dist2(t,e)<sq(def.range*CFG.tile)) damage(e, def.dmg*meta.dmg*dmgMult, false); }
           SFX.hit(); noise(0.1,0.18,false);
           burst(t.x,t.y-6,"#c9ced4",6);
@@ -645,6 +703,8 @@ function update(){
     if(!enemies.includes(p.tgt)){ projectiles.splice(i,1); continue; }
     const dx=p.tgt.x-p.x, dy=p.tgt.y-p.y, m=Math.hypot(dx,dy)||1;
     p.x += dx/m*p.spd*DT; p.y += dy/m*p.spd*DT;
+    // acid trail particles
+    if(Math.random()<0.45) particles.push({x:p.x+(Math.random()-0.5)*4,y:p.y+(Math.random()-0.5)*4,vx:(Math.random()-0.5)*18,vy:(Math.random()-0.5)*18,t:0.18,col:"#c8f050"});
     if(m < 10){
       let dmg = p.dmg;
       if(p.tgt.snared && p.tgt.drench>0){ dmg*=2; popup(p.tgt.x,p.tgt.y,"FERMENT x2","#b0e07f"); burst(p.tgt.x,p.tgt.y,"#b0e07f",8); }
@@ -660,6 +720,8 @@ function update(){
   /* particles / popups */
   for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.t-=DT; p.x+=p.vx*DT; p.y+=p.vy*DT; p.vx*=0.94; p.vy*=0.94; if(p.t<=0) particles.splice(i,1); }
   for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.t-=DT; p.y-=24*DT; if(p.t<=0) popups.splice(i,1); }
+  for(let i=stains.length-1;i>=0;i--){ stains[i].t-=DT; if(stains[i].t<=0) stains.splice(i,1); }
+  for(let i=rings.length-1;i>=0;i--){ const rr=rings[i]; rr.t-=DT; if(rr.t<=0){ rings.splice(i,1); continue; } rr.r=rr.maxR*(1-rr.t/rr.maxT); }
 
   /* wave clear check */
   if(mode==="play" && spawnQ.length===0 && enemies.length===0) waveCleared();
@@ -671,12 +733,23 @@ function nearHive(e){
 }
 function damage(e, amt, pierce){
   const arm = Math.max(0, e.armor - (e.drench>0?0.15:0) - (e.corroded>0?e.armor:0));
-  e.hp -= amt * (pierce?1:(1-arm));
-  e.flash = 0.12;
+  const dealt = amt * (pierce?1:(1-arm));
+  e.hp -= dealt; e.flash = 0.12;
+  if(dealt >= 30) popup(e.x, e.y-e.r-4, Math.floor(dealt)+"", "#ffd080");
 }
 function kill(e){
   const idx = enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
   biomass += CFG.killBounty + run.killBonus;
+  killsThisRun++;
+  // kill combo
+  comboN++; comboT = 1.5;
+  if(comboN >= 3) popup(e.x, e.y-20, "×"+comboN+" FRENZY!", "#ffe060");
+  // kill milestone every 25
+  if(killsThisRun % 25 === 0) showBanner(killsThisRun+" ELIMINATED","the hive grows stronger");
+  // sweeper interception bonus
+  if(e.type==="sweeper" && e.chanT>0){ biomass+=30; popup(e.x,e.y,"INTERCEPTED! +30","#e3d34e"); }
+  // ground stain
+  stains.push({x:e.x,y:e.y,t:5,col:e.col}); if(stains.length>20) stains.shift();
   burst(e.x,e.y,e.col,10);
   if(e.type==="boss"){ SFX.boom(); shakeIt(10); hitStop=4; bigBurst(e.x,e.y,"#c9d3dd",32); bigBurst(e.x,e.y,"#e0c0ff",18); for(let i=0;i<3;i++) dropCorpse(e.x+(i-1)*CFG.tile, e.y); }
   else if(e.type==="butcher"){ SFX.boom(); shakeIt(7); hitStop=3; bigBurst(e.x,e.y,"#b04a4a",24); popup(e.x,e.y,"THE BUTCHER FALLS","#b04a4a"); for(let i=0;i<2;i++) dropCorpse(e.x+(i*2-1)*CFG.tile*0.5, e.y); }
@@ -737,23 +810,39 @@ function onTap(x,y){
   if(menu){
     const picked = menuHit(x,y);
     if(picked==='evolve'){ applyTier2(menu.tower); return; }
+    if(picked==='salvage'){
+      const t2=CFG.tier2[menu.tower.type], refund=Math.floor(t2.cost*0.4);
+      biomass+=refund; popup(menu.tower.x,menu.tower.y,"+"+refund+"◈ SALVAGED","#e3d34e");
+      burst(menu.tower.x,menu.tower.y,"#e3d34e",10);
+      const mt=menu.tower; menu=null;
+      towers.splice(towers.indexOf(mt),1);
+      if(blocked[mt.r][mt.c]) unblock(mt.c,mt.r);
+      return;
+    }
     if(picked && menu.corpse){ mutate(menu.corpse, picked); return; }
     menu = null;
   }
   // corpse tap
   const [c,r] = xyToTile(x,y);
   const k = corpses.find(k=>k.c===c&&k.r===r);
-  if(k){ menu = {corpse:k}; SFX.ui(); return; }
-  // tower tap for upgrade
-  const tw = towers.find(t=>t.c===c&&t.r===r&&t.type!=="warden"&&t.tier===0);
-  if(tw && CFG.tier2[tw.type]){ menu = {tower:tw}; SFX.ui(); return; }
+  if(k){
+    const [kx2,ky2]=tileToXY(k.c,k.r);
+    rings.push({x:kx2,y:ky2,r:0,maxR:28,maxT:0.35,t:0.35,col:"rgba(155,224,127,0.8)"});
+    burst(kx2,ky2,"#9be07f",5);
+    menu={corpse:k}; SFX.ui(); return;
+  }
+  // tower tap (tier-0 = evolve, tier-1 = salvage)
+  const tw = towers.find(t=>t.c===c&&t.r===r&&t.type!=="warden"&&CFG.tier2[t.type]);
+  if(tw){ menu = {tower:tw}; SFX.ui(); return; }
 }
 function menuAnchor(){ if(menu.tower) return [menu.tower.x, menu.tower.y]; const s = menu.corpse; return tileToXY(s.c, s.r); }
 function menuOpts(){
   if(!menu) return [];
   if(menu.tower){
     const [tx,ty]=[menu.tower.x,menu.tower.y];
-    return [{type:'evolve', x:tx, y:Math.max(TOP+46,ty-80), r:40}];
+    const oy=Math.max(TOP+46,ty-80);
+    if(menu.tower.tier===1) return [{type:'salvage', x:tx, y:oy, r:40}];
+    return [{type:'evolve', x:tx, y:oy, r:40}];
   }
   const [kx,ky] = menuAnchor();
   const types = ["spitter","rootmass","spore","node"];
@@ -861,7 +950,9 @@ function handleEndScreen(x,y){
   }
 }
 canvas.addEventListener("mousedown", ev=>{ const [x,y]=canvasPos(ev); onTap(x,y); });
+canvas.addEventListener("mousemove", ev=>{ const [x,y]=canvasPos(ev); ptrX=x; ptrY=y; });
 canvas.addEventListener("touchstart", ev=>{ ev.preventDefault(); const [x,y]=canvasPos(ev); onTap(x,y); }, {passive:false});
+canvas.addEventListener("touchmove", ev=>{ const [x,y]=canvasPos(ev); ptrX=x; ptrY=y; }, {passive:true});
 window.addEventListener("keydown", ev=>{
   const k = ev.key.toLowerCase();
   if(k==="m"){ muted=!muted; save.muted=muted; persist(); }
@@ -870,6 +961,22 @@ window.addEventListener("keydown", ev=>{
 document.addEventListener("visibilitychange", ()=>{
   if(document.hidden){ lastT = 0; if((mode==="play"||mode==="prep") && !paused){ paused = true; CG.gameplayStop(); } }
 });
+
+function drawBossBar(){
+  const boss = enemies.find(e=>e.type==="boss"||e.type==="butcher");
+  if(!boss) return;
+  const bw=W-100, bx=50, by=H-52;
+  ctx.fillStyle="rgba(14,18,20,0.92)"; ctx.fillRect(bx-4,by-22,bw+8,46);
+  ctx.strokeStyle=boss.type==="boss"?"#8fa0b0":"#b04a4a"; ctx.lineWidth=2;
+  ctx.strokeRect(bx-4,by-22,bw+8,46); ctx.lineWidth=1;
+  ctx.fillStyle="#1a1e22"; ctx.fillRect(bx,by,bw,14);
+  ctx.fillStyle=boss.type==="boss"?"#6a8090":"#b04a4a";
+  ctx.fillRect(bx,by,bw*Math.max(0,boss.hp/boss.max),14);
+  ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 13px monospace";
+  ctx.fillText(boss.type==="boss"?"— THE PURIFIER —":"— THE BUTCHER —",W/2,by-6);
+  ctx.fillStyle="#8a94a0"; ctx.font="11px monospace";
+  ctx.fillText(Math.ceil(Math.max(0,boss.hp))+" HP",W/2,by+26);
+}
 
 /* ===== Render ===== */
 function draw(){
@@ -893,6 +1000,12 @@ function draw(){
   if(mode==="title"){ drawTitle(); ctx.restore(); return; }
 
   drawHive();
+  // ground stains (fading death marks)
+  for(const s of stains){
+    ctx.globalAlpha=Math.min(0.35, s.t/5*0.35);
+    ctx.fillStyle=s.col; ctx.beginPath(); ctx.ellipse(s.x,s.y,10,6,0.4,0,6.283); ctx.fill();
+  }
+  ctx.globalAlpha=1;
   // clouds
   for(const cl of clouds){
     ctx.fillStyle = "rgba(150,220,120,"+(0.10+0.08*Math.sin(cl.t*6))+")";
@@ -913,11 +1026,20 @@ function draw(){
     if(k.stack>1){ ctx.fillStyle="#9be07f"; ctx.font="bold 11px monospace"; ctx.textAlign="center"; ctx.fillText("x"+k.stack,x,y-22); }
     ctx.restore();
   }
+  // expanding rings (Warden impact, corpse tap)
+  for(const rr of rings){
+    ctx.globalAlpha=(rr.t/rr.maxT)*0.65;
+    ctx.strokeStyle=rr.col; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(rr.x,rr.y,Math.max(1,rr.r),0,6.283); ctx.stroke(); ctx.lineWidth=1;
+  }
+  ctx.globalAlpha=1;
   // towers
   for(const t of towers){
     ctx.save(); ctx.translate(t.x,t.y);
     const p = 1+0.05*Math.sin(t.pulse*3);
     ctx.scale(p,p);
+    // tier-2 aura glow
+    if(t.tier===1){ ctx.save(); ctx.globalAlpha=0.13+0.05*Math.sin(t.pulse*2.2); ctx.fillStyle="#e0a0f0"; ctx.beginPath(); ctx.arc(0,0,21,0,6.283); ctx.fill(); ctx.restore(); }
     if(t.flash>0){ ctx.globalAlpha=0.6; }
     if(t.type==="warden"){
       if(t.swing>0) t.swing -= DT;
@@ -953,14 +1075,38 @@ function draw(){
       ctx.closePath(); ctx.fill();
       ctx.fillStyle="#efe0ff"; ctx.beginPath(); ctx.arc(0,0,3,0,6.283); ctx.fill();
     }
+    // cooldown reload arc (shooter towers only)
+    if(t.cd>0 && t.type!=="rootmass" && t.type!=="node"){ ctx.save(); ctx.globalAlpha=0.28; ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,17,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
     if(t.tier===1){ ctx.globalAlpha=1; ctx.fillStyle="#e0a0f0"; ctx.beginPath(); ctx.arc(12,-12,5,0,6.283); ctx.fill(); ctx.fillStyle="#fff"; ctx.font="bold 7px monospace"; ctx.textAlign="center"; ctx.fillText("2",12,-9); }
     ctx.restore();
     // hp bar if hurt
     if(t.hp<t.max){ ctx.fillStyle="#333"; ctx.fillRect(t.x-14,t.y-24,28,4); ctx.fillStyle="#e0a04a"; ctx.fillRect(t.x-14,t.y-24,28*(t.hp/t.max),4); }
   }
+  // node link lines (purple dashes between Node and buffed towers)
+  ctx.save(); ctx.setLineDash([4,7]);
+  for(const n of towers){
+    if(n.type!=="node") continue;
+    const lr=(n.tier===1?2.4:CFG.towers.node.range)*CFG.tile;
+    for(const tw of towers){
+      if(tw===n||dist2(n,tw)>=sq(lr)) continue;
+      ctx.globalAlpha=0.17+0.07*Math.sin(perfNow*2.5);
+      ctx.strokeStyle="#c9a0f0"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(n.x,n.y); ctx.lineTo(tw.x,tw.y); ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]); ctx.globalAlpha=1; ctx.restore();
   // enemies
   for(const e of enemies){
     ctx.save(); ctx.translate(e.x,e.y);
+    // speed streak for scavengers
+    if(e.type==="scav" && flow){
+      const [ec2,er2]=xyToTile(e.x,e.y);
+      const fv=(inGrid(ec2,er2)&&flow[er2]&&flow[er2][ec2])?flow[er2][ec2]:null;
+      if(fv){ ctx.save(); ctx.globalAlpha=0.2; ctx.fillStyle=e.col;
+        ctx.beginPath(); ctx.arc(-fv[0]*10,-fv[1]*10,e.r*0.65,0,6.283); ctx.fill();
+        ctx.beginPath(); ctx.arc(-fv[0]*16,-fv[1]*16,e.r*0.35,0,6.283); ctx.fill();
+        ctx.restore(); }
+    }
     ctx.fillStyle = e.flash>0 ? "#ffffff" : e.col;
     if(e.type==="sweeper"){
       ctx.fillRect(-e.r,-e.r,e.r*2,e.r*2);
@@ -988,9 +1134,17 @@ function draw(){
     if(e.snared){ ctx.strokeStyle="#8a6a3f"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,e.r*0.6,e.r*0.8,0,3.14); ctx.stroke(); }
     if(e.drench>0){ ctx.fillStyle="rgba(180,240,80,0.5)"; ctx.beginPath(); ctx.arc(e.r*0.5,-e.r*0.5,3,0,6.283); ctx.fill(); }
     if(e.corroded>0){ ctx.strokeStyle="rgba(200,240,80,0.85)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,e.r+4,0,6.283); ctx.stroke(); ctx.lineWidth=1; }
+    // HP tint: redden at low health
+    if(e.hp/e.max<0.5 && e.flash<=0){ const dmgF=Math.min(1,(1-e.hp/e.max)*2); ctx.save(); ctx.globalAlpha=dmgF*0.38; ctx.fillStyle="#cc2020"; ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill(); ctx.restore(); }
     ctx.restore();
     // hp bar
     if(e.hp<e.max){ ctx.fillStyle="#222"; ctx.fillRect(e.x-14,e.y-e.r-10,28,4); ctx.fillStyle="#e06060"; ctx.fillRect(e.x-14,e.y-e.r-10,28*Math.max(0,e.hp/e.max),4); }
+    // last enemy pulse ring
+    if(mode==="play" && spawnQ.length===0 && enemies.length===1){
+      const lp=0.5+0.5*Math.sin(perfNow*8);
+      ctx.strokeStyle="rgba(255,80,80,"+(0.4+lp*0.5)+")"; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.arc(e.x,e.y,e.r+6+lp*3,0,6.283); ctx.stroke(); ctx.lineWidth=1;
+    }
   }
   // projectiles
   ctx.fillStyle="#c8f050";
@@ -1006,6 +1160,7 @@ function draw(){
   drawHUD();
   drawAbilities();
   drawSpeedBtn();
+  drawBossBar();
   if(menu) drawMenu();
   if(mode==="prep") drawPrep();
   if(boonChoice) drawBoons();
@@ -1027,11 +1182,13 @@ function draw(){
     eg.addColorStop(0,"rgba(0,0,0,0)"); eg.addColorStop(1,"rgba(210,40,40,"+edgeA.toFixed(3)+")");
     ctx.fillStyle=eg; ctx.fillRect(0,0,W,H);
   }
+  // wave-start flash
+  if(waveFlashT>0){ ctx.fillStyle="rgba(255,255,255,"+(waveFlashT/0.15*0.13)+")"; ctx.fillRect(0,0,W,H); }
 }
 function drawHive(){
   const [x0,y0]=tileToXY(CFG.hive.c0,CFG.hive.r0), [x1,y1]=tileToXY(CFG.hive.c1,CFG.hive.r1);
   const cx=(x0+x1)/2, cy=(y0+y1)/2;
-  const pulse = 1+0.04*Math.sin(perfNow*2.2);
+  const pulse = 1+0.04*Math.sin(perfNow*(hiveHP/hiveMax<0.25?7:2.2));
   // roots radiating
   ctx.strokeStyle="rgba(150,100,180,0.25)"; ctx.lineWidth=3;
   for(let i=0;i<8;i++){ const a=i*0.785+0.3; ctx.beginPath(); ctx.moveTo(cx,cy);
@@ -1070,6 +1227,8 @@ function drawHUD(){
   // DNA
   ctx.fillStyle="#c9a0f0"; ctx.textAlign="right"; ctx.font="bold 20px monospace";
   ctx.fillText("◆"+save.dna, W-146, 44);
+  // kill counter
+  if(mode==="play"||mode==="prep"){ ctx.fillStyle="#5a6470"; ctx.textAlign="left"; ctx.font="11px monospace"; ctx.fillText("⚡"+killsThisRun, 52, 66); }
   // pause + mute buttons (56px touch targets)
   ctx.fillStyle="#1c2226"; ctx.fillRect(W-128,8,56,56); ctx.fillRect(W-64,8,56,56);
   ctx.strokeStyle="rgba(255,255,255,0.2)"; ctx.strokeRect(W-128,8,56,56); ctx.strokeRect(W-64,8,56,56);
@@ -1082,14 +1241,22 @@ function drawMenu(){
   const opts = menuOpts();
   ctx.fillStyle="rgba(5,7,9,0.35)"; ctx.fillRect(0,TOP,W,H-TOP);
   if(menu.tower){
-    const o=opts[0], t2=CFG.tier2[menu.tower.type], ok=biomass>=t2.cost;
-    ctx.save(); if(!ok) ctx.globalAlpha=0.55;
+    const o=opts[0], t2=CFG.tier2[menu.tower.type];
     ctx.fillStyle="rgba(14,12,22,0.95)"; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.fill();
-    ctx.strokeStyle=ok?"#e0a0f0":"#666"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
-    ctx.fillStyle="#e0a0f0"; ctx.textAlign="center"; ctx.font="bold 11px monospace"; ctx.fillText("EVOLVE",o.x,o.y-5);
-    ctx.fillStyle="#dfe6ec"; ctx.font="bold 9px monospace"; ctx.fillText(t2.name,o.x,o.y+8);
-    ctx.fillStyle=ok?"#0d0a1a":"#1a0d0d"; ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(o.x-22,o.y+14,44,18,8);else ctx.rect(o.x-22,o.y+14,44,18); ctx.fill();
-    ctx.fillStyle=ok?"#e0a0f0":"#e07f7f"; ctx.font="bold 12px monospace"; ctx.fillText("◈"+t2.cost,o.x,o.y+28); ctx.restore();
+    if(o.type==='salvage'){
+      const refund=Math.floor(t2.cost*0.4);
+      ctx.strokeStyle="#e3d34e"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
+      ctx.fillStyle="#e3d34e"; ctx.textAlign="center"; ctx.font="bold 11px monospace"; ctx.fillText("SALVAGE",o.x,o.y-5);
+      ctx.fillStyle="#8fd9a8"; ctx.font="bold 12px monospace"; ctx.fillText("+"+refund+"◈",o.x,o.y+10);
+    } else {
+      const ok=biomass>=t2.cost;
+      ctx.save(); if(!ok) ctx.globalAlpha=0.55;
+      ctx.strokeStyle=ok?"#e0a0f0":"#666"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
+      ctx.fillStyle="#e0a0f0"; ctx.textAlign="center"; ctx.font="bold 11px monospace"; ctx.fillText("EVOLVE",o.x,o.y-5);
+      ctx.fillStyle="#dfe6ec"; ctx.font="bold 9px monospace"; ctx.fillText(t2.name,o.x,o.y+8);
+      ctx.fillStyle=ok?"#0d0a1a":"#1a0d0d"; ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(o.x-22,o.y+14,44,18,8);else ctx.rect(o.x-22,o.y+14,44,18); ctx.fill();
+      ctx.fillStyle=ok?"#e0a0f0":"#e07f7f"; ctx.font="bold 12px monospace"; ctx.fillText("◈"+t2.cost,o.x,o.y+28); ctx.restore();
+    }
     return;
   }
   const [kx,ky] = menuAnchor();
@@ -1140,6 +1307,9 @@ function drawPrep(){
       if(tease){ ctx.fillStyle="#c9a0f0"; ctx.font="bold 16px monospace"; ctx.fillText(tease, W/2, TOP+94); }
     }
   }
+  // rotating lore line
+  ctx.fillStyle="rgba(100,110,120,0.65)"; ctx.font="11px monospace"; ctx.textAlign="center";
+  ctx.fillText(LORE[Math.floor(perfNow*0.07)%LORE.length], W/2, H-12);
 }
 function drawAbilities(){
   const glyphs = { overgrowth:"Ψ", bloom:"✦", pheromone:"◎" };
@@ -1178,8 +1348,9 @@ function drawBoons(){
   const cards = boonCards();
   for(let i=0;i<cards.length;i++){
     const o=cards[i], b=boonChoice[i];
-    ctx.fillStyle="rgba(26,19,48,0.95)"; ctx.fillRect(o.x,o.y,o.w,o.h);
-    ctx.strokeStyle="#b088e0"; ctx.lineWidth=2; ctx.strokeRect(o.x,o.y,o.w,o.h); ctx.lineWidth=1;
+    const hover=ptrX>=o.x&&ptrX<=o.x+o.w&&ptrY>=o.y&&ptrY<=o.y+o.h;
+    ctx.fillStyle=hover?"rgba(40,28,68,0.98)":"rgba(26,19,48,0.95)"; ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.strokeStyle=hover?"#e0d0ff":"#b088e0"; ctx.lineWidth=hover?3:2; ctx.strokeRect(o.x,o.y,o.w,o.h); ctx.lineWidth=1;
     ctx.fillStyle="#dfe6ec"; ctx.font="bold 21px monospace";
     ctx.fillText(b.txt, o.x+o.w/2, o.y+60);
     ctx.fillStyle="#8fd9a8"; ctx.font="16px monospace";
@@ -1209,6 +1380,15 @@ function drawPaused(){
 function dailyBtnRect(){ return {x:W/2-140,y:398,w:280,h:80}; }
 function drawTitle(){
   ctx.textAlign="center";
+  // animated root network
+  ctx.strokeStyle="rgba(150,100,180,0.07)"; ctx.lineWidth=1.5;
+  for(let i=0;i<22;i++){
+    const t0=i*0.41, amp=35+i*7;
+    const sx=(i*173)%W, sy=40+((i*271)%(H-40));
+    const ex=sx+Math.cos(t0+perfNow*0.25)*amp, ey=sy+Math.sin(t0+perfNow*0.25)*amp;
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.quadraticCurveTo((sx+ex)/2+15,sy+50,ex,ey); ctx.stroke();
+  }
+  ctx.lineWidth=1;
   ctx.fillStyle="#b088e0"; ctx.font="bold 64px Georgia, serif";
   ctx.fillText("DEADROOT", W/2, 190);
   ctx.fillStyle="#8a94a0"; ctx.font="15px monospace";
@@ -1255,9 +1435,12 @@ function drawEnd(won){
     ctx.fillText("Overrun on wave "+wn+" — "+(endless?"THE LONG NIGHT":phaseOf(Math.min(waveIdx,11))), W/2, 148);
     ctx.fillStyle="#c9a0f0"; ctx.fillText("+"+dnaEarned+" DNA harvested this run", W/2, 172);
   }
+  // run stats
+  ctx.fillStyle="#6a7480"; ctx.font="11px monospace"; ctx.textAlign="center";
+  ctx.fillText("⚡ "+killsThisRun+" eliminated  ·  🏗 "+towersBuiltThisRun+" towers built  ·  ◈ "+Math.floor(peakBiomass)+" peak biomass", W/2, 192);
   // Mycelial Network
   ctx.fillStyle="#b088e0"; ctx.font="bold 18px monospace";
-  ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 206);
+  ctx.fillText("MYCELIAL NETWORK — DNA: "+save.dna, W/2, 208);
   const {bx,bw,rowH,by} = endLayout();
   ctx.font="12px monospace";
   for(let i=0;i<CFG.meta.length;i++){
@@ -1299,6 +1482,7 @@ function frame(t){
   if(dt>0.25) dt = 0.25;
   perfNow += dt;
   if(edgePulseT>0) edgePulseT = Math.max(0, edgePulseT - dt*2.5);
+  if(waveFlashT>0) waveFlashT = Math.max(0, waveFlashT - dt);
   if(slowMoT>0){ slowMoT -= dt; if(slowMoT<=0) timeScale=1; }
   if(hitStop>0){ hitStop--; draw(); return; }
   if(!paused){ acc += dt*timeScale; while(acc>=DT){ for(let i=0;i<gameSpeed;i++) update(); acc-=DT; } }
