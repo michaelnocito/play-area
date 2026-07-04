@@ -614,6 +614,7 @@ function spawnBoss(hp){
 // wave lifecycle
 function beginWave(n){
   wave = n; wavePhase = 0;
+  restGag = null;                     // JF-#031: cameo clears when the fight resumes
   const D = DISTRICTS[sel];
   hitsWave = 0;                       // untouched-wave trial tracking (JF-#011)
   const bossWave = wave % WAVES_PER_DISTRICT === 0;
@@ -640,12 +641,16 @@ function onWaveClear(){
       won = true;
       banner(D.boss + ' FALLS  ·  +25◆', '#7ce8a8', 190);
     }
-    restT = 210; slowMo = Math.max(slowMo, 30); Snd.best();
+    restT = 210; slowMo = Math.max(slowMo, 30); Snd.best(); moonWake(160);   // JF-#031: the moon watches the boss drop
   } else {
     banner('WAVE ' + wave + ' CLEARED', '#7ce8a8', 100);
     restT = 140; Snd.tick();
   }
-  if (hitsWave === 0) bumpTrial('nohit');
+  if (hitsWave === 0){ bumpTrial('nohit'); moonWake(120); popup(780, 150, '👏 slow clap', '#f0ead2'); }   // JF-#031: flawless wave earns a moon clap
+  // JF-#031: a background cameo during the breather (straggler or a passing cat)
+  restGag = Math.random() < 0.5
+    ? { kind: 'flag', x: -50, dir: 1, spd: 1.1 }
+    : { kind: 'cat',  x: W + 50, dir: -1, spd: 2.4 };
   if (!won) offerScrolls();   // JF-#025: the rest beat becomes a choice
 }
 let hitsWave = 0;
@@ -708,6 +713,21 @@ const HYPE = [
 ];
 let hypeShown = -1;
 let longestSend = 0;   // JF-#030: farthest yeet this run (px), bragged on the tally
+// JF-#031: the moon wakes up and reacts to the big moments
+let moonWakeT = 0;
+function moonWake(f){ moonWakeT = Math.max(moonWakeT, f); }
+// JF-#031: one gag prop per district — a thrown body sailing through it pays off
+let propHitT = 0;
+const PROPS = [
+  { kind: 'dummy',   cry: 'STUFFING EVERYWHERE', col: '#d8cba0' },
+  { kind: 'cart',    cry: 'NOODLES!!',           col: '#e8c76a' },
+  { kind: 'gong',    cry: 'GOOOONG',             col: '#e0b050' },
+  { kind: 'laundry', cry: 'TANGLED IN THE WASH', col: '#cfe0f8' },
+  { kind: 'urn',     cry: 'THE ANCESTORS ARE FURIOUS', col: '#7ce8a8' }
+];
+const PROP_X = 132;   // stands off to the left; bodies thrown that way crash it
+// JF-#031: between-wave background cameo (a straggler waves off, or a cat trots by)
+let restGag = null;
 function hype(c){
   for (const H of HYPE){
     if (c >= H.at && H.at > hypeShown){
@@ -792,7 +812,7 @@ function strike(dir){
     if (felled >= 3){
       score += 500 * (felled - 2);
       banner('☗ STRIKE!! ' + felled + ' PINS', '#ffd98a', 100);
-      Snd.block(); Snd.best(); shake = Math.max(shake, 14); slowMo = Math.max(slowMo, 24);
+      Snd.block(); Snd.best(); shake = Math.max(shake, 14); slowMo = Math.max(slowMo, 24); moonWake(90);
     }
     // JF-#010: PALM WAVE — 3 consecutive perfects release a wave that fells both sides
     if (perfect && hasTech(2)){
@@ -1069,6 +1089,7 @@ function startRun(){
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
   hypeShown = -1; longestSend = 0;   // JF-#030: reset silly-run trackers
+  moonWakeT = 0; propHitT = 0; restGag = null;   // JF-#031
   dBase = DISTRICTS[sel].dBase;
   beginWave(1);
   // JF-#012: veterans get the district's line instead of the controls lesson
@@ -1091,6 +1112,9 @@ function update(){
   if (msgT > 0) msgT--;
   if (bannerT > 0) bannerT--;
   if (P.punchT > 0) P.punchT--;
+  if (moonWakeT > 0) moonWakeT--;      // JF-#031
+  if (propHitT > 0) propHitT--;
+  if (restGag){ restGag.x += restGag.dir * restGag.spd; if (restGag.x < -60 || restGag.x > W + 60) restGag = null; }
 
   popups = popups.filter(p => (p.life--, p.y -= 0.7, p.life > 0));
   parts = parts.filter(p => {
@@ -1255,6 +1279,14 @@ function update(){
             }
           }
         }
+        // JF-#031: a thrown body sailing through the district prop = a payoff crash
+        if (e.st === E_THROWN && !e.propCrashed && e.y < 430 && e.y > 360 && Math.abs(e.x - PROP_X) < 32){
+          e.propCrashed = true; propHitT = 14; e.vx *= 0.4;
+          const P0 = PROPS[sel];
+          popup(PROP_X, 372, P0.cry, P0.col, true);
+          burst(PROP_X, 400, P0.col, 16, 5);
+          Snd.block(); shake = Math.max(shake, 8); moonWake(70);
+        }
         // JF-#030: record the farthest yeet (thrown bodies only)
         if (e.st === E_THROWN && e.sendX0 !== undefined){
           const d = Math.abs(e.x - e.sendX0);
@@ -1397,6 +1429,67 @@ function fighter(x, y, face, opts){
   cx.restore();   // end torsoDrop group
   cx.restore();   // end fighter transform
 }
+// JF-#031: district gag props — simple cartoon silhouettes that wobble on impact
+function drawProp(p, x, base){
+  cx.save();
+  cx.translate(x, base);
+  const wob = propHitT > 0 ? Math.sin(propHitT * 0.9) * (propHitT / 14) * 0.22 : 0;
+  cx.rotate(wob);
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
+  const out = (fill, path) => { cx.beginPath(); path(); cx.closePath(); cx.fillStyle = fill; cx.fill(); cx.strokeStyle = OUT; cx.lineWidth = 3; cx.stroke(); };
+  if (p.kind === 'dummy'){                 // training dummy: post + straw head
+    cx.strokeStyle = OUT; cx.lineWidth = 8; cx.beginPath(); cx.moveTo(0, 0); cx.lineTo(0, -46); cx.stroke();
+    out('#c9b27a', () => { cx.arc(0, -56, 12, 0, 7); });
+    cx.strokeStyle = OUT; cx.lineWidth = 6; cx.beginPath(); cx.moveTo(-16, -40); cx.lineTo(16, -40); cx.stroke();
+  } else if (p.kind === 'cart'){           // noodle cart: box, wheels, steaming bowl
+    out('#a5713e', () => { cx.rect(-30, -34, 60, 26); });
+    cx.fillStyle = OUT; cx.beginPath(); cx.arc(-18, -6, 8, 0, 7); cx.arc(18, -6, 8, 0, 7); cx.fill();
+    out('#e8dcc0', () => { cx.ellipse(0, -40, 15, 6, 0, 0, 7); });   // bowl
+    cx.strokeStyle = 'rgba(240,234,210,0.5)'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(-4, -44); cx.quadraticCurveTo(-9, -52, -3, -58); cx.moveTo(6, -44); cx.quadraticCurveTo(11, -52, 5, -58); cx.stroke();
+  } else if (p.kind === 'gong'){           // temple gong on a frame
+    cx.strokeStyle = OUT; cx.lineWidth = 6;
+    cx.beginPath(); cx.moveTo(-26, 0); cx.lineTo(-22, -60); cx.lineTo(22, -60); cx.lineTo(26, 0); cx.stroke();
+    out(p.col, () => { cx.arc(0, -40, 22, 0, 7); });
+    out('#b8923a', () => { cx.arc(0, -40, 8, 0, 7); });
+  } else if (p.kind === 'laundry'){        // laundry line with hanging clothes
+    cx.strokeStyle = OUT; cx.lineWidth = 6;
+    cx.beginPath(); cx.moveTo(-30, 0); cx.lineTo(-30, -56); cx.moveTo(34, 0); cx.lineTo(34, -56); cx.stroke();
+    cx.strokeStyle = '#8a7a5a'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(-30, -52); cx.quadraticCurveTo(2, -44, 34, -52); cx.stroke();
+    for (const [cx0, cc] of [[-16, '#cfe0f8'], [4, '#e8b0b0'], [22, '#b0e8c0']]){
+      out(cc, () => { cx.rect(cx0 - 7, -50, 14, 18); });
+    }
+  } else {                                 // urn / jade pot
+    out(p.col, () => { cx.moveTo(-14, -4); cx.quadraticCurveTo(-24, -30, -12, -50);
+      cx.lineTo(12, -50); cx.quadraticCurveTo(24, -30, 14, -4); });
+    out('#5fae88', () => { cx.ellipse(0, -50, 14, 5, 0, 0, 7); });
+  }
+  cx.restore();
+}
+// JF-#031: rest-beat cameo actors
+function drawRestGag(){
+  const gg = restGag, gx = gg.x, gy = 418;
+  cx.save(); cx.translate(gx, gy);
+  if (gg.kind === 'flag'){                 // a defeated straggler waddles off waving a flag
+    cx.scale(gg.dir, 1);
+    fighter(0, 0, 1, { col: '#9aa2b0', sash: '#6a4040', size: 0.7, eyes: 'dizzy' });
+    cx.strokeStyle = OUT; cx.lineWidth = 4; cx.beginPath(); cx.moveTo(10, -44); cx.lineTo(24, -60); cx.stroke();
+    cx.fillStyle = '#f4f0e6'; cx.beginPath();
+    cx.moveTo(24, -60); cx.lineTo(38 + Math.sin(t * 0.4) * 3, -57); cx.lineTo(24, -50); cx.closePath(); cx.fill();
+    cx.strokeStyle = OUT; cx.lineWidth = 1.5; cx.stroke();
+  } else {                                 // a cat trots across, unbothered
+    cx.scale(gg.dir, 1);
+    cx.fillStyle = '#2a2530'; cx.strokeStyle = OUT; cx.lineWidth = 2;
+    cx.beginPath(); cx.ellipse(0, -8, 16, 7, 0, 0, 7); cx.fill();                 // body
+    cx.beginPath(); cx.arc(13, -16, 7, 0, 7); cx.fill();                          // head
+    cx.beginPath(); cx.moveTo(9, -22); cx.lineTo(11, -30); cx.lineTo(15, -22); cx.fill();   // ear
+    cx.strokeStyle = '#2a2530'; cx.lineWidth = 3;
+    cx.beginPath(); cx.moveTo(-15, -6); cx.quadraticCurveTo(-26, -14 + Math.sin(t * 0.3) * 4, -24, -22); cx.stroke();  // tail
+    cx.fillStyle = '#8ee87c'; cx.beginPath(); cx.arc(15, -17, 1.6, 0, 7); cx.fill();        // eye
+  }
+  cx.restore();
+}
 // 4-spike cartoon star
 function drawStar(x, y, r, col, rot){
   cx.save(); cx.translate(x, y); cx.rotate(rot || 0);
@@ -1421,20 +1514,36 @@ function drawWorld(){
   cx.beginPath(); cx.arc(780, 90, 60, 0, 7); cx.fill();
   cx.fillStyle = '#f0ead2';
   cx.beginPath(); cx.arc(780, 90, 34, 0, 7); cx.fill();
-  cx.strokeStyle = 'rgba(24,18,32,0.35)'; cx.lineWidth = 2.5; cx.lineCap = 'round';
-  cx.beginPath();                                   // two closed eyes
-  cx.arc(771, 86, 6, 0.2, Math.PI - 0.2); cx.moveTo(795, 86); cx.arc(789, 86, 6, 0.2, Math.PI - 0.2);
-  cx.stroke();
-  cx.beginPath(); cx.arc(781, 96, 7, 0.15, Math.PI - 0.15); cx.stroke();   // little smile
-  // drifting "z z z" that resets slowly
-  cx.fillStyle = 'rgba(240,234,210,0.5)'; cx.textAlign = 'left';
-  cx.font = 'italic 14px ' + COMIC;
-  for (let i = 0; i < 3; i++){
-    const zt = (t * 0.4 + i * 40) % 120;
-    cx.globalAlpha = Math.max(0, 0.6 - zt / 200);
-    cx.fillText('z', 812 + i * 9 + zt * 0.15, 66 - zt * 0.35);
+  cx.strokeStyle = 'rgba(24,18,32,0.55)'; cx.lineWidth = 2.5; cx.lineCap = 'round';
+  if (moonWakeT > 0){                               // JF-#031: startled awake, watching
+    cx.fillStyle = '#fff';
+    cx.beginPath(); cx.arc(771, 86, 5.5, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(789, 86, 5.5, 0, 7); cx.fill();
+    cx.fillStyle = 'rgba(24,18,32,0.7)';
+    cx.beginPath(); cx.arc(772, 87, 2.4, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(790, 87, 2.4, 0, 7); cx.fill();
+    cx.strokeStyle = 'rgba(24,18,32,0.55)'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(765, 79); cx.lineTo(776, 81); cx.moveTo(795, 79); cx.lineTo(784, 81); cx.stroke();   // raised brows
+    cx.fillStyle = 'rgba(24,18,32,0.6)';                         // little 'o' of surprise
+    cx.beginPath(); cx.arc(780, 98, 4, 0, 7); cx.fill();
+    cx.fillStyle = '#ffd98a'; cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center';
+    cx.fillText('!', 824, 74);
+    cx.textAlign = 'left';
+  } else {
+    cx.beginPath();                                 // two closed sleeping eyes
+    cx.arc(771, 86, 6, 0.2, Math.PI - 0.2); cx.moveTo(795, 86); cx.arc(789, 86, 6, 0.2, Math.PI - 0.2);
+    cx.stroke();
+    cx.beginPath(); cx.arc(781, 96, 7, 0.15, Math.PI - 0.15); cx.stroke();   // little smile
+    // drifting "z z z" that resets slowly
+    cx.fillStyle = 'rgba(240,234,210,0.5)'; cx.textAlign = 'left';
+    cx.font = 'italic 14px ' + COMIC;
+    for (let i = 0; i < 3; i++){
+      const zt = (t * 0.4 + i * 40) % 120;
+      cx.globalAlpha = Math.max(0, 0.6 - zt / 200);
+      cx.fillText('z', 812 + i * 9 + zt * 0.15, 66 - zt * 0.35);
+    }
+    cx.globalAlpha = 1;
   }
-  cx.globalAlpha = 1;
   // pagoda silhouettes (count/height vary by district)
   cx.fillStyle = 'rgba(8,11,17,0.85)';
   for (let i = 0; i < D.pag; i++){
@@ -1464,6 +1573,10 @@ function drawWorld(){
   cx.fillStyle = D.ground; cx.fillRect(0, 428, W, H - 428);
   cx.strokeStyle = 'rgba(232,220,192,0.12)'; cx.lineWidth = 2;
   cx.beginPath(); cx.moveTo(0, 428); cx.lineTo(W, 428); cx.stroke();
+  // JF-#031: the district's gag prop, wobbling if it was just crashed into
+  drawProp(PROPS[sel], PROP_X, 428);
+  // JF-#031: between-wave background cameo
+  if (restGag) drawRestGag();
   // JF-#017: district ambience — deterministic drift from t, no particle state
   if (sel === 0){                       // COURTYARD: falling blossom petals
     cx.fillStyle = 'rgba(232,168,184,0.55)';
