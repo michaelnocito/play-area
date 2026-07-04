@@ -219,8 +219,40 @@ comboT, comboN, noHitWaves, waveStartHP, waveT, waveFlashT, stains[], rings[],
 killsThisRun, towersBuiltThisRun, peakBiomass, seenSweeper, ptrX, ptrY,
 droneNode2, droneGain2
 
+## DR-#012 — Tower graphics overhaul (2026-07-03)
+Mike: "too hard to figure out what tower does what — simplify mechanic + visuals."
+Research: JF cartoon pass (chunky outlines, distinct silhouettes, behavior tells in art).
+
+### 20 changes shipped
+**Silhouettes (5):** Spitter = organic acid sac + protruding proboscis tube; Rootmass =
+4 curved bezier claw arms + knotted core; Spore = mushroom (dome + wide brim + stem);
+Node = 6-point crystal star spire; Warden = wider stitched torso outline.
+
+**Cel outline (1):** All towers draw a dark outline before fill, popping off dark bg.
+
+**Behavior tells (4):** Spitter acid drip animates at proboscis tip (sin oscillation);
+Rootmass arms rotate (grabbing motion); Spore emits 3 rising puff particles (always
+drifting up = cloud tell); Node pulses 2 expanding signal rings (broadcast tell).
+
+**Color system (3):** TCOL palette — unique hue per type (acid lime / bark brown /
+emerald / violet / sickly green). Tier-2 shifts body color: GEYSER=teal, STRANGLER=
+dark-brown, BLIGHT=sickly dark, OVERMIND=bright violet. HP bars use tower accent color.
+
+**Tier-2 art (3):** GEYSER adds splash ring at tip; STRANGLER adds 5th arm + barbed
+hooks; BLIGHT darkens cap; OVERMIND adds crystal spire above star. Tier badge removed —
+art carries the signal. Aura glow uses tower accent color.
+
+**Menu UX (4):** Per-tower colored background per option; role label inside button
+(ACID/SNARE/SPORE/LINK); affordable options pulse with green shimmer ring; range preview
+ring uses tower color; node range ring now shown.
+
+### New
+- `TCOL` constant (palette per tower type)
+- `drawTowerArt(type, tier, pulse, isIcon, swing)` — unified renderer
+- `drawTowerIcon` is now a thin wrapper around `drawTowerArt`
+
 ## Backlog / next (v1.1 → submission)
 - **Category C (before submission):** rewarded ad SECOND WIND hook, CG SDK verify,
   mobile QA full playthrough on live URL, corpse rot timer / Sweeper sanitize tooltip.
-- Playtest pass on DR-#011: salvage balance (40% ok?), UNSCATHED frequency, combo feel,
-  boss bar positioning (check it doesn't overlap ability buttons), damage number spam threshold.
+- Playtest pass on DR-#011/012: salvage balance, UNSCATHED frequency, combo feel,
+  boss bar positioning, damage number spam threshold, tower readability QA.
