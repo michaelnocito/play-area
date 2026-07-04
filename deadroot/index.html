@@ -3,12 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="description" content="Deadroot: a corpse-mutation tower defense. Humans nearly wiped out the undead — the virus got smarter. Mutate the fallen into weapons and defend the Hive through 12 waves and beyond.">
+<meta property="og:title" content="Deadroot">
+<meta property="og:description" content="Corpse-mutation tower defense — mutate their dead before the cleanup crew steals them back.">
 <title>Deadroot</title>
 <!-- Verify against current CrazyGames SDK docs before submitting -->
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body { width:100%; height:100%; background:#07090b; overflow:hidden; touch-action:none; }
-  canvas { display:block; margin:0 auto; }
+  html,body { width:100%; height:100%; background:#07090b; overflow:hidden; touch-action:none; overscroll-behavior:none; }
+  canvas { display:block; margin:0 auto; touch-action:none; }
 </style>
 </head>
 <body>
@@ -24,6 +27,8 @@
 
 /* ===== CrazyGames SDK adapter (no-op offline) ===== */
 let sdkLive = false;
+let lastAdAt = -Infinity; // interstitial cooldown — avoid ad-spam on quick repeat deaths
+const AD_COOLDOWN = 45; // seconds
 const CG = {
   init(cb){
     try{ if(window.CrazyGames?.SDK){
@@ -37,8 +42,26 @@ const CG = {
   gameplayStart(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStart(); }catch(e){} },
   gameplayStop(){ try{ if(sdkLive) window.CrazyGames.SDK.game.gameplayStop(); }catch(e){} },
   happytime(){ try{ if(sdkLive) window.CrazyGames.SDK.game.happytime(); }catch(e){} },
-  hasAdblock(){ try{ return !!(sdkLive && window.CrazyGames.SDK.ad.hasAdblock); }catch(e){ return false; } },
-  interstitial(done){ try{ if(sdkLive){ window.CrazyGames.SDK.ad.requestAd("midgame",{adFinished:done,adError:done,adStarted:()=>{}}); return; } }catch(e){} done&&done(); },
+  // SDK docs describe hasAdblock as a boolean property, but adapt defensively
+  // in case a given SDK build exposes it as a method instead
+  hasAdblock(){
+    try{
+      if(!sdkLive) return false;
+      const v = window.CrazyGames.SDK.ad.hasAdblock;
+      return !!(typeof v==="function" ? v() : v);
+    }catch(e){ return false; }
+  },
+  interstitial(done){
+    try{
+      if(sdkLive){
+        if(perfNow-lastAdAt < AD_COOLDOWN){ done&&done(); return; } // too soon since the last one — skip, don't spam
+        lastAdAt = perfNow;
+        window.CrazyGames.SDK.ad.requestAd("midgame",{adFinished:done,adError:done,adStarted:()=>{}});
+        return;
+      }
+    }catch(e){}
+    done&&done();
+  },
   rewarded(done,fail){
     try{
       if(sdkLive){
@@ -181,8 +204,15 @@ function tileToXY(c,r){ return [c*CFG.tile+CFG.tile/2, TOP + r*CFG.tile+CFG.tile
 function xyToTile(x,y){ return [Math.floor(x/CFG.tile), Math.floor((y-TOP)/CFG.tile)]; }
 
 /* ===== Audio (procedural WebAudio) ===== */
-let AC=null, muted = !!save.muted;
-function audio(){ if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(AC&&AC.state==="suspended") AC.resume(); }
+let AC=null, muted = !!save.muted, masterBus=null;
+function audio(){
+  if(!AC){ try{
+    AC = new (window.AudioContext||window.webkitAudioContext)();
+    masterBus = AC.createDynamicsCompressor(); masterBus.connect(AC.destination);
+  }catch(e){} }
+  if(AC&&AC.state==="suspended") AC.resume();
+}
+function dest(){ return masterBus||AC.destination; }
 function tone(f0,f1,dur,type,vol,delay){
   if(muted||!AC) return;
   try{
@@ -191,7 +221,7 @@ function tone(f0,f1,dur,type,vol,delay){
     o.type = type||"sine"; o.frequency.setValueAtTime(f0,t);
     o.frequency.exponentialRampToValueAtTime(Math.max(f1,1),t+dur);
     g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+dur+0.02);
+    o.connect(g); g.connect(dest()); o.start(t); o.stop(t+dur+0.02);
   }catch(e){}
 }
 function noise(dur,vol,hp){
@@ -202,7 +232,7 @@ function noise(dur,vol,hp){
     const s = AC.createBufferSource(); s.buffer=buf;
     const f = AC.createBiquadFilter(); f.type = hp?"highpass":"lowpass"; f.frequency.value = hp?1800:600;
     const g = AC.createGain(); g.gain.value = vol;
-    s.connect(f); f.connect(g); g.connect(AC.destination); s.start();
+    s.connect(f); f.connect(g); g.connect(dest()); s.start();
   }catch(e){}
 }
 const SFX = {
@@ -230,13 +260,13 @@ function updateDrone(){
       droneNode = AC.createOscillator(); droneGain = AC.createGain();
       droneNode.type = "sawtooth"; droneNode.frequency.value = 55;
       droneGain.gain.value = 0;
-      droneNode.connect(droneGain); droneGain.connect(AC.destination);
+      droneNode.connect(droneGain); droneGain.connect(dest());
       droneNode.start();
       // tension layer: sine octave up, joins below 25% HP
       droneNode2 = AC.createOscillator(); droneGain2 = AC.createGain();
       droneNode2.type = "sine"; droneNode2.frequency.value = 110;
       droneGain2.gain.value = 0;
-      droneNode2.connect(droneGain2); droneGain2.connect(AC.destination);
+      droneNode2.connect(droneGain2); droneGain2.connect(dest());
       droneNode2.start();
     }catch(e){ droneNode=null; droneGain=null; return; }
   }
@@ -296,6 +326,10 @@ const DAILY_HELPFUL = [
   { txt:"FULL LARDER", sub:"+50 starting biomass", apply:_=>{ biomass+=50; } }
 ];
 let daily = false;
+// device-adaptive input wording (bible UX law: "tap" on touch, key/click names on desktop)
+const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+const TAP_WORD = IS_TOUCH ? "TAP" : "CLICK";
+const tapWord = IS_TOUCH ? "tap" : "click";
 function dayIndex(){ return Math.floor(Date.now()/86400000); }
 function dailyMods(){ const d=dayIndex(); return [DAILY_HOSTILE[d%3], DAILY_HELPFUL[(d>>2)%3]]; }
 function bumpDailyStreak(){
@@ -467,8 +501,10 @@ function applyTier2(t){
   menu = null;
 }
 function popup(x,y,txt,col){ popups.push({x,y,txt,col,t:1.2}); }
-function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=30+Math.random()*90; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.4+Math.random()*0.4,col}); } }
-function bigBurst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=80+Math.random()*200; particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.7+Math.random()*0.5,col,big:true}); } }
+const MAX_PARTICLES = 500; // perf safety net so a chaotic moment (boss death + combo + hive hit) can't spike frame time
+function addParticle(p){ if(particles.length<MAX_PARTICLES) particles.push(p); }
+function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=30+Math.random()*90; addParticle({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.4+Math.random()*0.4,col}); } }
+function bigBurst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, s=80+Math.random()*200; addParticle({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:0.7+Math.random()*0.5,col,big:true}); } }
 function shakeIt(n){ shake = Math.max(shake,n); }
 
 /* ===== Sweeper pathing (simple greedy A*-lite on small grid) ===== */
@@ -702,7 +738,7 @@ function update(){
         e.burnT += DT;
         if(e.burnT>=0.5){
           e.burnT=0;
-          for(const t of towers){ if(dist2(e,t)<sq(CFG.tile*1.4)){ t.hp-=6; t.flash=0.2; particles.push({x:t.x,y:t.y,vx:0,vy:-30,t:0.4,col:"#e0a04a"}); } }
+          for(const t of towers){ if(dist2(e,t)<sq(CFG.tile*1.4)){ t.hp-=6; t.flash=0.2; addParticle({x:t.x,y:t.y,vx:0,vy:-30,t:0.4,col:"#e0a04a"}); } }
           for(const cl of clouds){
             if((cl.x-e.x)**2+(cl.y-e.y)**2 < sq(cl.r)){
               // thermobaric: cloud ignites
@@ -787,7 +823,7 @@ function update(){
     const dx=p.tgt.x-p.x, dy=p.tgt.y-p.y, m=Math.hypot(dx,dy)||1;
     p.x += dx/m*p.spd*DT; p.y += dy/m*p.spd*DT;
     // acid trail particles
-    if(Math.random()<0.45) particles.push({x:p.x+(Math.random()-0.5)*4,y:p.y+(Math.random()-0.5)*4,vx:(Math.random()-0.5)*18,vy:(Math.random()-0.5)*18,t:0.18,col:"#c8f050"});
+    if(Math.random()<0.45) addParticle({x:p.x+(Math.random()-0.5)*4,y:p.y+(Math.random()-0.5)*4,vx:(Math.random()-0.5)*18,vy:(Math.random()-0.5)*18,t:0.18,col:"#c8f050"});
     if(m < 10){
       let dmg = p.dmg;
       if(p.tgt.snared && p.tgt.drench>0){ dmg*=2; popup(p.tgt.x,p.tgt.y,"FERMENT x2","#b0e07f"); burst(p.tgt.x,p.tgt.y,"#b0e07f",8); }
@@ -919,17 +955,19 @@ function onTap(x,y){
     if(picked && menu.corpse){ mutate(menu.corpse, picked); return; }
     menu = null;
   }
-  // corpse tap
-  const [c,r] = xyToTile(x,y);
-  const k = corpses.find(k=>k.c===c&&k.r===r);
+  // corpse / tower tap — nearest-within-radius (not exact-tile) so the effective
+  // tap target scales with hitPad instead of collapsing to ~14px at 0.36 viewScale
+  const tapR = CFG.tile*0.5 + hitPad(CFG.tile);
+  let k=null, bestD=Infinity;
+  for(const cp of corpses){ const [cx,cy]=tileToXY(cp.c,cp.r); const d=(cx-x)**2+(cy-y)**2; if(d<bestD && d<tapR*tapR){ bestD=d; k=cp; } }
   if(k){
     const [kx2,ky2]=tileToXY(k.c,k.r);
     rings.push({x:kx2,y:ky2,r:0,maxR:28,maxT:0.35,t:0.35,col:"rgba(155,224,127,0.8)"});
     burst(kx2,ky2,"#9be07f",5);
     menu={corpse:k}; SFX.ui(); return;
   }
-  // tower tap (tier-0 = evolve, tier-1 = salvage)
-  const tw = towers.find(t=>t.c===c&&t.r===r&&t.type!=="warden"&&CFG.tier2[t.type]);
+  let tw=null; bestD=Infinity;
+  for(const t of towers){ if(t.type==="warden"||!CFG.tier2[t.type]) continue; const d=(t.x-x)**2+(t.y-y)**2; if(d<bestD && d<tapR*tapR){ bestD=d; tw=t; } }
   if(tw){ menu = {tower:tw}; SFX.ui(); return; }
 }
 function menuAnchor(){ if(menu.tower) return [menu.tower.x, menu.tower.y]; const s = menu.corpse; return tileToXY(s.c, s.r); }
@@ -1174,6 +1212,21 @@ window.addEventListener("keydown", ev=>{
   const k = ev.key.toLowerCase();
   if(k==="m"){ muted=!muted; save.muted=muted; persist(); }
   if(k==="p" && (mode==="play"||mode==="prep")){ paused=!paused; if(paused) CG.gameplayStop(); else CG.gameplayStart(); }
+  // desktop-first: number keys pick a boon, or fire a Hive Mind active when no boon is up
+  const digit = parseInt(ev.key,10);
+  if(digit>=1 && digit<=4){
+    const i = digit-1;
+    if(boonChoice && boonChoice[i]){
+      boonChoice[i].apply(run);
+      if(boonChoice[i].id) run.boonsUsed.push(boonChoice[i].id);
+      popup(W/2,H/2-90,boonChoice[i].txt,"#c9a0f0"); SFX.ui();
+      boonChoice = null;
+    } else if(!boonChoice) {
+      const b = abilBtns()[i]; if(b) activateAbility(b.a);
+    }
+  }
+  // desktop-first: Enter/Space restarts from the end screen without hunting for the button
+  if((k==="enter"||k===" ") && (mode==="over"||mode==="victory")){ ev.preventDefault(); newRun(); }
 });
 document.addEventListener("visibilitychange", ()=>{
   if(document.hidden){ lastT = 0; if((mode==="play"||mode==="prep") && !paused){ paused = true; CG.gameplayStop(); } }
@@ -1519,7 +1572,7 @@ function drawPrep(){
     const k = corpses[0]; const [kx,ky]=tileToXY(k.c,k.r);
     const bob = 8*Math.sin(perfNow*4);
     ctx.fillStyle="#9be07f"; ctx.font="bold 28px monospace";
-    ctx.fillText("TAP A CORPSE", kx, ky-52+bob);
+    ctx.fillText(TAP_WORD+" A CORPSE", kx, ky-52+bob);
     ctx.fillText("▼", kx, ky-30+bob);
   } else {
     ctx.fillStyle="rgba(14,18,20,0.9)"; ctx.fillRect(W/2-120,TOP+8,240,58);
@@ -1544,7 +1597,9 @@ function drawPrep(){
 function drawAbilities(){
   const glyphs = { overgrowth:"Ψ", bloom:"✦", pheromone:"◎" };
   const names = { overgrowth:"OVERGROW", bloom:"BLOOM", pheromone:"PHEROMONE" };
-  for(const b of abilBtns()){
+  const btns = abilBtns();
+  for(let i=0;i<btns.length;i++){
+    const b = btns[i];
     const ready = b.a.cd<=0;
     ctx.fillStyle = ready ? "rgba(30,45,30,0.9)" : "rgba(20,24,26,0.9)";
     ctx.fillRect(b.x,b.y,b.w,b.h);
@@ -1554,6 +1609,7 @@ function drawAbilities(){
     ctx.fillText(glyphs[b.a.id], b.x+b.w/2, b.y+36);
     ctx.font="bold 9px monospace"; ctx.fillStyle = ready ? "#8fd9a8" : "#555";
     ctx.fillText(names[b.a.id], b.x+b.w/2, b.y+56);
+    if(!IS_TOUCH){ ctx.fillStyle="#5a6470"; ctx.font="9px monospace"; ctx.textAlign="left"; ctx.fillText(""+(i+1), b.x+4, b.y+12); ctx.textAlign="center"; }
     if(!ready){
       ctx.strokeStyle="#e3d34e"; ctx.lineWidth=4;
       ctx.beginPath(); ctx.arc(b.x+b.w/2,b.y+b.h/2,28,-Math.PI/2,-Math.PI/2+6.283*(1-b.a.cd/CFG.abilityCD)); ctx.stroke();
@@ -1585,6 +1641,7 @@ function drawBoons(){
     ctx.fillText(b.txt, o.x+o.w/2, o.y+60);
     ctx.fillStyle="#8fd9a8"; ctx.font="16px monospace";
     ctx.fillText(b.sub, o.x+o.w/2, o.y+94);
+    if(!IS_TOUCH){ ctx.fillStyle="#6a7480"; ctx.font="11px monospace"; ctx.fillText("["+(i+1)+"]", o.x+o.w/2, o.y+o.h-12); }
   }
   ctx.fillStyle="#8a94a0"; ctx.font="12px monospace";
   ctx.fillText("this run only — every run differs", W/2, H/2+100);
@@ -1605,7 +1662,7 @@ function drawPaused(){
   ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 28px monospace";
   ctx.fillText("PAUSED", W/2, H/2-10);
   ctx.font="14px monospace"; ctx.fillStyle="#8a94a0";
-  ctx.fillText("tap or press P to resume", W/2, H/2+20);
+  ctx.fillText((IS_TOUCH?"tap":"click")+" or press P to resume", W/2, H/2+20);
 }
 function dailyBtnRect(){ return {x:W/2-140,y:398,w:280,h:96}; }
 function drawTitle(){
@@ -1625,7 +1682,7 @@ function drawTitle(){
   ctx.fillText("They nearly wiped us out. The virus got smarter.", W/2, 240);
   ctx.fillText("Now their dead are our walls, our weapons, our food.", W/2, 262);
   ctx.fillStyle="#8fd9a8"; ctx.font="bold 20px monospace";
-  ctx.fillText(save.won ? "TAP TO DEFEND THE HIVE — again" : "TAP TO DEFEND THE HIVE", W/2, 340+6*Math.sin(perfNow*3));
+  ctx.fillText(save.won ? TAP_WORD+" TO DEFEND THE HIVE — again" : TAP_WORD+" TO DEFEND THE HIVE", W/2, 340+6*Math.sin(perfNow*3));
   if(save.bestWave>0){ ctx.fillStyle="#c9a0f0"; ctx.font="13px monospace";
     ctx.fillText("best: wave "+save.bestWave+(save.won?"  ·  campaign complete":""), W/2, 380); }
   // daily trial button
@@ -1647,7 +1704,7 @@ function drawTitle(){
   ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(cx,cy,42,32,0,0,6.283); ctx.fill();
   ctx.fillStyle="#b088e0"; ctx.beginPath(); ctx.ellipse(cx,cy,20,15,0,0,6.283); ctx.fill();
   ctx.fillStyle="#565f68"; ctx.font="11px monospace";
-  ctx.fillText("tap corpses to mutate defenders · M mute · P pause", W/2, H-30);
+  ctx.fillText(tapWord+" corpses to mutate defenders · M mute · P pause", W/2, H-30);
 }
 function endLayout(){ return { bx: W/2-280, bw: 560, rowH: 48, by: 248 }; }
 function drawSecondWind(){

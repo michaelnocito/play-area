@@ -258,7 +258,55 @@ ring uses tower color; node range ring now shown.
   Sweeper sanitize tooltip.
 - Human eyes still needed: does the portrait rotate-hint read well; is squeezed
   mobile play (viewScale≈0.36 on a 375px phone) actually comfortable now that
-  touch targets are padded — a bigger fix (portrait camera/pan) is still open.
+  touch/tap targets are padded/radius-searched — a bigger fix (portrait
+  camera/pan) is still open. Also: does the audio compressor actually sound
+  right (can't verify by ear headlessly).
+
+## DR-#016 — CrazyGames-acceptance hardening batch #2, 12 more fixes (2026-07-04)
+Re-ran the guideline audit a third time (GAME_BIBLE Parts 1/2/4) looking past what
+DR-#014/#015 already covered. Verified headlessly via preview_eval: parse-check,
+mocked-SDK ad-cooldown timing, master-compressor node creation, mobile-viewport
+corpse/tower tap-radius hit tests (near-miss hits and far-miss non-hits), keyboard
+digit-key boon/ability shortcuts, Enter-to-restart, particle hard-cap, and a full
+15k-tick endless regression sweep.
+
+1. **Interstitial ad-frequency cooldown** — `CG.interstitial` now no-ops (calls
+   `done()` without requesting an ad) if under 45s since the last one. Stops rapid
+   repeat deaths (e.g. declining Second Wind on wave 1 over and over) from
+   spamming ads, which reads as a dark pattern and risks CG's own ad-frequency
+   review.
+2. **Master audio compressor** — every oscillator/noise/drone voice now routes
+   through one `DynamicsCompressorNode` (`dest()`) instead of straight to
+   `AC.destination`, so overlapping SFX (hive hit + combo + hit-stop) can't clip.
+3. **Meta description + OG tags** — head previously had only a `<title>`; added
+   an honest one-line description and OG title/description (bible: "the game is
+   honest about what it is").
+4. **`overscroll-behavior:none` + canvas `touch-action:none`** — iOS Safari
+   rubber-band/bounce-scroll safeguard so a stray swipe near the viewport edge
+   can't shift the page under the canvas mid-run.
+5. **Particle hard cap** — new `addParticle()`/`MAX_PARTICLES=500` gate on all 4
+   particle-push sites; a worst-case pile-up (boss death + frenzy combo + hive
+   hit at once) can no longer spike the array unbounded and tank frame time.
+6. **Device-adaptive input wording** — `IS_TOUCH`/`TAP_WORD`/`tapWord` detect
+   touch capability once; all 4 "TAP..." strings (onboarding, pause, title,
+   prep hint) now say CLICK on desktop, TAP on touch (bible UX law).
+7. **Corpse/tower tap target widened to a real radius search** (the most
+   important fix this round) — tap detection was exact-tile lookup, meaning at
+   375px mobile (viewScale≈0.36) the actual core interaction — tapping a corpse
+   — had a ~14px hit zone. Replaced with nearest-corpse/tower-within-radius using
+   the same `hitPad()` padding as the HUD buttons; verified a tap 15px off dead
+   center at mobile scale now still hits, while a tap far away correctly misses.
+8. **Keyboard boon + ability shortcuts (desktop)** — digit keys 1-4 pick a boon
+   when the choice screen is up, or fire the matching Hive Mind active otherwise.
+9. **Enter/Space restarts from the death/victory screen** — desktop convenience,
+   skips hunting for the tap zone; verified over→prep via a real KeyboardEvent.
+10. **Defensive `hasAdblock` check** — now handles the SDK exposing it as either
+    a boolean property or a method, since the exact shape can't be confirmed
+    without the live SDK.
+11. **Boon-card keyboard hints** — small "[1]" "[2]" "[3]" labels on boon cards
+    (desktop only) so the new shortcut in #8 has a visible tell, not a secret.
+12. **Ability-button keyboard hints** — same treatment, small digit label in the
+    corner of each Hive Mind ability button (desktop only).
 
 ## DR-#015 — CrazyGames-acceptance hardening batch, 12 fixes (2026-07-04)
 Re-ran the guideline audit (GAME_BIBLE Parts 1/2/4) and built all 12 findings in one
