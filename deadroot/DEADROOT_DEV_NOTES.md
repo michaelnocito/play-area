@@ -515,3 +515,21 @@ newRun()). Daily runs excluded to keep the leaderboard/best-wave comparison clea
 - Added `deadroot` entry to global `.claude/launch.json` (port 4216, serves the
   deadroot folder directly) since play-area's dev-server port was occupied by
   another session.
+
+## DR-#019 — one-shot cardinal wardens + in-game DEV MENU (2026-07-04, Mike playtest feedback)
+Feedback came in via the playtest tracker (deadroot DR-#001 run marked "Nothing freezes or
+traps you" = fail): normal mobs slipped past the undefended side; Mike wanted the cardinal
+wardens to reliably answer normal mobs, keeping perimeter awareness on the player.
+- **Warden one-shot**: `CFG.towers.warden.dmg` 16 → 32, so a chain-sweep one-shots a 30hp
+  scav the instant it enters range. Bigger enemies (troop/butcher/boss) still take multiple
+  hits. Player must still watch the perimeter (chosen over auto-converting kills to free
+  towers, which would trivialize the mutate economy).
+- **DEV MENU (new reusable system, now mandated in GAME_BIBLE Part 5)**: in-game debug menu
+  gated behind `?dev=1` (+ auto-on localhost), wrapped in `DR-#019 DEV:BEGIN..END` markers so
+  the pre-launch build strips it (dev version stays in git). Toggle with the `⚙ DEV` button
+  or the ` / ~ key. Knobs: warden fire rate / damage / range (live sliders → CFG), game speed
+  1x/2x/4x, hive god mode, show tower ranges (debug-draw), +100 biomass, spawn scav, skip
+  wave, kill all. Nothing in the block is load-bearing — real play runs identically without it.
+- Verified in preview (?dev=1): DEV=true, sliders write CFG live (warden rate → 2.5),
+  god/ranges toggle, +100 biomass works, no console errors. Screenshot tooling still times
+  out on the canvas (known), verified functionally via eval.

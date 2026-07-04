@@ -140,4 +140,44 @@ Where's the ending? What's the one-line pitch a player tells a friend? If any an
 - [ ] Audio levels consistent; mute persists
 - [ ] Original name + thumbnail; PEGI 12; honest description
 - [ ] No cross-promo links, no external links
+- [ ] **DEV MENU stripped** (see Part 5) — no `DEV:BEGIN..END` block in the submitted build
 - [ ] Full playthrough QA on the live URL, desktop + mobile
+
+---
+
+## Part 5 — Dev menu (every game must have one; strip it before launch)
+
+**The term.** What we're building is an in-game **debug menu** (a.k.a. dev menu / cheat
+menu). The values it exposes for live tweaking are **tunables** or **cvars** ("console
+variables", the id-Software/Valve term for named settings you change at runtime). The
+build that ships with it stripped is the **release/shipping build**; the one that keeps it
+is the **dev build**. The industry library most associated with these panels is **Dear
+ImGui** (immediate-mode debug UI). We roll our own tiny DOM panel instead, same idea.
+
+**Why it's mandatory.** Playtesting is a tune-retest-repeat loop. Editing a constant,
+saving, and reloading for every tweak is death by a thousand cuts. A live dev menu lets
+the value change while the game runs, so a whole session's worth of balance calls happens
+in one sitting. This is standard studio practice.
+
+**The rules (all games, going forward):**
+1. **Gate it behind `?dev=1`** (plus auto-on for localhost) so players never see it:
+   `const DEV = new URLSearchParams(location.search).has('dev') || location.hostname==='localhost';`
+2. **Comment-mark the whole thing** with `DEV:BEGIN` / `DEV:END` (like the SDK markers) so
+   a pre-launch step can strip it cleanly. Keep every dev-only line inside those markers.
+3. **Nothing inside is load-bearing.** Real gameplay must run identically with the whole
+   block deleted. Knobs write to the config/flags the game already reads; they add nothing.
+4. **Strip before launch, save the dev version.** The submitted build has the block
+   removed (Part 4 checkbox). The dev build stays in git history (and/or an `index.dev.html`),
+   so the knobs are one revert away next time you tune.
+
+**Canonical knobs (research-backed — grant/spawn/skip/view-modes/god are the standard debug
+set; add game-specific tunables on top):**
+- **Game speed** 1x/2x/4x (fast-forward testing)
+- **God mode** (the thing you'd otherwise die to, made harmless — test long sessions)
+- **Grant currency** (+N of the game's resource)
+- **Spawn / skip / clear** (force the next wave, spawn a specific enemy, clear the field)
+- **View modes** (show ranges / hitboxes / paths — the "debug draw" overlays)
+- **Per-system tunables** — the sliders specific to this game (e.g. Deadroot: warden fire
+  rate / damage / range)
+
+Reference implementation: `deadroot/index.html`, `DR-#019 DEV:BEGIN..END`.

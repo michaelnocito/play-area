@@ -88,7 +88,7 @@ const CFG = {
   killBounty: 6,
   corpse: { rot: 15, payout: 25 },
   towers: {
-    warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:16 },
+    warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
     spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:3.3, rate:1.1, dmg:13 },
     rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
@@ -306,6 +306,13 @@ let boonChoice = null; // [boon, boon] while a pick is pending
 let banner = null;     // {txt, sub, t}
 let overgrowthT = 0, pherT = 0;
 let gameSpeed = 1; // 1x / 2x fast-forward
+// DR-#019 DEV:BEGIN — in-game dev/tuning menu (industry term: "debug menu" +
+// live "tunables"/"cvars"). Gated behind ?dev=1 so players never see it; the
+// whole DEV block is also comment-marked so a pre-launch strip removes it while
+// the dev version stays in git. See GAME_BIBLE Part 5.
+const DEV = new URLSearchParams(location.search).has('dev') || location.hostname==='localhost' || location.hostname==='127.0.0.1';
+let godMode = false, showRanges = false;
+// DR-#019 DEV:END
 // DR-#010 juice
 let hitStop = 0, slowMoT = 0, timeScale = 1; // hit-stop + wave-clear slow-mo
 let edgePulseT = 0;                           // screen-edge red flash on hive damage
@@ -763,7 +770,7 @@ function update(){
       if(isHive(ec,er) || nearHive(e)){
         e.atkT += DT;
         if(e.atkT>=1){
-          e.atkT=0; hiveHP -= e.dmg;
+          e.atkT=0; if(!godMode) hiveHP -= e.dmg;   /* DR-#019: dev god mode */
           SFX.hiveHit(); shakeIt(5); burst(e.x,e.y,"#e07f7f",10); edgePulseT = 1.0;
           if(hiveHP<=0){ hiveHP=0; gameOver(); return; }
         }
@@ -1590,6 +1597,9 @@ function draw(){
   ctx.globalAlpha=1;
   // towers
   for(const t of towers){
+    // DR-#019 DEV:BEGIN — dev "show ranges" view mode (range ring per tower)
+    if(showRanges){ const def=CFG.towers[t.type]; if(def&&def.range){ ctx.save(); ctx.globalAlpha=0.5; ctx.strokeStyle=(TCOL[t.type]&&TCOL[t.type].acc)||"#e0e060"; ctx.lineWidth=1.5; ctx.setLineDash([3,4]); ctx.beginPath(); ctx.arc(t.x,t.y,def.range*CFG.tile,0,6.283); ctx.stroke(); ctx.restore(); } }
+    // DR-#019 DEV:END
     contactShadow(t.x, t.y+16, 16, 6, 0.3);
     ctx.save(); ctx.translate(t.x,t.y);
     const p = 1+0.05*Math.sin(t.pulse*3);
@@ -2199,6 +2209,57 @@ function frame(t){
 }
 genDecor();
 CG.init(()=>{});
+
+/* DR-#019 DEV:BEGIN =========================================================
+   In-game DEV / TUNING MENU (industry: "debug menu" + live "tunables"/"cvars").
+   Gated behind ?dev=1 (players never see it). The whole block is comment-marked
+   so the pre-launch build strips it; the dev version stays in git. Adding knobs?
+   Keep the mapping to CFG/flags so nothing here is load-bearing for real play.
+   ========================================================================== */
+if(DEV){
+  const knobs = [
+    { label:'Warden fire rate', min:0.2, max:3, step:0.1, get:()=>CFG.towers.warden.rate, set:v=>CFG.towers.warden.rate=v },
+    { label:'Warden damage',    min:5,  max:120,step:1,   get:()=>CFG.towers.warden.dmg,  set:v=>CFG.towers.warden.dmg=v },
+    { label:'Warden range',     min:1,  max:6,  step:0.1, get:()=>CFG.towers.warden.range,set:v=>CFG.towers.warden.range=v },
+  ];
+  const wrap = document.createElement('div');
+  wrap.id = 'devMenu';
+  wrap.style.cssText = 'position:fixed;top:8px;left:8px;z-index:9999;font:12px/1.4 ui-monospace,Menlo,monospace;color:#dfeada;background:rgba(16,20,16,0.92);border:1px solid #4a6a42;border-radius:8px;padding:10px 12px;width:230px;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)';
+  const btn = document.createElement('button');
+  btn.textContent = '⚙ DEV';
+  btn.style.cssText = 'position:fixed;top:8px;left:8px;z-index:10000;font:bold 12px ui-monospace,monospace;color:#dfeada;background:rgba(16,20,16,0.85);border:1px solid #4a6a42;border-radius:8px;padding:6px 10px;cursor:pointer';
+  const bs = 'display:block;width:100%;margin:3px 0;padding:6px;font:11px ui-monospace,monospace;color:#dfeada;background:#20301c;border:1px solid #4a6a42;border-radius:6px;cursor:pointer;text-align:left';
+  let html = '<div style="font-weight:bold;letter-spacing:1px;color:#c8e0a8;margin-bottom:6px">DEV MENU  <span style="float:right;opacity:.6;font-weight:normal">` toggle</span></div>';
+  knobs.forEach((k,i)=>{ html += `<label style="display:block;margin:6px 0 2px">${k.label}: <b id="kv${i}"></b></label><input type="range" id="ks${i}" min="${k.min}" max="${k.max}" step="${k.step}" style="width:100%">`; });
+  html += '<div style="margin:8px 0 3px;color:#c8e0a8">Game speed</div><div id="spd"></div>';
+  html += `<label style="display:block;margin:8px 0 2px"><input type="checkbox" id="god"> Hive god mode</label>`;
+  html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="rng"> Show tower ranges</label>`;
+  html += `<button id="dBio" style="${bs}">+100 biomass</button>`;
+  html += `<button id="dSpawn" style="${bs}">spawn a scav</button>`;
+  html += `<button id="dSkip" style="${bs}">skip wave (clear enemies)</button>`;
+  html += `<button id="dKill" style="${bs}">kill all enemies</button>`;
+  wrap.innerHTML = html;
+  document.body.appendChild(btn); document.body.appendChild(wrap);
+  const toggle = ()=>{ const open = wrap.style.display==='none'; wrap.style.display=open?'block':'none'; btn.style.display=open?'none':'block'; if(open) refresh(); };
+  btn.onclick = toggle;
+  addEventListener('keydown', e=>{ if(e.key==='`'||e.key==='~'){ e.preventDefault(); toggle(); } });
+  function refresh(){
+    knobs.forEach((k,i)=>{ const s=wrap.querySelector('#ks'+i), v=wrap.querySelector('#kv'+i); s.value=k.get(); v.textContent=(+k.get()).toFixed(k.step<1?1:0); });
+    wrap.querySelector('#god').checked=godMode; wrap.querySelector('#rng').checked=showRanges;
+    const spd=wrap.querySelector('#spd'); spd.innerHTML='';
+    [1,2,4].forEach(mult=>{ const b=document.createElement('button'); b.textContent=mult+'x'; b.style.cssText='padding:5px 12px;margin-right:5px;font:11px ui-monospace,monospace;border-radius:6px;cursor:pointer;border:1px solid #4a6a42;color:#dfeada;background:'+(gameSpeed===mult?'#3a6a30':'#20301c'); b.onclick=()=>{ gameSpeed=mult; refresh(); }; spd.appendChild(b); });
+  }
+  knobs.forEach((k,i)=>{ wrap.querySelector('#ks'+i).oninput=e=>{ k.set(+e.target.value); wrap.querySelector('#kv'+i).textContent=(+e.target.value).toFixed(k.step<1?1:0); }; });
+  wrap.querySelector('#god').onchange=e=>godMode=e.target.checked;
+  wrap.querySelector('#rng').onchange=e=>showRanges=e.target.checked;
+  const inGame = ()=> mode==='play' || mode==='prep';
+  wrap.querySelector('#dBio').onclick=()=>{ if(inGame()) biomass+=100; };
+  wrap.querySelector('#dSpawn').onclick=()=>{ if(mode==='play') spawnEnemy('scav'); };
+  wrap.querySelector('#dSkip').onclick=()=>{ if(inGame()){ enemies.length=0; spawnQ.length=0; } };
+  wrap.querySelector('#dKill').onclick=()=>{ if(inGame()) enemies.length=0; };
+}
+/* DR-#019 DEV:END ========================================================= */
+
 requestAnimationFrame(frame);
 </script>
 </body>
