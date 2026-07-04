@@ -67,9 +67,14 @@
     border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit;
   }
   #overlay button:active { transform: scale(0.97); }
+  #overlay button:hover { background: #d8a24d; } /* RS-#085: hover feedback on menu buttons */
+  /* RS-#085: visible keyboard-focus ring for keyboard/switch navigation (accessibility). */
+  #overlay button:focus-visible, #muteBtn:focus-visible, #pauseBtn:focus-visible {
+    outline: 2px solid #ffe9b0; outline-offset: 2px;
+  }
   #overlay.hidden { display: none; }
   #scoreLine { font-size: 15px; margin-top: 8px; color: #f1e3c6; }
-  #best { font-size: 11px; opacity: 0.65; margin-top: 3px; }
+  #best { font-size: 11px; opacity: 0.8; margin-top: 3px; } /* RS-#069: was 0.65, easily missed */
   #touchControls {
     position: absolute; bottom: 0; left: 0; right: 0; height: 30%;
     display: flex; pointer-events: none;
@@ -105,6 +110,7 @@
   #tally .trow.show { opacity: 1; transition: opacity 0.12s; }
   #tally .trow .pts { color: #e8c878; font-weight: bold; }
   #tally .trow.total { border-top: 1px solid rgba(232,200,120,0.35); margin-top: 5px; padding-top: 5px; font-size: 16px; }
+  #tally .trow.total .pts { text-shadow: 0 0 8px rgba(255,233,176,0.6); } /* RS-#085: the total pops */
   #newBest { font-size: 14px; color: #ffe9b0; letter-spacing: 2px; margin-top: 6px; opacity: 0;
     text-shadow: 0 0 12px rgba(255,233,176,0.8); }
   #newBest.show { opacity: 1; transition: opacity 0.2s; }
@@ -118,13 +124,18 @@
     padding: 5px 8px; margin-top: 4px; border: 1px solid rgba(232,200,120,0.25);
     border-radius: 4px; cursor: pointer; text-align: left; opacity: 0;
   }
-  .shopRow.show { opacity: 1; transition: opacity 0.15s; }
+  .shopRow.show { opacity: 1; transition: opacity 0.15s, border-color 0.12s, background 0.12s; }
+  /* RS-#068: shop rows had no hover feedback — every other clickable (chips, buttons) reacts. */
+  .shopRow:not(.cant):hover { border-color: rgba(255,233,176,0.6); background: rgba(232,200,120,0.06); }
   .shopRow .sname { font-size: 11px; letter-spacing: 1px; color: #e8c878; }
-  .shopRow .sdesc { font-size: 9px; opacity: 0.7; }
+  .shopRow .sdesc { font-size: 9.5px; opacity: 0.75; }
   .shopRow .scost { font-size: 11px; white-space: nowrap; color: #ffe9b0; }
   .shopRow .pips { letter-spacing: 2px; font-size: 9px; color: #e8c878; }
   .shopRow.cant { opacity: 0.45; cursor: default; }
   .shopRow.cant.show { opacity: 0.45; }
+  /* RS-#068: a maxed track reads differently from a merely-unaffordable one at a glance. */
+  .shopRow.maxed { opacity: 0.7; cursor: default; background: rgba(207,232,200,0.06); border-color: rgba(207,232,200,0.3); }
+  .shopRow.maxed.show { opacity: 0.7; }
   .shopRow.pulse { animation: shopPulse 0.9s infinite; }
   @keyframes shopPulse { 50% { border-color: #ffe9b0; box-shadow: 0 0 10px rgba(255,233,176,0.4); } }
   #firstBuy { font-size: 10px; color: #ffe9b0; margin-top: 5px; opacity: 0; }
@@ -138,24 +149,27 @@
   #mapNext { font-size: 10px; letter-spacing: 1px; opacity: 0.7; margin-top: 3px; }
   #nightBtn.hiddenBtn, #dailyBtn.hiddenBtn, #adReviveBtn.hiddenBtn, #adDoubleBtn.hiddenBtn { display: none; }
   #nightBtn, #dailyBtn { background: #3a3145; color: #e8c878; margin-top: 8px; }
-  #dailyBtn { margin-left: 8px; }
+  /* RS-#069: Daily Trial reads as the special/limited mode, not a clone of Night Shift. */
+  #dailyBtn { margin-left: 8px; background: #4a3a2a; color: #ffd98c; }
   #adReviveBtn, #adDoubleBtn { background: #2f4a3a; color: #cfe8c8; font-size: 11px; padding: 8px 14px; margin-top: 8px; }
   #buffRow, #cloakRow { margin-top: 8px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
   .chip {
     font-size: 9px; padding: 4px 7px; border: 1px solid rgba(232,200,120,0.3);
     border-radius: 4px; cursor: pointer; color: #f1e3c6; display: flex; align-items: center; gap: 5px;
+    transition: border-color 0.12s, background 0.12s;
   }
-  .chip.eq { border-color: #ffe9b0; box-shadow: 0 0 8px rgba(255,233,176,0.4); }
+  .chip:not(.cant):hover { border-color: rgba(255,233,176,0.6); background: rgba(232,200,120,0.06); } /* RS-#068 */
+  .chip.eq { border-color: #ffe9b0; box-shadow: 0 0 8px rgba(255,233,176,0.4); background: rgba(255,233,176,0.08); }
   .chip.cant { opacity: 0.4; }
   .chip .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.45); }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <canvas id="game" width="480" height="270"></canvas>
+  <canvas id="game" width="480" height="270" aria-label="Rooftop Sprint game screen" role="img"></canvas>
   <div id="hud">
     <div><div class="label">Distance</div><div class="value" id="distVal">0m</div><div class="label" id="nextDist"></div></div>
-    <div style="text-align:center"><div class="label">Points</div><div class="value" id="scoreVal">0</div></div>
+    <div style="text-align:center"><div class="label">Points</div><div class="value" id="scoreVal">0</div><div class="label" id="districtLbl"></div></div>
     <div style="text-align:right"><div class="label">Light</div><div class="value" id="featherVal">0</div></div>
   </div>
   <div id="overlay">
@@ -171,7 +185,8 @@
     <div id="tallyJoke"></div>
     <div id="walletLine"></div>
     <div id="shop"></div>
-    <div id="firstBuy">&#9670; your first training is affordable</div>
+    <!-- RS-#076: "training" was vague jargon for a new player — say what it actually is. -->
+    <div id="firstBuy">&#9670; Spend Light below to upgrade your Lamplighter</div>
     <div id="mapLine"></div>
     <div id="buffRow"></div>
     <div id="cloakRow"></div>
@@ -183,11 +198,12 @@
     <button id="nightBtn" class="hiddenBtn">Night Shift &mdash; Endless</button>
     <button id="dailyBtn" class="hiddenBtn">Daily Trial</button>
   </div>
-  <div id="muteBtn">&#128266;</div>
-  <div id="pauseBtn">&#10074;&#10074;</div>
+  <!-- RS-#083: accessible labels + roles on the icon/touch controls (screen readers, Part 1 UX). -->
+  <div id="muteBtn" role="button" tabindex="0" aria-label="Toggle mute">&#128266;</div>
+  <div id="pauseBtn" role="button" tabindex="0" aria-label="Pause">&#10074;&#10074;</div>
   <div id="touchControls">
-    <div class="tbtn" id="btnJump">JUMP</div>
-    <div class="tbtn" id="btnStrike">STRIKE</div>
+    <div class="tbtn" id="btnJump" role="button" aria-label="Jump">JUMP</div>
+    <div class="tbtn" id="btnStrike" role="button" aria-label="Strike or slide">STRIKE</div>
   </div>
 </div>
 <script>
@@ -219,6 +235,7 @@
   const btnStrike = document.getElementById('btnStrike');
   const muteBtn = document.getElementById('muteBtn');
   const scoreVal = document.getElementById('scoreVal');
+  const districtLbl = document.getElementById('districtLbl');
   const tallyEl = document.getElementById('tally');
   const newBestEl = document.getElementById('newBest');
   const statsLine = document.getElementById('statsLine');
@@ -286,7 +303,7 @@
      first purchase affordable in 1-2 runs; one-tap spend ON the tally screen. */
   const SAVE_KEY = 'rooftopSprintSave_v1';
   let save = { light: 0, oil: 0, arts: 0, wick: 0, kills: 0, lastDay: '', streak: 0, miles: {}, district: 0, campaignDone: false, seenStory: false,
-    buffs: {}, buffEq: '', cloaks: { 0: 1 }, cloak: 0, dailyBest: 0, dailyDate: '' };
+    buffs: {}, buffEq: '', cloaks: { 0: 1 }, cloak: 0, dailyBest: 0, dailyDate: '', lastRunScore: 0 };
   try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && typeof s === 'object') save = Object.assign(save, s); } catch(e){}
   function saveNow() {
     let str = '';
@@ -299,7 +316,7 @@
     { key: 'oil',  name: 'MORNING OIL',  max: 3, costs: [15, 30, 60],
       descs: ['Start with the lamp partly lit', 'Start brighter (a music layer up)', 'Start at a mid-run glow'] },
     { key: 'arts', name: 'LAMP ARTS',    max: 3, costs: [15, 30, 60],
-      descs: ['Light is drawn to you from farther', 'PERFECT kills STUN nearby wardens', 'Dominoes chain farther'] },
+      descs: ['Pull Light in from a wider radius', 'PERFECT kills STUN nearby wardens', 'Dominoes chain farther'] },
     { key: 'wick', name: 'WICK & FLINT', max: 3, costs: [15, 30, 60],
       descs: ['Head start: begin 50m along', 'Head start: begin 100m along', 'SECOND FLAME: one free revive per run'] },
   ];
@@ -324,6 +341,9 @@
     // change, just further Light sinks past the ones any early run can already afford.
     { n: 'Violet Dusk',  col: '#5a3a7a', cost: 150 },
     { n: 'Beacon White', col: '#c9c0a8', cost: 200 },
+    // RS-#065: two more for the deepest spenders — same cosmetic-only Light sink, no mechanics.
+    { n: 'Copper Row',   col: '#8a4a2f', cost: 260 },
+    { n: 'Lantern Gold', col: '#a8842f', cost: 320 },
   ];
   // Lantern ranks: lifetime wardens felled → visible rank (the player's sash renders in rank color)
   const RANKS = [
@@ -350,16 +370,19 @@
 
   // ---------- Silly seasoning (Law 12: broad appeal, art-first — flavor only, never a new
   // hitbox or a mismatched art style; every line here is a bonus, nothing gates on it) ----------
-  const WARDEN_QUIPS = ["OI!", "MY LAMP!", "NOT THE FACE", "WORTH IT", "TELL MY LANTERN...", "OW", "RUDE", "I HAD PLANS"];
+  // RS-#064 flavor variety batch: more lines per array = less repetition on long/repeat sessions
+  // (Law 6/12: no boring or repetitive stretches) — pure content, zero logic/RNG-count change.
+  const WARDEN_QUIPS = ["OI!", "MY LAMP!", "NOT THE FACE", "WORTH IT", "TELL MY LANTERN...", "OW", "RUDE", "I HAD PLANS",
+    "UNHAND ME", "I YIELD", "THIS ISN'T IN MY CONTRACT", "SOMEONE WRITE THIS DOWN"];
   const CAPTAIN_QUIPS = [
-    ["OH COME ON", "THAT TICKLED", "IS THAT ALL?"],
-    ["OKAY OW", "MY DIGNITY", "NOT MY HELMET"],
-    ["WORTH EVERY LUMEN", "TELL THE OTHERS I—", "*dramatic gasp*"],
+    ["OH COME ON", "THAT TICKLED", "IS THAT ALL?", "WARMING UP, ARE WE"],
+    ["OKAY OW", "MY DIGNITY", "NOT MY HELMET", "THIS IS EMBARRASSING"],
+    ["WORTH EVERY LUMEN", "TELL THE OTHERS I—", "*dramatic gasp*", "REMEMBER ME FONDLY"],
   ];
   const HYPE_LINES = {
-    perfect: ["CHEF'S KISS", "LAMP-TASTIC", "OH THAT'S NICE", "CLEAN AS A WHISTLE"],
-    domino: ["BOWLING NIGHT", "TIMBER!", "THAT'S A CHAIN REACTION", "DOMINO DELIGHT"],
-    captain: ["LIGHTS OUT, PAL", "GATE'S OPEN", "THAT'S A WRAP", "BEACON APPROVES"],
+    perfect: ["CHEF'S KISS", "LAMP-TASTIC", "OH THAT'S NICE", "CLEAN AS A WHISTLE", "TEXTBOOK", "NO NOTES"],
+    domino: ["BOWLING NIGHT", "TIMBER!", "THAT'S A CHAIN REACTION", "DOMINO DELIGHT", "ONE AFTER ANOTHER", "STACKED 'EM UP"],
+    captain: ["LIGHTS OUT, PAL", "GATE'S OPEN", "THAT'S A WRAP", "BEACON APPROVES", "NEXT GATE, PLEASE"],
   };
   const TALLY_JOKES = [
     "Style points: incalculable.",
@@ -369,9 +392,14 @@
     "Your form has been noted by the pigeons.",
     "The Beacon is, at minimum, mildly impressed.",
     "Certified: 100% lamp, 0% chill.",
+    "No wardens were spared in the making of this run.",
+    "The Guild has filed a strongly-worded complaint.",
+    "Insurance premiums city-wide: rising.",
   ];
-  const CAMEO_LINES = ["GET A LADDER!", "MIND THE LAUNDRY!", "IS THAT LEGAL?", "SHOW OFF.", "MY CABBAGES!"];
-  const SILLY_QUIPS = ["WHY DID I WEAR THIS TO WORK", "THE HAT DID NOTHING WRONG", "AT LEAST I LOOKED GOOD", "TELL THE PARTY I'M SORRY"];
+  const CAMEO_LINES = ["GET A LADDER!", "MIND THE LAUNDRY!", "IS THAT LEGAL?", "SHOW OFF.", "MY CABBAGES!",
+    "WATCH THE TILES!", "I'M TELLING THE GUARD."];
+  const SILLY_QUIPS = ["WHY DID I WEAR THIS TO WORK", "THE HAT DID NOTHING WRONG", "AT LEAST I LOOKED GOOD", "TELL THE PARTY I'M SORRY",
+    "THIS WAS A GIFT", "I REGRET NOTHING (LIES)"];
   let moonReactT = 0; // reactive moon: brief wide-eyed blink on big moments (STAGE 4 of the sweep — cosmetic only)
 
   /* ===== Procedural audio (Batch 3) — light-reactive score + layered SFX =====
@@ -388,7 +416,7 @@
     if (!AC) return { muted: true, resume: noop, tick: noop, setTs: noop, duck: noop, setMuted: noop,
       toggleMute(){ return true; }, qaHighpass: noop, jump: noop, land: noop, swing: noop, kill: noop,
       chime: noop, domino: noop, sparkle: noop, death: noop, slide: noop, bird: noop,
-      uiTick: noop, newBest: noop, brace: noop };
+      uiTick: noop, newBest: noop, brace: noop, deny: noop };
     let ac = null, bus, qaHP, lpf, master, musicG, sfxG, padG, noiseBuf;
     let muted = false;
     try { muted = localStorage.getItem('rooftopSprintMuted') === '1'; } catch(e){}
@@ -514,6 +542,8 @@
       // RS-#048: a distinct low double-tick for a braced/lunging guard — an audio tell to match
       // the visual one, so the warning reads even with sound as the only channel a player notices.
       brace()  { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'square', 180, 0, 0.002, 0.05, 0.10); tone(sfxG, t + 0.07, 'square', 140, 0, 0.002, 0.06, 0.10); },
+      // RS-#070: short low "denied" blip for a rejected purchase (can't afford) — UI feedback only.
+      deny()   { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'square', 150, 0, 0.002, 0.06, 0.10); tone(sfxG, t + 0.06, 'square', 110, 0, 0.002, 0.07, 0.10); },
       death()  { if (!ok()) return; const t = ac.currentTime; tone(sfxG, t, 'sawtooth', 220, 45, 0.01, 0.12, 0.70); noiseSweep(sfxG, t, 1800, 220, 1.2, 0.02, 0.10, 0.50); bassHit(sfxG, t + 0.05, 48, 0.6, 0.40); },
       slide()  { if (!ok()) return; noiseSweep(sfxG, ac.currentTime, 700, 380, 1.0, 0.03, 0.07, 0.30); },
       bird()   { if (!ok()) return; const t = ac.currentTime; for (let i = 0; i < 3; i++) noiseSweep(sfxG, t + i * 0.06, 1500, 2400, 2.5, 0.01, 0.04, 0.05); },
@@ -573,9 +603,14 @@
   const stars = Array.from({length: 36}, (_, i) => ({ x: (i*97.3)%W, y: ((i*61.7)%86)+4, tw: (i*37)%100 }));
   let drawT = 0; // visual-only clock (advances every rendered frame, even on menus)
   let shootStarT = 0; // RS-#050: occasional shooting star countdown, driven off drawT only
+  let hurtFlashT = 0; // RS-#081: red screen-edge flash on death — draw-side juice, no sim effect
 
   // Device-adaptive prompts (CG §9: touch zones only on touch devices, key hints only on desktop)
   const isTouch = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
+  // RS-#082: honor the OS "reduce motion" setting — screen shake is the biggest motion offender,
+  // so we scale it down hard for players who've asked for less (accessibility, Part 1 UX).
+  let reduceMotion = false;
+  try { reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e){}
 
   // ---------- World state ----------
   let state = 'menu'; // menu | playing | paused | resuming | dead
@@ -588,7 +623,7 @@
   const SHAKE_MULT = 0.6;   // global tune-down — old amplitudes were punchy enough to feel jarring
   const SHAKE_CAP = 9;      // stacked hits (e.g. domino + captain) can no longer compound past this
   let shake = 0, shakeX = 0, shakeY = 0;
-  function addShake(v) { shake = Math.min(SHAKE_CAP, Math.max(shake, v * SHAKE_MULT)); }
+  function addShake(v) { shake = Math.min(SHAKE_CAP, Math.max(shake, v * SHAKE_MULT * (reduceMotion ? 0.25 : 1))); }
   // Lamplighter run-state: 0→1, fed by lamp-light streamed from killed wardens.
   // Drives the weapon glow radius + rekindled windows now; music layers key off it in Batch 3.
   let lampLight = 0;
@@ -597,13 +632,15 @@
   // The run is a journey: six named districts, a Warden Captain at each gate, the Great
   // Beacon at the end. Endless ("Night Shift") is a post-game unlock, not the core game.
   const DISTRICT_LEN = 250; // meters per district
+  // RS-#071: district tints were 0.06–0.09 — barely perceptible, so the palette shift that's meant
+  // to signal "new district" read as nothing. Bumped to 0.11–0.15 (+ a `col` for banner theming).
   const DISTRICTS = [
-    { name: 'THE OLD QUARTER',     tint: null,                      guardP: 0.38, hazP: 0.72 },
-    { name: 'LANTERN ROW',         tint: 'rgba(255,150,70,0.06)',   guardP: 0.46, hazP: 0.76 },
-    { name: 'THE MARKET SHAMBLES', tint: 'rgba(90,180,130,0.07)',   guardP: 0.52, hazP: 0.80 },
-    { name: 'TEMPLE STEPS',        tint: 'rgba(140,100,220,0.08)',  guardP: 0.56, hazP: 0.82 },
-    { name: 'THE HIGH TERRACES',   tint: 'rgba(90,150,230,0.08)',   guardP: 0.62, hazP: 0.85 },
-    { name: 'BEACON RISE',         tint: 'rgba(255,100,90,0.09)',   guardP: 0.68, hazP: 0.88 },
+    { name: 'THE OLD QUARTER',     tint: null,                      col: '#e8c878', guardP: 0.38, hazP: 0.72 },
+    { name: 'LANTERN ROW',         tint: 'rgba(255,150,70,0.12)',   col: '#ffab60', guardP: 0.46, hazP: 0.76 },
+    { name: 'THE MARKET SHAMBLES', tint: 'rgba(90,180,130,0.12)',   col: '#8fdcae', guardP: 0.52, hazP: 0.80 },
+    { name: 'TEMPLE STEPS',        tint: 'rgba(140,100,220,0.13)',  col: '#b89aec', guardP: 0.56, hazP: 0.82 },
+    { name: 'THE HIGH TERRACES',   tint: 'rgba(90,150,230,0.13)',   col: '#8fb4e8', guardP: 0.62, hazP: 0.85 },
+    { name: 'BEACON RISE',         tint: 'rgba(255,100,90,0.15)',   col: '#ff8f84', guardP: 0.68, hazP: 0.88 },
   ];
   function districtIdx(d) { // campaign clamps at the last; Night Shift / Daily cycle forever
     const i = Math.floor(d / DISTRICT_LEN);
@@ -614,19 +651,22 @@
   let distanceSeed = 0;    // distance at run start (checkpoint + Wick & Flint)
   let curD = 0;            // district the player is in right now
   let nextCaptainD = DISTRICT_LEN; // distance of the next district gate
-  let bannerText = '', bannerT = 0;
+  let bannerText = '', bannerT = 0, bannerCol = '#ffe9b0'; // RS-#071: banners tint to district color
   let buffUsedMsg = '', buffUsedMsgT = 0; // RS-#045: confirms which run-start buff got spent
-  function showBanner(text, frames) { bannerText = text; bannerT = frames; }
+  function showBanner(text, frames, col) { bannerText = text; bannerT = frames; bannerCol = col || '#ffe9b0'; }
   const PTS_CAPTAIN = 1000;
   let captainK = 0;        // captains felled this run
 
   // ---------- Run variety (Law 5: every run differs) ----------
   // Boons: a 1-of-2 choice at each district gate (FLAME rank+). JUMP picks left, STRIKE right.
+  // RS-#065: two more boons — Law 5 variety was thin at 4 (a run cycles the whole set in ~8 gates).
   const BOONS = [
     { n: 'GLEAMING MOTES', d: 'Light pickups count double',        k: 'motes2' },
     { n: 'KINDLED LAMP',   d: 'Lamp +0.3 now (Light Burst fuel)',  k: 'kindle' },
     { n: 'QUIET ROOFS',    d: 'Fewer wardens ahead',               k: 'quiet'  },
     { n: 'LONG LOOK',      d: 'Strike marker shows farther out',   k: 'look'   },
+    { n: 'LIGHT FOOTED',   d: 'Fewer low hazards ahead',           k: 'light'  },
+    { n: 'STEADY LAMP',    d: 'Whiff recovery is faster',          k: 'steady' },
   ];
   let boonA = 0, boonB = 1, boonFlags = {};
   function applyBoon(i) {
@@ -638,11 +678,14 @@
     state = 'playing';
   }
   // Night modifiers: rotate daily in Night Shift; the Daily Trial pins one to its seed.
+  // RS-#065: two more modifiers — the old 4 repeated every 4 nights, thin for a daily hook.
   const NIGHT_MODS = [
     { n: 'DARK NIGHT',   d: 'the lamp burns down — keep striking' },
     { n: 'DOUBLE WATCH', d: 'half again as many wardens' },
     { n: 'BRIGHT MOTES', d: 'pickups are worth double' },
     { n: 'LOW CEILING',  d: 'more hanging hazards' },
+    { n: 'RESTLESS NIGHT', d: 'wardens and hazards both busier' },
+    { n: 'CALM EVENING',   d: 'a quieter, gentler roofline' },
   ];
   let modIdx = -1; // -1 = no modifier (campaign)
 
@@ -667,9 +710,11 @@
 
   const MAX_MESSAGES = 10; // RS-#059: a stacked STAGGERED/quip/hype-line moment could silently
   // drop later flavor text at the old cap of 6 — cosmetic-only, but still worth the headroom.
-  const messages = Array.from({length: MAX_MESSAGES}, () => ({active:false,x:0,y:0,t:0,t0:26,text:''}));
-  function spawnMessage(x,y,text,dur){
-    for(const m of messages){ if(!m.active){ m.active=true;m.x=x;m.y=y;m.t=dur||26;m.t0=m.t;m.text=text; return; } }
+  const messages = Array.from({length: MAX_MESSAGES}, () => ({active:false,x:0,y:0,t:0,t0:26,text:'',col:'#e8c878'}));
+  // RS-#077: messages can now carry a color — captain/perfect callouts pop brighter than a
+  // routine CLEAN, so importance reads at a glance instead of a wall of identical gold text.
+  function spawnMessage(x,y,text,dur,col){
+    for(const m of messages){ if(!m.active){ m.active=true;m.x=x;m.y=y;m.t=dur||26;m.t0=m.t;m.text=text;m.col=col||'#e8c878'; return; } }
   }
 
   const MAX_SEGMENTS = 14; // spawn window ÷ min roof length can hit ~11 live segments — 10 exhausted the pool and punched holes in the world
@@ -775,7 +820,7 @@
     boonFlags = {}; strikeCd = 0;
     lampLight = 0; // the lamp starts cold every run (progression hooks may seed it later)
     for(const c of cloak){ c.x = 80 - 4; c.y = GROUND_Y - 22; }
-    distance = 0; feathers = 0; speed = baseSpeed; shake = 0; shakeX = 0; shakeY = 0; graceT = 0;
+    distance = 0; feathers = 0; speed = baseSpeed; shake = 0; shakeX = 0; shakeY = 0; graceT = 0; hurtFlashT = 0;
     killPts = 0; dominoBonus = 0; cleanK = 0; heavyK = 0; perfK = 0; dominoK = 0; bestChain = 0;
     captainK = 0; bannerT = 0; curD = 0; revived = false; moonReactT = 0;
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
@@ -839,8 +884,11 @@
     let guardP = DISTRICTS[dI].guardP * (pressure || showcase ? 1.5 : 1);
     let hazP = DISTRICTS[dI].hazP;
     if (boonFlags.quiet) guardP *= 0.65;                    // QUIET ROOFS boon
+    if (boonFlags.light) hazP *= 0.65;                      // LIGHT FOOTED boon
     if (modIdx === 1) guardP *= 1.4;                        // DOUBLE WATCH night
     if (modIdx === 3) { hazP *= 1.3; guardP *= 0.85; }      // LOW CEILING night
+    if (modIdx === 4) { guardP *= 1.2; hazP *= 1.15; }      // RESTLESS NIGHT
+    if (modIdx === 5) { guardP *= 0.8; hazP *= 0.85; }      // CALM EVENING
 
     // Warden Captain at each district gate: placed on the roof that spans the boundary
     // (slides to the next roof if the boundary fell in a gap)
@@ -1063,7 +1111,7 @@
     }
     player.strikeFlash = 8;
     Snd.swing();
-    if (!nearest) { strikeCd = player.onGround ? 24 : 10; return; } // whiff recovery (a mid-air flail costs less)
+    if (!nearest) { strikeCd = (player.onGround ? 24 : 10) * (boonFlags.steady ? 0.6 : 1); return; } // whiff recovery (STEADY LAMP boon shortens it)
     if (nearest && !nearest.cap && shieldUp(nearest)) { // feint warden: the shield blocks everything — wait for the opening
       strikeCd = 26;
       spawnMessage(nearest.x, nearest.y - 48, 'BLOCKED', 24);
@@ -1081,7 +1129,7 @@
         const capSeg = segments.find(s => s.active && nearest.x >= s.x1 - 4 && nearest.x <= s.x2 + 4);
         nearest.x = capSeg ? Math.min(nearest.x + 30 + speed * 6, capSeg.x2 - 16) : nearest.x + 30 + speed * 6;
         spawnBurst(nearest.x, nearest.y-18, 10, '#f0a04a');
-        spawnMessage(nearest.x, nearest.y-56, nearest.hp === 2 ? 'STAGGERED' : 'GUARD BROKEN', 28);
+        spawnMessage(nearest.x, nearest.y-56, nearest.hp === 2 ? 'STAGGERED' : 'GUARD BROKEN', 28, '#f0a04a');
         spawnMessage(nearest.x, nearest.y-70, CAPTAIN_QUIPS[nearest.hp === 2 ? 0 : 1][(rnd()*3)|0], 34); // silly seasoning — flavor only
         moonReactT = 60;
         Snd.kill(1); addShake(8); slowmoT = Math.max(slowmoT, 160);
@@ -1091,11 +1139,13 @@
       killPts += PTS_CAPTAIN; captainK += 1; feathers += 3;
       spawnStream(nearest.x, nearest.y - 44, 12);
       spawnBurst(nearest.x, nearest.y-18, 18, '#ffffff');
-      spawnMessage(nearest.x, nearest.y-56, 'CAPTAIN FELLED +' + PTS_CAPTAIN, 40);
+      spawnBurst(nearest.x, nearest.y-18, 12, '#e8c878'); // RS-#080: gold second layer — a captain fell reads richer than a plain kill
+      spawnBurst(nearest.x, nearest.y-18, 8, DISTRICTS[nearest.capD % DISTRICTS.length].col);
+      spawnMessage(nearest.x, nearest.y-56, 'CAPTAIN FELLED +' + PTS_CAPTAIN, 40, '#ffffff');
       spawnMessage(nearest.x, nearest.y-70, CAPTAIN_QUIPS[2][(rnd()*3)|0], 40);
       moonReactT = 130;
       Snd.kill(2); Snd.domino(); addShake(13); slowmoT = Math.max(slowmoT, 500);
-      showBanner(DISTRICTS[nearest.capD % DISTRICTS.length].name + ' RELIT', 150);
+      showBanner(DISTRICTS[nearest.capD % DISTRICTS.length].name + ' RELIT', 150, DISTRICTS[nearest.capD % DISTRICTS.length].col);
       if (mode === 'campaign') {
         if (nearest.capD + 1 > save.district) { save.district = Math.min(DISTRICTS.length - 1, nearest.capD + 1); saveNow(); }
         if (nearest.capD === DISTRICTS.length - 1) winAt = drawT + 80; // the beacon moment breathes, then the ending
@@ -1146,7 +1196,7 @@
         killPts += PTS_PERFECT; perfK += 1;
         spawnBurst(nearest.x, nearest.y-16, 16, '#ffffff');
         spawnBurst(nearest.x, nearest.y-16, 10, '#e8c878');
-        spawnMessage(nearest.x, nearest.y-44, 'PERFECT +' + PTS_PERFECT, 40);
+        spawnMessage(nearest.x, nearest.y-44, 'PERFECT +' + PTS_PERFECT, 40, '#ffffff');
         if (save.arts >= 2) { // Lamp Arts T2: the flash of a perfect strike stuns nearby wardens
           for (const s of guards) {
             if (!s.active || !s.alive || s === nearest || s.cap) continue;
@@ -1165,7 +1215,7 @@
         nearest.fly = 1; nearest.vx = 7; nearest.vy = -2.6; nearest.spin = 0.28;
         spawnBurst(nearest.x, nearest.y-16, 12, '#f0a04a');
         killPts += PTS_HEAVY; heavyK += 1;
-        spawnMessage(nearest.x, nearest.y-42, 'HEAVY BLOW +' + PTS_HEAVY, 32);
+        spawnMessage(nearest.x, nearest.y-42, 'HEAVY BLOW +' + PTS_HEAVY, 32, '#f0a04a');
         Snd.kill(1);
         addShake(9);
         slowmoT = Math.max(slowmoT, 200);
@@ -1223,6 +1273,9 @@
   muteBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); Snd.resume(); Snd.toggleMute(); syncMuteBtn(); });
   syncMuteBtn();
   pauseBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); togglePause(); });
+  // RS-#083: keyboard activation for the role=button icons so the aria/tabindex is actually usable.
+  muteBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); Snd.resume(); Snd.toggleMute(); syncMuteBtn(); } });
+  pauseBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePause(); } });
   startBtn.addEventListener('click', () => { mode = 'campaign'; beginGame(); });
   nightBtn.addEventListener('click', () => { mode = 'endless'; startDistrict = 0; beginGame(); });
   const dailyBtn = document.getElementById('dailyBtn');
@@ -1343,7 +1396,7 @@
 
     // district crossing: banner + the world's mood shifts (Law 2: named milestones)
     const dNow = districtIdx(distance);
-    if (dNow !== curD) { curD = dNow; showBanner(DISTRICTS[curD].name, 140); Snd.sparkle(); }
+    if (dNow !== curD) { curD = dNow; showBanner(DISTRICTS[curD].name, 140, DISTRICTS[curD].col); Snd.sparkle(); }
     if (winAt > 0 && drawT >= winAt && state === 'playing') { win(); return; }
 
     while (nextSpawnX < player.x + W + 260 && spawnSegment(false)); // stops cleanly if the pool is momentarily full; retries next frame after culling
@@ -1630,6 +1683,7 @@
       ? 'BEACON ' + Math.max(0, Math.ceil(nextCaptainD - distance)) + 'm'
       : 'gate ' + Math.max(0, Math.ceil(nextCaptainD - distance)) + 'm';
     scoreVal.textContent = runScore();
+    districtLbl.textContent = DISTRICTS[curD].name; // RS-#087: current district always visible in HUD (Law 8)
     featherVal.textContent = feathers;
   }
 
@@ -1638,10 +1692,21 @@
   let tallyTimers = [];
   let tallyDone = false; // gates shop key input until the reveal finishes (variable line count)
   function clearTally() { for (const t of tallyTimers) clearTimeout(t); tallyTimers = []; tallyDone = false; }
+  // RS-#073: what each rank actually gates, so the ladder advertises its own next reward (Law 8/11)
+  const RANK_UNLOCKS = { 1: 'Daily Trial', 2: 'gate boons', 3: 'Night Shift early' };
+  function nextUnlockHint() {
+    const rI = rankIdx(save.kills);
+    for (let i = rI + 1; i < RANKS.length; i++) {
+      if (RANK_UNLOCKS[i]) return (RANKS[i].at - save.kills) + ' foes to ' + RANK_UNLOCKS[i];
+    }
+    return '';
+  }
   function updateMenuMeta() {
+    const hint = nextUnlockHint();
     metaLine.textContent = '◆ Light ' + save.light + ' · ' + RANKS[rankIdx(save.kills)].name +
       (save.streak > 1 ? ' · day ' + save.streak : '') +
-      (burstUnlocked() ? ' · LIGHT BURST ready' : '');
+      (burstUnlocked() ? ' · LIGHT BURST ready' : '') +
+      (hint ? ' · ' + hint : '');
   }
   // Campaign map (Law 8: where you're going is always visible): six lamps, lit as districts
   // are relit; tap a reached lamp to start the next run from that checkpoint
@@ -1671,16 +1736,18 @@
     buffRow.innerHTML = '';
     for (const b of BUFFS) {
       const owned = save.buffs[b.k] || 0;
+      const equipped = save.buffEq === b.k;
       const c = document.createElement('div');
-      c.className = 'chip' + (save.buffEq === b.k ? ' eq' : '') + (!owned && save.light < b.cost ? ' cant' : '');
+      c.className = 'chip' + (equipped ? ' eq' : '') + (!owned && save.light < b.cost ? ' cant' : '');
+      // RS-#070: an equipped buff now says so explicitly — "×1" alone didn't read as "riding next run".
       c.innerHTML = owned
-        ? b.n + ' ×' + owned + '<span style="opacity:0.6">' + b.d + '</span>'
+        ? b.n + ' ×' + owned + (equipped ? ' ✓' : '') + '<span style="opacity:0.6">' + b.d + '</span>'
         : b.n + ' ◆' + b.cost + '<span style="opacity:0.6">' + b.d + '</span>';
       c.addEventListener('pointerdown', (e) => {
         e.preventDefault(); e.stopPropagation();
         if (owned) { save.buffEq = save.buffEq === b.k ? '' : b.k; }
         else if (save.light >= b.cost) { save.light -= b.cost; save.buffs[b.k] = 1; save.buffEq = b.k; Snd.sparkle(); }
-        else return;
+        else { Snd.deny(); return; } // RS-#070: audible "can't afford" instead of silent nothing
         saveNow(); renderBuffs(); updateMenuMeta();
       });
       buffRow.appendChild(c);
@@ -1698,7 +1765,7 @@
         e.preventDefault(); e.stopPropagation();
         if (owned) { save.cloak = i; Snd.uiTick(2); }
         else if (save.light >= cl.cost) { save.light -= cl.cost; save.cloaks[i] = 1; save.cloak = i; Snd.newBest(); }
-        else return;
+        else { Snd.deny(); return; }
         saveNow(); renderCloaks(); updateMenuMeta();
       });
       cloakRow.appendChild(c);
@@ -1706,8 +1773,10 @@
   }
   // One-tap spend on the tally screen (Rogue Legacy flow rule: death → tally → tap → running again)
   function buyTrack(i) {
-    const tr = TRACKS[i], tier = save[tr.key];
-    if (tier >= tr.max || save.light < tr.costs[tier]) return;
+    const tr = TRACKS[i]; if (!tr) return; // RS-#067: guard a bad index (corrupted save / stray keypress)
+    const tier = save[tr.key] | 0;
+    if (tier >= tr.max) return;
+    if (save.light < tr.costs[tier]) { Snd.deny(); return; } // RS-#078: audible "can't afford" on tracks too
     save.light -= tr.costs[tier]; save[tr.key] = tier + 1; saveNow();
     Snd.newBest();
     walletLine.textContent = '◆ Light banked: ' + save.light;
@@ -1720,8 +1789,9 @@
       const tier = save[tr.key], maxed = tier >= tr.max, cost = maxed ? 0 : tr.costs[tier];
       if (!maxed && save.light >= cost && cost < cheapestCost) { cheapest = i; cheapestCost = cost; }
       const d = document.createElement('div');
-      d.className = 'shopRow show' + (!maxed && save.light >= cost ? '' : ' cant');
-      d.innerHTML = '<span><span class="sname">' + (i+1) + '. ' + tr.name + '</span><br><span class="sdesc">' + tr.descs[Math.min(tier, tr.max - 1)] + '</span></span>' +
+      d.className = 'shopRow show' + (maxed ? ' maxed' : save.light >= cost ? '' : ' cant');
+      const desc = maxed ? 'Fully mastered' : tr.descs[Math.min(tier, tr.max - 1)];
+      d.innerHTML = '<span><span class="sname">' + (i+1) + '. ' + tr.name + '</span><br><span class="sdesc">' + desc + '</span></span>' +
         '<span class="pips">' + '●'.repeat(tier) + '○'.repeat(tr.max - tier) + '</span>' +
         '<span class="scost">' + (maxed ? 'MAX' : '◆ ' + cost) + '</span>';
       d.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); buyTrack(i); });
@@ -1823,9 +1893,13 @@
   let adReviveUsed = false, adDoubleUsed = false;
   let lastBank = { light: 0, kills: 0 }; // un-banked if an ad revive resumes the run
   function placeOnNextRoof() { // shared by Second Flame + ad revive: a gap death needs ground
-    const next = segments.filter(s => s.active && s.x2 > player.x + 20).sort((a,b)=>a.x1-b.x1)[0];
+    // Prefer the next roof ahead; if none, fall back to ANY active roof (nearest) so the revive
+    // never drops the player into empty airspace with vy=0 to immediately re-die (RS-#066: the old
+    // else-branch parked them at GROUND_Y-40 mid-air over a gap, a guaranteed second death).
+    let next = segments.filter(s => s.active && s.x2 > player.x + 20).sort((a,b)=>a.x1-b.x1)[0];
+    if (!next) next = segments.filter(s => s.active).sort((a,b)=>Math.abs(a.x1-player.x)-Math.abs(b.x1-player.x))[0];
     if (next) { player.x = Math.max(player.x, next.x1 + 12); player.y = next.y; player.vy = 0; player.onGround = true; }
-    else { player.y = GROUND_Y - 40; player.vy = 0; }
+    else { player.y = GROUND_Y; player.vy = 0; player.onGround = true; }
   }
   function die(cause) {
     // Warding Charm buff: absorbs one hit before anything else is spent
@@ -1861,7 +1935,7 @@
     state = 'dead'; player.dead = true; deathAtT = drawT;
     spawnBurst(player.x+player.w/2, player.y-10, 14, '#a44');
     Snd.death(); // the claimed layers collapse back to embers (tick gates on state)
-    addShake(10);
+    addShake(10); hurtFlashT = 40;
     CG.gameplayStop();
     const finalScore = runScore();
     const isBest = finalScore > best;
@@ -1888,7 +1962,15 @@
     adDoubleBtn.textContent = CG.adblocked() ? '▶ Double this run\'s Light (bonus)' : '▶ Double this run\'s Light (ad)';
     scoreLine.textContent = '';
     showTally(finalScore, isBest, lightEarned);
-    bestEl.textContent = `Best score: ${best}`;
+    // RS-#072: "beat your last run" inline delta — a cheap per-run goal-gradient (Law 8/11) that
+    // gives every run a comparison even when it's nowhere near the all-time best.
+    let bestLine = `Best score: ${best}`;
+    if (!isBest && save.lastRunScore > 0) {
+      const delta = finalScore - save.lastRunScore;
+      bestLine += delta >= 0 ? `  ·  ▲ +${delta} vs last` : `  ·  ▼ ${delta} vs last`;
+    }
+    bestEl.textContent = bestLine;
+    save.lastRunScore = finalScore; saveNow();
     // daily trial keeps its own ladder — one seeded route per day
     if (mode === 'daily') {
       const dk = new Date().toDateString();
@@ -2094,8 +2176,12 @@
     ctx.fillStyle = '#4a3a2a'; ctx.fillRect(-6,-7,5,8); ctx.fillRect(1,-7,5,8);
     ctx.restore();
     if (g.cap && g.alive) { // hp pips — the three-strike read is always legible
-      ctx.fillStyle = '#ffe9b0';
-      for (let i = 0; i < g.hp; i++) { ctx.beginPath(); ctx.arc(-8 + i*8, -60, 2.4, 0, Math.PI*2); ctx.fill(); }
+      // RS-#075: dark outline ring per pip so the pale-gold pips never wash out against the
+      // warm sky gradient / rust enemies on a bright phone screen (legibility, Part 1 UX).
+      for (let i = 0; i < g.hp; i++) {
+        ctx.beginPath(); ctx.arc(-8 + i*8, -60, 3.4, 0, Math.PI*2); ctx.fillStyle = '#241a2e'; ctx.fill();
+        ctx.beginPath(); ctx.arc(-8 + i*8, -60, 2.4, 0, Math.PI*2); ctx.fillStyle = '#ffe9b0'; ctx.fill();
+      }
     }
     if (g.archer && g.alive) { // bow + red glint just before the arrow looses (the tell)
       ctx.strokeStyle = '#4a3826'; ctx.lineWidth = 1.5;
@@ -2271,7 +2357,7 @@
   }
   function drawMessages(camX) {
     ctx.font = 'bold 10px Georgia'; ctx.textAlign = 'center';
-    for (const m of messages) { if (!m.active) continue; ctx.globalAlpha=Math.min(m.t/14,1); ctx.fillStyle='#e8c878'; ctx.fillText(m.text, m.x-camX, m.y-Math.min(m.t0-m.t, 20)*0.5); }
+    for (const m of messages) { if (!m.active) continue; ctx.globalAlpha=Math.min(m.t/14,1); ctx.fillStyle=m.col; ctx.fillText(m.text, m.x-camX, m.y-Math.min(m.t0-m.t, 20)*0.5); }
     ctx.globalAlpha = 1;
   }
   function draw() {
@@ -2365,6 +2451,17 @@
     // district mood tint (cheap palette shift; sky sprite stays shared)
     const tint = DISTRICTS[curD].tint;
     if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); }
+    // RS-#074: speed lines fade in as the run approaches its plateau — a sense-of-velocity cue
+    // for the late game where speed itself stops climbing (roadmap item; screen-space, cosmetic).
+    if (state === 'playing' && speed > 4.6 && !reduceMotion) { // RS-#086: reduce-motion skips the streaks
+      const sa = Math.min(0.16, (speed - 4.6) * 0.12);
+      ctx.strokeStyle = 'rgba(245,231,200,' + sa + ')'; ctx.lineWidth = 1;
+      for (let i = 0; i < 5; i++) {
+        const ly = ((i * 53 + drawT * 9) % (H + 20)) - 10;
+        const lx = (drawT * 22 + i * 97) % (W + 80);
+        ctx.beginPath(); ctx.moveTo(W - lx, ly); ctx.lineTo(W - lx - 34, ly); ctx.stroke();
+      }
+    }
     // Dawn palette swap (second visual zone, Law: long-run freshness): every other full lap
     // through the six districts in an endless mode, the night warms toward dawn — cheap, no
     // second sprite sheet, just a warm overlay whose strength eases in over the lap.
@@ -2378,11 +2475,19 @@
       }
     }
     ctx.drawImage(vignImg, 0, 0, W, H);
+    if (hurtFlashT > 0) { // RS-#081: red edge-vignette pulse on death — a clear "you were hit" beat
+      hurtFlashT--;
+      ctx.globalAlpha = (hurtFlashT / 40) * (reduceMotion ? 0.22 : 0.5); // RS-#088: gentler under reduce-motion
+      const hg = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.75);
+      hg.addColorStop(0, 'rgba(200,40,40,0)'); hg.addColorStop(1, 'rgba(200,40,40,0.9)');
+      ctx.fillStyle = hg; ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
     if (bannerT > 0) { // district / relit banner
       bannerT--;
       ctx.textAlign = 'center';
       ctx.globalAlpha = Math.min(1, bannerT / 30, (150 - bannerT) / 12 + 0.2);
-      ctx.font = 'bold 17px Georgia'; ctx.fillStyle = '#ffe9b0';
+      ctx.font = 'bold 17px Georgia'; ctx.fillStyle = bannerCol;
       ctx.shadowColor = 'rgba(255,190,110,0.8)'; ctx.shadowBlur = 14;
       ctx.fillText(bannerText, W/2, 62);
       ctx.shadowBlur = 0; ctx.globalAlpha = 1;
@@ -2412,8 +2517,11 @@
       ctx.fillStyle = 'rgba(8,6,14,0.55)'; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#e8c878'; ctx.textAlign = 'center';
       if (state === 'paused') {
-        ctx.font = 'bold 20px Georgia'; ctx.fillText('PAUSED', W/2, H/2 - 4);
-        ctx.font = '10px Georgia'; ctx.globalAlpha = 0.8;
+        ctx.font = 'bold 20px Georgia'; ctx.fillText('PAUSED', W/2, H/2 - 18);
+        // RS-#084: show the current run at a glance while paused, so it reads as "your run so far"
+        ctx.font = '10px Georgia'; ctx.globalAlpha = 0.9;
+        ctx.fillText(Math.floor(distance) + 'm  ·  ' + runScore() + ' pts', W/2, H/2 - 2);
+        ctx.globalAlpha = 0.8;
         ctx.fillText(isTouch ? 'tap to resume' : 'P or tap to resume', W/2, H/2 + 16);
         // RS-#058: pause used to show nothing but "PAUSED" — now a quick glance also gives the
         // controls recap and the same goal-gradient nudge the tally screen shows (Law 8: the
@@ -2488,8 +2596,9 @@
   updateMenuMeta();
   renderMap(); renderBuffs(); renderCloaks();
   // fantasy frame (Law 10): three lines on first boot, one line after
+  // RS-#079: the returning-player line now teases the loop (why a 4th run) — relight, climb, unlock.
   document.querySelectorAll('#overlay p')[0].innerHTML = save.seenStory
-    ? 'Run the rooftops. Take back the light.'
+    ? 'Relight the districts. Climb the ranks. Unlock the endless Night Shift.'
     : 'The wardens snuffed every lamp and hoard the light.<br>You carry the last living flame.<br>Relight six districts. Reach the Great Beacon.';
   requestAnimationFrame(loop);
   // SDK call order still matters: game.* calls only fire after init() resolves (sdkLive).
