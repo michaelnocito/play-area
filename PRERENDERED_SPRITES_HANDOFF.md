@@ -103,12 +103,16 @@ game"). First action in the new chat = propose 2-3 candidate packs for deadroot 
 Ready-made 2D sprite packs that are BOTH genuinely 3D-pre-rendered AND have a full 4-tier
 enemy roster (weak/mid/tanky/boss) with a clean commercial license turned out to be rare.
 **Two-phase plan Mike chose:**
-- **Phase 1 (prototype, now):** SmallScaleInt "HD 8-Directional Top-Down Zombie Pack"
-  (itch.io: smallscaleint.itch.io/hd-8-directional-top-down-zombie-pack, ~$15-30). 35+ character
-  variants incl. tanky "Hulk"/radiated/cop/soldier types, 15 anims x 8 directions. Render
-  method (3D vs pixel art) wasn't fully confirmed in research — verify by eye once purchased.
-  Mike buys, drops files in `deadroot/assets/raw/`, Claude wires the vertical slice (scav enemy
-  first, behind a flag) to prove the pipeline cheaply before spending more.
+- **Phase 1 (prototype, now):** RetroStyle Games "SWAT vs Zombies" free pack
+  (retrostylegames.com/portfolio/free-isometric-sprites-swat-vs-zombies/). Confirmed genuinely
+  pre-rendered from rigged 3D models. Only 3 character types (SWAT Soldier, Zombie Brute,
+  Female Zombie), 4 animation states each — enough to prove the pipeline (drawSprite, atlas,
+  color-tint) on the scav enemy, NOT enough for the full roster.
+  **License is Discord-gated with no stated commercial terms — prototype/internal use only,
+  do NOT ship this pack in the CG/itch.io release.** Swap to Phase 2 before shipping.
+  Mike downloads (may require joining their Discord per the page), drops files in
+  `deadroot/assets/raw/`, Claude wires the vertical slice (scav enemy first, behind a flag)
+  to prove the pipeline before spending on Synty.
 - **Phase 2 (once deadroot is tight/polished):** Synty POLYGON City Zombies pack
   (syntystore.com/products/polygon-city-zombies-pack, $49.99) — 50 distinct character types,
   much stronger variety/quality, clean one-time commercial license. Sold as 3D FBX models only
