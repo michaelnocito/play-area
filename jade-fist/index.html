@@ -242,10 +242,16 @@ const STYLES = [
   { name: 'MOON WHITE',   col: '#f8f2e0', cost: 40  },
   { name: 'JADE ROBE',    col: '#aee8c6', cost: 60  },
   { name: 'GOLD SILK',    col: '#e8cf88', cost: 90  },
-  { name: 'NIGHT ORCHID', col: '#c8aee6', cost: 120 }
+  { name: 'NIGHT ORCHID', col: '#c8aee6', cost: 120 },
+  // JF-#033: silly accessories — pure jade sinks, cosmetic only
+  { name: 'PANDA HOOD',    col: '#f0ead2', acc: 'panda',    cost: 80  },
+  { name: 'FAKE MUSTACHE', col: '#e8dcc0', acc: 'mustache', cost: 50  },
+  { name: 'CHICKEN SUIT',  col: '#f4dd7a', acc: 'chicken',  cost: 160 },
+  { name: "LI'L DRAGON",   col: '#aee8c6', acc: 'dragon',   cost: 220 }
 ];
 let styleSel = save.cos.wear;      // wardrobe cursor (menu)
 function wearCol(){ return STYLES[save.cos.wear].col; }
+function wornAcc(){ return STYLES[save.cos.wear].acc || null; }
 function styleNext(){
   styleSel = (styleSel + 1) % STYLES.length;
   if (save.cos.own[styleSel]){ save.cos.wear = styleSel; persist(); }
@@ -1396,6 +1402,27 @@ function fighter(x, y, face, opts){
       cx.beginPath(); cx.moveTo(0.5, -90.5); cx.lineTo(8, -87.5); cx.moveTo(15.5, -90.5); cx.lineTo(9, -87.5); cx.stroke();
     }
   }
+  // JF-#033: worn accessory (player only) — sits in the head group so BIG-HEAD scales it
+  if (o.acc === 'panda'){
+    cx.fillStyle = '#22201e';
+    cx.beginPath(); cx.arc(-10, -96, 6.5, 0, 7); cx.arc(10, -96, 6.5, 0, 7); cx.fill();   // ears
+    cx.beginPath(); cx.ellipse(4, -84, 4.5, 5.5, 0.3, 0, 7); cx.ellipse(12, -84, 4.5, 5.5, -0.3, 0, 7); cx.fill();   // eye patches
+  } else if (o.acc === 'mustache'){
+    cx.fillStyle = '#2a2622'; cx.strokeStyle = '#2a2622'; cx.lineWidth = 3; cx.lineCap = 'round';
+    cx.beginPath(); cx.moveTo(8, -78); cx.quadraticCurveTo(2, -82, -2, -76); cx.moveTo(8, -78); cx.quadraticCurveTo(15, -82, 19, -76); cx.stroke();
+  } else if (o.acc === 'chicken'){
+    cx.fillStyle = '#e0503a';                                   // red comb
+    cx.beginPath(); cx.moveTo(-4, -97); cx.quadraticCurveTo(0, -104, 4, -97); cx.quadraticCurveTo(8, -104, 12, -97); cx.fill();
+    cx.fillStyle = '#f0a83a';                                   // beak
+    cx.beginPath(); cx.moveTo(16, -82); cx.lineTo(26, -80); cx.lineTo(16, -77); cx.closePath(); cx.fill();
+  } else if (o.acc === 'dragon'){
+    cx.save(); cx.translate(-18, -92 + Math.sin(t * 0.2) * 3);   // a li'l dragon familiar bobbing at the shoulder
+    cx.fillStyle = '#4fbf82'; cx.strokeStyle = OUT; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(0, 0, 7, 0, 7); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.moveTo(-4, -6); cx.lineTo(-6, -12); cx.lineTo(-1, -8); cx.fill();   // horn
+    cx.fillStyle = '#ffec9a'; cx.beginPath(); cx.arc(3, -1, 1.5, 0, 7); cx.fill();          // eye
+    cx.restore();
+  }
   cx.restore();   // JF-#032: end big-head group
   // arms: chunky, with round fists; lead arm extends on punch
   const arm = (x1, y1, x2, y2) => {
@@ -1717,6 +1744,7 @@ function draw(){
   cx.fill();
   fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
     punch: P.punchT, pose: pPose, rot: run.drunken ? Math.sin(t * 0.14) * 0.1 : 0,   // JF-#032: DRUNKEN sway
+    acc: wornAcc(),   // JF-#033
     eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
   // particles
@@ -1852,7 +1880,7 @@ function draw(){
         ppunch = Math.max(0, 12 - ft);
         cap = 'COUNTER — throw them into the rest'; capCol = '#e8c76a';
       } else { ex2 = -999; cap = 'they come at you — strike toward them'; }
-      fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72 });   // JF-#023
+      fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72, acc: wornAcc() });   // JF-#023/#033
       if (ex2 > -200 && ex2 < W + 200)
         fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
       cx.fillStyle = capCol; cx.font = '19px Georgia'; cx.textAlign = 'center';
