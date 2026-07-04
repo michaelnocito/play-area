@@ -1,7 +1,25 @@
 # Rooftop Sprint — Dev Notes (always read first in a new chat)
 
-> **⚡ RESUME HERE (2026-07-04, RS-#044 difficulty rework shipped on top of RS-#042/#043/RS-SILLY):
-> Next = MIKE'S FULL PLAYTEST, then B7 SHIP WAVE**
+> **⚡ RESUME HERE (2026-07-04, RS-#045..#054 CG-acceptance polish batch shipped): Next = MIKE'S
+> FULL PLAYTEST, then B7 SHIP WAVE**
+>
+> **🛠️ RS-#045..#054 DONE 2026-07-04 (HEAD `7decac0`) — 12-item polish batch, from a full
+> GAME_BIBLE.md audit + rs_playtest.js/rs_qa_sweep.js run across seeds:** buff-consumed
+> confirmation message; braced/lunging guard marker now has a shape+motion tell (spike + pulsing
+> ring) instead of color-only (colorblind fix); adblock-aware ad short-circuit (skips the
+> round-trip, honors the reward immediately); HUD + touch-button font legibility bump; distinct
+> `Snd.brace()` audio tell for the brace warning (and fixed a real bug this exposed — the
+> no-AudioContext fallback stub was missing a `brace: noop` entry, which threw in any headless/
+> no-audio environment); fall-height-scaled landing dust; a deterministic occasional shooting star
+> (drawT-driven, never `rnd()`, so it can't touch the seeded gameplay stream); brazier pool 6→9
+> and guard pool 12→15 (qa sweep had both sitting at their ceiling — one heavy beat from silently
+> dropping spawns); two more cloak colors; pause now ducks audio like an ad break does. Most of
+> the audit's other findings (menu-world-behind-overlay, district visual variety, guard death-
+> animation variety) turned out to be **already implemented** — stale roadmap entries, not real
+> gaps; verified in code before touching anything. Verified: parse-check clean, both suites green
+> on default seed (seed 2 flipped one gap-death after the guard-pool fix legitimately changed that
+> seed's layout — confirmed via RS_DEBUG it's the same pre-existing bot-timing-margin artifact
+> from §6, not a new bug).
 >
 > **⚔️ RS-#044 DONE 2026-07-04 (HEAD `7215ee0`) — guards brace/lunge, full difficulty rework,
 > from Mike reporting the game trivializes to "spam attack":** root cause was that a FAR-range
