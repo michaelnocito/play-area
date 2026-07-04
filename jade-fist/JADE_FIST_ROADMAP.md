@@ -36,6 +36,10 @@ One quality bar, one submission wave. Status as of JF-#026 (2026-07-03).
       difficulty bump; bot re-validated fair (11/12 wins, 0% unreactable)
 - [x] JF-#029 Real duck/jump poses (deep crouch + tucked-leg leap) + ground shadow;
       full test battery 17/17 (dodge windows, timing, spacing, integrity) + bot 12/12 fair
+- [x] JF-#030–#034 "Make it sillier" batch (10 gags, all on existing systems): enemy
+      chatter, gag props, reactive moon, longest-yeet stat, joke scrolls, accessory
+      cosmetics, bowling STRIKE, hype announcer, boss personalities + Butcher cleavers,
+      between-wave cameo; validated smoke + bot 12/12 fair
 
 ## Left (in order)
 - [ ] **Mike re-playtest** — the harder build + new dodge axis + cartoon look; notes feed JF-#029
