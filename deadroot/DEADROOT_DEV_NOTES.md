@@ -775,6 +775,17 @@ no HMR; parse-check; preview_eval eval + draw sweep; console clean). Numbering =
 the new mechanics (rebalancing blind would risk the confirmed-good maze). D1 human roster is asset-gated (needs
 Engvee Knight/Barbarian/Halberdier atlases dropped in `assets/raw/`, per SPR-#003).
 
+## DR-#033 — dev-menu playtest tunables for the new mechanics (2026-07-05)
+Mike chose "playtest" — so wired the `?dev=1` DEV MENU with live sliders for everything C8 would tune, so he can
+dial the feel in real time and report the sweet spots (which feeds C8 without me guessing). Dropped the now-dead
+warden knobs (warden removed in DR-#032 C6). Knobs → CFG: Grabber slow%/range/cost, Zombie cost, Hedge cost,
+Kill bounty, Reabsorb secs, Maze rot/sec, Maze rot cap, + the existing enemy/tower sprite sizes. Slider label
+precision now derives from step (`kdec`), menu scrolls (`max-height:92vh`), added a "spawn a troop (tanky)" button
+(tank shows the slow + ramping rot better than a scav). Nothing load-bearing — all inside DR-#019 DEV:BEGIN..END,
+stripped for release. Verified in-browser at `?dev=1`: menu opens, all 11 knobs show correct values/precision,
+sliders write CFG live (grabber slow→0.6, reabsorb→6.5), spawn-troop works, console clean.
+**Playtest URL:** https://michaelnocito.github.io/play-area/deadroot/?dev=1 (⚙ DEV button top-left, or ` / ~ key).
+
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
 attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/
