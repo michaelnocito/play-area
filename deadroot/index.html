@@ -303,7 +303,6 @@ let waveIdx = 0, endlessN = 0, endless = false;
 let prepT = 0, spawnQ = [], spawnT = 0;
 let enemies = [], corpses = [], towers = [], projectiles = [], clouds = [], particles = [], popups = [];
 let blocked = null, flow = null;
-let web = [], webStrands = [], lastStructSig = -1; // DR-#022 spiderweb (superseded by DR-#023 placed hedges)
 let hedge = [];            // DR-#023: hedge[r][c] = player-placed maze wall (blocks + renders as topiary)
 let hedgePaid = [];        // DR-#025 C5: true only for hedges the player paid for (seeded ones refund nothing)
 let buildMode = null;      // DR-#023: null | 'hedge' | 'spitter' — active build brush from the palette
@@ -640,61 +639,8 @@ function placeUnit(c,r,type){
   return true;
 }
 
-const WEB_CAP = 4;
-function rebuildWebs(){
-  return; // DR-#023: corpse-bridging retired — hedges are the maze walls now (kept for reference)
-  if(!web.length) return;
-  // clear last frame's web tiles (they never coincide with a corpse/tower tile)
-  for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){ if(web[r][c]){ web[r][c]=false; blocked[r][c]=false; } }
-  webStrands = [];
-  // nodes = blocking corpses + towers (trampled corpses are walkable, so not anchors)
-  const nodes = [];
-  for(const k of corpses) if(!k.trampled) nodes.push([k.c,k.r]);
-  for(const t of towers) nodes.push([t.c,t.r]);
-  // eligible aligned pairs, nearest first so short strands claim the cap
-  const pairs = [];
-  for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
-    const [c1,r1]=nodes[i], [c2,r2]=nodes[j];
-    const adc=Math.abs(c2-c1), adr=Math.abs(r2-r1);
-    if(!(c1===c2 || r1===r2 || adc===adr)) continue; // not on a line
-    const span=Math.max(adc,adr);
-    if(span<2 || span>3) continue;                    // gap of exactly 1 or 2 empty tiles
-    pairs.push({i,j,span});
-  }
-  pairs.sort((a,b)=>a.span-b.span);
-  const conn = new Array(nodes.length).fill(0);
-  const added = []; // {tiles, s:[c1,r1,c2,r2]} in placement order (shortest strands first)
-  for(const p of pairs){
-    if(conn[p.i]>=WEB_CAP || conn[p.j]>=WEB_CAP) continue;
-    const [c1,r1]=nodes[p.i], [c2,r2]=nodes[p.j];
-    const dc=Math.sign(c2-c1), dr=Math.sign(r2-r1);
-    // gather the empty intervening tiles; bail if anything already blocks the line
-    const tiles=[]; let cc=c1+dc, rr=r1+dr, clean=true;
-    while(cc!==c2 || rr!==r2){
-      if(!inGrid(cc,rr) || isHive(cc,rr) || blocked[rr][cc]){ clean=false; break; }
-      tiles.push([cc,rr]); cc+=dc; rr+=dr;
-    }
-    if(!clean || !tiles.length) continue;
-    for(const [tc,tr] of tiles){ blocked[tr][tc]=true; web[tr][tc]=true; }
-    conn[p.i]++; conn[p.j]++; added.push({tiles, s:[c1,r1,c2,r2]});
-  }
-  // seal safety: compute the field once; if the web sealed a side, peel strands back (longest
-  // first) until enemies can path again. Common (no-seal) case = ONE computeFlow. Peels are
-  // capped so a pathological dense mesh can't hitch the frame; a hard fallback then strips any
-  // remaining web tiles so the field is always legal.
-  let res = computeFlow(blocked), guard = 0;
-  while(!sideHasPath(res.dist) && added.length && guard++ < 24){
-    const last = added.pop();
-    for(const [tc,tr] of last.tiles){ web[tr][tc]=false; blocked[tr][tc]=false; }
-    res = computeFlow(blocked);
-  }
-  if(!sideHasPath(res.dist)){
-    for(const a of added) for(const [tc,tr] of a.tiles){ web[tr][tc]=false; blocked[tr][tc]=false; }
-    added.length = 0; res = computeFlow(blocked);
-  }
-  webStrands = added.map(a=>a.s);
-  flow = res.flow; flowDist = res.dist;
-}
+// DR-#032 C6: the DR-#022 spiderweb-bridging system was fully retired by the DR-#023 buy-and-place pivot
+// (hedges are the maze walls now). Removed rebuildWebs/drawWebs/web[]/webStrands and their per-frame sig check.
 
 /* ===== Entities ===== */
 let nextId = 1;
@@ -743,25 +689,8 @@ function mutate(k, type){
   if(!save.seenEvolveTip && CFG.tier2[type]){ evolveTipT = 6; evolveTipTower = {x, y}; save.seenEvolveTip = true; persist(); }
   menu = null;
 }
-const WARDEN_NAMES = ["GRUNT","MOLAR","SPLICE","FESTER"];
-function spawnWarden(c,r){
-  if(!tryBlock(c,r)) return;
-  const [x,y] = tileToXY(c,r);
-  const usedNames = towers.filter(t=>t.name).map(t=>t.name);
-  const wName = WARDEN_NAMES.find(n=>!usedNames.includes(n)) || null;
-  towers.push({ type:"warden", c, r, x, y, cd:0, hp:150, max:150, flash:0, pulse:Math.random()*6, swing:0, tier:0, level:1, name:wName });
-}
-function applyTier2(t){
-  const t2 = CFG.tier2[t.type];
-  if(!t2 || biomass<t2.cost){ SFX.deny(); popup(t.x,t.y,"NEED BIOMASS","#e07f7f"); menu=null; return; }
-  biomass -= t2.cost;
-  t.tier = 1;
-  towersEvolvedThisRun++;
-  popup(t.x,t.y-30,"-"+t2.cost+"◈","#e07f7f");
-  SFX.squelch(); burst(t.x,t.y,"#e0a0f0",16); shakeIt(2);
-  popup(t.x,t.y,"→ "+t2.name,"#e0a0f0");
-  menu = null;
-}
+// DR-#032 C6: removed spawnWarden (free cardinal wardens retired by the DR-#023 pivot — never called)
+// and applyTier2 (biomass EVOLVE path replaced by feast/salvage; tier never rises now — never called).
 /* ===== Feast mechanic: towers take damage + devour corpses to heal/upgrade ===== */
 function damageTower(t, dmg){
   t.hp -= dmg; t.flash = 0.15;
@@ -874,8 +803,7 @@ function newRun(){
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#023 placed maze walls
   hedgePaid = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#025 C5
-  web = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
-  webStrands = []; lastStructSig = -1; buildMode = null;
+  buildMode = null;
   rebuildFlow();
   firstMutateDone = false; onboardT = 0; menu = null;
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
@@ -1019,10 +947,6 @@ function update(){
     }
   }
 
-  // DR-#022: recompute the spiderweb only when the structure changed (a corpse/tower added or
-  // removed), never per-frame. Runs before enemies move so they read the fresh maze this frame.
-  const structSig = corpses.length*1000 + towers.length;
-  if(structSig !== lastStructSig){ lastStructSig = structSig; rebuildWebs(); }
 
   /* enemies */
   for(let i=enemies.length-1;i>=0;i--){
@@ -1872,26 +1796,6 @@ function drawFlowOverlay(){
     ctx.moveTo(hx,hy); ctx.lineTo(hx-ax*H2+ay*H2, hy-ay*H2-ax*H2);
   }
   ctx.stroke();
-  ctx.restore();
-}
-/* DR-#022: draw the spiderweb strands (sticky pale threads with cross-ticks) between anchors. */
-function drawWebs(){
-  if(!webStrands.length) return;
-  ctx.save(); ctx.lineCap="round";
-  for(const s of webStrands){
-    const [x1,y1]=tileToXY(s[0],s[1]), [x2,y2]=tileToXY(s[2],s[3]);
-    const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy)||1, px=-dy/len, py=dx/len;
-    ctx.strokeStyle="rgba(198,228,190,0.22)"; ctx.lineWidth=5;
-    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-    ctx.strokeStyle="rgba(170,214,158,0.55)"; ctx.lineWidth=1.6;
-    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-    const ticks=Math.max(2,Math.round(len/16));
-    ctx.strokeStyle="rgba(210,232,198,0.4)"; ctx.lineWidth=1;
-    ctx.beginPath();
-    for(let i=1;i<ticks;i++){ const t=i/ticks, mx=x1+dx*t, my=y1+dy*t, w=3.5;
-      ctx.moveTo(mx-px*w,my-py*w); ctx.lineTo(mx+px*w,my+py*w); }
-    ctx.stroke();
-  }
   ctx.restore();
 }
 /* DR-#023: render placed hedges as merged topiary (autotile-lite: round only outer corners, extend
