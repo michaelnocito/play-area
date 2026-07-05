@@ -26,8 +26,8 @@ Known: canvas screenshots time out in tooling — verify via `preview_eval` (rel
 - ~~A2 Quest tactics (FFT)~~ — **PARKED** as a separate future game (see Decisions above).
 
 ### B. Your requested additions
-- **B1 — Grabber zombie.** New unit type that **slows** enemies (snare aura or on-hit slow — the old `rootmass` behavior fits). Needs a **distinct look** (grasping tendrils/hands vs the Spitter). Adds a 3rd palette brush / grow option. Effort: **S–M**.
-- **B2 — Reabsorption cooldown.** When a zombie dies, a **few-second delay** before you can raise a new one (the Hive reabsorbs the biomass) — gives losing a zombie real weight, pairs with destructible gaps. *Decision needed: global cooldown vs per-tile.* Effort: **S**.
+- ~~**B1 — Grabber zombie.**~~ **DONE (DR-#025).** 3rd build brush (GRABBER, 45◈, range 2.0, slow 0.40): a zombie that slows every enemy in its amber snare aura instead of shooting. Distinct look = amber disc + dashed aura ring + grasping clawed tendrils. Destructible, growable from a hedge. Tune slow%/range/cost on playtest.
+- ~~**B2 — Reabsorption cooldown.**~~ **DONE (DR-#025), GLOBAL Hive-wide (chosen over per-tile).** 4s lockout on raising a NEW zombie (fresh place AND grow) after any zombie dies; hedges/salvage exempt. Palette buttons dim + countdown; cursor red while cooling. Tune the 4s on playtest.
 
 ### C. Maze / build polish (existing backlog)
 - C1 Drag-to-paint walls (place a line of hedges in one drag). **S–M**
@@ -48,9 +48,9 @@ Known: canvas screenshots time out in tooling — verify via `preview_eval` (rel
 ---
 
 ## Suggested sequencing (my rec)
-1. **B1 Grabber + B2 Reabsorption** — small, concrete depth on top of the (now confirmed-good) maze. Best next build.
+1. ~~**B1 Grabber + B2 Reabsorption**~~ — **DONE (DR-#025).** Next up ↓
 2. **C6 dead-code cleanup + C7 boon/onboarding text** — clear the retired-mechanic cruft so balancing is clean.
 3. **D1 human roster + C8 balance** — flesh out the threat and tune it.
 4. **A3 Survival → shippable** — polish + CG pre-submission checklist = ship.
 
-Tell the next session which item IDs to build (e.g. "build B1 + B2"). B2 needs one decision: reabsorption cooldown **global** (Hive-wide) vs **per-tile**.
+Tell the next session which item IDs to build. Suggested next: **C6 + C7** (clear dead-mechanic cruft), then **D1 + C8**.

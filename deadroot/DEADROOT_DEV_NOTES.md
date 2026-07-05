@@ -710,6 +710,37 @@ that kill a zombie leave a GAP in the maze. Confirmed lane call: paths ≥2 wide
 **Backlog (still):** drag-to-paint; ghost/red drag preview; nicer autotile hedge + zombie-in-wall
 art; path-length DoT; sell/remove; rip dead FEAST/mutate/warden/web code; boon/onboarding text; balance.
 
+## DR-#025 — B1 Grabber zombie + B2 reabsorption cooldown (2026-07-05)
+Two requested depth adds on top of the confirmed-good 2-wide maze (Mike playtest, HANDOFF Decisions).
+- **B1 — GRABBER zombie (3rd build brush).** New unit type `CFG.towers.grabber` (cost 45, range 2.0,
+  slow 0.40). It's a risen zombie that **slows every enemy in its aura** instead of shooting — the old
+  rootmass snare behavior, reworked as a placeable unit. The snare loop now sums slow from rootmass AND
+  grabber via a `slowMul = min(1-slow)` (multiple slowers stack to the strongest, not additively), and
+  sets `e.snared` (so grabber-snared foes still trigger FERMENT ×2 with a Spitter's acid). Grabber is
+  skipped in the fire loop (`type===grabber` → no projectile). Distinct look so it never reads as a
+  Spitter: **amber base disc** (vs lime), a **persistent dashed amber snare-radius ring** (readability
+  tell — this zone slows), and **4 animated grasping clawed tendrils** reaching outward (`drawGrabTendrils`,
+  the silhouette tell / "grasping hands vs Spitter"). It's a tower → has HP, is destructible (leaves a
+  maze gap like any zombie), can be **grown from a hedge** for 45−5=40, and salvages like other units.
+  Palette rebalanced to 3 buttons (HEDGE / ZOMBIE / GRABBER), w138 gap14, each button uses its type's
+  accent color when selected.
+- **B2 — Reabsorption cooldown (GLOBAL Hive-wide — my pick over per-tile).** `CFG.reabsorbTime = 4`s.
+  When ANY zombie dies (melee brawl → `destroyTower`, or incinerator burn-down → the fire-loop death
+  path; both call `triggerReabsorb()`), the Hive-wide `reabsorbCD` is set to 4s. While it's >0, raising
+  a **new** zombie (both fresh place AND grow-from-hedge, both brushes) is denied with a "REABSORBING Ns"
+  popup. **Hedges are NOT gated** (structure, not undead) and **salvage does not trigger it** (deliberate
+  player action, not a loss). Chose global over per-tile: simpler tell, and it makes losing any zombie a
+  real tempo hit (pairs with destructible gaps — a breach + a raise-lockout at once). Tell: the two unit
+  palette buttons dim + show a live "reabsorbing Ns" countdown; the build cursor goes red for unit brushes
+  while cooling. Both reset in `newRun`; `reabsorbCD` decrements in `update()` alongside overgrowth/pher.
+- Verified via preview_eval (reload — no HMR): grabber places (hp60) + appears as 3rd palette brush;
+  enemy on top of grabber `snared=true`, far enemy `false`; zombie death sets reabsorbCD→4; new place +
+  grow both blocked while cooling, both succeed after; **hedge stays allowed while cooling**; 1500-tick
+  live run with 2 leveled/tier grabbers + a spitter + `draw()` every tick throws nothing; console clean.
+  Determinism + single-file fast-load intact. All code wrapped in DR-#025 comments.
+**Next:** Mike playtests grabber feel (slow % / range / cost) + reabsorb length (4s too punishing/lenient?).
+Then C6 dead-code cleanup + C7 boon/onboarding text, then D1 roster + C8 balance → A3 shippable.
+
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
 attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/

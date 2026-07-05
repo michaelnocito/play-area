@@ -87,11 +87,13 @@ const CFG = {
   startBiomass: 120,        // DR-#023: enough to lay a starter maze + a unit
   killBounty: 6,
   hedgeCost: 5,             // DR-#023: cheap wall; ~1/8 of a Spitter so a full maze ≈ one tower
+  reabsorbTime: 4,          // DR-#025 B2: Hive-wide delay before a NEW zombie can be raised after one dies
   gates: [ {c:25,r:8}, {c:0,r:9}, {c:13,r:0}, {c:12,r:17} ], // DR-#023 labyrinth entrances (E,W,N,S), open in order
   corpse: { rot: 15, payout: 25 },
   towers: {
     warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
     spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:3.3, rate:1.1, dmg:13 },
+    grabber:  { cost:45, name:"GRABBER",  desc:"slows nearby foes", range:2.0, slow:0.4 }, // DR-#025 B1: snare-aura zombie, grasping look
     rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
     node:     { cost:70, name:"NODE",     desc:"+50% nearby fire rate", range:1.6 }
@@ -132,6 +134,7 @@ const CFG = {
 const TCOL = {
   warden:   {body:"#9ab880", mid:"#6a8858", dark:"#3a4a30", acc:"#d8e060"},
   spitter:  {body:"#7ed038", mid:"#4a9018", dark:"#1a3a08", acc:"#c8f050"},
+  grabber:  {body:"#c8925a", mid:"#8a5c2e", dark:"#3a2410", acc:"#e6b072"}, // DR-#025 B1: amber grasping zombie
   rootmass: {body:"#a06838", mid:"#704820", dark:"#2e1808", acc:"#d09050"},
   spore:    {body:"#40c068", mid:"#208048", dark:"#0e3818", acc:"#9af0a8"},
   node:     {body:"#8858d8", mid:"#5a38b0", dark:"#200848", acc:"#d0a0f8"},
@@ -310,6 +313,7 @@ let run = null;
 let boonChoice = null; // [boon, boon] while a pick is pending
 let banner = null;     // {txt, sub, t}
 let overgrowthT = 0, pherT = 0;
+let reabsorbCD = 0;   // DR-#025 B2: Hive-wide reabsorption cooldown; blocks raising a new zombie while >0
 let gameSpeed = 1; // 1x / 2x fast-forward
 // DR-#019 DEV:BEGIN — in-game dev/tuning menu (industry term: "debug menu" +
 // live "tunables"/"cvars"). Gated behind ?dev=1 so players never see it; the
@@ -607,9 +611,12 @@ function placeHedge(c,r){
   burst(x,y,"#5f9e52",7); SFX.squelch();
   return true;
 }
-function placeUnit(c,r){
+function placeUnit(c,r,type){
+  type = type || "spitter";                            // DR-#025: brush picks spitter or grabber
   const [x,y]=tileToXY(c,r);
-  const full = CFG.towers.spitter.cost;
+  // DR-#025 B2: the Hive can't raise a NEW zombie until it finishes reabsorbing a lost one.
+  if(reabsorbCD>0){ SFX.deny(); popup(x,y-12,"REABSORBING "+Math.ceil(reabsorbCD)+"s","#c99bd8"); return false; }
+  const full = CFG.towers[type].cost;
   const grow = !!(hedge[r] && hedge[r][c]);            // DR-#024: growing an existing hedge into a zombie
   const cost = grow ? full - CFG.hedgeCost : full;     // discount — the hedge is already paid for
   if(biomass < cost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
@@ -617,9 +624,10 @@ function placeUnit(c,r){
   else if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"KEEP A 2-WIDE PATH","#e3d34e"); return false; }
   biomass -= cost;
   const thp = 60 + (run?run.towerHp:0);
-  towers.push({ type:"spitter", c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
+  towers.push({ type, c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
   towersBuiltThisRun++; firstMutateDone=true;
-  popup(x,y-28, grow?"GROWN":"-"+cost+"◈","#e07f7f"); burst(x,y,"#9be07f",14); SFX.squelch(); shakeIt(2);
+  const acc=(TCOL[type]&&TCOL[type].acc)||"#9be07f";
+  popup(x,y-28, grow?"GROWN":"-"+cost+"◈","#e07f7f"); burst(x,y,acc,14); SFX.squelch(); shakeIt(2);
   return true;
 }
 
@@ -760,7 +768,10 @@ function destroyTower(t){
   rings.push({x:t.x,y:t.y,r:0,maxR:34,maxT:0.35,t:0.35,col:"rgba(224,96,96,0.7)"});
   popup(t.x,t.y-10,"ZOMBIE SLAIN","#e06060"); SFX.squelch(); shakeIt(3);
   if(menu && menu.tower===t) menu=null;
+  triggerReabsorb(); // DR-#025 B2
 }
+// DR-#025 B2: a lost zombie makes the Hive reabsorb the biomass — Hive-wide delay before raising a new one.
+function triggerReabsorb(){ reabsorbCD = CFG.reabsorbTime; }
 function corpseInRange(t){
   const R=(CFG.towers[t.type]?CFG.towers[t.type].range:2)*CFG.tile;
   let best=null, bd=Infinity;
@@ -857,7 +868,7 @@ function newRun(){
   webStrands = []; lastStructSig = -1; buildMode = null;
   rebuildFlow();
   firstMutateDone = false; onboardT = 0; menu = null;
-  run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
+  run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
@@ -868,7 +879,7 @@ function newRun(){
   genDecor(); // fresh treeline + growing bone piles each run
   // DR-#023: seed a concentric labyrinth (rotating gaps) the player extends; no free defenders
   seedLabyrinth();
-  showBanner("GROW YOUR LABYRINTH","HEDGE walls the lanes — grow a hedge into a ZOMBIE to bite back");
+  showBanner("GROW YOUR LABYRINTH","HEDGE walls lanes · ZOMBIE bites · GRABBER slows the horde");
   mode = "prep"; prepT = 16; // generous first prep to lay the first maze
   CG.gameplayStart();
 }
@@ -960,6 +971,7 @@ function update(){
   if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
   if(overgrowthT>0) overgrowthT -= DT;
   if(pherT>0) pherT -= DT;
+  if(reabsorbCD>0) reabsorbCD -= DT; // DR-#025 B2
   for(const a of run.abil) if(a.cd>0) a.cd -= DT;
   if(comboT>0){ comboT-=DT; if(comboT<=0) comboN=0; }
   if(mode==="play") waveT+=DT;
@@ -1005,10 +1017,13 @@ function update(){
     if(e.coat>0){ e.coat-=DT; e.hp -= 6*DT*meta.dmg; }
     if(e.corroded>0) e.corroded -= DT;
     e.snared = false;
-    let strangled = false;
-    for(const t of towers){ if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*(1+run.rootR)*CFG.tile)){ e.snared=true; if(t.tier===1) strangled=true; break; } }
+    let strangled = false, slowMul = 1; // DR-#025 B1: grabber zombies contribute their own slow
+    for(const t of towers){
+      if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*(1+run.rootR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul,1-CFG.towers.rootmass.slow); if(t.tier===1) strangled=true; }
+      else if(t.type==="grabber" && dist2(e,t) < sq(CFG.towers.grabber.range*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul,1-CFG.towers.grabber.slow); }
+    }
     if(strangled) e.hp -= 8*DT*meta.dmg;
-    let spd = e.spd * CFG.tile * (e.snared?1-CFG.towers.rootmass.slow:1);
+    let spd = e.spd * CFG.tile * slowMul;
     if(overgrowthT>0) spd *= 0.15;
     if(e.type==="sweeper") spd *= (1-run.sweepSlow) * (e.panicT>0 ? 1.8 : 1);
 
@@ -1110,9 +1125,10 @@ function update(){
       towers.splice(i,1);
       const stillHere = corpses.some(k=>k.c===t.c&&k.r===t.r);
       if(!stillHere && blocked[t.r][t.c]) unblock(t.c,t.r);
+      triggerReabsorb(); // DR-#025 B2: burned-down zombie also starts the reabsorb delay
       continue;
     }
-    if(t.type==="rootmass"||t.type==="node") continue;
+    if(t.type==="rootmass"||t.type==="node"||t.type==="grabber") continue; // DR-#025: grabber is a slow aura, not a shooter
     const def = CFG.towers[t.type];
     // Feast level scaling: each devoured corpse makes the zombie hit harder + faster
     const lvl = t.level||1;
@@ -1303,7 +1319,7 @@ function onTap(x,y){
   // DR-#023: with a build brush active, a tap in the field places a hedge or a unit (brush stays on)
   if(buildMode && y>TOP){
     const [c,r]=xyToTile(x,y);
-    if(inGrid(c,r)){ if(buildMode==="hedge") placeHedge(c,r); else placeUnit(c,r); }
+    if(inGrid(c,r)){ if(buildMode==="hedge") placeHedge(c,r); else placeUnit(c,r,buildMode); }
     return;
   }
 
@@ -1864,29 +1880,62 @@ function drawGates(){
     ctx.restore();
   }
 }
+/* DR-#025 B1: grabber's grasping tendrils — clawed arms reaching outward, the distinct slow-tower tell. */
+function drawGrabTendrils(t){
+  const cx=t.x, cy=t.y-2, reach=17+(t.tier===1?3:0);
+  ctx.save();
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  for(let a=0;a<4;a++){
+    const base = a*(Math.PI/2) + Math.PI/4;
+    const wig = Math.sin(t.pulse*2.4 + a*1.7)*0.35;   // slow grasping wiggle
+    const ang = base + wig;
+    const ex = cx + Math.cos(ang)*reach, ey = cy + Math.sin(ang)*reach*0.7;
+    const mx = cx + Math.cos(ang-0.3)*reach*0.55, my = cy + Math.sin(ang-0.3)*reach*0.4;
+    // arm
+    ctx.strokeStyle="#3a2410"; ctx.lineWidth=4.5;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.quadraticCurveTo(mx,my,ex,ey); ctx.stroke();
+    ctx.strokeStyle="#c8925a"; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.quadraticCurveTo(mx,my,ex,ey); ctx.stroke();
+    // 3 grasping claw fingers at the tip
+    const dx=Math.cos(ang), dy=Math.sin(ang)*0.7, px=-dy, py=dx;
+    ctx.strokeStyle="#e6b072"; ctx.lineWidth=1.8;
+    for(let f=-1;f<=1;f++){
+      const fx=ex+px*f*3, fy=ey+py*f*3;
+      ctx.beginPath(); ctx.moveTo(ex,ey); ctx.lineTo(fx+dx*4, fy+dy*4); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
 /* DR-#023: bottom-center build palette. */
 function paletteBtns(){
-  const w=150,h=58,gap=16,y=H-h-14, total=w*2+gap, x0=W/2-total/2;
-  return [ {x:x0, y, w, h, mode:"hedge", label:"HEDGE", cost:CFG.hedgeCost},
-           {x:x0+w+gap, y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost} ];
+  const w=138,h=58,gap=14,y=H-h-14, total=w*3+gap*2, x0=W/2-total/2;
+  return [ {x:x0, y, w, h, mode:"hedge", label:"HEDGE", cost:CFG.hedgeCost, unit:false},
+           {x:x0+(w+gap), y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
+           {x:x0+(w+gap)*2, y, w, h, mode:"grabber", label:"GRABBER", cost:CFG.towers.grabber.cost, unit:true} ]; // DR-#025 B1
 }
 function drawPalette(){
   if(mode!=="play"&&mode!=="prep") return;
+  const cooling = reabsorbCD>0; // DR-#025 B2: unit brushes are locked while the Hive reabsorbs
   for(const b of paletteBtns()){
-    const sel=buildMode===b.mode, afford=biomass>=b.cost;
+    const sel=buildMode===b.mode, locked=b.unit&&cooling, afford=biomass>=b.cost&&!locked;
+    const acc = (TCOL[b.mode]&&TCOL[b.mode].acc) || "#9be07f";
+    ctx.globalAlpha = locked?0.55:1;
     ctx.fillStyle = sel?"#2b5a26":"rgba(16,20,18,0.9)";
-    ctx.strokeStyle = sel?"#9be07f":"rgba(150,190,140,0.4)"; ctx.lineWidth=sel?3:1.5;
+    ctx.strokeStyle = sel?acc:"rgba(150,190,140,0.4)"; ctx.lineWidth=sel?3:1.5;
     ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(b.x,b.y,b.w,b.h,10);else ctx.rect(b.x,b.y,b.w,b.h); ctx.fill(); ctx.stroke();
-    ctx.textAlign="left"; ctx.fillStyle=afford?"#dfeada":"#9a7060"; ctx.font="bold 17px monospace";
-    ctx.fillText(b.label, b.x+14, b.y+26);
-    ctx.fillStyle=afford?"#8fd9a8":"#e06060"; ctx.font="bold 15px monospace";
-    ctx.fillText(b.cost+"◈", b.x+14, b.y+46);
+    ctx.textAlign="left"; ctx.fillStyle=afford?"#dfeada":"#9a7060"; ctx.font="bold 16px monospace";
+    ctx.fillText(b.label, b.x+13, b.y+26);
+    if(locked){ ctx.fillStyle="#c99bd8"; ctx.font="bold 14px monospace"; ctx.fillText("reabsorbing "+Math.ceil(reabsorbCD)+"s", b.x+13, b.y+46); }
+    else { ctx.fillStyle=afford?"#8fd9a8":"#e06060"; ctx.font="bold 15px monospace"; ctx.fillText(b.cost+"◈", b.x+13, b.y+46); }
+    ctx.globalAlpha = 1;
   }
-  // build cursor: green = placeable, red = blocked/hive/gate
+  // build cursor: green = placeable, red = blocked/hive/gate/cooling
   if(buildMode && ptrY>TOP){
     const [c,r]=xyToTile(ptrX,ptrY);
     if(inGrid(c,r)){
-      const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && biomass>=(buildMode==="hedge"?CFG.hedgeCost:CFG.towers.spitter.cost);
+      const cost = buildMode==="hedge"?CFG.hedgeCost:CFG.towers[buildMode].cost;
+      const cool = buildMode!=="hedge" && cooling;
+      const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && biomass>=cost && !cool;
       ctx.strokeStyle = ok?"rgba(155,224,127,0.9)":"rgba(224,96,96,0.9)"; ctx.lineWidth=2.5;
       ctx.strokeRect(c*CFG.tile+1, TOP+r*CFG.tile+1, CFG.tile-2, CFG.tile-2);
     }
@@ -2005,20 +2054,33 @@ function draw(){
     if(t.type==="warden" && t.swing>0) t.swing -= DT;
     // SPR-#002: the Spitter tower is a risen zombie (pre-rendered-3D sprite), aiming
     // at the nearest attacker. Falls back to procedural art until the atlas loads.
-    const useZombie = t.type==="spitter" && useSprites && SPR.zombie.ready;
+    const isGrab = t.type==="grabber"; // DR-#025 B1
+    const useZombie = (t.type==="spitter"||isGrab) && useSprites && SPR.zombie.ready;
     const lvl = t.level||1;
     if(useZombie){
+      // grabber: persistent snare-radius aura (readability tell — this zone slows) under the sprite
+      if(isGrab){
+        const aR = CFG.towers.grabber.range*CFG.tile;
+        ctx.save();
+        ctx.globalAlpha = 0.10+0.04*Math.sin(t.pulse*2.0);
+        ctx.fillStyle = "#e6b072"; ctx.beginPath(); ctx.arc(t.x,t.y,aR,0,6.283); ctx.fill();
+        ctx.globalAlpha = 0.4; ctx.strokeStyle="rgba(230,176,114,0.6)"; ctx.lineWidth=1.5; ctx.setLineDash([4,6]);
+        ctx.beginPath(); ctx.arc(t.x,t.y,aR,0,6.283); ctx.stroke(); ctx.setLineDash([]);
+        ctx.restore();
+      }
       // stronger zombies are visibly bigger + glow more (mods change the look)
       const lvlF = 1 + (lvl-1)*0.10;
       const baseR = (26 + (t.tier===1?6:0)) * lvlF;
       const bg = ctx.createRadialGradient(t.x,t.y+8,2, t.x,t.y+8,baseR);
-      const bcol = lvl>=3 ? "224,160,240" : "120,220,120";
+      const bcol = isGrab ? "220,150,90" : (lvl>=3 ? "224,160,240" : "120,220,120");
       bg.addColorStop(0,"rgba("+bcol+","+(0.5+0.12*Math.sin(t.pulse*2.2))+")");
       bg.addColorStop(1,"rgba("+bcol+",0)");
       ctx.save(); ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(t.x,t.y+8,baseR,baseR*0.55,0,0,6.283); ctx.fill(); ctx.restore();
       const ds = towerSpriteScale*lvlF;
       drawSpriteFrame('zombie', t.x, t.y-Math.round(ds*0.16), towerAimAngle(t), t.pulse*30, ds, t.flash);
-      if(t.cd>0){ ctx.save(); ctx.globalAlpha=0.3; ctx.strokeStyle="#dfff70"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(t.x,t.y+6,24,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
+      // grabber: grasping tendrils/claws reaching outward toward its prey (the distinct silhouette tell)
+      if(isGrab) drawGrabTendrils(t);
+      else if(t.cd>0){ ctx.save(); ctx.globalAlpha=0.3; ctx.strokeStyle="#dfff70"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(t.x,t.y+6,24,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
     } else {
       ctx.save(); ctx.translate(t.x,t.y);
       const p = 1+0.05*Math.sin(t.pulse*3);
