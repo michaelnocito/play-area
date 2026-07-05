@@ -561,12 +561,39 @@ function gatesReachable(dist){
   for(const g of openGates()){ if(dist[g.r][g.c]===Infinity) return false; }
   return true;
 }
-/* DR-#023 player placement: block a tile only if every open gate keeps its route to the Hive. */
+/* DR-#024: mark every tile that belongs to some fully-open 2x2 block — i.e. tiles a 2-enemy-wide
+   corridor can pass through. Out-of-grid + Hive read as open so borders/gates count. */
+function wideOpenGrid(){
+  const R=CFG.rows, C=CFG.cols;
+  const open=(r,c)=> (r<0||c<0||r>=R||c>=C) ? true : !blocked[r][c];
+  const wide=Array.from({length:R},()=>new Array(C).fill(false));
+  for(let r=-1;r<R;r++) for(let c=-1;c<C;c++){
+    if(open(r,c)&&open(r+1,c)&&open(r,c+1)&&open(r+1,c+1)){
+      for(const [rr,cc] of [[r,c],[r+1,c],[r,c+1],[r+1,c+1]]) if(rr>=0&&cc>=0&&rr<R&&cc<C) wide[rr][cc]=true;
+    }
+  }
+  return wide;
+}
+/* DR-#024: every OPEN gate must reach the Hive along a 2-wide corridor (never a single-file pinch). */
+function gatesWideReachable(){
+  const wide=wideOpenGrid(), R=CFG.rows, C=CFG.cols;
+  const seen=Array.from({length:R},()=>new Array(C).fill(false));
+  const q=[]; let head=0; const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  for(let r=CFG.hive.r0;r<=CFG.hive.r1;r++) for(let c=CFG.hive.c0;c<=CFG.hive.c1;c++){ if(wide[r][c]){ seen[r][c]=true; q.push([c,r]); } }
+  while(head<q.length){ const [c,r]=q[head++]; for(const [dc,dr] of dirs){ const nc=c+dc,nr=r+dr; if(nc<0||nr<0||nc>=C||nr>=R||seen[nr][nc]||!wide[nr][nc]) continue; seen[nr][nc]=true; q.push([nc,nr]); } }
+  for(const g of openGates()){
+    let ok=false;
+    for(const [dc,dr] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]){ const nc=g.c+dc,nr=g.r+dr; if(nc>=0&&nr>=0&&nc<C&&nr<R&&seen[nr][nc]){ ok=true; break; } }
+    if(!ok) return false;
+  }
+  return true;
+}
+/* DR-#023/#024 player placement: block a tile only if every open gate keeps a 2-WIDE route to the Hive. */
 function tryPlaceBlock(c,r){
   if(!inGrid(c,r) || isHive(c,r) || gateAt(c,r) || blocked[r][c]) return false;
   blocked[r][c] = true;
+  if(!gatesWideReachable()){ blocked[r][c] = false; return false; }
   const res = computeFlow(blocked);
-  if(!gatesReachable(res.dist)){ blocked[r][c] = false; return false; }
   flow = res.flow; flowDist = res.dist;
   return true;
 }
@@ -575,21 +602,24 @@ function tryPlaceBlock(c,r){
 function placeHedge(c,r){
   const [x,y]=tileToXY(c,r);
   if(biomass < CFG.hedgeCost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
-  if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"CAN'T BLOCK PATH","#e3d34e"); return false; }
+  if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"KEEP A 2-WIDE PATH","#e3d34e"); return false; }
   biomass -= CFG.hedgeCost; hedge[r][c]=true; firstMutateDone=true;
   burst(x,y,"#5f9e52",7); SFX.squelch();
   return true;
 }
 function placeUnit(c,r){
   const [x,y]=tileToXY(c,r);
-  const cost = CFG.towers.spitter.cost;
+  const full = CFG.towers.spitter.cost;
+  const grow = !!(hedge[r] && hedge[r][c]);            // DR-#024: growing an existing hedge into a zombie
+  const cost = grow ? full - CFG.hedgeCost : full;     // discount — the hedge is already paid for
   if(biomass < cost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
-  if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"CAN'T BLOCK PATH","#e3d34e"); return false; }
+  if(grow){ hedge[r][c]=false; }                       // tile stays blocked; swap hedge → zombie
+  else if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"KEEP A 2-WIDE PATH","#e3d34e"); return false; }
   biomass -= cost;
   const thp = 60 + (run?run.towerHp:0);
   towers.push({ type:"spitter", c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
   towersBuiltThisRun++; firstMutateDone=true;
-  popup(x,y-28,"-"+cost+"◈","#e07f7f"); burst(x,y,"#9be07f",14); SFX.squelch(); shakeIt(2);
+  popup(x,y-28, grow?"GROWN":"-"+cost+"◈","#e07f7f"); burst(x,y,"#9be07f",14); SFX.squelch(); shakeIt(2);
   return true;
 }
 
@@ -801,7 +831,7 @@ function pathStep(fc,fr,tc,tr){
 function seedLabyrinth(){
   const {c0,c1,r0,r1} = CFG.hive;
   const put=(c,r)=>{ if(inGrid(c,r)&&!isHive(c,r)&&!gateAt(c,r)){ blocked[r][c]=true; hedge[r][c]=true; } };
-  for(const {d,gap} of [{d:2,gap:"E"},{d:4,gap:"S"},{d:6,gap:"W"}]){
+  for(const {d,gap} of [{d:2,gap:"E"},{d:5,gap:"W"}]){ // DR-#024: rings spaced 3 apart → 2-wide corridors
     const L=c0-d, R=c1+d, T=r0-d, B=r1+d, mc=(L+R)/2, mr=(T+B)/2;
     for(let c=L;c<=R;c++){
       if(!(gap==="N" && Math.abs(c-mc)<=1)) put(c,T);
@@ -838,7 +868,7 @@ function newRun(){
   genDecor(); // fresh treeline + growing bone piles each run
   // DR-#023: seed a concentric labyrinth (rotating gaps) the player extends; no free defenders
   seedLabyrinth();
-  showBanner("BUILD YOUR LABYRINTH","tap HEDGE to wall lanes, SPITTER to raise a zombie");
+  showBanner("GROW YOUR LABYRINTH","HEDGE walls the lanes — grow a hedge into a ZOMBIE to bite back");
   mode = "prep"; prepT = 16; // generous first prep to lay the first maze
   CG.gameplayStart();
 }
@@ -1838,7 +1868,7 @@ function drawGates(){
 function paletteBtns(){
   const w=150,h=58,gap=16,y=H-h-14, total=w*2+gap, x0=W/2-total/2;
   return [ {x:x0, y, w, h, mode:"hedge", label:"HEDGE", cost:CFG.hedgeCost},
-           {x:x0+w+gap, y, w, h, mode:"spitter", label:"SPITTER", cost:CFG.towers.spitter.cost} ];
+           {x:x0+w+gap, y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost} ];
 }
 function drawPalette(){
   if(mode!=="play"&&mode!=="prep") return;

@@ -685,6 +685,31 @@ art; path-length DoT reward; sell/remove hedges; rip out dead FEAST/mutate/web c
 & onboarding text that still reference mutate/rot; balance pass (kill bounty vs wall/tower costs);
 gate-escalation banners. Then: Mike playtests the new loop.
 
+## DR-#024 — deadroot unify: hedge↔zombie, 2-wide paths, destructible walls (2026-07-05)
+Mike playtest on DR-#023: hedge pathing too restrictive; wants ≥2-wide lanes; the hedge IS the
+deadroot (grows into a zombie or stays a blocker); every wall tile is a hedge OR a zombie; enemies
+that kill a zombie leave a GAP in the maze. Confirmed lane call: paths ≥2 wide, build 1 tile at a time.
+- **2-wide path guarantee (the "too restrictive"/"can't block full path" fix):** `wideOpenGrid()`
+  marks every tile in a fully-open 2×2 block (out-of-grid + Hive read open); `gatesWideReachable()`
+  BFSes those wide tiles from the Hive and requires every OPEN gate to connect. `tryPlaceBlock` now
+  refuses any placement that would pinch the guaranteed route below 2 wide (not just full seal).
+  Verified: filling a column, the 3 tiles that would choke it to 1-wide are refused (corridor stays
+  ≥2). Seeded labyrinth rebuilt to 2 concentric rings spaced 3 apart (d=2,5) → 2-wide corridors +
+  3-wide rotating gaps; seed passes `gatesWideReachable` with all 4 gates reachable (~60 hedge tiles).
+- **Grow hedge → zombie (unified deadroot):** the ZOMBIE brush on an existing hedge tile converts it
+  in place for the price difference (40−5 = 35, "GROWN"); on empty it places a fresh zombie (40) via
+  the 2-wide `tryPlaceBlock`. Hedge = cheap permanent blocker; zombie = blocker that also attacks.
+- **Destructible zombies → gaps:** attackers already brawl units in range (DR-#020 combat, still
+  live); `destroyTower` unblocks the tile → a real breach in the maze. Hedges are NOT towers so
+  they're indestructible structure. Verified: killing a placed/grown zombie unblocks its tile.
+- Palette relabeled SPITTER→**ZOMBIE**; onboarding banner "GROW YOUR LABYRINTH — HEDGE walls the
+  lanes, grow a hedge into a ZOMBIE to bite back."
+- Verified via preview_eval (reload — no HMR): seed 2-wide + gates reachable; hedge place; grow
+  (cost 35, hedge cleared, tile stays blocked); destroy → gap; pinch refused (3/14); 1200-frame run
+  + full draw throws nothing; console clean. Determinism + fast-load intact.
+**Backlog (still):** drag-to-paint; ghost/red drag preview; nicer autotile hedge + zombie-in-wall
+art; path-length DoT; sell/remove; rip dead FEAST/mutate/warden/web code; boon/onboarding text; balance.
+
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
 attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/
