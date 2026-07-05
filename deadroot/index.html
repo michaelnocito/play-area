@@ -566,7 +566,7 @@ function mutate(k, type){
   popup(x,y-30,"-"+t.cost+"◈","#e07f7f");
   towersBuiltThisRun++;
   const thp = 60 + run.towerHp;
-  towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0 });
+  towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
   SFX.squelch(); burst(x,y,"#9be07f",14); shakeIt(2);
   if(!firstMutateDone){ firstMutateDone = true; }
   // one-time evolve nudge on first tower built
@@ -579,7 +579,7 @@ function spawnWarden(c,r){
   const [x,y] = tileToXY(c,r);
   const usedNames = towers.filter(t=>t.name).map(t=>t.name);
   const wName = WARDEN_NAMES.find(n=>!usedNames.includes(n)) || null;
-  towers.push({ type:"warden", c, r, x, y, cd:0, hp:150, max:150, flash:0, pulse:Math.random()*6, swing:0, tier:0, name:wName });
+  towers.push({ type:"warden", c, r, x, y, cd:0, hp:150, max:150, flash:0, pulse:Math.random()*6, swing:0, tier:0, level:1, name:wName });
 }
 function applyTier2(t){
   const t2 = CFG.tier2[t.type];
@@ -591,6 +591,52 @@ function applyTier2(t){
   SFX.squelch(); burst(t.x,t.y,"#e0a0f0",16); shakeIt(2);
   popup(t.x,t.y,"→ "+t2.name,"#e0a0f0");
   menu = null;
+}
+/* ===== Feast mechanic: towers take damage + devour corpses to heal/upgrade ===== */
+function damageTower(t, dmg){
+  t.hp -= dmg; t.flash = 0.15;
+  addParticle({x:t.x,y:t.y-4,vx:(Math.random()-0.5)*40,vy:-40,t:0.4,col:"#c86060"});
+  if(t.hp<=0) destroyTower(t);
+}
+function destroyTower(t){
+  const i=towers.indexOf(t); if(i<0) return;
+  towers.splice(i,1);
+  const stillCorpse = corpses.some(k=>k.c===t.c&&k.r===t.r);
+  if(!stillCorpse && blocked[t.r][t.c]) unblock(t.c,t.r);
+  burst(t.x,t.y,(TCOL[t.type]&&TCOL[t.type].acc)||"#9be07f",16);
+  rings.push({x:t.x,y:t.y,r:0,maxR:34,maxT:0.35,t:0.35,col:"rgba(224,96,96,0.7)"});
+  popup(t.x,t.y-10,"ZOMBIE SLAIN","#e06060"); SFX.squelch(); shakeIt(3);
+  if(menu && menu.tower===t) menu=null;
+}
+function corpseInRange(t){
+  const R=(CFG.towers[t.type]?CFG.towers[t.type].range:2)*CFG.tile;
+  let best=null, bd=Infinity;
+  for(const k of corpses){ const [kx,ky]=tileToXY(k.c,k.r); const d=(kx-t.x)**2+(ky-t.y)**2; if(d<bd && d<R*R){ bd=d; best=k; } }
+  return best;
+}
+function consumeCorpse(k){
+  const i=corpses.indexOf(k); if(i>=0) corpses.splice(i,1);
+  if(!k.trampled && !towers.some(t=>t.c===k.c&&t.r===k.r)) unblock(k.c,k.r);
+  // little tendril of the corpse being dragged in
+  const [kx,ky]=tileToXY(k.c,k.r); burst(kx,ky,"#7a8a5a",6);
+}
+function feastHeal(t){
+  const k=corpseInRange(t);
+  if(!k){ SFX.deny(); popup(t.x,t.y-20,"NO CORPSE IN RANGE","#e07f7f"); menu=null; return; }
+  consumeCorpse(k);
+  t.hp = Math.min(t.max, t.hp + Math.ceil(t.max*0.5));
+  popup(t.x,t.y-22,"DEVOUR → HEAL","#9be07f"); burst(t.x,t.y,"#9be07f",14); SFX.squelch();
+  menu=null;
+}
+function feastUpgrade(t){
+  const k=corpseInRange(t);
+  if(!k){ SFX.deny(); popup(t.x,t.y-20,"NO CORPSE IN RANGE","#e07f7f"); menu=null; return; }
+  consumeCorpse(k);
+  t.level=(t.level||1)+1;
+  t.max += 20; t.hp += 20; // grows tougher as it grows stronger
+  towersEvolvedThisRun++;
+  popup(t.x,t.y-22,"DEVOUR → LVL "+t.level,"#e0a0f0"); bigBurst(t.x,t.y,"#e0a0f0",14); SFX.squelch(); shakeIt(2);
+  menu=null;
 }
 function popup(x,y,txt,col){ popups.push({x,y,txt,col,t:1.2}); }
 const MAX_PARTICLES = 500; // perf safety net so a chaotic moment (boss death + combo + hive hit) can't spike frame time
@@ -826,6 +872,9 @@ function update(){
     } else {
       // walk flow field to hive
       const [ec,er]=xyToTile(e.x,e.y);
+      // Feast combat: the living brawl any zombie tower within reach (towers have HP)
+      let brawl=null, bbd=Infinity; const atkR=CFG.tile*1.25;
+      for(const t of towers){ const d=dist2(e,t); if(d<bbd && d<atkR*atkR){ bbd=d; brawl=t; } }
       if(isHive(ec,er) || nearHive(e)){
         e.atkT += DT;
         if(e.atkT>=1){
@@ -833,6 +882,10 @@ function update(){
           SFX.hiveHit(); shakeIt(5); burst(e.x,e.y,"#e07f7f",10); edgePulseT = 1.0;
           if(hiveHP<=0){ hiveHP=0; gameOver(); return; }
         }
+      } else if(brawl){
+        // stop and hack at the zombie tower
+        e.atkT += DT;
+        if(e.atkT>=1){ e.atkT=0; damageTower(brawl, e.dmg); burst(brawl.x,brawl.y-4,"#c86060",4); }
       } else {
         let dx=0,dy=0;
         const f = inGrid(ec,er) ? flow[er][ec] : null;
@@ -884,9 +937,11 @@ function update(){
     }
     if(t.type==="rootmass"||t.type==="node") continue;
     const def = CFG.towers[t.type];
-    let rate = def.rate * meta.rate * (pherT>0?1.4:1);
-    let dmgMult = 1;
-    for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq((n.tier===1?2.4:CFG.towers.node.range)*CFG.tile)){ rate*=1.5; if(n.tier===1) dmgMult=1.25; break; } }
+    // Feast level scaling: each devoured corpse makes the zombie hit harder + faster
+    const lvl = t.level||1;
+    let rate = def.rate * meta.rate * (pherT>0?1.4:1) * (1+(lvl-1)*0.10);
+    let dmgMult = 1 + (lvl-1)*0.25;
+    for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq((n.tier===1?2.4:CFG.towers.node.range)*CFG.tile)){ rate*=1.5; if(n.tier===1) dmgMult*=1.25; break; } }
     t.cd -= DT*rate;
     if(t.cd<=0){
       // find target in range (pheromone: hunt sweepers first)
@@ -1065,14 +1120,16 @@ function onTap(x,y){
   // mutate menu open?
   if(menu){
     const picked = menuHit(x,y);
-    if(picked==='evolve'){ applyTier2(menu.tower); return; }
+    if(picked==='heal'){ feastHeal(menu.tower); return; }
+    if(picked==='upgrade'){ feastUpgrade(menu.tower); return; }
     if(picked==='salvage'){
-      const t2=CFG.tier2[menu.tower.type], refund=Math.floor(t2.cost*0.4);
+      const refund=20+((menu.tower.level||1)-1)*10;
       biomass+=refund; popup(menu.tower.x,menu.tower.y,"+"+refund+"◈ SALVAGED","#e3d34e");
       burst(menu.tower.x,menu.tower.y,"#e3d34e",10);
       const mt=menu.tower; menu=null;
       towers.splice(towers.indexOf(mt),1);
-      if(blocked[mt.r][mt.c]) unblock(mt.c,mt.r);
+      const stillCorpse = corpses.some(k=>k.c===mt.c&&k.r===mt.r);
+      if(!stillCorpse && blocked[mt.r][mt.c]) unblock(mt.c,mt.r);
       return;
     }
     if(picked && menu.corpse){ mutate(menu.corpse, picked); return; }
@@ -1097,10 +1154,13 @@ function menuAnchor(){ if(menu.tower) return [menu.tower.x, menu.tower.y]; const
 function menuOpts(){
   if(!menu) return [];
   if(menu.tower){
-    const [tx,ty]=[menu.tower.x,menu.tower.y];
-    const oy=Math.max(TOP+46,ty-80);
-    if(menu.tower.tier===1) return [{type:'salvage', x:tx, y:oy, r:40}];
-    return [{type:'evolve', x:tx, y:oy, r:40}];
+    const t=menu.tower;
+    const cx=Math.max(90, Math.min(W-90, t.x)), oy=Math.max(TOP+52, t.y-74);
+    return [
+      {type:'heal',    x:cx-48, y:oy, r:38},
+      {type:'upgrade', x:cx+48, y:oy, r:38},
+      {type:'salvage', x:cx,    y:Math.min(H-38, t.y+66), r:30},
+    ];
   }
   const [kx,ky] = menuAnchor();
   const types = ["spitter","rootmass","spore","node"];
@@ -1639,12 +1699,12 @@ function draw(){
   if(evolveTipT>0 && evolveTipTower){
     const a=Math.min(1,evolveTipT/1.2)*Math.min(1,(6-evolveTipT)/0.5);
     ctx.save(); ctx.globalAlpha=Math.max(0,a);
-    const tw=210, x=evolveTipTower.x, y=evolveTipTower.y;
+    const tw=308, x=evolveTipTower.x, y=evolveTipTower.y;
     const tx=Math.max(tw/2+6,Math.min(W-tw/2-6,x)), ty=Math.max(TOP+6,y-70);
     ctx.fillStyle="rgba(14,18,20,0.92)"; ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(tx-tw/2,ty,tw,34,7);else ctx.rect(tx-tw/2,ty,tw,34); ctx.fill();
     ctx.strokeStyle="rgba(224,160,240,0.7)"; ctx.stroke();
     ctx.fillStyle="#e0a0f0"; ctx.textAlign="center"; ctx.font="bold 11px monospace";
-    ctx.fillText((IS_TOUCH?"tap":"click")+" a tower again to EVOLVE it", tx, ty+21);
+    ctx.fillText((IS_TOUCH?"tap":"click")+" a zombie to DEVOUR corpses (heal/upgrade)", tx, ty+21);
     ctx.restore();
   }
   // expanding rings (Warden impact, corpse tap)
@@ -1664,15 +1724,18 @@ function draw(){
     // SPR-#002: the Spitter tower is a risen zombie (pre-rendered-3D sprite), aiming
     // at the nearest attacker. Falls back to procedural art until the atlas loads.
     const useZombie = t.type==="spitter" && useSprites && SPR.zombie.ready;
+    const lvl = t.level||1;
     if(useZombie){
-      // bioluminescent base: reads as "your risen dead" + separates the dark sprite from the dark ground
-      const baseR = 26 + (t.tier===1?6:0);
+      // stronger zombies are visibly bigger + glow more (mods change the look)
+      const lvlF = 1 + (lvl-1)*0.10;
+      const baseR = (26 + (t.tier===1?6:0)) * lvlF;
       const bg = ctx.createRadialGradient(t.x,t.y+8,2, t.x,t.y+8,baseR);
-      const bcol = t.tier===1 ? "150,110,210" : "120,220,120";
+      const bcol = lvl>=3 ? "224,160,240" : "120,220,120";
       bg.addColorStop(0,"rgba("+bcol+","+(0.5+0.12*Math.sin(t.pulse*2.2))+")");
       bg.addColorStop(1,"rgba("+bcol+",0)");
       ctx.save(); ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(t.x,t.y+8,baseR,baseR*0.55,0,0,6.283); ctx.fill(); ctx.restore();
-      drawSpriteFrame('zombie', t.x, t.y-Math.round(towerSpriteScale*0.16), towerAimAngle(t), t.pulse*30, towerSpriteScale, t.flash);
+      const ds = towerSpriteScale*lvlF;
+      drawSpriteFrame('zombie', t.x, t.y-Math.round(ds*0.16), towerAimAngle(t), t.pulse*30, ds, t.flash);
       if(t.cd>0){ ctx.save(); ctx.globalAlpha=0.3; ctx.strokeStyle="#dfff70"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(t.x,t.y+6,24,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
     } else {
       ctx.save(); ctx.translate(t.x,t.y);
@@ -1688,6 +1751,8 @@ function draw(){
       ctx.restore();
     }
     if(t.hp<t.max){ const tc=TCOL[t.type]; ctx.fillStyle="#333"; ctx.fillRect(t.x-14,t.y-24,28,4); ctx.fillStyle=tc?tc.acc:"#e0a04a"; ctx.fillRect(t.x-14,t.y-24,28*(t.hp/t.max),4); }
+    // level pips (feast upgrades): small chevrons above a leveled-up zombie
+    if(lvl>1){ ctx.fillStyle="#e0a0f0"; for(let p=0;p<Math.min(lvl-1,5);p++){ ctx.beginPath(); ctx.arc(t.x-8+p*4, t.y-30, 1.6, 0, 6.283); ctx.fill(); } }
   }
   // node link lines (purple dashes between Node and buffed towers)
   ctx.save(); ctx.setLineDash([4,7]);
@@ -1951,21 +2016,26 @@ function drawMenu(){
   const opts = menuOpts();
   ctx.fillStyle="rgba(5,7,9,0.35)"; ctx.fillRect(0,TOP,W,H-TOP);
   if(menu.tower){
-    const o=opts[0], t2=CFG.tier2[menu.tower.type];
-    ctx.fillStyle="rgba(14,12,22,0.95)"; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.fill();
-    if(o.type==='salvage'){
-      const refund=Math.floor(t2.cost*0.4);
-      ctx.strokeStyle="#e3d34e"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
-      ctx.fillStyle="#e3d34e"; ctx.textAlign="center"; ctx.font="bold 11px monospace"; ctx.fillText("SALVAGE",o.x,o.y-5);
-      ctx.fillStyle="#8fd9a8"; ctx.font="bold 12px monospace"; ctx.fillText("+"+refund+"◈",o.x,o.y+10);
-    } else {
-      const ok=biomass>=t2.cost;
-      ctx.save(); if(!ok) ctx.globalAlpha=0.55;
-      ctx.strokeStyle=ok?"#e0a0f0":"#666"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
-      ctx.fillStyle="#e0a0f0"; ctx.textAlign="center"; ctx.font="bold 11px monospace"; ctx.fillText("EVOLVE",o.x,o.y-5);
-      ctx.fillStyle="#dfe6ec"; ctx.font="bold 9px monospace"; ctx.fillText(t2.name,o.x,o.y+8);
-      ctx.fillStyle=ok?"#0d0a1a":"#1a0d0d"; ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(o.x-22,o.y+14,44,18,8);else ctx.rect(o.x-22,o.y+14,44,18); ctx.fill();
-      ctx.fillStyle=ok?"#e0a0f0":"#e07f7f"; ctx.font="bold 12px monospace"; ctx.fillText("◈"+t2.cost,o.x,o.y+28); ctx.restore();
+    const t=menu.tower;
+    // feast range ring: corpses inside this can be devoured
+    const R=(CFG.towers[t.type]?CFG.towers[t.type].range:2)*CFG.tile;
+    const hasCorpse = !!corpseInRange(t);
+    ctx.strokeStyle=hasCorpse?"rgba(155,224,127,0.35)":"rgba(200,200,200,0.15)"; ctx.lineWidth=2;
+    ctx.setLineDash([5,6]); ctx.beginPath(); ctx.arc(t.x,t.y,R,0,6.283); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth=1;
+    // current level tag
+    ctx.fillStyle="#c8e0a8"; ctx.textAlign="center"; ctx.font="bold 12px monospace"; ctx.fillText("LVL "+(t.level||1), t.x, t.y-32);
+    for(const o of opts){
+      const feast = (o.type==='heal'||o.type==='upgrade');
+      const enabled = feast ? hasCorpse : true;
+      const col = o.type==='heal'?"#9be07f":o.type==='upgrade'?"#e0a0f0":"#e3d34e";
+      ctx.save(); if(!enabled) ctx.globalAlpha=0.4;
+      ctx.fillStyle="rgba(14,16,20,0.96)"; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.fill();
+      ctx.strokeStyle=col; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
+      ctx.fillStyle=col; ctx.textAlign="center";
+      if(o.type==='heal'){ ctx.font="bold 13px monospace"; ctx.fillText("DEVOUR", o.x, o.y-6); ctx.fillText("HEAL", o.x, o.y+10); }
+      else if(o.type==='upgrade'){ ctx.font="bold 13px monospace"; ctx.fillText("DEVOUR", o.x, o.y-6); ctx.fillText("LVL "+((t.level||1)+1), o.x, o.y+10); }
+      else { ctx.font="bold 11px monospace"; ctx.fillText("SALVAGE", o.x, o.y-3); ctx.fillStyle="#8fd9a8"; ctx.font="bold 12px monospace"; ctx.fillText("+"+(20+((t.level||1)-1)*10)+"◈", o.x, o.y+12); }
+      ctx.restore();
     }
     return;
   }

@@ -549,6 +549,34 @@ is an art/silhouette/color problem, not inherently an engine problem — top-dow
 the MOST readable for TD (Bloons/Kingdom Rush). Engine choice pending Mike's decision; see the
 engine handoff being drafted this session.
 
+## DR-#020 — FEAST mechanic: tower combat + devour corpses to heal/upgrade (2026-07-05)
+New tower mechanic (Mike). Researched Age of Mythology (buildings have HP, get destroyed,
+are healable) + Warcraft 3 Undead Ghoul **Cannibalize** (consume a nearby corpse to heal;
+a corpse eaten can't also be raised — contested-resource choice). Deadroot's version:
+- **Towers take damage + can be destroyed.** Any attacker within 1.25 tiles of a zombie
+  tower stops and hacks at it (deals its dmg on the 1s atkT cadence). At 0 HP the tower is
+  destroyed (`destroyTower` → unblock tile + reflow, "ZOMBIE SLAIN"). Mike chose "anything
+  in range" attacks. (Ranged spitters still usually kill weak attackers before melee, so
+  this bites most at chokepoints / vs tanky units — tune later.)
+- **Corpses feed towers (Mike's call: biomass only builds NEW zombies).** Tap a zombie →
+  radial menu: **DEVOUR → HEAL** (restore 50% max HP) or **DEVOUR → LVL n+1** (level up),
+  each consumes the nearest corpse in the tower's range; plus **SALVAGE** (biomass refund).
+  A dashed range ring + "LVL n" tag show while the menu is open; buttons dim if no corpse
+  is in range.
+- **Levels scale power + look:** `t.level` (per-corpse). Firing rate +10%/lvl, damage
+  +25%/lvl (wired into the fire loop). Devour-upgrade also +20 max HP. Visually the zombie
+  grows (sprite + base glow ×(1+.1/lvl)), glow turns purple at lvl 3+, level pips above it.
+- Replaced the old biomass-cost EVOLVE/tier-2 path (applyTier2 now dead code) with feasting.
+  `corpseInRange`/`consumeCorpse`/`feastHeal`/`feastUpgrade`/`damageTower`/`destroyTower`
+  added near mutate. Onboarding tip retext: "tap a zombie to DEVOUR corpses (heal/upgrade)".
+- Verified: feastHeal 20→50 & consumes corpse; feastUpgrade → lvl2 +20max & consumes;
+  immortal troop chips a spitter 60→30 (combat works); tower destroyed at 0 HP; menu opens
+  with heal/upgrade/salvage and tapping upgrade levels it; screenshot confirms the radial
+  menu + range ring + bigger purple lvl-3 zombie read clearly; multi-wave regression clean.
+**Next / open:** balance (does "anything in range" stall or feel good at real difficulty?);
+corpse is now contested 3 ways (mutate-new / feast-heal / feast-upgrade / rot) — watch the
+economy; then Knight→troop etc., then fold Rootmass/Spore/Node into Spitter feast "mods".
+
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
 attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/
