@@ -320,6 +320,8 @@ let godMode = false, showRanges = false;
 // wired per-type as their atlases land). Atlas loads async; procedural draw is the
 // fallback if it 404s or before it's ready, so the game always runs.
 let useSprites = true;
+let enemySpriteScale = 6.0;   // × enemy radius (tunable via dev menu)
+let towerSpriteScale = 96;    // px (tunable via dev menu)
 const SPR = {
   zombie: { img: new Image(), meta: null, ready: false }, // your Spitter tower (risen dead)
   thief:  { img: new Image(), meta: null, ready: false }  // scav attacker (fantasy human)
@@ -1670,7 +1672,7 @@ function draw(){
       bg.addColorStop(0,"rgba("+bcol+","+(0.5+0.12*Math.sin(t.pulse*2.2))+")");
       bg.addColorStop(1,"rgba("+bcol+",0)");
       ctx.save(); ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(t.x,t.y+8,baseR,baseR*0.55,0,0,6.283); ctx.fill(); ctx.restore();
-      drawSpriteFrame('zombie', t.x, t.y-10, towerAimAngle(t), t.pulse*30, 76, t.flash);
+      drawSpriteFrame('zombie', t.x, t.y-Math.round(towerSpriteScale*0.16), towerAimAngle(t), t.pulse*30, towerSpriteScale, t.flash);
       if(t.cd>0){ ctx.save(); ctx.globalAlpha=0.3; ctx.strokeStyle="#dfff70"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(t.x,t.y+6,24,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
     } else {
       ctx.save(); ctx.translate(t.x,t.y);
@@ -1728,7 +1730,7 @@ function draw(){
     let spriteDrawn = false;
     if(e.type==="scav" && useSprites && SPR.thief.ready){
       const ang = scavFv ? Math.atan2(-scavFv[1], -scavFv[0]) : Math.atan2(hyE-e.y, hxE-e.x);
-      spriteDrawn = blitFrame('thief', ang, e.id*1.3, e.r*4.4, e.flash);
+      spriteDrawn = blitFrame('thief', ang, e.id*1.3, e.r*enemySpriteScale, e.flash);
     }
     if(!spriteDrawn){
     // cel outline silhouette (pops against the busier environment)
@@ -2303,6 +2305,8 @@ if(DEV){
     { label:'Warden fire rate', min:0.2, max:3, step:0.1, get:()=>CFG.towers.warden.rate, set:v=>CFG.towers.warden.rate=v },
     { label:'Warden damage',    min:5,  max:120,step:1,   get:()=>CFG.towers.warden.dmg,  set:v=>CFG.towers.warden.dmg=v },
     { label:'Warden range',     min:1,  max:6,  step:0.1, get:()=>CFG.towers.warden.range,set:v=>CFG.towers.warden.range=v },
+    { label:'Enemy sprite size',min:3,  max:12, step:0.2, get:()=>enemySpriteScale, set:v=>enemySpriteScale=v },
+    { label:'Tower sprite size',min:48, max:180,step:2,   get:()=>towerSpriteScale, set:v=>towerSpriteScale=v },
   ];
   const wrap = document.createElement('div');
   wrap.id = 'devMenu';
