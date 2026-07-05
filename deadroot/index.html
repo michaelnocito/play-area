@@ -2695,16 +2695,24 @@ CG.init(()=>{});
    Keep the mapping to CFG/flags so nothing here is load-bearing for real play.
    ========================================================================== */
 if(DEV){
+  // DR-#033: playtest tunables for the DR-#025→#032 mechanics — dial the feel live, then tell me the numbers.
   const knobs = [
-    { label:'Warden fire rate', min:0.2, max:3, step:0.1, get:()=>CFG.towers.warden.rate, set:v=>CFG.towers.warden.rate=v },
-    { label:'Warden damage',    min:5,  max:120,step:1,   get:()=>CFG.towers.warden.dmg,  set:v=>CFG.towers.warden.dmg=v },
-    { label:'Warden range',     min:1,  max:6,  step:0.1, get:()=>CFG.towers.warden.range,set:v=>CFG.towers.warden.range=v },
+    { label:'Grabber slow %',   min:0,  max:0.9,step:0.05,get:()=>CFG.towers.grabber.slow, set:v=>CFG.towers.grabber.slow=v },
+    { label:'Grabber range',    min:1,  max:4,  step:0.1, get:()=>CFG.towers.grabber.range,set:v=>CFG.towers.grabber.range=v },
+    { label:'Grabber cost',     min:10, max:90, step:5,   get:()=>CFG.towers.grabber.cost, set:v=>CFG.towers.grabber.cost=v },
+    { label:'Zombie cost',      min:10, max:90, step:5,   get:()=>CFG.towers.spitter.cost, set:v=>CFG.towers.spitter.cost=v },
+    { label:'Hedge cost',       min:1,  max:20, step:1,   get:()=>CFG.hedgeCost, set:v=>CFG.hedgeCost=v },
+    { label:'Kill bounty',      min:1,  max:20, step:1,   get:()=>CFG.killBounty, set:v=>CFG.killBounty=v },
+    { label:'Reabsorb secs',    min:0,  max:12, step:0.5, get:()=>CFG.reabsorbTime, set:v=>CFG.reabsorbTime=v },
+    { label:'Maze rot / sec',   min:0,  max:2,  step:0.05,get:()=>CFG.mazeDoT, set:v=>CFG.mazeDoT=v },
+    { label:'Maze rot cap',     min:0,  max:40, step:1,   get:()=>CFG.mazeDoTCap, set:v=>CFG.mazeDoTCap=v },
     { label:'Enemy sprite size',min:3,  max:12, step:0.2, get:()=>enemySpriteScale, set:v=>enemySpriteScale=v },
     { label:'Tower sprite size',min:48, max:180,step:2,   get:()=>towerSpriteScale, set:v=>towerSpriteScale=v },
   ];
+  const kdec = st => st<0.1?2 : st<1?1 : 0; // slider label precision from step
   const wrap = document.createElement('div');
   wrap.id = 'devMenu';
-  wrap.style.cssText = 'position:fixed;top:8px;left:8px;z-index:9999;font:12px/1.4 ui-monospace,Menlo,monospace;color:#dfeada;background:rgba(16,20,16,0.92);border:1px solid #4a6a42;border-radius:8px;padding:10px 12px;width:230px;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)';
+  wrap.style.cssText = 'position:fixed;top:8px;left:8px;z-index:9999;font:12px/1.4 ui-monospace,Menlo,monospace;color:#dfeada;background:rgba(16,20,16,0.92);border:1px solid #4a6a42;border-radius:8px;padding:10px 12px;width:230px;max-height:92vh;overflow-y:auto;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)';
   const btn = document.createElement('button');
   btn.textContent = '⚙ DEV';
   btn.style.cssText = 'position:fixed;top:8px;left:8px;z-index:10000;font:bold 12px ui-monospace,monospace;color:#dfeada;background:rgba(16,20,16,0.85);border:1px solid #4a6a42;border-radius:8px;padding:6px 10px;cursor:pointer';
@@ -2717,6 +2725,7 @@ if(DEV){
   html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="spr"> Spitter zombie sprite (vs procedural)</label>`;
   html += `<button id="dBio" style="${bs}">+100 biomass</button>`;
   html += `<button id="dSpawn" style="${bs}">spawn a scav</button>`;
+  html += `<button id="dTroop" style="${bs}">spawn a troop (tanky)</button>`;
   html += `<button id="dSkip" style="${bs}">skip wave (clear enemies)</button>`;
   html += `<button id="dKill" style="${bs}">kill all enemies</button>`;
   wrap.innerHTML = html;
@@ -2725,18 +2734,19 @@ if(DEV){
   btn.onclick = toggle;
   addEventListener('keydown', e=>{ if(e.key==='`'||e.key==='~'){ e.preventDefault(); toggle(); } });
   function refresh(){
-    knobs.forEach((k,i)=>{ const s=wrap.querySelector('#ks'+i), v=wrap.querySelector('#kv'+i); s.value=k.get(); v.textContent=(+k.get()).toFixed(k.step<1?1:0); });
+    knobs.forEach((k,i)=>{ const s=wrap.querySelector('#ks'+i), v=wrap.querySelector('#kv'+i); s.value=k.get(); v.textContent=(+k.get()).toFixed(kdec(k.step)); });
     wrap.querySelector('#god').checked=godMode; wrap.querySelector('#rng').checked=showRanges; wrap.querySelector('#spr').checked=useSprites;
     const spd=wrap.querySelector('#spd'); spd.innerHTML='';
     [1,2,4].forEach(mult=>{ const b=document.createElement('button'); b.textContent=mult+'x'; b.style.cssText='padding:5px 12px;margin-right:5px;font:11px ui-monospace,monospace;border-radius:6px;cursor:pointer;border:1px solid #4a6a42;color:#dfeada;background:'+(gameSpeed===mult?'#3a6a30':'#20301c'); b.onclick=()=>{ gameSpeed=mult; refresh(); }; spd.appendChild(b); });
   }
-  knobs.forEach((k,i)=>{ wrap.querySelector('#ks'+i).oninput=e=>{ k.set(+e.target.value); wrap.querySelector('#kv'+i).textContent=(+e.target.value).toFixed(k.step<1?1:0); }; });
+  knobs.forEach((k,i)=>{ wrap.querySelector('#ks'+i).oninput=e=>{ k.set(+e.target.value); wrap.querySelector('#kv'+i).textContent=(+e.target.value).toFixed(kdec(k.step)); }; });
   wrap.querySelector('#god').onchange=e=>godMode=e.target.checked;
   wrap.querySelector('#rng').onchange=e=>showRanges=e.target.checked;
   wrap.querySelector('#spr').onchange=e=>useSprites=e.target.checked;
   const inGame = ()=> mode==='play' || mode==='prep';
   wrap.querySelector('#dBio').onclick=()=>{ if(inGame()) biomass+=100; };
   wrap.querySelector('#dSpawn').onclick=()=>{ if(mode==='play') spawnEnemy('scav'); };
+  wrap.querySelector('#dTroop').onclick=()=>{ if(mode==='play') spawnEnemy('troop'); };
   wrap.querySelector('#dSkip').onclick=()=>{ if(inGame()){ enemies.length=0; spawnQ.length=0; } };
   wrap.querySelector('#dKill').onclick=()=>{ if(inGame()) enemies.length=0; };
 }
