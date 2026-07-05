@@ -320,33 +320,48 @@ let godMode = false, showRanges = false;
 // wired per-type as their atlases land). Atlas loads async; procedural draw is the
 // fallback if it 404s or before it's ready, so the game always runs.
 let useSprites = true;
-const SPR = { zombie: { img: new Image(), meta: null, ready: false } };
-(function loadSprite(key, pngPath, jsonPath){
+const SPR = {
+  zombie: { img: new Image(), meta: null, ready: false }, // your Spitter tower (risen dead)
+  thief:  { img: new Image(), meta: null, ready: false }  // scav attacker (fantasy human)
+};
+(function loadSprites(list){
+  for(const [key,png,jsn] of list){ const s=SPR[key];
+    fetch(jsn).then(r=>r.ok?r.json():null).then(meta=>{
+      if(!meta) return;
+      s.img.onload=()=>{ s.meta=meta; s.ready=true; };
+      s.img.onerror=()=>{};
+      s.img.src=png;
+    }).catch(()=>{});
+  }
+})([
+  ['zombie','assets/zombie_atlas.png','assets/zombie_atlas.json'],
+  ['thief','assets/thief_atlas.png','assets/thief_atlas.json']
+]);
+function pickFrame(s, ang, animSeed){
+  const deg = (ang*180/Math.PI + 360) % 360;
+  let dir = s.meta.dirs[0], best = 999;
+  for(const d of s.meta.dirs){ const diff = Math.min(Math.abs(deg-d), 360-Math.abs(deg-d)); if(diff<best){ best=diff; dir=d; } }
+  const frame = Math.floor(perfNow*8 + animSeed) % s.meta.framesPerDir;
+  return s.meta.frames[dir+'_'+frame];
+}
+// blit a frame centered at the CURRENT origin (caller already translated) — used inside the enemy loop
+function blitFrame(key, ang, animSeed, drawSize, flash){
   const s = SPR[key];
-  fetch(jsonPath).then(r=>r.ok?r.json():null).then(meta=>{
-    if(!meta) return;
-    s.img.onload = ()=>{ s.meta = meta; s.ready = true; };
-    s.img.onerror = ()=>{};
-    s.img.src = pngPath;
-  }).catch(()=>{});
-})('zombie', 'assets/zombie_atlas.png', 'assets/zombie_atlas.json');
-// draw one directional frame of a sprite atlas, centered at (cx,cy), facing `ang`
+  if(!s || !s.ready) return false;
+  const f = pickFrame(s, ang, animSeed);
+  if(!f) return false;
+  ctx.drawImage(s.img, f.x, f.y, f.w, f.h, -drawSize/2, -drawSize/2, drawSize, drawSize);
+  if(flash>0){ ctx.save(); ctx.globalCompositeOperation='source-atop'; ctx.globalAlpha=0.6; ctx.fillStyle='#ffffff'; ctx.fillRect(-drawSize/2,-drawSize/2,drawSize,drawSize); ctx.restore(); }
+  return true;
+}
+// world-space wrapper — used by stationary towers
 function drawSpriteFrame(key, cx, cy, ang, animSeed, drawSize, flash){
   const s = SPR[key];
   if(!s || !s.ready) return false;
-  const deg = (ang*180/Math.PI + 360) % 360;
-  const dirs = s.meta.dirs;
-  let dir = dirs[0], best = 999;
-  for(const d of dirs){ const diff = Math.min(Math.abs(deg-d), 360-Math.abs(deg-d)); if(diff<best){ best=diff; dir=d; } }
-  const fpd = s.meta.framesPerDir;
-  const frame = Math.floor(perfNow*8 + animSeed) % fpd;
-  const f = s.meta.frames[dir+'_'+frame];
-  if(!f) return false;
   ctx.save(); ctx.translate(cx,cy);
-  ctx.drawImage(s.img, f.x, f.y, f.w, f.h, -drawSize/2, -drawSize/2, drawSize, drawSize);
-  if(flash>0){ ctx.globalCompositeOperation='source-atop'; ctx.globalAlpha=0.6; ctx.fillStyle='#ffffff'; ctx.fillRect(-drawSize/2,-drawSize/2,drawSize,drawSize); }
+  const ok = blitFrame(key, ang, animSeed, drawSize, flash);
   ctx.restore();
-  return true;
+  return ok;
 }
 // a stationary zombie tower "aims" at the nearest attacker (else faces the field)
 function towerAimAngle(t){
@@ -1708,10 +1723,13 @@ function draw(){
         ctx.beginPath(); ctx.arc(-scavFv[0]*16,-scavFv[1]*16,e.r*0.35,0,6.283); ctx.fill();
         ctx.restore(); }
     }
-    // SPR-#002: attackers render procedurally for now. The zombie atlas moved to the
-    // Spitter TOWER (lore flip). Human-attacker sprites (Thief→scav, etc.) re-enable
-    // this per-type as their atlases land: drawSpriteFrame('thief', e.x,e.y, angFromFlow, ...).
-    const spriteDrawn = false;
+    // SPR-#003: scav attacker = the Thief (fantasy human, pre-rendered-3D sprite),
+    // facing its travel direction. Procedural block below is the fallback.
+    let spriteDrawn = false;
+    if(e.type==="scav" && useSprites && SPR.thief.ready){
+      const ang = scavFv ? Math.atan2(-scavFv[1], -scavFv[0]) : Math.atan2(hyE-e.y, hxE-e.x);
+      spriteDrawn = blitFrame('thief', ang, e.id*1.3, e.r*4.4, e.flash);
+    }
     if(!spriteDrawn){
     // cel outline silhouette (pops against the busier environment)
     ctx.strokeStyle="rgba(8,10,12,0.9)"; ctx.lineWidth=2.5;

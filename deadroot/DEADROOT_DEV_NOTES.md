@@ -549,6 +549,33 @@ is an art/silhouette/color problem, not inherently an engine problem — top-dow
 the MOST readable for TD (Bloons/Kingdom Rush). Engine choice pending Mike's decision; see the
 engine handoff being drafted this session.
 
+## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
+The other half of the flip: first human attacker wired. "The Living vs The Dead" —
+attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/
+Halberdier coexist; NO orcs). Roster: **Thief→scav, Knight→troop, Barbarian→incin,
+Halberdier→sweeper**, butcher/boss = scaled-up variants (later).
+- Source: Engvee "Animated Isometric Thief" (free, same creator/style as the zombie pack →
+  towers + attackers match). Mike downloaded `x256_Spritesheets.zip`; unzipped to
+  `assets/raw/engvee_thief/` (gitignored).
+- `scripts/pack_thief_atlas.py` (PIL): the thief sheets are 1024×1024 = 4×4 grid of 256px
+  frames per direction (16 dirs available; we take 8). Crops tight to a shared character
+  bbox so the sprite fills the frame (reads bigger — Mike's "too small" note), downsamples
+  to 96px, packs 8 dirs × 8 frames → `assets/thief_atlas.png` (768×768, ~365KB). No tint
+  (natural human reads distinctly from the green zombie towers).
+- Sprite module generalized again: `pickFrame` + `blitFrame` (origin-space, for the enemy
+  loop which is already translated) + `drawSpriteFrame` (world-space wrapper, for towers).
+  SPR now holds {zombie, thief}, both loaded at boot.
+- Scav enemy renders the thief (facing travel dir = -flow), drawSize e.r*4.4 (~40px, up from
+  the old e.r*2.7). Procedural frog is the fallback. Status tells + hp bar still draw over it.
+- Verified: parse OK, both atlases load, blitFrame('thief') returns true w/ 1633 opaque px in
+  frame 0_0; pixel-sampling scav centers = dark human tones (40-67), NOT the light-blue
+  procedural scav → thief IS rendering. (Screenshot tooling flaky/down most of session; got a
+  couple clean captures confirming zombie-towers-on-green-pads + thief attackers.)
+**Atlas budget note:** zombie ~176KB + thief ~365KB ≈ 540KB so far. Watch this as more units
+land (CG fast-load = the whole reason we didn't pick Godot). Can trim frames/optimize PNGs later.
+**Next:** Mike eyeballs live — is thief big/clear enough? Then Knight→troop etc., then the
+Spitter mod-tree tower rework (4 towers → 1 zombie + visual mods).
+
 ## SPR-#002 — LORE FLIP: zombies are the TOWERS, humans are the attackers (2026-07-04)
 Mike caught that SPR-#001 put the zombie sprite on the wrong side: "zombies are us, not the
 ones attacking." Correct lore = you are the undead Hive → your risen dead are the TOWERS; the
