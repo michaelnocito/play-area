@@ -102,6 +102,13 @@ Where's the ending? What's the one-line pitch a player tells a friend? If any an
 
 ## Part 3 — How we build (workflow standards)
 
+- **Build on strengths first.** When triaging playtest feedback, reinforcing what's
+  already landing well is the top priority — before spending effort on what doesn't
+  work, double down on what players react to positively. Log positive feedback with
+  the same rigor as bugs (playtest-tracker's 👍 strength tag, or a PASS note), and
+  give it its own "build on it" roadmap lane, not just a checkmark. Only pour extra
+  effort into non-strengths once the strengths pass has had its due — a weak feature
+  polished to 6/10 rarely beats a strong feature pushed to 9/10.
 - **Research first** at every new system/milestone: check how shipped games solved it,
   check platform docs, THEN build the right-sized thing.
 - **Single-file web games by default**: one `index.html`, canvas + vanilla JS, procedural
