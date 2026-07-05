@@ -549,6 +549,32 @@ is an art/silhouette/color problem, not inherently an engine problem — top-dow
 the MOST readable for TD (Bloons/Kingdom Rush). Engine choice pending Mike's decision; see the
 engine handoff being drafted this session.
 
+## SPR-#002 — LORE FLIP: zombies are the TOWERS, humans are the attackers (2026-07-04)
+Mike caught that SPR-#001 put the zombie sprite on the wrong side: "zombies are us, not the
+ones attacking." Correct lore = you are the undead Hive → your risen dead are the TOWERS; the
+attackers are the living. Decided direction (Mike):
+- **Attackers = a fantasy human war-host** (alternate-world lore, so Thief/Knight/Barbarian/
+  Halberdier coexist freely). Sourced from Engvee (same creator as the zombie pack → style
+  matches). Roster: Thief→scav, Knight→troop, Barbarian→incin, Halberdier→sweeper,
+  butcher/boss = scaled-up variants. NO orcs. Human atlases wired per-type as Mike drops them.
+- **Towers = zombies.** Simplify to ONE base tower (Spitter = a risen zombie); upgrades/mods
+  will change its look AND function (the old Rootmass/Spore/Node behaviors become Spitter mod
+  branches — that rework is the NEXT slice, not done yet).
+
+Shipped this batch (the tower half of the flip):
+- Renamed `assets/scav_atlas.{png,json}` → `zombie_atlas.*` (it was always a zombie render).
+- Sprite module generalized: `drawSpriteFrame(key,cx,cy,ang,animSeed,drawSize,flash)` (self-
+  translating) + `towerAimAngle(t)` (zombie tower faces nearest attacker, else the field).
+- Spitter tower renders the zombie sprite, aiming at its target, over a pulsing bioluminescent
+  **base disc** (lime; violet at tier-2) so the dark sprite separates from the post-#018 dark
+  ground + reads as "yours." drawSize 76. Procedural `drawTowerArt` kept as fallback.
+- Enemy sprite path disabled (`spriteDrawn=false`) so attackers render procedurally until the
+  human atlases land. Dev-menu toggle relabeled "Spitter zombie sprite (vs procedural)".
+- Verified via screenshot: two zombie towers on glowing pads, readability much improved vs
+  SPR-#001's tiny dark speck.
+**Next:** Mike drops Engvee **Thief** in `assets/raw/` → wire Thief→scav, then the rest of the
+human roster, then the Spitter mod-tree tower rework.
+
 ## SPR-#001 — pre-rendered-3D sprite pipeline, scav vertical slice (2026-07-04)
 Answers the readability driver above without an engine rebuild: pre-render 3D models to 2D
 sprite sheets, keep the existing web game. Engvee "Animated Isometric Zombies" pack (free,

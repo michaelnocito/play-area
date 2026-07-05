@@ -314,11 +314,13 @@ const DEV = new URLSearchParams(location.search).has('dev') || location.hostname
 let godMode = false, showRanges = false;
 // DR-#019 DEV:END
 
-// SPR-#001: pre-rendered-3D sprite pipeline, vertical slice on the scav enemy.
-// Atlas + JSON load async; procedural draw is the fallback if they 404 or before
-// they're ready, so the game always runs even if assets/ is missing.
+// SPR-#002: pre-rendered-3D sprites. LORE FLIP — you are the undead Hive, so the
+// zombie sprite is now the SPITTER TOWER (your risen dead), not an attacker. The
+// attackers are a fantasy human war-host (Thief/Knight/Barbarian/Halberdier sprites,
+// wired per-type as their atlases land). Atlas loads async; procedural draw is the
+// fallback if it 404s or before it's ready, so the game always runs.
 let useSprites = true;
-const SPR = { scav: { img: new Image(), meta: null, ready: false } };
+const SPR = { zombie: { img: new Image(), meta: null, ready: false } };
 (function loadSprite(key, pngPath, jsonPath){
   const s = SPR[key];
   fetch(jsonPath).then(r=>r.ok?r.json():null).then(meta=>{
@@ -327,28 +329,31 @@ const SPR = { scav: { img: new Image(), meta: null, ready: false } };
     s.img.onerror = ()=>{};
     s.img.src = pngPath;
   }).catch(()=>{});
-})('scav', 'assets/scav_atlas.png', 'assets/scav_atlas.json');
-function drawSprite(key, e, hxE, hyE, flowVal){
+})('zombie', 'assets/zombie_atlas.png', 'assets/zombie_atlas.json');
+// draw one directional frame of a sprite atlas, centered at (cx,cy), facing `ang`
+function drawSpriteFrame(key, cx, cy, ang, animSeed, drawSize, flash){
   const s = SPR[key];
-  if(!s.ready) return false;
-  let ang;
-  if(flowVal){ ang = Math.atan2(-flowVal[1], -flowVal[0]); } // flowVal points toward hive; sprite dir should face travel = -flow
-  else { ang = Math.atan2(hyE-e.y, hxE-e.x); }
-  let deg = (ang*180/Math.PI + 360) % 360;
+  if(!s || !s.ready) return false;
+  const deg = (ang*180/Math.PI + 360) % 360;
   const dirs = s.meta.dirs;
   let dir = dirs[0], best = 999;
   for(const d of dirs){ const diff = Math.min(Math.abs(deg-d), 360-Math.abs(deg-d)); if(diff<best){ best=diff; dir=d; } }
   const fpd = s.meta.framesPerDir;
-  const frame = Math.floor(perfNow*8 + e.id*1.3) % fpd;
+  const frame = Math.floor(perfNow*8 + animSeed) % fpd;
   const f = s.meta.frames[dir+'_'+frame];
   if(!f) return false;
-  const drawSize = e.r*2.7; // sprite model doesn't fill the full hit-circle; scale up to match established enemy footprint
-  ctx.save();
-  if(e.flash>0) ctx.globalAlpha = 0.55;
+  ctx.save(); ctx.translate(cx,cy);
   ctx.drawImage(s.img, f.x, f.y, f.w, f.h, -drawSize/2, -drawSize/2, drawSize, drawSize);
-  if(e.flash>0){ ctx.globalCompositeOperation='source-atop'; ctx.fillStyle='#ffffff'; ctx.fillRect(-drawSize/2,-drawSize/2,drawSize,drawSize); }
+  if(flash>0){ ctx.globalCompositeOperation='source-atop'; ctx.globalAlpha=0.6; ctx.fillStyle='#ffffff'; ctx.fillRect(-drawSize/2,-drawSize/2,drawSize,drawSize); }
   ctx.restore();
   return true;
+}
+// a stationary zombie tower "aims" at the nearest attacker (else faces the field)
+function towerAimAngle(t){
+  let bx=null, by=null, bd=Infinity;
+  for(const e of enemies){ const d=(e.x-t.x)**2+(e.y-t.y)**2; if(d<bd){ bd=d; bx=e.x; by=e.y; } }
+  if(bx===null) return Math.PI/2;
+  return Math.atan2(by-t.y, bx-t.x);
 }
 // DR-#010 juice
 let hitStop = 0, slowMoT = 0, timeScale = 1; // hit-stop + wave-clear slow-mo
@@ -1638,18 +1643,33 @@ function draw(){
     if(showRanges){ const def=CFG.towers[t.type]; if(def&&def.range){ ctx.save(); ctx.globalAlpha=0.5; ctx.strokeStyle=(TCOL[t.type]&&TCOL[t.type].acc)||"#e0e060"; ctx.lineWidth=1.5; ctx.setLineDash([3,4]); ctx.beginPath(); ctx.arc(t.x,t.y,def.range*CFG.tile,0,6.283); ctx.stroke(); ctx.restore(); } }
     // DR-#019 DEV:END
     contactShadow(t.x, t.y+16, 16, 6, 0.3);
-    ctx.save(); ctx.translate(t.x,t.y);
-    const p = 1+0.05*Math.sin(t.pulse*3);
-    ctx.scale(p,p);
-    // tier-2 aura glow
-    if(t.tier===1){ ctx.save(); ctx.globalAlpha=0.13+0.05*Math.sin(t.pulse*2.2); ctx.fillStyle=TCOL[t.type]?TCOL[t.type].acc:"#e0a0f0"; ctx.beginPath(); ctx.arc(0,0,23,0,6.283); ctx.fill(); ctx.restore(); }
-    if(t.flash>0){ ctx.globalAlpha=0.6; }
     if(t.type==="warden" && t.swing>0) t.swing -= DT;
-    drawTowerArt(t.type, t.tier, t.pulse, false, t.swing||0);
-    ctx.globalAlpha = 1;
-    // cooldown reload arc (shooter towers only)
-    if(t.cd>0 && t.type!=="rootmass" && t.type!=="node"){ ctx.save(); ctx.globalAlpha=0.28; ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,17,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
-    ctx.restore();
+    // SPR-#002: the Spitter tower is a risen zombie (pre-rendered-3D sprite), aiming
+    // at the nearest attacker. Falls back to procedural art until the atlas loads.
+    const useZombie = t.type==="spitter" && useSprites && SPR.zombie.ready;
+    if(useZombie){
+      // bioluminescent base: reads as "your risen dead" + separates the dark sprite from the dark ground
+      const baseR = 26 + (t.tier===1?6:0);
+      const bg = ctx.createRadialGradient(t.x,t.y+8,2, t.x,t.y+8,baseR);
+      const bcol = t.tier===1 ? "150,110,210" : "120,220,120";
+      bg.addColorStop(0,"rgba("+bcol+","+(0.5+0.12*Math.sin(t.pulse*2.2))+")");
+      bg.addColorStop(1,"rgba("+bcol+",0)");
+      ctx.save(); ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(t.x,t.y+8,baseR,baseR*0.55,0,0,6.283); ctx.fill(); ctx.restore();
+      drawSpriteFrame('zombie', t.x, t.y-10, towerAimAngle(t), t.pulse*30, 76, t.flash);
+      if(t.cd>0){ ctx.save(); ctx.globalAlpha=0.3; ctx.strokeStyle="#dfff70"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(t.x,t.y+6,24,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
+    } else {
+      ctx.save(); ctx.translate(t.x,t.y);
+      const p = 1+0.05*Math.sin(t.pulse*3);
+      ctx.scale(p,p);
+      // tier-2 aura glow
+      if(t.tier===1){ ctx.save(); ctx.globalAlpha=0.13+0.05*Math.sin(t.pulse*2.2); ctx.fillStyle=TCOL[t.type]?TCOL[t.type].acc:"#e0a0f0"; ctx.beginPath(); ctx.arc(0,0,23,0,6.283); ctx.fill(); ctx.restore(); }
+      if(t.flash>0){ ctx.globalAlpha=0.6; }
+      drawTowerArt(t.type, t.tier, t.pulse, false, t.swing||0);
+      ctx.globalAlpha = 1;
+      // cooldown reload arc (shooter towers only)
+      if(t.cd>0 && t.type!=="rootmass" && t.type!=="node"){ ctx.save(); ctx.globalAlpha=0.28; ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,17,-Math.PI/2,-Math.PI/2+6.283*(1-t.cd)); ctx.stroke(); ctx.restore(); }
+      ctx.restore();
+    }
     if(t.hp<t.max){ const tc=TCOL[t.type]; ctx.fillStyle="#333"; ctx.fillRect(t.x-14,t.y-24,28,4); ctx.fillStyle=tc?tc.acc:"#e0a04a"; ctx.fillRect(t.x-14,t.y-24,28*(t.hp/t.max),4); }
   }
   // node link lines (purple dashes between Node and buffed towers)
@@ -1688,10 +1708,10 @@ function draw(){
         ctx.beginPath(); ctx.arc(-scavFv[0]*16,-scavFv[1]*16,e.r*0.35,0,6.283); ctx.fill();
         ctx.restore(); }
     }
-    // SPR-#001: scav renders from the pre-rendered-3D atlas when it's loaded; the
-    // full procedural outline+fill+eyes block below is the fallback (still runs
-    // for every other type, and for scav if the atlas hasn't loaded/A-B'd off).
-    const spriteDrawn = e.type==="scav" && useSprites && drawSprite('scav', e, hxE, hyE, scavFv);
+    // SPR-#002: attackers render procedurally for now. The zombie atlas moved to the
+    // Spitter TOWER (lore flip). Human-attacker sprites (Thief→scav, etc.) re-enable
+    // this per-type as their atlases land: drawSpriteFrame('thief', e.x,e.y, angFromFlow, ...).
+    const spriteDrawn = false;
     if(!spriteDrawn){
     // cel outline silhouette (pops against the busier environment)
     ctx.strokeStyle="rgba(8,10,12,0.9)"; ctx.lineWidth=2.5;
@@ -2278,7 +2298,7 @@ if(DEV){
   html += '<div style="margin:8px 0 3px;color:#c8e0a8">Game speed</div><div id="spd"></div>';
   html += `<label style="display:block;margin:8px 0 2px"><input type="checkbox" id="god"> Hive god mode</label>`;
   html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="rng"> Show tower ranges</label>`;
-  html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="spr"> Scav sprite (vs procedural)</label>`;
+  html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="spr"> Spitter zombie sprite (vs procedural)</label>`;
   html += `<button id="dBio" style="${bs}">+100 biomass</button>`;
   html += `<button id="dSpawn" style="${bs}">spawn a scav</button>`;
   html += `<button id="dSkip" style="${bs}">skip wave (clear enemies)</button>`;
