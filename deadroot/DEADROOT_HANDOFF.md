@@ -12,14 +12,18 @@ Recent slices: DR-#021 buildable walls + no-corner-cut collision + route overlay
 
 Known: canvas screenshots time out in tooling — verify via `preview_eval` (reload first, no HMR). Dead code kept but unwired: FEAST/mutate/warden/corpse-webbing/tier2.
 
+## Decisions locked (2026-07-05, Mike playtest)
+- **The 2-wide maze feels good** — no tuning needed there. Direction is confirmed: this is a buy-and-place hedge-maze **Survival** game.
+- **FFT-style tactics is a separate game, PARKED.** Agreed it's a near-new core loop, not an evolution of this. Not on the near-term roadmap — revisit as its own project later. Everything below is about making the maze Survival game great.
+
 ---
 
 ## ROADMAP — pick what to build next
 
-### A. Direction / modes (the big fork)
-- **A1 — Mode select (Survival + menu).** Add a front menu; wrap the current game as **Survival mode**. Foundation for everything multi-mode. Effort: **S–M**. *(Recommended first if going multi-mode.)*
-- **A2 — "Quest" tactics mode (FFT-style).** Turn-based tactical battles: a party of 4–5 monster types (Spitter/Grabber/Brute/Spore/Shambler), move + one action per turn, simple enemy AI, 3–5 quest battles, reuse grid + sprites. A near-new core loop. Effort: **XL**. *(Recommended path: build a tiny prototype slice FIRST — one 8×8 battle, 2 units, move+attack, dumb AI — to validate the feel before committing.)*
-- **A3 — Survival to shippable.** Balance pass, dead-code cleanup, art polish, pre-submission checklist. Effort: **M**. *(Recommended to finish before A2, so one mode ships while tactics is explored.)*
+### A. Direction / shippable
+- **A3 — Survival to shippable.** Balance pass, dead-code cleanup, art polish, GAME_BIBLE Part 4 pre-submission checklist. The finish line for this game. Effort: **M**. *(Recommended once the depth items below are in.)*
+- ~~A1 Mode select~~ — not needed while there's a single mode; revisit only if/when the tactics game exists.
+- ~~A2 Quest tactics (FFT)~~ — **PARKED** as a separate future game (see Decisions above).
 
 ### B. Your requested additions
 - **B1 — Grabber zombie.** New unit type that **slows** enemies (snare aura or on-hit slow — the old `rootmass` behavior fits). Needs a **distinct look** (grasping tendrils/hands vs the Spitter). Adds a 3rd palette brush / grow option. Effort: **S–M**.
@@ -44,8 +48,9 @@ Known: canvas screenshots time out in tooling — verify via `preview_eval` (rel
 ---
 
 ## Suggested sequencing (my rec)
-1. **B1 Grabber + B2 Reabsorption** — small, concrete, adds depth to the maze you're about to playtest.
-2. **A1 Mode select + A3 Survival-to-shippable** — get one mode truly done.
-3. **A2 Quest prototype** — validate the tactics feel small before committing to the full FFT direction.
+1. **B1 Grabber + B2 Reabsorption** — small, concrete depth on top of the (now confirmed-good) maze. Best next build.
+2. **C6 dead-code cleanup + C7 boon/onboarding text** — clear the retired-mechanic cruft so balancing is clean.
+3. **D1 human roster + C8 balance** — flesh out the threat and tune it.
+4. **A3 Survival → shippable** — polish + CG pre-submission checklist = ship.
 
-Tell the next session which item IDs to build (e.g. "build B1 + B2", or "prototype A2").
+Tell the next session which item IDs to build (e.g. "build B1 + B2"). B2 needs one decision: reabsorption cooldown **global** (Hive-wide) vs **per-tile**.
