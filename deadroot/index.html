@@ -315,6 +315,8 @@ let boonChoice = null; // [boon, boon] while a pick is pending
 let banner = null;     // {txt, sub, t}
 let overgrowthT = 0, pherT = 0;
 let reabsorbCD = 0;   // DR-#025 B2: Hive-wide reabsorption cooldown; blocks raising a new zombie while >0
+let gateOpenT = [0,0,0,0], prevGateN = 0; // DR-#029 C9: per-gate open-flash timers + how many gates were open last wave
+const GATE_DIR = ["EAST","WEST","NORTH","SOUTH"]; // CFG.gates order
 let gameSpeed = 1; // 1x / 2x fast-forward
 // DR-#019 DEV:BEGIN — in-game dev/tuning menu (industry term: "debug menu" +
 // live "tunables"/"cvars"). Gated behind ?dev=1 so players never see it; the
@@ -708,7 +710,7 @@ function spawnEnemy(type){
     col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0 });
   // spawn poof — the human shoves out through the treeline
   burst(x,y,"#4a5a3a",6); rings.push({x,y,r:0,maxR:e.r+10,maxT:0.3,t:0.3,col:"rgba(120,150,100,0.5)"});
-  if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they steal your mutate"); }
+  if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they clear your biomass"); }
 }
 function dropCorpse(x,y){
   const [c,r] = xyToTile(x,y);
@@ -875,6 +877,7 @@ function newRun(){
   rebuildFlow();
   firstMutateDone = false; onboardT = 0; menu = null;
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
+  gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
@@ -901,14 +904,19 @@ function queueWave(){
   spawnT = 0; waveT = 0; waveStartHP = hiveHP; waveFlashT = 0.15; lastSurvivorShown = false;
   mode = "play";
   SFX.wave();
-  // drama: name the moments
+  // DR-#029 C9: flash any gate that just opened this wave (a visible field tell for the escalation)
+  const curN = openGates().length; const opened = [];
+  for(let i=prevGateN;i<curN;i++){ gateOpenT[i]=3.5; opened.push(GATE_DIR[i]); }
+  prevGateN = Math.max(prevGateN, curN);
+  // drama: name the moments (gate openings get a directional callout so the player knows where the new front is)
   if(!endless){
-    if(waveIdx===0) showBanner("THE SCOUTS","they probe from the east");
-    else if(waveIdx===1) showBanner("THEY FLANK","now from the west too");
-    else if(waveIdx===4) showBanner("THE PURGE BEGINS","heavy squads, from every direction");
+    if(waveIdx===0) showBanner("THE SCOUTS","they probe from the EAST gate");
+    else if(waveIdx===1) showBanner("THE WEST GATE OPENS","they flank from a second front");
+    else if(waveIdx===4) showBanner("THE PURGE BEGINS","NORTH & SOUTH gates open — every direction");
     else if(waveIdx===7) showBanner("THE BUTCHER","he burned a hundred hives");
     else if(waveIdx===8) showBanner("THE EXTERMINATION","everything they have left");
     else if(waveIdx===11){ showBanner("THE PURIFIER","kill it and the surface is yours"); tone(80,60,1.2,"sawtooth",0.2); tone(80,60,1.2,"sawtooth",0.2,1.3); }
+    else if(opened.length) showBanner("THE "+opened.join(" & ")+(opened.length>1?" GATES OPEN":" GATE OPENS"),"a new way in");
   } else if(endlessN%3===2) showBanner("PURIFIER INBOUND","the long night deepens");
 }
 function waveCleared(){
@@ -978,6 +986,7 @@ function update(){
   if(overgrowthT>0) overgrowthT -= DT;
   if(pherT>0) pherT -= DT;
   if(reabsorbCD>0) reabsorbCD -= DT; // DR-#025 B2
+  for(let i=0;i<gateOpenT.length;i++) if(gateOpenT[i]>0) gateOpenT[i]-=DT; // DR-#029 C9
   for(const a of run.abil) if(a.cd>0) a.cd -= DT;
   if(comboT>0){ comboT-=DT; if(comboT<=0) comboN=0; }
   if(mode==="play") waveT+=DT;
@@ -1899,10 +1908,22 @@ function drawHedges(){
 function drawGates(){
   const hcx=(CFG.hive.c0+CFG.hive.c1+1)/2*CFG.tile, hcy=TOP+(CFG.hive.r0+CFG.hive.r1+1)/2*CFG.tile;
   const open=openGates();
-  for(const g of CFG.gates){
+  CFG.gates.forEach((g,gi)=>{
     const isOpen=open.includes(g), [x,y]=tileToXY(g.c,g.r);
     let dx=hcx-x, dy=hcy-y; const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
     const ang=Math.atan2(dy,dx);
+    // DR-#029 C9: just-opened gate flares — expanding ring + hot arch so the new front is unmissable
+    const of = gateOpenT[gi]||0;
+    if(of>0){
+      const p = 1-(of/3.5); // 0→1 over the flash
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, of/3.5)*0.8;
+      ctx.strokeStyle="#ffb060"; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(x,y,10+p*34,0,6.283); ctx.stroke();
+      ctx.globalAlpha = 0.5+0.5*Math.sin(perfNow*10); ctx.strokeStyle="#ffd080"; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(x,y,16,ang-1.3,ang+1.3); ctx.stroke();
+      ctx.restore();
+    }
     ctx.save();
     ctx.globalAlpha = isOpen ? 0.55+0.35*Math.sin(perfNow*3) : 0.2;
     ctx.strokeStyle = isOpen ? "#e0714a" : "#6a5048"; ctx.lineWidth=3; ctx.lineCap="round";
@@ -1910,7 +1931,7 @@ function drawGates(){
     const bx=x+dx*5, by=y+dy*5, px=-dy, py=dx;                              // inward chevron
     ctx.beginPath(); ctx.moveTo(bx+px*7,by+py*7); ctx.lineTo(bx+dx*10,by+dy*10); ctx.lineTo(bx-px*7,by-py*7); ctx.stroke();
     ctx.restore();
-  }
+  });
 }
 /* DR-#025 B1: grabber's grasping tendrils — clawed arms reaching outward, the distinct slow-tower tell. */
 function drawGrabTendrils(t){
