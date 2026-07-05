@@ -88,6 +88,8 @@ const CFG = {
   killBounty: 6,
   hedgeCost: 5,             // DR-#023: cheap wall; ~1/8 of a Spitter so a full maze ≈ one tower
   reabsorbTime: 4,          // DR-#025 B2: Hive-wide delay before a NEW zombie can be raised after one dies
+  mazeDoT: 0.55,            // DR-#030 C4: rot dmg/sec GAINED per second an enemy spends walking your maze
+  mazeDoTCap: 16,           // DR-#030 C4: cap on that ramping rot so a long maze rewards, not trivializes
   gates: [ {c:25,r:8}, {c:0,r:9}, {c:13,r:0}, {c:12,r:17} ], // DR-#023 labyrinth entrances (E,W,N,S), open in order
   corpse: { rot: 15, payout: 25 },
   towers: {
@@ -707,7 +709,7 @@ function spawnEnemy(type){
   const [x,y] = tileToXY(c,r);
   const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
-    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0 });
+    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0, mazeT:0 }); // DR-#030 C4: mazeT = seconds spent walking the maze
   // spawn poof — the human shoves out through the treeline
   burst(x,y,"#4a5a3a",6); rings.push({x,y,r:0,maxR:e.r+10,maxT:0.3,t:0.3,col:"rgba(120,150,100,0.5)"});
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they clear your biomass"); }
@@ -1100,6 +1102,11 @@ function update(){
         else { const [hx,hy]=tileToXY(12.5,8.5); dx=hx-e.x; dy=hy-e.y; }
         const m=Math.hypot(dx,dy)||1;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
+        // DR-#030 C4: the longer they wind through your maze, the harder the creeping rot bites (rewards long routes)
+        e.mazeT += DT;
+        const rot = Math.min(CFG.mazeDoT*e.mazeT, CFG.mazeDoTCap)*meta.dmg;
+        e.hp -= rot*DT;
+        if(e.mazeT>4 && Math.sin(perfNow*7+e.id)>0.9) addParticle({x:e.x+(Math.random()-0.5)*e.r,y:e.y-e.r*0.4,vx:0,vy:-24,t:0.5,col:"#7cae5a"});
       }
       // incinerator: burns adjacent towers; detonates spore clouds
       if(e.type==="incin"){
