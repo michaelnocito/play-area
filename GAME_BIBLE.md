@@ -4,7 +4,9 @@ This is gospel. Every game project (this repo and beyond) is built against this 
 It is the distilled result of CrazyGames research (docs.crazygames.com, verified 2026-07-03),
 one rejection (Flipline), one accepted-pipeline submission (GameMonetize), and the full
 Jade Fist design restructure. When a new chat starts a game task: read this first, then the
-project's <GAME>_DEV_NOTES.md, then build.
+project's **<GAME>_HANDOFF.md** if one exists (current state + roadmap the last session left —
+e.g. `deadroot/DEADROOT_HANDOFF.md`), then its <GAME>_DEV_NOTES.md, then build. A handoff names
+what to pick up next; wait for the user to choose roadmap item IDs before building.
 
 **Prime rule: before building ANY feature, check it against Part 1 and Part 2. If a game
 fails Part 2, no amount of Part 1 compliance saves it.**
