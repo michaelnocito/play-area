@@ -613,6 +613,39 @@ reject-the-seal wall rule, hard-wall webbing, foundation-first slice. This is th
 (bridging scattered drops into a hedge), subject to the same seal rule; then live drag/red-preview
 polish + a path-length damage reward (DoT along route) if Mike wants more strategic depth.
 
+## DR-#022 — SPIDERWEB webbing: strands bridge nearby corpses/towers into hedge walls (2026-07-05)
+The signature maze mechanic on top of DR-#021's foundation. Your dead anchor a web: any two BLOCKING
+corpses/towers that line up (same row, same col, or a clean diagonal) with a 1-2 tile GAP auto-grow a
+strand that HARD-BLOCKS the intervening tiles — so scattered organic corpse-drops fuse into a real
+hedge/spiderweb wall without needing a perfectly contiguous line. Turns "where corpses land" into a
+strategic web-completion puzzle.
+- **Model:** nodes = non-trampled corpses + towers. Eligible pair = aligned (dc==0 | dr==0 | |dc|==|dr|)
+  with `span=max(|dc|,|dr|)` in {2,3} (gap of 1 or 2 empty tiles). Nearest pairs claim strands first;
+  each node caps at `WEB_CAP=4` connections so the web stays readable (spider-radial logic from research).
+- **Seal-safe + fast:** strand tiles go into `blocked`, then ONE `computeFlow` checks `sideHasPath`
+  (DR-#021 invariant). Common no-seal case = a single flow recompute. If a web would seal a side, peel
+  strands back longest-first (capped at 24 peels), then a hard fallback strips any remaining web tiles —
+  so the field is ALWAYS legal and a pathological dense mesh can't hitch the frame. Measured: realistic
+  8-corpse cluster ~0.6ms / 9 strands; degenerate full-board 40-corpse lattice bounded to ~13ms / 26
+  flows (and correctly refuses to web since it would seal).
+- **Recompute trigger:** NOT per-frame. `update()` compares a structure signature
+  (`corpses.length*1000 + towers.length`); `rebuildWebs()` runs only when a corpse/tower is added or
+  removed. Idle frames cost nothing. Catches every add/remove site (drop/mutate/feast/sanitize/decay/
+  destroy/warden) with no per-site wiring.
+- **State:** `web[r][c]` (bool, which tiles are web-blocked, cleared+recomputed each rebuild; never
+  coincides with a corpse/tower tile), `webStrands` (list of `[c1,r1,c2,r2]` for rendering), `lastStructSig`.
+  All reset in `newRun`. `rebuildWebs` sets `flow`/`flowDist` directly from its final field.
+- **Render:** `drawWebs()` (after `drawFlowOverlay`, under corpses so anchors sit on top): pale sticky
+  strand (wide soft pass + thin bright line) with perpendicular cross-ticks = spiderweb read.
+- Verified via preview_eval (page reloaded so evals hit current code — earlier evals silently ran stale
+  page memory, worth remembering: static file, NO HMR): horiz gap-2 fills both tiles, diagonal bridges
+  the mid tile, too-far (span>3) makes no strand, removing a node clears its strand+tiles, seal peel keeps
+  every edge reachable, 600-frame live run (starter corpses+wardens, spawns, drops, full draw) throws
+  nothing, console clean. Determinism (no RNG) + single-file fast-load intact.
+**Next:** Mike playtests the maze feel end-to-end (does webbing make placement strategic? tune span/CAP/
+gap). Then optional depth: live drag/red placement preview, path-length DoT reward. Then back to roster
+(Knight→troop etc.) + the Spitter mod-tree tower rework.
+
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
 attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/

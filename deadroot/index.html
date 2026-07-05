@@ -296,6 +296,7 @@ let waveIdx = 0, endlessN = 0, endless = false;
 let prepT = 0, spawnQ = [], spawnT = 0;
 let enemies = [], corpses = [], towers = [], projectiles = [], clouds = [], particles = [], popups = [];
 let blocked = null, flow = null;
+let web = [], webStrands = [], lastStructSig = -1; // DR-#022 spiderweb: strands bridge nearby corpses/towers into hedge walls
 let shake = 0, menu = null; // menu = {corpse}
 let firstMutateDone = false, onboardT = 0;
 let rotTipT = 0, evolveTipT = 0, evolveTipTower = null; // one-time teaching nudges (rot ring / evolve)
@@ -538,6 +539,67 @@ function moveWithWalls(e, mx, my){
   if(my!==0 && !solidAt(e.x, e.y + my + (my>0?WALL_MARG:-WALL_MARG))) e.y += my;
 }
 
+/* DR-#022 spiderweb webbing: your dead anchor a web. Any two blocking corpses/towers that
+   line up (same row, same col, or a clean diagonal) with a 1-2 tile GAP between them auto-grow
+   a strand that hard-blocks the intervening tiles — so scattered organic corpse-drops fuse into
+   a real hedge/web wall. Each strand tile still passes the sideHasPath seal rule, so webbing can
+   never fully trap enemies. Recomputed only when the structure changes (see update's sig check),
+   never per-frame. Nearest pairs win first; each node caps at WEB_CAP strands for readability. */
+const WEB_CAP = 4;
+function rebuildWebs(){
+  if(!web.length) return;
+  // clear last frame's web tiles (they never coincide with a corpse/tower tile)
+  for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){ if(web[r][c]){ web[r][c]=false; blocked[r][c]=false; } }
+  webStrands = [];
+  // nodes = blocking corpses + towers (trampled corpses are walkable, so not anchors)
+  const nodes = [];
+  for(const k of corpses) if(!k.trampled) nodes.push([k.c,k.r]);
+  for(const t of towers) nodes.push([t.c,t.r]);
+  // eligible aligned pairs, nearest first so short strands claim the cap
+  const pairs = [];
+  for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
+    const [c1,r1]=nodes[i], [c2,r2]=nodes[j];
+    const adc=Math.abs(c2-c1), adr=Math.abs(r2-r1);
+    if(!(c1===c2 || r1===r2 || adc===adr)) continue; // not on a line
+    const span=Math.max(adc,adr);
+    if(span<2 || span>3) continue;                    // gap of exactly 1 or 2 empty tiles
+    pairs.push({i,j,span});
+  }
+  pairs.sort((a,b)=>a.span-b.span);
+  const conn = new Array(nodes.length).fill(0);
+  const added = []; // {tiles, s:[c1,r1,c2,r2]} in placement order (shortest strands first)
+  for(const p of pairs){
+    if(conn[p.i]>=WEB_CAP || conn[p.j]>=WEB_CAP) continue;
+    const [c1,r1]=nodes[p.i], [c2,r2]=nodes[p.j];
+    const dc=Math.sign(c2-c1), dr=Math.sign(r2-r1);
+    // gather the empty intervening tiles; bail if anything already blocks the line
+    const tiles=[]; let cc=c1+dc, rr=r1+dr, clean=true;
+    while(cc!==c2 || rr!==r2){
+      if(!inGrid(cc,rr) || isHive(cc,rr) || blocked[rr][cc]){ clean=false; break; }
+      tiles.push([cc,rr]); cc+=dc; rr+=dr;
+    }
+    if(!clean || !tiles.length) continue;
+    for(const [tc,tr] of tiles){ blocked[tr][tc]=true; web[tr][tc]=true; }
+    conn[p.i]++; conn[p.j]++; added.push({tiles, s:[c1,r1,c2,r2]});
+  }
+  // seal safety: compute the field once; if the web sealed a side, peel strands back (longest
+  // first) until enemies can path again. Common (no-seal) case = ONE computeFlow. Peels are
+  // capped so a pathological dense mesh can't hitch the frame; a hard fallback then strips any
+  // remaining web tiles so the field is always legal.
+  let res = computeFlow(blocked), guard = 0;
+  while(!sideHasPath(res.dist) && added.length && guard++ < 24){
+    const last = added.pop();
+    for(const [tc,tr] of last.tiles){ web[tr][tc]=false; blocked[tr][tc]=false; }
+    res = computeFlow(blocked);
+  }
+  if(!sideHasPath(res.dist)){
+    for(const a of added) for(const [tc,tr] of a.tiles){ web[tr][tc]=false; blocked[tr][tc]=false; }
+    added.length = 0; res = computeFlow(blocked);
+  }
+  webStrands = added.map(a=>a.s);
+  flow = res.flow; flowDist = res.dist;
+}
+
 /* ===== Entities ===== */
 let nextId = 1;
 function spawnEnemy(type){
@@ -703,6 +765,8 @@ function newRun(){
   waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0;
   enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
+  web = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#022
+  webStrands = []; lastStructSig = -1;
   rebuildFlow();
   firstMutateDone = false; onboardT = 0; menu = null;
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
@@ -841,6 +905,11 @@ function update(){
       if(menu && menu.corpse===k) menu=null;
     }
   }
+
+  // DR-#022: recompute the spiderweb only when the structure changed (a corpse/tower added or
+  // removed), never per-frame. Runs before enemies move so they read the fresh maze this frame.
+  const structSig = corpses.length*1000 + towers.length;
+  if(structSig !== lastStructSig){ lastStructSig = structSig; rebuildWebs(); }
 
   /* enemies */
   for(let i=enemies.length-1;i>=0;i--){
@@ -1657,6 +1726,26 @@ function drawFlowOverlay(){
   ctx.stroke();
   ctx.restore();
 }
+/* DR-#022: draw the spiderweb strands (sticky pale threads with cross-ticks) between anchors. */
+function drawWebs(){
+  if(!webStrands.length) return;
+  ctx.save(); ctx.lineCap="round";
+  for(const s of webStrands){
+    const [x1,y1]=tileToXY(s[0],s[1]), [x2,y2]=tileToXY(s[2],s[3]);
+    const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy)||1, px=-dy/len, py=dx/len;
+    ctx.strokeStyle="rgba(198,228,190,0.22)"; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.strokeStyle="rgba(170,214,158,0.55)"; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    const ticks=Math.max(2,Math.round(len/16));
+    ctx.strokeStyle="rgba(210,232,198,0.4)"; ctx.lineWidth=1;
+    ctx.beginPath();
+    for(let i=1;i<ticks;i++){ const t=i/ticks, mx=x1+dx*t, my=y1+dy*t, w=3.5;
+      ctx.moveTo(mx-px*w,my-py*w); ctx.lineTo(mx+px*w,my+py*w); }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 function draw(){
   ctx.save();
   if(shake>0){ ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); }
@@ -1683,6 +1772,7 @@ function draw(){
   drawEnvironment();
   drawHive();
   drawFlowOverlay(); // DR-#021: show the maze lanes under the entities
+  drawWebs();        // DR-#022: spiderweb strands (under corpses so anchors sit on top)
   // ground stains (fading death marks)
   for(const s of stains){
     ctx.globalAlpha=Math.min(0.35, s.t/5*0.35);
