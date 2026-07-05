@@ -1332,6 +1332,7 @@ function onTap(x,y){
   // mutate menu open?
   if(menu){
     const picked = menuHit(x,y);
+    if(picked==='removehedge'){ removeHedge(menu.hedge.c, menu.hedge.r); return; }
     if(picked==='heal'){ feastHeal(menu.tower); return; }
     if(picked==='upgrade'){ feastUpgrade(menu.tower); return; }
     if(picked==='salvage'){
@@ -1352,10 +1353,27 @@ function onTap(x,y){
   let tw=null, bestD=Infinity;
   for(const t of towers){ if(t.type==="warden") continue; const d=(t.x-x)**2+(t.y-y)**2; if(d<bestD && d<tapR*tapR){ bestD=d; tw=t; } }
   if(tw){ menu = {tower:tw}; SFX.ui(); return; }
+  // DR-#027 C5: tap a hedge (no brush active) → open a REMOVE menu (refunds paid hedges)
+  { const [c,r]=xyToTile(x,y); if(inGrid(c,r) && hedge[r] && hedge[r][c]){ menu = {hedge:{c,r}}; SFX.ui(); return; } }
 }
-function menuAnchor(){ if(menu.tower) return [menu.tower.x, menu.tower.y]; const s = menu.corpse; return tileToXY(s.c, s.r); }
+function hedgeRefund(c,r){ return hedgePaid[r] && hedgePaid[r][c] ? Math.max(1, Math.round(hedgeCostNow()*0.6)) : 0; } // DR-#027 C5
+function removeHedge(c,r){
+  const refund = hedgeRefund(c,r);
+  hedge[r][c]=false; hedgePaid[r][c]=false;
+  if(blocked[r][c] && !towers.some(t=>t.c===c&&t.r===r)) unblock(c,r); // reopens the lane; can never seal
+  const [x,y]=tileToXY(c,r);
+  if(refund>0){ biomass+=refund; popup(x,y-10,"+"+refund+"◈","#e3d34e"); }
+  else popup(x,y-10,"REMOVED","#b8c2cc");
+  burst(x,y,"#8a6a3f",8); SFX.squelch(); menu=null;
+}
+function menuAnchor(){ if(menu.tower) return [menu.tower.x, menu.tower.y]; if(menu.hedge) return tileToXY(menu.hedge.c, menu.hedge.r); const s = menu.corpse; return tileToXY(s.c, s.r); }
 function menuOpts(){
   if(!menu) return [];
+  if(menu.hedge){ // DR-#027 C5: remove/sell a hedge
+    const [hx,hy]=tileToXY(menu.hedge.c, menu.hedge.r);
+    const cx=Math.max(90, Math.min(W-90, hx));
+    return [ {type:'removehedge', x:cx, y:Math.max(TOP+52, hy-64), r:34} ];
+  }
   if(menu.tower){
     const t=menu.tower; // DR-#023: FEAST retired — a unit's only menu action is SALVAGE (biomass refund)
     const cx=Math.max(90, Math.min(W-90, t.x));
@@ -2350,6 +2368,19 @@ function drawHUD(){
 function drawMenu(){
   const opts = menuOpts();
   ctx.fillStyle="rgba(5,7,9,0.35)"; ctx.fillRect(0,TOP,W,H-TOP);
+  if(menu.hedge){ // DR-#027 C5: hedge REMOVE button
+    const [hx,hy]=tileToXY(menu.hedge.c, menu.hedge.r);
+    ctx.strokeStyle="rgba(224,211,78,0.5)"; ctx.lineWidth=2.5;
+    ctx.strokeRect(menu.hedge.c*CFG.tile+2, TOP+menu.hedge.r*CFG.tile+2, CFG.tile-4, CFG.tile-4); ctx.lineWidth=1;
+    const refund=hedgeRefund(menu.hedge.c, menu.hedge.r);
+    for(const o of opts){
+      ctx.fillStyle="rgba(14,16,20,0.96)"; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.fill();
+      ctx.strokeStyle="#e3d34e"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
+      ctx.fillStyle="#e3d34e"; ctx.textAlign="center"; ctx.font="bold 12px monospace"; ctx.fillText("REMOVE", o.x, o.y-3);
+      ctx.fillStyle=refund>0?"#8fd9a8":"#8a94a0"; ctx.font="bold 12px monospace"; ctx.fillText(refund>0?"+"+refund+"◈":"free", o.x, o.y+12);
+    }
+    return;
+  }
   if(menu.tower){
     const t=menu.tower;
     // feast range ring: corpses inside this can be devoured
