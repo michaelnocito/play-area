@@ -739,7 +739,41 @@ Two requested depth adds on top of the confirmed-good 2-wide maze (Mike playtest
   live run with 2 leveled/tier grabbers + a spitter + `draw()` every tick throws nothing; console clean.
   Determinism + single-file fast-load intact. All code wrapped in DR-#025 comments.
 **Next:** Mike playtests grabber feel (slow % / range / cost) + reabsorb length (4s too punishing/lenient?).
-Then C6 dead-code cleanup + C7 boon/onboarding text, then D1 roster + C8 balance → A3 shippable.
+
+## DR-#026 → #032 — C-backlog sweep (2026-07-05, "go for remaining roadmapped items")
+Cleared the entire C polish/cleanup backlog in one session, each its own commit + headless verify (reload,
+no HMR; parse-check; preview_eval eval + draw sweep; console clean). Numbering = one DR-# per batch.
+- **DR-#026 (C7) — boon + onboarding text to the buy-and-place loop.** Reworked BOONS: dead Spore/Rootmass
+  boons (LINGERING SPORES, DEEP ROOTS) → GRASPING REACH (+35% grabber radius, `run.grabR`), CHOKEHOLD
+  (+15% grabber slow, `run.grabSlow`), THORNED HEDGES (hedges cost 2◈, `run.hedgeDisc` via `hedgeCostNow()`);
+  ACID/HIDE retexted Spitter→Zombie. Wired grabR/grabSlow into the snare loop + aura render. Prep onboarding
+  "TAP A CORPSE" (dead — no starter corpses post-pivot) → "PICK A BRUSH, THEN TAP THE FIELD TO BUILD" pointing
+  at the palette. Neutralized the never-firing rot-ring + evolve/devour teaching nudges.
+- **DR-#027 (C5) — sell/remove for partial refund.** Zombie SALVAGE already existed; added hedge removal:
+  tap a hedge (no brush) → REMOVE menu. `hedgePaid[r][c]` tracks player-paid vs seeded hedges — paid refund
+  60% of current hedge cost, seeded remove for free (repositioning). Removal always unblocks (never seals).
+- **DR-#028 (C1+C2) — drag-to-paint + ghost preview.** Hold + drag with the HEDGE brush lays a wall in one
+  stroke (`painting`/`dragPaint`, one hedge per newly-entered tile; units stay single-tap). Build cursor
+  upgraded to a filled ghost in the brush's own hue (red + X when blocked).
+- **DR-#029 (C9) — gate-escalation banners + flare.** Newly-opened gates flash an expanding ring + hot arch
+  (`gateOpenT[]`, `GATE_DIR`) so the new front is unmissable; banners renamed to call the direction ("THE WEST
+  GATE OPENS", "NORTH & SOUTH gates open"). Fixed a stale "steal your mutate" sweeper sub.
+- **DR-#030 (C4) — path-length reward.** `e.mazeT` accrues while an enemy walks the maze; creeping-rot DoT
+  ramps `min(mazeDoT*mazeT, cap)` (0.55/s per sec, cap 16) so long serpentine routes cook the horde (rot motes
+  as the tell). Deaths route through the normal `kill()` (biomass + corpse). Troop loses ~29% over a 10s walk.
+- **DR-#031 (C3) — leafier topiary hedges.** Deterministic dappled leaf-clumps (`hedgeHash`) + top-face
+  highlight over the merged-corner topiary; clip-free (inset clumps) so it stays cheap — 120-hedge maze draws
+  ~2.5ms under the preview's SOFTWARE renderer (negligible on real GPU). The grown zombie already reads distinct
+  (glowing disc + sprite vs topiary), so no separate zombie-in-wall art needed. Full 47-blob atlas skipped as
+  not worth the weight.
+- **DR-#032 (C6) — rip dead code.** Removed the fully-retired DR-#022 spiderweb system (`rebuildWebs`,
+  `drawWebs`, `web[]`, `webStrands`, `lastStructSig`, the per-frame structSig recompute), `spawnWarden` +
+  `WARDEN_NAMES` (free cardinal wardens retired by the pivot, zero call sites), and `applyTier2` (biomass EVOLVE
+  replaced by feast/salvage; `t.tier` never rises now). Verified zero dangling refs + 1500-tick run clean.
+  (Left the harmless feast/mutate corpse-menu tangle — interwoven with the live salvage menu; low value, higher risk.)
+**Not built (need Mike):** C8 balance, D2 boss waves, D3 meta re-tune, A3 shippable all need his playtest feel on
+the new mechanics (rebalancing blind would risk the confirmed-good maze). D1 human roster is asset-gated (needs
+Engvee Knight/Barbarian/Halberdier atlases dropped in `assets/raw/`, per SPR-#003).
 
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
