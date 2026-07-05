@@ -84,8 +84,10 @@ const CG = {
 const CFG = {
   cols: 26, rows: 18, tile: 40,
   hive: { c0:12, r0:8, c1:13, r1:9, hp: 100 },
-  startBiomass: 60,
+  startBiomass: 120,        // DR-#023: enough to lay a starter maze + a unit
   killBounty: 6,
+  hedgeCost: 5,             // DR-#023: cheap wall; ~1/8 of a Spitter so a full maze ≈ one tower
+  gates: [ {c:25,r:8}, {c:0,r:9}, {c:13,r:0}, {c:12,r:17} ], // DR-#023 labyrinth entrances (E,W,N,S), open in order
   corpse: { rot: 15, payout: 25 },
   towers: {
     warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
@@ -296,7 +298,9 @@ let waveIdx = 0, endlessN = 0, endless = false;
 let prepT = 0, spawnQ = [], spawnT = 0;
 let enemies = [], corpses = [], towers = [], projectiles = [], clouds = [], particles = [], popups = [];
 let blocked = null, flow = null;
-let web = [], webStrands = [], lastStructSig = -1; // DR-#022 spiderweb: strands bridge nearby corpses/towers into hedge walls
+let web = [], webStrands = [], lastStructSig = -1; // DR-#022 spiderweb (superseded by DR-#023 placed hedges)
+let hedge = [];            // DR-#023: hedge[r][c] = player-placed maze wall (blocks + renders as topiary)
+let buildMode = null;      // DR-#023: null | 'hedge' | 'spitter' — active build brush from the palette
 let shake = 0, menu = null; // menu = {corpse}
 let firstMutateDone = false, onboardT = 0;
 let rotTipT = 0, evolveTipT = 0, evolveTipTower = null; // one-time teaching nudges (rot ring / evolve)
@@ -545,8 +549,53 @@ function moveWithWalls(e, mx, my){
    a real hedge/web wall. Each strand tile still passes the sideHasPath seal rule, so webbing can
    never fully trap enemies. Recomputed only when the structure changes (see update's sig check),
    never per-frame. Nearest pairs win first; each node caps at WEB_CAP strands for readability. */
+/* DR-#023: which entrances are open this wave (they open E→W→N→S as the assault escalates). */
+function openGates(){
+  if(endless) return CFG.gates;
+  const n = waveIdx===0 ? 1 : (waveIdx<4 ? 2 : 4);
+  return CFG.gates.slice(0, n);
+}
+function gateAt(c,r){ return CFG.gates.some(g=>g.c===c&&g.r===r); }
+/* every OPEN gate must still reach the Hive, else enemies can't path in */
+function gatesReachable(dist){
+  for(const g of openGates()){ if(dist[g.r][g.c]===Infinity) return false; }
+  return true;
+}
+/* DR-#023 player placement: block a tile only if every open gate keeps its route to the Hive. */
+function tryPlaceBlock(c,r){
+  if(!inGrid(c,r) || isHive(c,r) || gateAt(c,r) || blocked[r][c]) return false;
+  blocked[r][c] = true;
+  const res = computeFlow(blocked);
+  if(!gatesReachable(res.dist)){ blocked[r][c] = false; return false; }
+  flow = res.flow; flowDist = res.dist;
+  return true;
+}
+
+/* DR-#023 build actions — spend biomass to place a hedge wall or raise a Spitter unit. */
+function placeHedge(c,r){
+  const [x,y]=tileToXY(c,r);
+  if(biomass < CFG.hedgeCost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
+  if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"CAN'T BLOCK PATH","#e3d34e"); return false; }
+  biomass -= CFG.hedgeCost; hedge[r][c]=true; firstMutateDone=true;
+  burst(x,y,"#5f9e52",7); SFX.squelch();
+  return true;
+}
+function placeUnit(c,r){
+  const [x,y]=tileToXY(c,r);
+  const cost = CFG.towers.spitter.cost;
+  if(biomass < cost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
+  if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"CAN'T BLOCK PATH","#e3d34e"); return false; }
+  biomass -= cost;
+  const thp = 60 + (run?run.towerHp:0);
+  towers.push({ type:"spitter", c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
+  towersBuiltThisRun++; firstMutateDone=true;
+  popup(x,y-28,"-"+cost+"◈","#e07f7f"); burst(x,y,"#9be07f",14); SFX.squelch(); shakeIt(2);
+  return true;
+}
+
 const WEB_CAP = 4;
 function rebuildWebs(){
+  return; // DR-#023: corpse-bridging retired — hedges are the maze walls now (kept for reference)
   if(!web.length) return;
   // clear last frame's web tiles (they never coincide with a corpse/tower tile)
   for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){ if(web[r][c]){ web[r][c]=false; blocked[r][c]=false; } }
@@ -604,23 +653,12 @@ function rebuildWebs(){
 let nextId = 1;
 function spawnEnemy(type){
   const e = CFG.enemies[type];
-  // random edge tile that has a path
-  let c,r,tries=0;
-  // spawn sides open up as the campaign escalates: wave 1 right only,
-  // waves 2-4 right+left, all four sides once THE PURGE begins (0=top 1=bottom 2=left 3=right)
-  let sides = [0,1,2,3];
-  if(!endless){
-    if(waveIdx===0) sides = [3];
-    else if(waveIdx<4) sides = [2,3];
-  }
-  do{
-    const side = sides[Math.floor(Math.random()*sides.length)];
-    if(side===0){ c=Math.floor(Math.random()*CFG.cols); r=0; }
-    else if(side===1){ c=Math.floor(Math.random()*CFG.cols); r=CFG.rows-1; }
-    else if(side===2){ c=0; r=Math.floor(Math.random()*CFG.rows); }
-    else { c=CFG.cols-1; r=Math.floor(Math.random()*CFG.rows); }
-    tries++;
-  } while((blocked[r][c] || flowDist[r][c]===Infinity) && tries<40);
+  // DR-#023: enter through a fixed labyrinth GATE (they open E→W→N→S as the assault escalates).
+  // Pick a random open gate that can currently reach the Hive; fall back to the first gate.
+  const gates = openGates();
+  const reach = gates.filter(g=>flowDist[g.r][g.c]!==Infinity);
+  const g = (reach.length?reach:gates)[Math.floor(Math.random()*(reach.length?reach.length:gates.length))];
+  const c=g.c, r=g.r;
   const [x,y] = tileToXY(c,r);
   const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
@@ -636,11 +674,10 @@ function dropCorpse(x,y){
   const rot = meta.rot + (run?run.rotBonus:0);
   const ex = corpses.find(k=>k.c===c&&k.r===r);
   if(ex){ ex.t = rot; ex.maxT = rot; ex.stack++; popup(x,y,ex.stack>=3?"MASS GRAVE x"+ex.stack:"+STACKED","#9be07f"); return; }
-  const wasOpen = !blocked[r][c];
-  const walk = wasOpen ? tryBlock(c,r) : false;
-  if(wasOpen && !walk) popup(x,y-14,"PATH STAYS OPEN","#e3d34e"); // DR-#021: would fully seal → drops trampled
+  // DR-#023: corpses are now decorative + passive income (they rot into biomass). They no longer
+  // block or become buildable — the player raises units and grows hedges with biomass instead.
   const cName = HUMAN_NAMES[Math.floor(Math.random()*HUMAN_NAMES.length)];
-  corpses.push({ c, r, t: rot, maxT: rot, trampled: !walk, stack:1, name:cName });
+  corpses.push({ c, r, t: rot, maxT: rot, trampled: true, stack:1, name:cName });
 }
 function mutate(k, type){
   const t = CFG.towers[type];
@@ -758,6 +795,26 @@ function pathStep(fc,fr,tc,tr){
   return best;
 }
 
+/* DR-#023: seed a Cretan-style concentric labyrinth — square rings around the Hive, each with a
+   one-side gap that rotates E→S→W so the open route corkscrews inward. Reads as a maze on load and
+   gives the player a base to extend; the rotating gaps guarantee every gate can still reach center. */
+function seedLabyrinth(){
+  const {c0,c1,r0,r1} = CFG.hive;
+  const put=(c,r)=>{ if(inGrid(c,r)&&!isHive(c,r)&&!gateAt(c,r)){ blocked[r][c]=true; hedge[r][c]=true; } };
+  for(const {d,gap} of [{d:2,gap:"E"},{d:4,gap:"S"},{d:6,gap:"W"}]){
+    const L=c0-d, R=c1+d, T=r0-d, B=r1+d, mc=(L+R)/2, mr=(T+B)/2;
+    for(let c=L;c<=R;c++){
+      if(!(gap==="N" && Math.abs(c-mc)<=1)) put(c,T);
+      if(!(gap==="S" && Math.abs(c-mc)<=1)) put(c,B);
+    }
+    for(let r=T;r<=B;r++){
+      if(!(gap==="W" && Math.abs(r-mr)<=1)) put(L,r);
+      if(!(gap==="E" && Math.abs(r-mr)<=1)) put(R,r);
+    }
+  }
+  rebuildFlow();
+}
+
 /* ===== Game flow ===== */
 function newRun(){
   meta = metaVals();
@@ -765,8 +822,9 @@ function newRun(){
   waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0;
   enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
-  web = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#022
-  webStrands = []; lastStructSig = -1;
+  hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#023 placed maze walls
+  web = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
+  webStrands = []; lastStructSig = -1; buildMode = null;
   rebuildFlow();
   firstMutateDone = false; onboardT = 0; menu = null;
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0;
@@ -778,14 +836,10 @@ function newRun(){
   rotTipT=0; evolveTipT=0;
   save.plays=(save.plays|0)+1; persist();
   genDecor(); // fresh treeline + growing bone piles each run
-  // onboarding: two starter corpses on the RIGHT lane, where wave 1 comes from
-  dropCorpse(...tileToXY(CFG.hive.c1+3, 8));
-  dropCorpse(...tileToXY(CFG.hive.c1+4, 10));
-  // perimeter defense: a Flesh Warden at each cardinal direction — every lane has an answer
-  for(const [wc,wr] of [[12,3],[12,14],[6,9],[19,9]]) spawnWarden(wc,wr);
-  // first-ever run: nudge the rot-ring mechanic once (subtle, not a banner)
-  if(!save.seenRotTip){ rotTipT = 9; save.seenRotTip = true; persist(); }
-  mode = "prep"; prepT = 12; // generous first prep; shortens once they mutate
+  // DR-#023: seed a concentric labyrinth (rotating gaps) the player extends; no free defenders
+  seedLabyrinth();
+  showBanner("BUILD YOUR LABYRINTH","tap HEDGE to wall lanes, SPITTER to raise a zombie");
+  mode = "prep"; prepT = 16; // generous first prep to lay the first maze
   CG.gameplayStart();
 }
 function queueWave(){
@@ -1200,6 +1254,13 @@ function onTap(x,y){
   }
   // speed toggle (bottom-right) — 68px logical box, padded to a real 44px min tap target
   { const p=hitPad(68); if(x>W-78-p && x<W-10+p && y>H-78-p && y<H-10+p){ gameSpeed = gameSpeed===1?2:1; SFX.ui(); return; } }
+  // DR-#023 build palette (bottom-center): toggle the hedge / spitter brush
+  if(mode==="play"||mode==="prep"){
+    for(const b of paletteBtns()){
+      const p=hitPad(b.h);
+      if(x>=b.x-p&&x<=b.x+b.w+p&&y>=b.y-p&&y<=b.y+b.h+p){ buildMode = buildMode===b.mode?null:b.mode; menu=null; SFX.ui(); return; }
+    }
+  }
   // prep skip button
   if(mode==="prep" && firstMutateDone && x>W/2-120 && x<W/2+120 && y>TOP+8 && y<TOP+66){
     biomass += 15; popup(W/2,TOP+90,"+15","#8fd9a8"); queueWave(); return;
@@ -1208,6 +1269,12 @@ function onTap(x,y){
   for(const b of abilBtns()){
     const p=hitPad(b.w);
     if(x>=b.x-p&&x<=b.x+b.w+p&&y>=b.y-p&&y<=b.y+b.h+p){ activateAbility(b.a); return; }
+  }
+  // DR-#023: with a build brush active, a tap in the field places a hedge or a unit (brush stays on)
+  if(buildMode && y>TOP){
+    const [c,r]=xyToTile(x,y);
+    if(inGrid(c,r)){ if(buildMode==="hedge") placeHedge(c,r); else placeUnit(c,r); }
+    return;
   }
 
   // mutate menu open?
@@ -1228,32 +1295,19 @@ function onTap(x,y){
     if(picked && menu.corpse){ mutate(menu.corpse, picked); return; }
     menu = null;
   }
-  // corpse / tower tap — nearest-within-radius (not exact-tile) so the effective
-  // tap target scales with hitPad instead of collapsing to ~14px at 0.36 viewScale
+  // DR-#023: corpses are decorative now (no tap menu). Tapping a zombie unit opens its menu (salvage).
   const tapR = CFG.tile*0.5 + hitPad(CFG.tile);
-  let k=null, bestD=Infinity;
-  for(const cp of corpses){ const [cx,cy]=tileToXY(cp.c,cp.r); const d=(cx-x)**2+(cy-y)**2; if(d<bestD && d<tapR*tapR){ bestD=d; k=cp; } }
-  if(k){
-    const [kx2,ky2]=tileToXY(k.c,k.r);
-    rings.push({x:kx2,y:ky2,r:0,maxR:28,maxT:0.35,t:0.35,col:"rgba(155,224,127,0.8)"});
-    burst(kx2,ky2,"#9be07f",5);
-    menu={corpse:k}; SFX.ui(); return;
-  }
-  let tw=null; bestD=Infinity;
-  for(const t of towers){ if(t.type==="warden"||!CFG.tier2[t.type]) continue; const d=(t.x-x)**2+(t.y-y)**2; if(d<bestD && d<tapR*tapR){ bestD=d; tw=t; } }
+  let tw=null, bestD=Infinity;
+  for(const t of towers){ if(t.type==="warden") continue; const d=(t.x-x)**2+(t.y-y)**2; if(d<bestD && d<tapR*tapR){ bestD=d; tw=t; } }
   if(tw){ menu = {tower:tw}; SFX.ui(); return; }
 }
 function menuAnchor(){ if(menu.tower) return [menu.tower.x, menu.tower.y]; const s = menu.corpse; return tileToXY(s.c, s.r); }
 function menuOpts(){
   if(!menu) return [];
   if(menu.tower){
-    const t=menu.tower;
-    const cx=Math.max(90, Math.min(W-90, t.x)), oy=Math.max(TOP+52, t.y-74);
-    return [
-      {type:'heal',    x:cx-48, y:oy, r:38},
-      {type:'upgrade', x:cx+48, y:oy, r:38},
-      {type:'salvage', x:cx,    y:Math.min(H-38, t.y+66), r:30},
-    ];
+    const t=menu.tower; // DR-#023: FEAST retired — a unit's only menu action is SALVAGE (biomass refund)
+    const cx=Math.max(90, Math.min(W-90, t.x));
+    return [ {type:'salvage', x:cx, y:Math.max(TOP+52, t.y-72), r:36} ];
   }
   const [kx,ky] = menuAnchor();
   const types = ["spitter","rootmass","spore","node"];
@@ -1746,6 +1800,68 @@ function drawWebs(){
   }
   ctx.restore();
 }
+/* DR-#023: render placed hedges as merged topiary (autotile-lite: round only outer corners, extend
+   1px over shared edges so contiguous tiles read as one continuous hedge wall). */
+function hedgeRect(x,y,w,h,rad){ ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(x,y,w,h,rad); else ctx.rect(x,y,w,h); }
+function drawHedges(){
+  const T=CFG.tile, R=8;
+  for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){
+    if(!hedge[r][c]) continue;
+    const N=r>0&&hedge[r-1][c], S=r+1<CFG.rows&&hedge[r+1][c], Wl=c>0&&hedge[r][c-1], E=c+1<CFG.cols&&hedge[r][c+1];
+    const x=c*T, y=TOP+r*T;
+    const x0=x-(Wl?1:0), y0=y-(N?1:0), w=T+(Wl?1:0)+(E?1:0), h=T+(N?1:0)+(S?1:0);
+    const rad=[ (!N&&!Wl)?R:0, (!N&&!E)?R:0, (!S&&!E)?R:0, (!S&&!Wl)?R:0 ];
+    ctx.fillStyle="#1e3620"; hedgeRect(x0,y0+3,w,h,rad); ctx.fill();          // base shadow
+    ctx.fillStyle="#356b30"; hedgeRect(x0,y0,w,h,rad); ctx.fill();            // body
+    ctx.fillStyle="rgba(126,190,98,0.45)";                                    // dappled top light
+    hedgeRect(x0+3,y0+3,w-6,h*0.42, rad.map(v=>Math.max(0,v-3))); ctx.fill();
+  }
+}
+/* DR-#023: gate markers on the border — open gates glow (enemies enter here), closed are dim. */
+function drawGates(){
+  const hcx=(CFG.hive.c0+CFG.hive.c1+1)/2*CFG.tile, hcy=TOP+(CFG.hive.r0+CFG.hive.r1+1)/2*CFG.tile;
+  const open=openGates();
+  for(const g of CFG.gates){
+    const isOpen=open.includes(g), [x,y]=tileToXY(g.c,g.r);
+    let dx=hcx-x, dy=hcy-y; const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
+    const ang=Math.atan2(dy,dx);
+    ctx.save();
+    ctx.globalAlpha = isOpen ? 0.55+0.35*Math.sin(perfNow*3) : 0.2;
+    ctx.strokeStyle = isOpen ? "#e0714a" : "#6a5048"; ctx.lineWidth=3; ctx.lineCap="round";
+    ctx.beginPath(); ctx.arc(x,y,15,ang-1.15,ang+1.15); ctx.stroke();       // inward-facing arch
+    const bx=x+dx*5, by=y+dy*5, px=-dy, py=dx;                              // inward chevron
+    ctx.beginPath(); ctx.moveTo(bx+px*7,by+py*7); ctx.lineTo(bx+dx*10,by+dy*10); ctx.lineTo(bx-px*7,by-py*7); ctx.stroke();
+    ctx.restore();
+  }
+}
+/* DR-#023: bottom-center build palette. */
+function paletteBtns(){
+  const w=150,h=58,gap=16,y=H-h-14, total=w*2+gap, x0=W/2-total/2;
+  return [ {x:x0, y, w, h, mode:"hedge", label:"HEDGE", cost:CFG.hedgeCost},
+           {x:x0+w+gap, y, w, h, mode:"spitter", label:"SPITTER", cost:CFG.towers.spitter.cost} ];
+}
+function drawPalette(){
+  if(mode!=="play"&&mode!=="prep") return;
+  for(const b of paletteBtns()){
+    const sel=buildMode===b.mode, afford=biomass>=b.cost;
+    ctx.fillStyle = sel?"#2b5a26":"rgba(16,20,18,0.9)";
+    ctx.strokeStyle = sel?"#9be07f":"rgba(150,190,140,0.4)"; ctx.lineWidth=sel?3:1.5;
+    ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(b.x,b.y,b.w,b.h,10);else ctx.rect(b.x,b.y,b.w,b.h); ctx.fill(); ctx.stroke();
+    ctx.textAlign="left"; ctx.fillStyle=afford?"#dfeada":"#9a7060"; ctx.font="bold 17px monospace";
+    ctx.fillText(b.label, b.x+14, b.y+26);
+    ctx.fillStyle=afford?"#8fd9a8":"#e06060"; ctx.font="bold 15px monospace";
+    ctx.fillText(b.cost+"◈", b.x+14, b.y+46);
+  }
+  // build cursor: green = placeable, red = blocked/hive/gate
+  if(buildMode && ptrY>TOP){
+    const [c,r]=xyToTile(ptrX,ptrY);
+    if(inGrid(c,r)){
+      const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && biomass>=(buildMode==="hedge"?CFG.hedgeCost:CFG.towers.spitter.cost);
+      ctx.strokeStyle = ok?"rgba(155,224,127,0.9)":"rgba(224,96,96,0.9)"; ctx.lineWidth=2.5;
+      ctx.strokeRect(c*CFG.tile+1, TOP+r*CFG.tile+1, CFG.tile-2, CFG.tile-2);
+    }
+  }
+}
 function draw(){
   ctx.save();
   if(shake>0){ ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); }
@@ -1772,7 +1888,8 @@ function draw(){
   drawEnvironment();
   drawHive();
   drawFlowOverlay(); // DR-#021: show the maze lanes under the entities
-  drawWebs();        // DR-#022: spiderweb strands (under corpses so anchors sit on top)
+  drawGates();       // DR-#023: labyrinth entrances
+  drawHedges();      // DR-#023: player-built topiary maze walls
   // ground stains (fading death marks)
   for(const s of stains){
     ctx.globalAlpha=Math.min(0.35, s.t/5*0.35);
@@ -2023,6 +2140,7 @@ function draw(){
   drawHUD();
   drawAbilities();
   drawSpeedBtn();
+  drawPalette();     // DR-#023 build palette
   drawBossBar();
   if(menu) drawMenu();
   if(mode==="prep") drawPrep();

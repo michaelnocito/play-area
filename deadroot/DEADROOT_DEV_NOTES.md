@@ -646,6 +646,45 @@ strategic web-completion puzzle.
 gap). Then optional depth: live drag/red placement preview, path-length DoT reward. Then back to roster
 (Knight→troop etc.) + the Spitter mod-tree tower rework.
 
+## DR-#023 — CORE PIVOT: buy-and-place hedge-maze labyrinth (2026-07-05)
+Mike: the corpse-maze failed because corpses fall where the ENEMY dies — the player never
+controls placement, so it isn't strategic. Pivoted (his call, all my recs) to a classic
+build-and-place maze TD reskinned as a Greek/Victorian hedge-maze / Minotaur's labyrinth, zombies
+as the enemies-in-the-maze. Researched build-and-place TD economy + Cretan labyrinth structure +
+autotile hedges (see session). Confirmed 3 big calls: clean pivot (retire corpse-mutate/FEAST as
+core), tap-to-place hedges that auto-merge, fixed-entrance labyrinth. DR-#021 foundation carries
+over (buildable-wall rule, no-corner-cut collision, route overlay). This slice = the playable new
+loop; polish is backlogged.
+- **Economy (reuses `biomass` = bone-biomass):** `startBiomass 120`, `hedgeCost 5` (~1/8 of a
+  Spitter so a full maze ≈ one tower), Spitter still 40, `killBounty 6`. Corpses are now DECORATIVE
+  + passive income (they still rot → biomass) — they no longer block or become buildable.
+- **Fixed-entrance labyrinth:** `CFG.gates` (E,W,N,S border tiles); `openGates()` opens them in
+  order as waves escalate (1→2→4). `spawnEnemy` picks a random open, reachable gate. Hive stays
+  the central goal. `drawGates()` draws glowing inward arches at open gates.
+- **Build palette (bottom-center):** `paletteBtns()` = [HEDGE 5◈][SPITTER 40◈]; tapping toggles
+  `buildMode`; tapping a field tile places (brush stays sticky). `placeHedge`/`placeUnit` spend
+  biomass, feedback on NEED BIOMASS / CAN'T BLOCK PATH. `drawPalette()` renders buttons + a
+  green/red build cursor under the pointer.
+- **Placement seal rule:** `tryPlaceBlock(c,r)` blocks only if EVERY open gate keeps a route to the
+  Hive (`gatesReachable`), never on Hive/gate tiles — so you wall lanes into long routes but can't
+  trap. (Replaces the generic sideHasPath check for player builds.)
+- **Hedge render:** `drawHedges()` = merged topiary (autotile-lite: round only outer corners,
+  extend 1px over shared edges so contiguous tiles read as one continuous hedge; base shadow +
+  dappled top light). `seedLabyrinth()` pre-places 3 concentric square rings around the Hive with
+  a one-side gap that rotates E→S→W (corkscrew inward) — reads as a labyrinth on load, ~102 hedge
+  tiles, all 4 gates verified reachable.
+- **Retired as core (code kept, dead):** corpse tap-menu removed; `mutate`/FEAST/`spawnWarden`/
+  `rebuildWebs` (early-returns) no longer wired; tower tap-menu trimmed to SALVAGE only.
+- Verified via preview_eval (page reloaded — static file, NO HMR): labyrinth seeds + all gates
+  reachable; hedge/unit place with correct cost; Hive/gate/broke placements rejected; seal rule
+  refuses trapping tiles (all gates stay reachable); a lone scav winds the full labyrinth and
+  reaches center at ~frame 1549 (~26s, NOT trapped); 600-frame run + full draw throws nothing;
+  console clean. Determinism (no RNG in pathing) + single-file fast-load intact.
+**Backlog (deferred polish):** drag-to-paint walls; ghost/red drag preview; 47-tile blob autotile
+art; path-length DoT reward; sell/remove hedges; rip out dead FEAST/mutate/web code; rework boons
+& onboarding text that still reference mutate/rot; balance pass (kill bounty vs wall/tower costs);
+gate-escalation banners. Then: Mike playtests the new loop.
+
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
 attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/
