@@ -303,6 +303,7 @@ let enemies = [], corpses = [], towers = [], projectiles = [], clouds = [], part
 let blocked = null, flow = null;
 let web = [], webStrands = [], lastStructSig = -1; // DR-#022 spiderweb (superseded by DR-#023 placed hedges)
 let hedge = [];            // DR-#023: hedge[r][c] = player-placed maze wall (blocks + renders as topiary)
+let hedgePaid = [];        // DR-#025 C5: true only for hedges the player paid for (seeded ones refund nothing)
 let buildMode = null;      // DR-#023: null | 'hedge' | 'spitter' — active build brush from the palette
 let shake = 0, menu = null; // menu = {corpse}
 let firstMutateDone = false, onboardT = 0;
@@ -425,14 +426,15 @@ function bumpDailyStreak(){
 }
 function dailyStreakMult(){ return 1 + Math.min(save.dailyStreak-1, 6)*0.05; } // +5%/day, capped +30%
 
-const BOONS = [
-  { id:"acid",   txt:"ACID GLANDS",     sub:"+30% Spitter damage",        apply:r=>r.spitDmg+=0.30 },
-  { id:"mire",   txt:"PRESERVING MIRE", sub:"corpses rot 5s slower",      apply:r=>r.rotBonus+=5 },
+const BOONS = [ // DR-#026 C7: reworked to the buy-and-place loop (Zombie/Grabber/Hedge), no dead Spore/Rootmass boons
+  { id:"acid",   txt:"ACID GLANDS",     sub:"+30% Zombie bite damage",    apply:r=>r.spitDmg+=0.30 },
+  { id:"mire",   txt:"PRESERVING MIRE", sub:"corpses rot 5s slower (more biomass)", apply:r=>r.rotBonus+=5 },
   { id:"marrow", txt:"RICH MARROW",     sub:"+4 biomass per kill",        apply:r=>r.killBonus+=4 },
   { id:"air",    txt:"HEAVY AIR",       sub:"Sweepers move 25% slower",   apply:r=>r.sweepSlow+=0.25 },
-  { id:"linger", txt:"LINGERING SPORES",sub:"clouds last +2s",            apply:r=>r.cloudT+=2 },
-  { id:"hide",   txt:"THICK HIDE",      sub:"new towers +40 HP",          apply:r=>r.towerHp+=40 },
-  { id:"roots",  txt:"DEEP ROOTS",      sub:"Rootmass radius +30%",       apply:r=>r.rootR+=0.30 },
+  { id:"reach",  txt:"GRASPING REACH",  sub:"+35% Grabber slow radius",   apply:r=>r.grabR+=0.35 },
+  { id:"hide",   txt:"THICK HIDE",      sub:"new Zombies +40 HP",         apply:r=>r.towerHp+=40 },
+  { id:"choke",  txt:"CHOKEHOLD",       sub:"+15% Grabber slow strength", apply:r=>r.grabSlow+=0.15 },
+  { id:"thorn",  txt:"THORNED HEDGES",  sub:"Hedges cost 2◈ (from 5◈)",   apply:r=>r.hedgeDisc+=3 },
   { id:"glut",   txt:"GLUT",            sub:"+50 biomass right now",      apply:r=>{ biomass+=50; } }
 ];
 const LORE = [
@@ -457,6 +459,7 @@ const END_QUIPS_LOSE = ["they brought bleach. this time it worked.","death is ju
 
 function newRunMods(){
   return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
+    grabR:0, grabSlow:0, hedgeDisc:0, // DR-#026 C7: grabber radius / slow-strength / hedge discount boons
     enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[],
     abil: ["overgrowth","bloom","pheromone"].filter(id=>tier(id)>0).map(id=>({id, cd:0})) };
 }
@@ -603,11 +606,13 @@ function tryPlaceBlock(c,r){
 }
 
 /* DR-#023 build actions — spend biomass to place a hedge wall or raise a Spitter unit. */
+function hedgeCostNow(){ return Math.max(2, CFG.hedgeCost - (run?run.hedgeDisc:0)); } // DR-#026 C7: THORNED HEDGES boon
 function placeHedge(c,r){
   const [x,y]=tileToXY(c,r);
-  if(biomass < CFG.hedgeCost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
+  const hc = hedgeCostNow();
+  if(biomass < hc){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
   if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"KEEP A 2-WIDE PATH","#e3d34e"); return false; }
-  biomass -= CFG.hedgeCost; hedge[r][c]=true; firstMutateDone=true;
+  biomass -= hc; hedge[r][c]=true; hedgePaid[r][c]=true; firstMutateDone=true;
   burst(x,y,"#5f9e52",7); SFX.squelch();
   return true;
 }
@@ -618,9 +623,9 @@ function placeUnit(c,r,type){
   if(reabsorbCD>0){ SFX.deny(); popup(x,y-12,"REABSORBING "+Math.ceil(reabsorbCD)+"s","#c99bd8"); return false; }
   const full = CFG.towers[type].cost;
   const grow = !!(hedge[r] && hedge[r][c]);            // DR-#024: growing an existing hedge into a zombie
-  const cost = grow ? full - CFG.hedgeCost : full;     // discount — the hedge is already paid for
+  const cost = grow ? full - (hedgePaid[r][c]?hedgeCostNow():0) : full; // discount only if the hedge was paid for
   if(biomass < cost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
-  if(grow){ hedge[r][c]=false; }                       // tile stays blocked; swap hedge → zombie
+  if(grow){ hedge[r][c]=false; hedgePaid[r][c]=false; } // tile stays blocked; swap hedge → zombie
   else if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"KEEP A 2-WIDE PATH","#e3d34e"); return false; }
   biomass -= cost;
   const thp = 60 + (run?run.towerHp:0);
@@ -864,6 +869,7 @@ function newRun(){
   enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#023 placed maze walls
+  hedgePaid = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#025 C5
   web = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   webStrands = []; lastStructSig = -1; buildMode = null;
   rebuildFlow();
@@ -1020,7 +1026,7 @@ function update(){
     let strangled = false, slowMul = 1; // DR-#025 B1: grabber zombies contribute their own slow
     for(const t of towers){
       if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*(1+run.rootR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul,1-CFG.towers.rootmass.slow); if(t.tier===1) strangled=true; }
-      else if(t.type==="grabber" && dist2(e,t) < sq(CFG.towers.grabber.range*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul,1-CFG.towers.grabber.slow); }
+      else if(t.type==="grabber" && dist2(e,t) < sq(CFG.towers.grabber.range*(1+run.grabR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul, Math.max(0.15, 1-CFG.towers.grabber.slow-run.grabSlow)); }
     }
     if(strangled) e.hp -= 8*DT*meta.dmg;
     let spd = e.spd * CFG.tile * slowMul;
@@ -1909,7 +1915,7 @@ function drawGrabTendrils(t){
 /* DR-#023: bottom-center build palette. */
 function paletteBtns(){
   const w=138,h=58,gap=14,y=H-h-14, total=w*3+gap*2, x0=W/2-total/2;
-  return [ {x:x0, y, w, h, mode:"hedge", label:"HEDGE", cost:CFG.hedgeCost, unit:false},
+  return [ {x:x0, y, w, h, mode:"hedge", label:"HEDGE", cost:hedgeCostNow(), unit:false},
            {x:x0+(w+gap), y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
            {x:x0+(w+gap)*2, y, w, h, mode:"grabber", label:"GRABBER", cost:CFG.towers.grabber.cost, unit:true} ]; // DR-#025 B1
 }
@@ -1933,7 +1939,7 @@ function drawPalette(){
   if(buildMode && ptrY>TOP){
     const [c,r]=xyToTile(ptrX,ptrY);
     if(inGrid(c,r)){
-      const cost = buildMode==="hedge"?CFG.hedgeCost:CFG.towers[buildMode].cost;
+      const cost = buildMode==="hedge"?hedgeCostNow():CFG.towers[buildMode].cost;
       const cool = buildMode!=="hedge" && cooling;
       const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && biomass>=cost && !cool;
       ctx.strokeStyle = ok?"rgba(155,224,127,0.9)":"rgba(224,96,96,0.9)"; ctx.lineWidth=2.5;
@@ -2010,24 +2016,8 @@ function draw(){
     if(k.name && rotP > 0.55){ ctx.fillStyle="rgba(180,160,130,0.85)"; ctx.font="9px monospace"; ctx.textAlign="center"; ctx.fillText(k.name,x,y-28); }
     ctx.restore();
   }
-  // one-time rot-ring teaching nudge: anchor to the lower starter corpse, point at its ring
-  if(rotTipT>0 && corpses.length){
-    const k=corpses[corpses.length-1], [x,y]=tileToXY(k.c,k.r);
-    const a=Math.min(1,rotTipT/1.5)*Math.min(1,(9-rotTipT)/0.6); // fade in and out
-    ctx.save(); ctx.globalAlpha=Math.max(0,a);
-    const tw=196, tx=Math.max(tw/2+6,Math.min(W-tw/2-6,x)), ty=y+44;
-    ctx.fillStyle="rgba(14,18,20,0.92)"; ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(tx-tw/2,ty,tw,40,7);else ctx.rect(tx-tw/2,ty,tw,40); ctx.fill();
-    ctx.strokeStyle="rgba(143,217,168,0.7)"; ctx.stroke();
-    ctx.fillStyle="#8fd9a8"; ctx.textAlign="center"; ctx.font="bold 11px monospace";
-    ctx.fillText("the green ring = rot timer", tx, ty+16);
-    ctx.fillStyle="#b8c2cc"; ctx.font="10px monospace";
-    ctx.fillText("let it empty for biomass, or mutate now", tx, ty+30);
-    // little pointer line to the ring
-    ctx.strokeStyle="rgba(143,217,168,0.5)"; ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(x,y+20); ctx.stroke();
-    ctx.restore();
-  }
-  // one-time evolve nudge after first tower is built
-  if(evolveTipT>0 && evolveTipTower){
+  // DR-#026 C7: retired the rot-ring + evolve/devour teaching nudges (referenced mutate/rot, never fire post-pivot)
+  if(false && evolveTipT>0 && evolveTipTower){
     const a=Math.min(1,evolveTipT/1.2)*Math.min(1,(6-evolveTipT)/0.5);
     ctx.save(); ctx.globalAlpha=Math.max(0,a);
     const tw=308, x=evolveTipTower.x, y=evolveTipTower.y;
@@ -2060,7 +2050,7 @@ function draw(){
     if(useZombie){
       // grabber: persistent snare-radius aura (readability tell — this zone slows) under the sprite
       if(isGrab){
-        const aR = CFG.towers.grabber.range*CFG.tile;
+        const aR = CFG.towers.grabber.range*(1+(run?run.grabR:0))*CFG.tile;
         ctx.save();
         ctx.globalAlpha = 0.10+0.04*Math.sin(t.pulse*2.0);
         ctx.fillStyle = "#e6b072"; ctx.beginPath(); ctx.arc(t.x,t.y,aR,0,6.283); ctx.fill();
@@ -2423,12 +2413,13 @@ function drawMenu(){
 }
 function drawPrep(){
   ctx.textAlign="center";
-  if(!firstMutateDone && corpses.length>0){
-    const k = corpses[0]; const [kx,ky]=tileToXY(k.c,k.r);
+  if(!firstMutateDone){
+    // DR-#026 C7: teach the build palette (corpses are decorative now — the player builds from the palette)
     const bob = 8*Math.sin(perfNow*4);
-    ctx.fillStyle="#9be07f"; ctx.font="bold 28px monospace";
-    ctx.fillText(TAP_WORD+" A CORPSE", kx, ky-52+bob);
-    ctx.fillText("▼", kx, ky-30+bob);
+    const py = H - 58 - 14 - 30 + bob; // just above the palette buttons
+    ctx.fillStyle="#9be07f"; ctx.font="bold 22px monospace";
+    ctx.fillText("PICK A BRUSH, THEN "+TAP_WORD.toUpperCase()+" THE FIELD TO BUILD", W/2, py);
+    ctx.fillText("▼", W/2, py+22);
   } else {
     ctx.fillStyle="rgba(14,18,20,0.9)"; ctx.fillRect(W/2-120,TOP+8,240,58);
     ctx.strokeStyle="#8fd9a8"; ctx.lineWidth=2; ctx.strokeRect(W/2-120,TOP+8,240,58); ctx.lineWidth=1;
