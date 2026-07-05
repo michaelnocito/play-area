@@ -503,18 +503,40 @@ function rebuildFlow(){
 }
 let flowDist = null;
 
-/* Anti-boxing: try to block tile; if any edge spawn tile loses its path, keep it walkable (trampled). */
+/* DR-#021 maze rule: a placement is legal as long as EACH edge still keeps at least one
+   open tile that can reach the Hive. This lets the player wall off lanes and force long
+   serpentine routes (real mazing) while guaranteeing enemies can always path in from any
+   side — no full seal, no trapped mobs. Replaces DR-#001's far stricter "every edge tile
+   must keep its path", which is why building never created chokepoints (the "too free" feel). */
+function sideHasPath(dist){
+  const R=CFG.rows, C=CFG.cols;
+  let top=false,bot=false,left=false,right=false;
+  for(let c=0;c<C;c++){ if(!blocked[0][c]&&dist[0][c]!==Infinity)top=true; if(!blocked[R-1][c]&&dist[R-1][c]!==Infinity)bot=true; }
+  for(let r=0;r<R;r++){ if(!blocked[r][0]&&dist[r][0]!==Infinity)left=true; if(!blocked[r][C-1]&&dist[r][C-1]!==Infinity)right=true; }
+  return top&&bot&&left&&right;
+}
 function tryBlock(c,r){
   blocked[r][c] = true;
   const res = computeFlow(blocked);
-  let ok = true;
-  for(let i=0;i<CFG.cols;i++){ if(!blocked[0][i] && res.dist[0][i]===Infinity){ ok=false; break; } if(!blocked[CFG.rows-1][i] && res.dist[CFG.rows-1][i]===Infinity){ ok=false; break; } }
-  if(ok) for(let i=0;i<CFG.rows;i++){ if(!blocked[i][0] && res.dist[i][0]===Infinity){ ok=false; break; } if(!blocked[i][CFG.cols-1] && res.dist[i][CFG.cols-1]===Infinity){ ok=false; break; } }
-  if(!ok){ blocked[r][c] = false; return false; }
+  if(!sideHasPath(res.dist)){ blocked[r][c] = false; return false; }
   flow = res.flow; flowDist = res.dist;
   return true;
 }
 function unblock(c,r){ blocked[r][c] = false; rebuildFlow(); }
+
+/* DR-#021 wall collision: keep a walking body from penetrating a blocked tile, resolved
+   per-axis so it slides along a wall instead of squeezing diagonally through a 1-tile gap
+   (Defense Grid "no corner-cutting"). Outside the grid + the Hive read as open. */
+function solidAt(px,py){
+  const c=Math.floor(px/CFG.tile), r=Math.floor((py-TOP)/CFG.tile);
+  if(!inGrid(c,r)) return false;
+  return blocked[r][c];
+}
+const WALL_MARG = 12; // body half-width for wall collision (< tile/2 so real 1-wide corridors stay passable)
+function moveWithWalls(e, mx, my){
+  if(mx!==0 && !solidAt(e.x + mx + (mx>0?WALL_MARG:-WALL_MARG), e.y)) e.x += mx;
+  if(my!==0 && !solidAt(e.x, e.y + my + (my>0?WALL_MARG:-WALL_MARG))) e.y += my;
+}
 
 /* ===== Entities ===== */
 let nextId = 1;
@@ -552,7 +574,9 @@ function dropCorpse(x,y){
   const rot = meta.rot + (run?run.rotBonus:0);
   const ex = corpses.find(k=>k.c===c&&k.r===r);
   if(ex){ ex.t = rot; ex.maxT = rot; ex.stack++; popup(x,y,ex.stack>=3?"MASS GRAVE x"+ex.stack:"+STACKED","#9be07f"); return; }
-  const walk = !blocked[r][c] ? tryBlock(c,r) : false;
+  const wasOpen = !blocked[r][c];
+  const walk = wasOpen ? tryBlock(c,r) : false;
+  if(wasOpen && !walk) popup(x,y-14,"PATH STAYS OPEN","#e3d34e"); // DR-#021: would fully seal → drops trampled
   const cName = HUMAN_NAMES[Math.floor(Math.random()*HUMAN_NAMES.length)];
   corpses.push({ c, r, t: rot, maxT: rot, trampled: !walk, stack:1, name:cName });
 }
@@ -892,7 +916,7 @@ function update(){
         if(f){ const [nx,ny]=tileToXY(ec+f[0],er+f[1]); dx=nx-e.x; dy=ny-e.y; }
         else { const [hx,hy]=tileToXY(12.5,8.5); dx=hx-e.x; dy=hy-e.y; }
         const m=Math.hypot(dx,dy)||1;
-        e.x += dx/m*spd*DT; e.y += dy/m*spd*DT;
+        moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
       }
       // incinerator: burns adjacent towers; detonates spore clouds
       if(e.type==="incin"){
@@ -1613,6 +1637,26 @@ function drawMotes(){
 }
 
 /* ===== Render ===== */
+/* DR-#021 route overlay: faint directional chevrons on every walkable tile so the player
+   reads the lanes the maze funnels enemies through (research: persistent flow overlay). */
+function drawFlowOverlay(){
+  if(!flow || (mode!=="play" && mode!=="prep")) return;
+  ctx.save();
+  ctx.strokeStyle="rgba(143,217,168,0.12)"; ctx.lineWidth=1.4; ctx.lineCap="round";
+  ctx.beginPath();
+  const L=7, H2=4;
+  for(let r=0;r<CFG.rows;r++)for(let c=0;c<CFG.cols;c++){
+    if(blocked[r][c]||isHive(c,r)) continue;
+    const f=flow[r][c]; if(!f) continue;
+    const [x,y]=tileToXY(c,r); const ax=f[0], ay=f[1];
+    const hx=x+ax*L, hy=y+ay*L;
+    ctx.moveTo(x-ax*L, y-ay*L); ctx.lineTo(hx,hy);
+    ctx.lineTo(hx-ax*H2-ay*H2, hy-ay*H2+ax*H2);
+    ctx.moveTo(hx,hy); ctx.lineTo(hx-ax*H2+ay*H2, hy-ay*H2-ax*H2);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
 function draw(){
   ctx.save();
   if(shake>0){ ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); }
@@ -1638,6 +1682,7 @@ function draw(){
 
   drawEnvironment();
   drawHive();
+  drawFlowOverlay(); // DR-#021: show the maze lanes under the entities
   // ground stains (fading death marks)
   for(const s of stains){
     ctx.globalAlpha=Math.min(0.35, s.t/5*0.35);

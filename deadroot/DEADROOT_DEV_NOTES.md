@@ -577,6 +577,42 @@ a corpse eaten can't also be raised — contested-resource choice). Deadroot's v
 corpse is now contested 3 ways (mutate-new / feast-heal / feast-upgrade / rot) — watch the
 economy; then Knight→troop etc., then fold Rootmass/Spore/Node into Spitter feast "mods".
 
+## DR-#021 — MAZE foundation: buildable walls + no-squeeze collision + route overlay (2026-07-05)
+Mike: "enemies are so free it's hard to strategize" — wanted corpse placement to build a real
+maze (hedge-maze / spiderweb) so where you drop is a strategic call. Researched maze-TD design
+(Red Blob flow-field, Gemcraft/Desktop TD open mazing, Defense Grid "no corner-cutting", spider-
+web bridging geometry — see the session). Root cause found: the design was always "corpses block
+= organic mazing," but two rules made it feel free. Confirmed 3 big calls with Mike (all my recs):
+reject-the-seal wall rule, hard-wall webbing, foundation-first slice. This is the foundation slice;
+**webbing (auto-strands bridging nearby corpses into a hedge) is the next slice.**
+- **Relaxed the anti-box rule (the #1 fix).** DR-#001's `tryBlock` rejected a block if *any* edge
+  tile lost its path → you literally couldn't close a single lane, so walls never became choke-
+  points. New `sideHasPath(dist)` invariant: a placement is legal as long as EACH of the 4 edges
+  keeps ≥1 open tile that reaches the Hive. You can now wall off lanes and force long serpentine
+  routes; the game still guarantees enemies can always path in from any side (no full seal, no
+  trapped mobs). `tryBlock` now just calls `sideHasPath`. Verified: a 14-tall interior wall builds
+  fully (was rejected before); walling a whole edge column rejects exactly the tile that would seal
+  that side (17 built / 1 rejected).
+- **No-corner-cutting collision.** Enemy movement was continuous with NO wall collision — they
+  followed the flow vector and clipped diagonally through 1-tile gaps ("too free"). Added
+  `solidAt(px,py)` (blocked-tile test; outside-grid + Hive read open) + `moveWithWalls(e,mx,my)`
+  which resolves X and Y independently with a `WALL_MARG=12` body half-width, so a body slides
+  along a wall instead of squeezing a corner (Defense Grid rule). Hive-walking enemies now move via
+  `moveWithWalls`. Sweepers left on their own pathStep (target corpses, not the Hive) to keep scope
+  tight. Verified: body shoved into a wall moves 0px, slides 25px along it, moves 20px in the open.
+- **Route overlay** (`drawFlowOverlay`, drawn under entities after `drawHive`): faint lime
+  directional chevrons on every walkable tile so the player reads the lanes the maze funnels
+  enemies through (research: persistent flow overlay is the single highest-value readability move).
+  Draws only in play/prep, one batched stroke (~468 tiles, negligible). Skips blocked + Hive tiles.
+- **Teaching feedback:** dropping a corpse that WOULD fully seal now shows "PATH STAYS OPEN" so the
+  player learns the rule instead of silently getting a trampled corpse.
+- Determinism (fixed 60Hz) + CG single-file fast-load intact; no new assets. Verified via
+  preview_eval (screenshot tooling still times out on this canvas — known); console clean, no parse
+  errors. All wrapped as DR-#021 with code comments.
+**Next:** the spiderweb slice — corpses within ~2 tiles auto-grow a strand that hard-blocks the gap
+(bridging scattered drops into a hedge), subject to the same seal rule; then live drag/red-preview
+polish + a path-length damage reward (DoT along route) if Mike wants more strategic depth.
+
 ## SPR-#003 — Thief → scav (human attacker vertical slice) (2026-07-05)
 The other half of the flip: first human attacker wired. "The Living vs The Dead" —
 attackers are a fantasy human war-host (alternate-world lore lets Thief/Knight/Barbarian/
