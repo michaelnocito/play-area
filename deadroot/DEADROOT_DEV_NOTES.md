@@ -930,3 +930,33 @@ distinct (R>G>B), hedge avg grey-brown, seed = ~2 tiles & random, deselect switc
 **Still needs Mike's feel:** the balance numbers (1–4) are a first pass — he should replay and we
 re-tune off the new difficulty. The maze-seed reconciliation (5) is my synthesis of his two ideas;
 if he wanted literally one hedge OR a full random maze, easy to dial `stubs`/`len` in seedLabyrinth.
+
+## DR-#034 — CASTLE WALLS + playtest triage batch 2 (2026-07-06)
+Three new tracker inbox items, one flagged BLOCKER by Mike:
+
+1. **BLOCKER — "screen too busy, hard to decide where to build. Do away with hedges. Split the
+   screen into 4 distinct paths, like fighting on top of castle walls, all 4 converging on the
+   hive opening."** Shipped: permanent `rock` terrain grid — the whole field is castle stone
+   EXCEPT four 4-wide lanes (rows 7–10 east-west, cols 11–14 north-south) and a 6×6 plaza around
+   the Hive. Lanes line up with the existing E/W/N/S gates, so wave escalation (right → flank →
+   all sides) is unchanged. Rock is never buildable, never unblocked, and corpses can't drop on
+   it. `drawRocks()` renders dark stone with a lit parapet + crenellation teeth on every edge
+   facing a lane, so the four paths read instantly. HEDGES RETIRED: seedLabyrinth removed,
+   HEDGE brush pulled from the palette (now ZOMBIE + GRABBER), THORNED HEDGES boon removed
+   (hedge functions left dormant in code in case "for now" gets revisited). New run banner:
+   "DEFEND THE FOUR WALLS". Strategy is now lane defense: choke lanes with units (2-wide-path
+   rule still enforced) instead of free-form mazing.
+2. **Bug — on-screen text says "pick a brush"** (dev jargon for monster/building choices).
+   Onboarding line is now "PICK A UNIT, THEN TAP/CLICK A PATH TO BUILD".
+3. **Bug — death-recap screen shake is persistent, hard to read.** Root cause: `update()`
+   early-returned on the end screens BEFORE the shake decay line, so the death `shakeIt(8)`
+   froze on screen forever. Decay now runs before the early return; the recap settles in
+   well under a second.
+
+Verified in preview (dev build): all 4 gates open + reachable (flow dist 8–12), 304 rock /
+164 lane tiles, enemies of every type walk 900 frames with zero rock incursions, placement
+succeeds on lanes and is rejected on rock, palette shows 2 buttons, shake decays to 0 on the
+over screen, console clean. Screenshot eyeballed: cross-of-4-lanes composition reads clean.
+
+**Needs Mike's feel:** lane width (4 tiles) and plaza size are first guesses; balance from
+DR-#033 now plays on lanes instead of open field, so expect a re-tune pass after his playtest.

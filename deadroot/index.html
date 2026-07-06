@@ -303,6 +303,7 @@ let waveIdx = 0, endlessN = 0, endless = false;
 let prepT = 0, spawnQ = [], spawnT = 0;
 let enemies = [], corpses = [], towers = [], projectiles = [], clouds = [], particles = [], popups = [];
 let blocked = null, flow = null;
+let rock = [];             // DR-#034: permanent castle-wall terrain — 4 lanes converge on the Hive; never buildable, never unblocked
 let hedge = [];            // DR-#023: hedge[r][c] = player-placed maze wall (blocks + renders as topiary)
 let hedgePaid = [];        // DR-#025 C5: true only for hedges the player paid for (seeded ones refund nothing)
 let buildMode = null;      // DR-#023: null | 'hedge' | 'spitter' — active build brush from the palette
@@ -437,7 +438,6 @@ const BOONS = [ // DR-#026 C7: reworked to the buy-and-place loop (Zombie/Grabbe
   { id:"reach",  txt:"GRASPING REACH",  sub:"+35% Grabber slow radius",   apply:r=>r.grabR+=0.35 },
   { id:"hide",   txt:"THICK HIDE",      sub:"new Zombies +40 HP",         apply:r=>r.towerHp+=40 },
   { id:"choke",  txt:"CHOKEHOLD",       sub:"+15% Grabber slow strength", apply:r=>r.grabSlow+=0.15 },
-  { id:"thorn",  txt:"THORNED HEDGES",  sub:"Hedges cost 2◈ (from 5◈)",   apply:r=>r.hedgeDisc+=3 },
   { id:"glut",   txt:"GLUT",            sub:"+50 biomass right now",      apply:r=>{ biomass+=50; } }
 ];
 const LORE = [
@@ -537,7 +537,7 @@ function tryBlock(c,r){
   flow = res.flow; flowDist = res.dist;
   return true;
 }
-function unblock(c,r){ blocked[r][c] = false; rebuildFlow(); }
+function unblock(c,r){ if(rock[r]&&rock[r][c]) return; blocked[r][c] = false; rebuildFlow(); } // DR-#034: castle walls never open
 
 /* DR-#021 wall collision: keep a walking body from penetrating a blocked tile, resolved
    per-axis so it slides along a wall instead of squeezing diagonally through a 1-tile gap
@@ -662,7 +662,7 @@ function spawnEnemy(type){
 }
 function dropCorpse(x,y){
   const [c,r] = xyToTile(x,y);
-  if(!inGrid(c,r) || isHive(c,r)) return;
+  if(!inGrid(c,r) || isHive(c,r) || (rock[r]&&rock[r][c])) return; // DR-#034: no corpses on the walls
   // stack onto existing corpse tile -> just refresh & bonus
   const rot = meta.rot + (run?run.rotBonus:0);
   const ex = corpses.find(k=>k.c===c&&k.r===r);
@@ -781,26 +781,19 @@ function pathStep(fc,fr,tc,tr){
    to start, draw their own maze, don't make them undo too much" + "random maze pattern each level for
    variety"). Reconciled: 1–2 short random wall stubs (different every run) so there's a seed of variety
    to build around, but almost the whole board is the player's to draw. Was: 2 full concentric rings. */
-function seedLabyrinth(){
-  const {c0,c1,r0,r1} = CFG.hive;
-  const midC=(c0+c1)/2, midR=(r0+r1)/2;
-  const put=(c,r)=>{ // place a free seed hedge only if it keeps every gate on a 2-wide route to the Hive
-    if(!inGrid(c,r)||isHive(c,r)||gateAt(c,r)||blocked[r][c]) return false;
-    blocked[r][c]=true;
-    if(!gatesWideReachable()){ blocked[r][c]=false; return false; }
-    hedge[r][c]=true; return true; // hedgePaid stays false → seeded walls are free, no refund on remove
-  };
-  const stubs = 1 + Math.floor(Math.random()*2); // 1–2 stubs
-  let placed=0, tries=0;
-  while(placed<stubs && tries++<40){
-    const horiz = Math.random()<0.5;
-    const len = 2 + Math.floor(Math.random()*2);                     // 2–3 tiles long
-    const c = Math.round(midC + (Math.random()<0.5?-1:1)*(3+Math.floor(Math.random()*4)));
-    const r = Math.round(midR + (Math.random()<0.5?-1:1)*(2+Math.floor(Math.random()*4)));
-    let any=false;
-    for(let k=0;k<len;k++){ if(put(horiz?c+k:c, horiz?r:r+k)) any=true; }
-    if(any) placed++;
-  }
+/* DR-#034 CASTLE WALLS (playtest blocker: "screen too busy, hard to decide where to build —
+   do away with hedges, split the screen into 4 distinct paths, like fighting on top of castle
+   walls, all 4 walls converging on the hive opening"). The whole field is now permanent rock
+   EXCEPT four 4-wide lanes (one per gate) and a plaza around the Hive. The player defends the
+   lanes; hedges are retired (seedLabyrinth removed, hedge brush pulled from the palette). */
+const LANE = { rTop:7, rBot:10, cLeft:11, cRight:14, plazaC0:10, plazaC1:15, plazaR0:6, plazaR1:11 };
+function onLane(c,r){
+  return (r>=LANE.rTop && r<=LANE.rBot) || (c>=LANE.cLeft && c<=LANE.cRight) ||
+         (c>=LANE.plazaC0 && c<=LANE.plazaC1 && r>=LANE.plazaR0 && r<=LANE.plazaR1);
+}
+function buildCastleWalls(){
+  rock = Array.from({length:CFG.rows},(_,r)=>Array.from({length:CFG.cols},(_,c)=>!onLane(c,r)));
+  for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++) if(rock[r][c]) blocked[r][c]=true;
   rebuildFlow();
 }
 
@@ -826,9 +819,8 @@ function newRun(){
   rotTipT=0; evolveTipT=0;
   save.plays=(save.plays|0)+1; persist();
   genDecor(); // fresh treeline + growing bone piles each run
-  // DR-#023: seed a concentric labyrinth (rotating gaps) the player extends; no free defenders
-  seedLabyrinth();
-  showBanner("GROW YOUR LABYRINTH","HEDGE walls lanes · ZOMBIE bites · GRABBER slows the horde");
+  buildCastleWalls(); // DR-#034: 4 fixed lanes converge on the Hive
+  showBanner("DEFEND THE FOUR WALLS","every path leads to the Hive · ZOMBIE bites · GRABBER slows");
   mode = "prep"; prepT = 16; // generous first prep to lay the first maze
   CG.gameplayStart();
 }
@@ -920,8 +912,8 @@ function takeSecondWind(){
 /* ===== Update (fixed 60Hz) ===== */
 const DT = 1/60;
 function update(){
+  if(shake>0) shake = Math.max(0, shake-20*DT); // DR-#034: decay BEFORE the end-screen early return — the death-recap shake used to freeze on screen forever (playtest bug)
   if(mode==="title"||mode==="over"||mode==="victory"||mode==="secondwind") return;
-  if(shake>0) shake = Math.max(0, shake-20*DT);
   if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
   if(overgrowthT>0) overgrowthT -= DT;
   if(pherT>0) pherT -= DT;
@@ -1814,6 +1806,30 @@ function drawFlowOverlay(){
   ctx.stroke();
   ctx.restore();
 }
+/* DR-#034: castle-wall rock — dark stone mass with a lit parapet edge wherever it borders a
+   walkable lane, so the four paths read instantly. Deterministic per-tile detail (no flicker). */
+function drawRocks(){
+  const T=CFG.tile;
+  for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){
+    if(!rock[r] || !rock[r][c]) continue;
+    const x=c*T, y=TOP+r*T;
+    ctx.fillStyle="#1c2026"; ctx.fillRect(x,y,T,T);                      // stone body
+    const h1=hedgeHash(c*13+r, r*7-c);                                    // reuse deterministic hash
+    if(h1<0.5){ ctx.fillStyle="rgba(60,70,84,0.25)";                      // block face variation
+      ctx.fillRect(x+3+h1*10, y+3+hedgeHash(c-r,r+c)*10, 14, 9); }
+    // mortar seams (brick whisper)
+    ctx.strokeStyle="rgba(0,0,0,0.35)"; ctx.lineWidth=1;
+    ctx.strokeRect(x+0.5,y+0.5,T-1,T-1);
+    // parapet: lit edge + crenellation teeth on sides facing a lane
+    const open=(rr,cc)=> inGrid(cc,rr) && !rock[rr][cc];
+    ctx.fillStyle="#39424f";
+    if(open(r-1,c)){ ctx.fillRect(x,y,T,3);       for(let k=0;k<2;k++) ctx.fillRect(x+5+k*20, y, 10, 7); }
+    if(open(r+1,c)){ ctx.fillRect(x,y+T-3,T,3);   for(let k=0;k<2;k++) ctx.fillRect(x+5+k*20, y+T-7, 10, 7); }
+    if(open(r,c-1)){ ctx.fillRect(x,y,3,T);       for(let k=0;k<2;k++) ctx.fillRect(x, y+5+k*20, 7, 10); }
+    if(open(r,c+1)){ ctx.fillRect(x+T-3,y,3,T);   for(let k=0;k<2;k++) ctx.fillRect(x+T-7, y+5+k*20, 7, 10); }
+  }
+}
+
 /* DR-#023: render placed hedges as merged topiary (autotile-lite: round only outer corners, extend
    1px over shared edges so contiguous tiles read as one continuous hedge wall). */
 function hedgeRect(x,y,w,h,rad){ ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(x,y,w,h,rad); else ctx.rect(x,y,w,h); }
@@ -1932,10 +1948,9 @@ function drawGrabTendrils(t){
 }
 /* DR-#023: bottom-center build palette. */
 function paletteBtns(){
-  const w=138,h=58,gap=14,y=H-h-14, total=w*3+gap*2, x0=W/2-total/2;
-  return [ {x:x0, y, w, h, mode:"hedge", label:"HEDGE", cost:hedgeCostNow(), unit:false},
-           {x:x0+(w+gap), y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
-           {x:x0+(w+gap)*2, y, w, h, mode:"grabber", label:"GRABBER", cost:CFG.towers.grabber.cost, unit:true} ]; // DR-#025 B1
+  const w=138,h=58,gap=14,y=H-h-14, total=w*2+gap, x0=W/2-total/2; // DR-#034: hedge retired — two units
+  return [ {x:x0, y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
+           {x:x0+(w+gap), y, w, h, mode:"grabber", label:"GRABBER", cost:CFG.towers.grabber.cost, unit:true} ]; // DR-#025 B1
 }
 function drawPalette(){
   if(mode!=="play"&&mode!=="prep") return;
@@ -1999,6 +2014,7 @@ function draw(){
   if(mode==="title"){ drawTitle(); ctx.restore(); return; }
 
   drawEnvironment();
+  drawRocks();       // DR-#034: castle walls framing the four lanes
   drawHive();
   drawFlowOverlay(); // DR-#021: show the maze lanes under the entities
   drawGates();       // DR-#023: labyrinth entrances
@@ -2450,7 +2466,7 @@ function drawPrep(){
     const bob = 8*Math.sin(perfNow*4);
     const py = H - 58 - 14 - 30 + bob; // just above the palette buttons
     ctx.fillStyle="#9be07f"; ctx.font="bold 22px monospace";
-    ctx.fillText("PICK A BRUSH, THEN "+TAP_WORD.toUpperCase()+" THE FIELD TO BUILD", W/2, py);
+    ctx.fillText("PICK A UNIT, THEN "+TAP_WORD.toUpperCase()+" A PATH TO BUILD", W/2, py); // DR-#034: "brush" was dev jargon (playtest bug)
     ctx.fillText("▼", W/2, py+22);
   } else {
     ctx.fillStyle="rgba(14,18,20,0.9)"; ctx.fillRect(W/2-120,TOP+8,240,58);
