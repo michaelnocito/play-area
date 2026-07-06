@@ -252,6 +252,18 @@ ring uses tower color; node range ring now shown.
 - `drawTowerIcon` is now a thin wrapper around `drawTowerArt`
 
 ## Backlog / next (v1.1 → submission)
+- **DIFFICULTY — Mike's playtest 2026-07-06 (2 tracker fails, triaged to roadmap):**
+  (1) "Too easy: spam Spitters early and ride them to level 12 — no need for other
+  tower types; we need to encourage strategic use of towers in type, quantity and
+  placement." (2) "Engaging and novel but easy to figure out how to win — maybe start
+  with a random maze pattern each level for variety."
+  Both land on the NEXT planned slice: corpse-maze/hedge-maze pathing so placement =
+  strategy, PLUS per-level randomized maze variation (already roadmapped after
+  DR-#023/#024's fixed labyrinth), PLUS an economy/balance pass that punishes
+  single-tower spam (e.g. escalating cost per duplicate tower type, armor/resist
+  enemy types that hard-counter Spitter-only, or FEAST devour pressure). Fold the
+  balance work into the maze slice so difficulty is tuned against the new pathing,
+  not the old open field.
 - Playtest pass on DR-#011/012: salvage balance, UNSCATHED frequency, combo feel,
   boss bar positioning, damage number spam threshold, tower readability QA.
 - Remaining Category C: mobile QA full playthrough on live URL.
