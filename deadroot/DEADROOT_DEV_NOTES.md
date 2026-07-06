@@ -813,6 +813,22 @@ land (CG fast-load = the whole reason we didn't pick Godot). Can trim frames/opt
 **Next:** Mike eyeballs live — is thief big/clear enough? Then Knight→troop etc., then the
 Spitter mod-tree tower rework (4 towers → 1 zombie + visual mods).
 
+## Playtest feedback triage (2026-07-05, from playtest-tracker DR-#001 run)
+Three failed checklist items pulled from the tracker, triaged to roadmap:
+1. **"Getting closer" (run 0, vague)** — no concrete ask; parked, no action needed unless
+   Mike follows up with specifics.
+2. **"Too easy — spam one tower type (spitters) straight to wave 12, no reason to vary type/
+   quantity/placement"** — pre-dates the maze pivot (DR-#023→#025), which already forces
+   placement strategy via buy-and-place hedges/zombies/grabbers. Still open: a real balance
+   pass (C8, listed under DR-#026→032 "Not built") confirming the new economy actually
+   rewards varied builds instead of one dominant unit. Needs Mike's playtest feel on the
+   current maze build before tuning blind.
+3. **"Too easy/predictable — suggest a random maze pattern per level"** — same pre-maze-pivot
+   root cause. The seeded labyrinth (DR-#023/#024) is currently fixed, not randomized per
+   level. Roadmapped: consider per-level maze variation (randomized ring gaps/rotation) once
+   the current fixed layout's balance is confirmed with Mike — avoid randomizing on top of
+   an untested economy.
+
 ## SPR-#002 — LORE FLIP: zombies are the TOWERS, humans are the attackers (2026-07-04)
 Mike caught that SPR-#001 put the zombie sprite on the wrong side: "zombies are us, not the
 ones attacking." Correct lore = you are the undead Hive → your risen dead are the TOWERS; the
