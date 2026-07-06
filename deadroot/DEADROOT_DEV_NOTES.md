@@ -896,3 +896,37 @@ only, not shipped).
   extends to the other deadroot enemies it can cover; Phase 2 (Synty, needs Blender scripting)
   covers the rest of the roster. If it doesn't land, tune tint/scale/frame-count in
   `pack_atlas.py` and re-run.
+
+## DR-#033 — playtest triage batch (2026-07-06)
+Six changes from the playtest-tracker (Supabase inbox + failed checklist items, all on deadroot):
+
+1. **Spitters too strong / too easy (fails 3:1, 2:4, 3:2 + inbox note).** Mike: "create a bunch
+   of spitters quickly and ride them to level 12, no need for other tower types" + "scale down
+   their damage." Nerfed SPITTER dmg 13→9 and range 3.3→2.9 (a back-line wall covered too much;
+   placement now matters). Buffed enemy HP so they don't melt: scav 30→42, troop 95→120,
+   incin 65→85, sweeper 75→90. All live-tunable in the `?dev=1` menu — this is a first pass off
+   his feel, expect to re-tune.
+2. **GRABBER "attacks / one-shots" + "looks like a regular zombie" (fails 6:0, 6:1, 6:2).** Root
+   cause: grabber already dealt ZERO damage in code, but it shared the exact green ZOMBIE sprite,
+   so Mike was placing spitters thinking they were grabbers (and spitters one-shot). Fix: made
+   `dmg:0` explicit on the grabber def, and gave the grabber its OWN body — `drawGrabber()`, a
+   squat amber root-sac with a dark maw + grasping arms, never the zombie sprite. Now unmistakable.
+3. **Hedges → rotting wood (fail 6:10).** Mike: "more like rotting wood, grey and dark browns."
+   Recolored `drawHedges()` from leafy green topiary (DR-#031) to grey-brown rotted planks:
+   body #3a3128, dark grain streaks + knots, cool grey top highlight. Verified avg tile (41,39,33).
+4. **Auto-deselect (inbox bug).** "deselecting units should happen automatically when another
+   item/action is selected." Tapping an already-placed unit while a build brush is active now
+   clears the brush and opens that unit's menu instead of silently failing the placement.
+5. **Start with ~one hedge + random maze each run (inbox idea + fail 3:2).** Two asks in tension —
+   "give the player just one hedge to start, draw their own, don't make them undo much" vs "random
+   maze pattern each level for variety." Reconciled in `seedLabyrinth()`: was 2 full concentric
+   rings; now 1–2 short RANDOM wall stubs (different every run), 2-wide-reachability enforced. Light
+   enough to draw your own maze, varied enough to feel fresh. Seeded walls are free (no refund).
+
+Verified headless (reload/no-HMR + eval): grabber snares but deals 0 dmg over 90 frames, amber body
+distinct (R>G>B), hedge avg grey-brown, seed = ~2 tiles & random, deselect switches to unit menu,
+1800-frame mixed run clean, console clean. Parse-check passed.
+
+**Still needs Mike's feel:** the balance numbers (1–4) are a first pass — he should replay and we
+re-tune off the new difficulty. The maze-seed reconciliation (5) is my synthesis of his two ideas;
+if he wanted literally one hedge OR a full random maze, easy to dial `stubs`/`len` in seedLabyrinth.
