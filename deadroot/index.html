@@ -313,6 +313,7 @@ let hedgePaid = [];        // DR-#025 C5: true only for hedges the player paid f
 let buildMode = null;      // DR-#023: null | 'hedge' | 'spitter' — active build brush from the palette
 let shake = 0, menu = null; // menu = {corpse}
 let firstMutateDone = false, onboardT = 0;
+let queenPlaced = false; // DR-#039: the RootQueen is PLACED by the player each run (2x2 = 4 tiles)
 let rotTipT = 0, evolveTipT = 0, evolveTipTower = null; // one-time teaching nudges (rot ring / evolve)
 let dnaEarned = 0;
 /* run-scoped modifiers (boons) + ability state */
@@ -844,6 +845,25 @@ function onFloor(c,r){ return !WALLS.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3])
 // would send the WHOLE raid down one invisible-to-the-player side. Instead each raider picks a
 // side at spawn -- the party streams around both, and the whole burrow is defended space.
 const RAID_SPLIT = [ [8,2], [8,15] ]; // waypoint tiles: mouth of the top / bottom gap
+/* DR-#039 ROOTQUEEN (Mike): the fixed central eye is gone. The player places the RootQueen --
+   she occupies 2x2 (4 tiles), she is what the humans came for, and she is the boss of each
+   level. Placement is the FIRST act of every run; everything (flow field, nearHive, abilities)
+   already reads CFG.hive, so placement just rewrites that rect and rebuilds the flow. */
+function placeQueen(c,r){
+  c = Math.max(0, Math.min(CFG.cols-2, c)); r = Math.max(0, Math.min(CFG.rows-2, r));
+  for(let rr=r; rr<=r+1; rr++) for(let cc=c; cc<=c+1; cc++){
+    if(!inGrid(cc,rr) || blocked[rr][cc] || gateAt(cc,rr)){ SFX.deny(); popup(...tileToXY(c,r),"NEEDS 4 OPEN TILES","#e07f7f"); return false; }
+  }
+  const prev = {...CFG.hive};
+  CFG.hive.c0=c; CFG.hive.r0=r; CFG.hive.c1=c+1; CFG.hive.r1=r+1;
+  rebuildFlow();
+  if(!gatesReachable(flowDist)){ Object.assign(CFG.hive, prev); rebuildFlow(); SFX.deny(); return false; }
+  queenPlaced = true;
+  const [qx,qy]=tileToXY(c,r);
+  bigBurst(qx+CFG.tile/2, qy+CFG.tile/2, "#b088e0", 22); SFX.squelch(); shakeIt(3);
+  showBanner("THE ROOTQUEEN SETTLES","she is what they came for -- she must not fall");
+  return true;
+}
 function buildDungeon(){
   rock = Array.from({length:CFG.rows},(_,r)=>Array.from({length:CFG.cols},(_,c)=>!onFloor(c,r)));
   for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++) if(rock[r][c]) blocked[r][c]=true;
@@ -861,7 +881,7 @@ function newRun(){
   hedgePaid = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#025 C5
   buildMode = null;
   rebuildFlow();
-  firstMutateDone = false; onboardT = 0; menu = null;
+  firstMutateDone = false; onboardT = 0; menu = null; queenPlaced = false; // DR-#039
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
   gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
@@ -1112,7 +1132,7 @@ function update(){
         if(!e.wp && dx===0 && dy===0){
         const f = inGrid(ec,er) ? flow[er][ec] : null;
         if(f){ const [nx,ny]=tileToXY(ec+f[0],er+f[1]); dx=nx-e.x; dy=ny-e.y; }
-        else { const [hx,hy]=tileToXY(12.5,8.5); dx=hx-e.x; dy=hy-e.y; }
+        else { const [hx,hy]=tileToXY((CFG.hive.c0+CFG.hive.c1+1)/2-0.5,(CFG.hive.r0+CFG.hive.r1+1)/2-0.5); dx=hx-e.x; dy=hy-e.y; } // DR-#039 dynamic queen position
         }
         const m=Math.hypot(dx,dy)||1;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
@@ -1349,6 +1369,11 @@ function onTap(x,y){
       const o = cards[i];
       if(x>=o.x-pad&&x<=o.x+o.w+pad&&y>=o.y-pad&&y<=o.y+o.h+pad){ pickBoon(i); return; }
     }
+    return;
+  }
+  // DR-#039: before anything else each run, the tap places the RootQueen (2x2)
+  if((mode==="prep") && !queenPlaced){
+    if(y>TOP){ const [c,r]=xyToTile(x,y); if(placeQueen(c,r)) return; }
     return;
   }
   // speed toggle (bottom-right) — 68px logical box, padded to a real 44px min tap target
@@ -2222,8 +2247,8 @@ function draw(){
   drawEnvironment();
   drawFloor();       // DR-#037: mid-value floor slabs — actors and walls both pop against them
   drawRocks();       // DR-#034/#035: dungeon walls
-  drawHive();
-  drawFlowOverlay(); // DR-#021: show the maze lanes under the entities
+  if(queenPlaced) drawHive();
+  if(queenPlaced) drawFlowOverlay(); // DR-#021 lanes; DR-#039: meaningless until the Queen is placed
   drawGates();       // DR-#023: labyrinth entrances
   drawTraps();       // DR-#035: spike traps (floor layer, under bodies)
   drawDoors();       // DR-#035: breakable doors
@@ -2520,51 +2545,55 @@ function draw(){
   // wave-start flash
   if(waveFlashT>0){ ctx.fillStyle="rgba(255,255,255,"+(waveFlashT/0.15*0.13)+")"; ctx.fillRect(0,0,W,H); }
 }
+/* DR-#039: the ROOTQUEEN — compact, regal, fits her 2x2 (4-tile) footprint. She replaces the
+   old sprawling central eye; she is the boss of each level from the raiders' side. */
 function drawHive(){
   const [x0,y0]=tileToXY(CFG.hive.c0,CFG.hive.r0), [x1,y1]=tileToXY(CFG.hive.c1,CFG.hive.r1);
   const cx=(x0+x1)/2, cy=(y0+y1)/2;
   const hurt = hiveHP/hiveMax;
   const beat = REDUCED_MOTION ? 2.2 : (hurt<0.25?7:2.2);
   const pulse = 1+0.04*Math.sin(perfNow*beat);
-  // bioluminescent ground glow (soft, breathing)
-  const glowR = 92*pulse;
-  const gr = ctx.createRadialGradient(cx,cy,10, cx,cy,glowR);
+  // her glow stays inside her court (~1 tile past her body)
+  const glowR = 54*pulse;
+  const gr = ctx.createRadialGradient(cx,cy,8, cx,cy,glowR);
   const gcol = hurt<0.35 ? "224,90,90" : "150,110,210";
   gr.addColorStop(0,"rgba("+gcol+","+(0.30+0.08*Math.sin(perfNow*beat))+")");
   gr.addColorStop(1,"rgba("+gcol+",0)");
   ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(cx,cy,glowR,0,6.283); ctx.fill();
-  // writhing tendrils radiating outward (animated)
-  ctx.strokeStyle="rgba(150,100,180,0.30)"; ctx.lineWidth=3;
-  for(let i=0;i<10;i++){ const a=i*0.628+0.3+Math.sin(perfNow*0.6+i)*0.08, w=Math.sin(perfNow*1.1+i)*10;
-    ctx.beginPath(); ctx.moveTo(cx,cy);
-    ctx.quadraticCurveTo(cx+Math.cos(a)*60+w, cy+Math.sin(a)*60, cx+Math.cos(a+0.4)*98, cy+Math.sin(a+0.4)*98); ctx.stroke(); }
   ctx.save(); ctx.translate(cx,cy); ctx.scale(pulse,pulse);
-  // body with cel outline
+  // ROOT CROWN: dark root spikes rising behind her
+  ctx.strokeStyle="#241708"; ctx.lineWidth=5; ctx.lineCap="round";
+  for(let i=-2;i<=2;i++){
+    const a=-Math.PI/2+i*0.42, len=26+ (i%2===0?8:0);
+    ctx.beginPath(); ctx.moveTo(Math.cos(a)*18, Math.sin(a)*16);
+    ctx.lineTo(Math.cos(a)*(18+len), Math.sin(a)*(16+len)); ctx.stroke();
+  }
+  ctx.lineCap="butt";
+  // body: royal bulb with cel outline (fits inside 80x80)
   ctx.strokeStyle="rgba(20,10,30,0.85)"; ctx.lineWidth=3;
-  ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(0,0,52,42,0,0,6.283); ctx.fill(); ctx.stroke();
-  ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(0,0,38,30,0,0,6.283); ctx.fill();
-  // pulsing bioluminescent core sacs
-  for(const [ox,oy,r] of [[-20,-8,6],[18,-12,5],[-8,16,5],[22,10,4]]){
+  ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(0,4,32,28,0,0,6.283); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(0,2,23,20,0,0,6.283); ctx.fill();
+  // bioluminescent jewels on her mantle
+  for(const [ox,oy,r] of [[-13,-2,4],[12,-4,3.5],[0,13,3.5]]){
     ctx.save(); ctx.globalAlpha=0.5+0.4*Math.sin(perfNow*2.2+ox); ctx.fillStyle="#c9f0a8";
     ctx.beginPath(); ctx.arc(ox,oy,r,0,6.283); ctx.fill(); ctx.restore();
   }
-  // big cyclops eye — blinks, and glares at the nearest threat
-  const eyeR=15;
-  ctx.fillStyle="#e8dcf5"; ctx.beginPath(); ctx.ellipse(0,-2,eyeR,eyeR*0.82,0,0,6.283); ctx.fill();
+  // her eye — small now, regal, tracks the nearest threat
+  const eyeR=9;
+  ctx.fillStyle="#e8dcf5"; ctx.beginPath(); ctx.ellipse(0,-4,eyeR,eyeR*0.8,0,0,6.283); ctx.fill();
   ctx.strokeStyle="rgba(20,10,30,0.7)"; ctx.lineWidth=2; ctx.stroke();
-  // pupil tracks the nearest enemy
   let tgt=null, bd=Infinity;
   for(const e of enemies){ const d=(e.x-cx)**2+(e.y-cy)**2; if(d<bd){ bd=d; tgt=e; } }
   let lx=0, ly=0;
-  if(tgt){ const dx=tgt.x-cx, dy=tgt.y-cy, dm=Math.hypot(dx,dy)||1; lx=dx/dm*6; ly=dy/dm*5; }
-  const blink = (!REDUCED_MOTION && Math.sin(perfNow*0.9)>0.97) ? 0.12 : 1; // occasional blink
+  if(tgt){ const dx=tgt.x-cx, dy=tgt.y-cy, dm=Math.hypot(dx,dy)||1; lx=dx/dm*3.5; ly=dy/dm*3; }
+  const blink = (!REDUCED_MOTION && Math.sin(perfNow*0.9)>0.97) ? 0.12 : 1;
   ctx.save(); ctx.scale(1, blink);
   ctx.fillStyle = hurt<0.35 ? "#e05050" : "#3a1a5a";
-  ctx.beginPath(); ctx.arc(lx,(-2+ly)/blink,7,0,6.283); ctx.fill();
-  ctx.fillStyle="#fff"; ctx.globalAlpha=0.8; ctx.beginPath(); ctx.arc(lx-2,(-4+ly)/blink,2,0,6.283); ctx.fill();
+  ctx.beginPath(); ctx.arc(lx,(-4+ly)/blink,4.5,0,6.283); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.globalAlpha=0.8; ctx.beginPath(); ctx.arc(lx-1.5,(-6+ly)/blink,1.5,0,6.283); ctx.fill();
   ctx.restore();
-  if(hurt<0.5){ ctx.globalAlpha=1; ctx.strokeStyle="rgba(224,80,80,"+(0.5-hurt)+")"; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(-30,18); ctx.lineTo(-8,26); ctx.lineTo(6,18); ctx.stroke(); }
+  if(hurt<0.5){ ctx.globalAlpha=1; ctx.strokeStyle="rgba(224,80,80,"+(0.5-hurt)+")"; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(-16,14); ctx.lineTo(-4,19); ctx.lineTo(5,14); ctx.stroke(); }
   ctx.restore();
 }
 function drawHUD(){
@@ -2702,6 +2731,26 @@ function drawMenu(){
 }
 function drawPrep(){
   ctx.textAlign="center";
+  if(!queenPlaced){ // DR-#039: step 1 of every run
+    const bob = 8*Math.sin(perfNow*4);
+    ctx.fillStyle="#d8b8f8"; ctx.font="bold 24px monospace";
+    ctx.fillText("PLACE YOUR ROOTQUEEN", W/2, TOP+46+bob);
+    ctx.font="bold 15px monospace"; ctx.fillStyle="#a08cc0";
+    ctx.fillText(TAP_WORD.toLowerCase()+" 4 open tiles of earth -- she is what they came for", W/2, TOP+72+bob);
+    if(ptrY>TOP){ // 2x2 ghost cursor
+      const [c,r]=xyToTile(ptrX,ptrY); const T=CFG.tile;
+      const cc=Math.max(0,Math.min(CFG.cols-2,c)), rr=Math.max(0,Math.min(CFG.rows-2,r));
+      let ok=true; for(let r2=rr;r2<=rr+1;r2++) for(let c2=cc;c2<=cc+1;c2++) if(!inGrid(c2,r2)||blocked[r2][c2]||gateAt(c2,r2)) ok=false;
+      ctx.fillStyle = ok?"rgba(176,136,224,0.30)":"rgba(224,96,96,0.25)";
+      ctx.fillRect(cc*T+2, TOP+rr*T+2, T*2-4, T*2-4);
+      ctx.strokeStyle = ok?"rgba(216,184,248,0.95)":"rgba(224,96,96,0.95)"; ctx.lineWidth=2.5;
+      ctx.strokeRect(cc*T+1, TOP+rr*T+1, T*2-2, T*2-2); ctx.lineWidth=1;
+    }
+    // rotating lore line still shows
+    ctx.fillStyle="rgba(150,162,175,0.8)"; ctx.font="13px monospace";
+    ctx.fillText(LORE[Math.floor(perfNow*0.07)%LORE.length], W/2, H-12);
+    return;
+  }
   if(!firstMutateDone){
     // DR-#026 C7: teach the build palette (corpses are decorative now — the player builds from the palette)
     const bob = 8*Math.sin(perfNow*4);

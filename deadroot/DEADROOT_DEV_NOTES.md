@@ -1110,3 +1110,23 @@ Verified (reload, no HMR): parse OK, console clean; 76% playable, gate flow-dist
 two full campaign sims (dumb static bot, both gap mouths defended): waves 1-6 at 100 hive HP,
 first losses waves 7-8 (Butcher ramp) — humans with boons/actives/salvage will go further.
 Screenshot tooling still down — Mike eyeballs the root walls / earth floor / moss glow live.
+
+## DR-#039 — THE ROOTQUEEN (2026-07-07, Mike)
+Mike: "remove the big eye in the center; the player can pick where they want to put their eye,
+make it only 4 tiles big; turn it from the eye into the RootQueen — she is the boss of each level."
+
+- **Fixed central eye REMOVED.** The RootQueen occupies 2x2 (= 4 tiles) and the player PLACES
+  her as the FIRST act of every run: "PLACE YOUR ROOTQUEEN" prompt + 2x2 purple ghost cursor;
+  tap 4 open tiles. `placeQueen(c,r)` validates (in-grid, no walls, not the gate), rewrites
+  `CFG.hive` (everything — flow field, nearHive, abilities, HUD — already reads that rect, so
+  placement is one rect-write + `rebuildFlow()`), reverts if the gate can't reach her.
+- Until she's placed: taps do nothing else, the flow overlay and queen are hidden, palette
+  build + START RAID stay gated (firstMutateDone). Placement banner: "THE ROOTQUEEN SETTLES —
+  she is what they came for, she must not fall."
+- **New art**: compact regal bulb inside her 80x80 footprint — dark ROOT CROWN spikes, royal
+  purple mantle with bioluminescent jewels, a small eye that still tracks the nearest raider,
+  glow radius pulled in from 92 to 54 so she doesn't dominate the burrow. Distress tells kept
+  (red glow + frown under 50%, fast heartbeat under 25%).
+- Strategy consequence: her position sets the raid's path length — deep east chamber = long
+  gauntlet, near the gate = suicide. Verified: placement rejects the Great Root and the gate;
+  deep-chamber placement gives flow-dist 28 (vs 20 center); waves 1-3 win at 100 HP; console clean.
