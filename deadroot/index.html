@@ -94,7 +94,7 @@ const CFG = {
   corpse: { rot: 15, payout: 25 },
   towers: {
     warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
-    spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:2.9, rate:1.1, dmg:14 },  // DR-#037 standard: 3 hits kills a base raider. Batch release (whole party at once) gives towers fewer shot windows than a trickle TD, so per-hit damage must be higher. Maze-rot DoT removed — it was the real killer before.
+    spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:3.2, rate:1.1, dmg:14 },  // DR-#037 standard: 3 hits kills a base raider. Batch release (whole party at once) gives towers fewer shot windows than a trickle TD, so per-hit damage must be higher. Maze-rot DoT removed — it was the real killer before.
     grabber:  { cost:45, name:"GRABBER",  desc:"slows nearby foes", range:2.0, slow:0.4, dmg:0 }, // DR-#025 B1: snare-aura zombie, grasping look. DR-#033: dmg:0 made explicit — grabber NEVER attacks (playtest confusion; the real tell fix is the distinct art below)
     rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
@@ -458,6 +458,10 @@ const LORE = [
   "Biomass remembers what the living forget.",
   "Each fallen human becomes a guardian.",
   "The underground does not forget. It grows.",
+  "They came to our stronghold in the Deadroot forest.",
+  "They dared to enter our homes. They will stay forever.",
+  "Every root in this burrow remembers their footsteps.",
+  "The forest above is theirs. The dark below is OURS.",
 ];
 const HUMAN_NAMES = ["JEFF","KAREN","DAVE","SGT. PIKE","DR. HAYES","TORRES","PVT. MIKE","CHEN","ROSS","YANG","MCCREADY","BAKER","UNIT-7","VOLUNTEER","GRAVES","PATEL","KIM","RODRIGUEZ","WHITMORE","BRIGGS"];
 const YELPS = ["WAIT—","NOT THE VIRUS—","IT'S SPREADING!","ABORT MISSION!","THEY'RE ADAPTING!","FALL BACK!","SEND MORE UNITS","CONTAMINATION CONFIRMED","...I CAN FEEL IT","WASN'T IN THE BRIEFING"];
@@ -654,9 +658,15 @@ function placeUnit(c,r,type){
   const cost = grow ? full - (hedgePaid[r][c]?hedgeCostNow():0) : full; // discount only if the hedge was paid for
   if(biomass < cost){ SFX.deny(); popup(x,y-12,"NEED BIOMASS","#e07f7f"); return false; }
   if(grow){ hedge[r][c]=false; hedgePaid[r][c]=false; } // tile stays blocked; swap hedge → zombie
-  else if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"KEEP A 2-WIDE PATH","#e3d34e"); return false; }
+  // DR-#038: zombies NO LONGER block pathing. On the open burrow map, blocking towers made
+  // raiders simply path around every guard (whack-a-mole). Zombies are guards standing in the
+  // open — raiders already stop to BRAWL any zombie within 1.25 tiles (DR-#020), so placement
+  // = interception, not walling. Doors remain the physical blockers.
+  else {
+    if(!inGrid(c,r) || isHive(c,r) || gateAt(c,r) || blocked[r][c] || doorAt(c,r) || trapAt(c,r) || towers.some(t=>t.c===c&&t.r===r)){ SFX.deny(); return false; }
+  }
   biomass -= cost;
-  const thp = 90 + (run?run.towerHp:0); // DR-#037 standard: survives ~3 DPS-raider hits
+  const thp = 120 + (run?run.towerHp:0); // DR-#038: guards intercept (non-blocking) so they tank dogpiles — "their dead are your walls"
   towers.push({ type, c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
   towersBuiltThisRun++; firstMutateDone=true;
   const acc=(TCOL[type]&&TCOL[type].acc)||"#9be07f";
@@ -682,7 +692,8 @@ function spawnEnemy(type){
   const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
     col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0,
-    role:e.role||null, hidden:e.role==="stealth" && (endless || waveIdx>=2), healTgt:null }); // DR-#036/#037: stealth spawns hidden — but waves 1-2 arrive revealed (standard, learnable first level; all-stealth wave 1 was unwinnable)
+    role:e.role||null, hidden:e.role==="stealth" && (endless || waveIdx>=2), healTgt:null,
+    wp:(()=>{ const g2=RAID_SPLIT[Math.random()<0.5?0:1]; const p2=tileToXY(g2[0],g2[1]); return {x:p2[0],y:p2[1]}; })() }); // DR-#036/#037 stealth from wave 3; DR-#038 pick a side around the Great Root
   // spawn poof — the human shoves out through the treeline
   burst(x,y,"#4a5a3a",6); rings.push({x,y,r:0,maxR:e.r+10,maxT:0.3,t:0.3,col:"rgba(120,150,100,0.5)"});
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they clear your biomass"); }
@@ -710,7 +721,7 @@ function mutate(k, type){
   const [x,y] = tileToXY(k.c,k.r);
   popup(x,y-30,"-"+t.cost+"◈","#e07f7f");
   towersBuiltThisRun++;
-  const thp = 90 + run.towerHp; // DR-#037 standard
+  const thp = 120 + run.towerHp; // DR-#038 guard standard
   towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
   SFX.squelch(); burst(x,y,"#9be07f",14); shakeIt(2);
   if(!firstMutateDone){ firstMutateDone = true; }
@@ -815,23 +826,24 @@ function pathStep(fc,fr,tc,tr){
    raiding party pours in at once through ONE west entrance. Fixed hand-authored floor plan:
    entrance → guard room → NORTH or SOUTH branch (rooms + corridors) → both converge on the
    east approach → Hive chamber. Supersedes DR-#034's four castle lanes (rock terrain kept). */
-const ROOMS = [ // [c0,r0,c1,r1] floor rects; everything else is rock
-  [0,8,3,9],    // west entrance corridor
-  [4,6,8,11],   // guard room A
-  [6,4,7,5],    // corridor A→B (north)
-  [5,1,13,3],   // room B (north hall)
-  [14,2,17,3],  // corridor B→D
-  [18,1,23,5],  // room D (north-east)
-  [20,6,21,7],  // corridor D→east approach
-  [6,12,7,13],  // corridor A→C (south)
-  [5,14,13,16], // room C (south hall)
-  [14,14,17,15],// corridor C→E
-  [18,12,23,16],// room E (south-east)
-  [20,10,21,11],// corridor E→east approach
-  [16,8,21,9],  // east approach
-  [10,6,15,11]  // Hive chamber
+/* DR-#038 UNDERGROUND BURROW (Mike): "more of the play area playable; the setting is
+   underground; the walls of the room are roots; the lore is Deadroot — the humans have come
+   to our stronghold in the Deadroot forest and dared to enter our homes." Three big open
+   chambers beneath the forest, split by thin root walls (~75% of the grid playable, was ~50%).
+   Raiders breach the west root-gate, go around the Great Root, into the Hive chamber. */
+const WALLS = [ // [c0,r0,c1,r1] ROOT-WALL rects; everything else is floor
+  [0,0,25,0], [0,17,25,17],            // burrow edges (packed earth + roots)
+  [0,1,0,7], [0,10,0,16],              // west edge (gap rows 8-9 = the breached root-gate)
+  [25,1,25,16],                         // east edge
+  [8,5,8,12],                           // the Great Root: blocks the straight line — go around top/bottom
+  [17,1,17,7], [17,10,17,16],           // east partition (gap rows 8-9 into the deep chamber)
+  [12,2,13,3], [12,14,13,15]            // freestanding root clumps (cover / tactics)
 ];
-function onFloor(c,r){ return ROOMS.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3]); }
+function onFloor(c,r){ return !WALLS.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3]); }
+// DR-#038: the two ways around the Great Root are equal length, so the flow field's tie-break
+// would send the WHOLE raid down one invisible-to-the-player side. Instead each raider picks a
+// side at spawn -- the party streams around both, and the whole burrow is defended space.
+const RAID_SPLIT = [ [8,2], [8,15] ]; // waypoint tiles: mouth of the top / bottom gap
 function buildDungeon(){
   rock = Array.from({length:CFG.rows},(_,r)=>Array.from({length:CFG.cols},(_,c)=>!onFloor(c,r)));
   for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++) if(rock[r][c]) blocked[r][c]=true;
@@ -862,7 +874,7 @@ function newRun(){
   genDecor(); // fresh treeline + growing bone piles each run
   doors=[]; traps=[]; // DR-#035
   buildDungeon(); // DR-#035: fixed dungeon floor plan the player populates
-  showBanner("BUILD YOUR DUNGEON","monsters · doors · traps — start the raid when ready");
+  showBanner("THEY DARE ENTER OUR HOME","fortify the burrow — zombies · doors · traps — then start the raid");
   mode = "prep"; prepT = 0; // DR-#035: no prep timer — the player clicks START RAID
   CG.gameplayStart();
 }
@@ -881,7 +893,7 @@ function queueWave(){
   SFX.wave();
   gateOpenT[0]=3.5; // DR-#035: flare the entrance arch as the party breaches
   if(!endless){
-    if(waveIdx===0) showBanner("THE SCOUTS","a raiding party breaches the west door");
+    if(waveIdx===0) showBanner("THE SCOUTS","humans breach the west root-gate of the burrow");
     else if(waveIdx===4) showBanner("THE PURGE BEGINS","a bigger party, better armed");
     else if(waveIdx===7) showBanner("THE BUTCHER","he burned a hundred hives");
     else if(waveIdx===8) showBanner("THE EXTERMINATION","everything they have left");
@@ -1095,9 +1107,13 @@ function update(){
         if(e.atkT>=1){ e.atkT=0; damageTower(brawl, e.dmg); burst(brawl.x,brawl.y-4,"#c86060",4); }
       } else {
         let dx=0,dy=0;
+        // DR-#038: head for the chosen side of the Great Root first, then follow the flow
+        if(e.wp){ dx=e.wp.x-e.x; dy=e.wp.y-e.y; if(dx*dx+dy*dy < sq(24)) e.wp=null; }
+        if(!e.wp && dx===0 && dy===0){
         const f = inGrid(ec,er) ? flow[er][ec] : null;
         if(f){ const [nx,ny]=tileToXY(ec+f[0],er+f[1]); dx=nx-e.x; dy=ny-e.y; }
         else { const [hx,hy]=tileToXY(12.5,8.5); dx=hx-e.x; dy=hy-e.y; }
+        }
         const m=Math.hypot(dx,dy)||1;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
         // DR-#037: the DR-#030 maze-rot DoT is REMOVED (playtest: it killed everything and was
@@ -1929,40 +1945,51 @@ function drawFlowOverlay(){
    walls, mid-value desaturated floor, bright saturated actors on top).
    Floor = mid-value slate slabs with per-tile variation + seams; walls = near-black mass with a
    BRIGHT lit parapet edge facing every lane, so the dungeon plan reads at a glance. */
-function drawFloor(){
+function drawFloor(){ // DR-#038: packed burrow earth — warm mid-value soil so dark roots + bright actors both pop
   const T=CFG.tile;
   for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){
     if(!rock[r] || rock[r][c]) continue;
     const x=c*T, y=TOP+r*T;
-    const v = hedgeHash(c*11+r, r*13-c);                    // deterministic slab tint
-    const base = 48 + Math.floor(v*12);                     // 48..60 grey-blue
-    ctx.fillStyle = "rgb("+base+","+(base+3)+","+(base+9)+")";
+    const v = hedgeHash(c*11+r, r*13-c);                    // deterministic tint
+    const base = 50 + Math.floor(v*12);                     // 50..62 warm earth
+    ctx.fillStyle = "rgb("+(base+8)+","+base+","+(base-12)+")";
     ctx.fillRect(x,y,T,T);
-    ctx.strokeStyle="rgba(12,14,18,0.55)"; ctx.lineWidth=1; // slab seams
+    ctx.strokeStyle="rgba(18,13,8,0.45)"; ctx.lineWidth=1;  // packed-earth seams
     ctx.strokeRect(x+0.5,y+0.5,T-1,T-1);
-    if(v<0.25){ ctx.fillStyle="rgba(255,255,255,0.04)"; ctx.fillRect(x+4,y+4,T-8,3); } // worn highlight
-    else if(v>0.8){ ctx.fillStyle="rgba(0,0,0,0.12)"; ctx.fillRect(x+6+v*8,y+8+v*10,8,5); } // scuff
+    if(v<0.22){ ctx.fillStyle="rgba(140,180,110,0.10)";     // moss patch
+      ctx.beginPath(); ctx.arc(x+8+v*60,y+10+v*50,5,0,6.283); ctx.fill(); }
+    else if(v>0.8){ ctx.fillStyle="rgba(0,0,0,0.14)";       // pebble scuff
+      ctx.fillRect(x+6+v*8,y+8+v*10,8,5); }
   }
 }
+/* DR-#038: walls are ROOTS — the living walls of the Hive's burrow. Dark woody mass, gnarled
+   strands, and a bioluminescent moss edge wherever a root wall faces open floor (the Hive's
+   glow marks its home; also the main chamber-read tell). */
 function drawRocks(){
   const T=CFG.tile;
   for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){
     if(!rock[r] || !rock[r][c]) continue;
     const x=c*T, y=TOP+r*T;
-    ctx.fillStyle="#0e1116"; ctx.fillRect(x,y,T,T);                      // near-black stone body
-    const h1=hedgeHash(c*13+r, r*7-c);                                    // reuse deterministic hash
-    if(h1<0.5){ ctx.fillStyle="rgba(58,68,84,0.20)";                      // block face variation
-      ctx.fillRect(x+3+h1*10, y+3+hedgeHash(c-r,r+c)*10, 14, 9); }
-    // mortar seams (brick whisper)
-    ctx.strokeStyle="rgba(0,0,0,0.4)"; ctx.lineWidth=1;
-    ctx.strokeRect(x+0.5,y+0.5,T-1,T-1);
-    // parapet: BRIGHT lit edge + crenellation teeth on sides facing a lane (main lane-read tell)
+    ctx.fillStyle="#170f09"; ctx.fillRect(x,y,T,T);                        // dark heartwood mass
+    // gnarled root strands (deterministic curves, woody browns)
+    for(let i=0;i<3;i++){
+      const h=hedgeHash(c*17+i, r*19-i);
+      ctx.strokeStyle = i===0 ? "#31210f" : "#241708"; ctx.lineWidth=3+h*3;
+      ctx.beginPath();
+      ctx.moveTo(x+h*T, y);
+      ctx.quadraticCurveTo(x+T*0.5+(h-0.5)*14, y+T*0.5, x+(1-h)*T, y+T);
+      ctx.stroke();
+    }
+    // knot
+    const h2=hedgeHash(c*7-r, r*5+c);
+    if(h2<0.3){ ctx.fillStyle="#3a2a12"; ctx.beginPath(); ctx.arc(x+8+h2*60, y+10+h2*50, 3.5, 0, 6.283); ctx.fill(); }
+    // bioluminescent moss edge facing open floor — the burrow's glow
     const open=(rr,cc)=> inGrid(cc,rr) && !rock[rr][cc];
-    ctx.fillStyle="#5c6b82";
-    if(open(r-1,c)){ ctx.fillRect(x,y,T,3);       for(let k=0;k<2;k++) ctx.fillRect(x+5+k*20, y, 10, 7); }
-    if(open(r+1,c)){ ctx.fillRect(x,y+T-3,T,3);   for(let k=0;k<2;k++) ctx.fillRect(x+5+k*20, y+T-7, 10, 7); }
-    if(open(r,c-1)){ ctx.fillRect(x,y,3,T);       for(let k=0;k<2;k++) ctx.fillRect(x, y+5+k*20, 7, 10); }
-    if(open(r,c+1)){ ctx.fillRect(x+T-3,y,3,T);   for(let k=0;k<2;k++) ctx.fillRect(x+T-7, y+5+k*20, 7, 10); }
+    ctx.fillStyle="#6f9b5a";
+    if(open(r-1,c)){ ctx.fillRect(x,y,T,3);     for(let k=0;k<2;k++) if(hedgeHash(c+k,r*3)>0.4) ctx.fillRect(x+4+k*20, y, 12, 6); }
+    if(open(r+1,c)){ ctx.fillRect(x,y+T-3,T,3); for(let k=0;k<2;k++) if(hedgeHash(c-k,r*5)>0.4) ctx.fillRect(x+4+k*20, y+T-6, 12, 6); }
+    if(open(r,c-1)){ ctx.fillRect(x,y,3,T);     for(let k=0;k<2;k++) if(hedgeHash(c*3,r+k)>0.4) ctx.fillRect(x, y+4+k*20, 6, 12); }
+    if(open(r,c+1)){ ctx.fillRect(x+T-3,y,3,T); for(let k=0;k<2;k++) if(hedgeHash(c*5,r-k)>0.4) ctx.fillRect(x+T-6, y+4+k*20, 6, 12); }
   }
 }
 
@@ -2152,7 +2179,7 @@ function drawPalette(){
     if(inGrid(c,r)){
       const cost = buildCost(buildMode);
       const cool = (buildMode==="spitter"||buildMode==="grabber") && cooling;
-      const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && !doorAt(c,r) && !trapAt(c,r) && biomass>=cost && !cool;
+      const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && !doorAt(c,r) && !trapAt(c,r) && !towers.some(t=>t.c===c&&t.r===r) && biomass>=cost && !cool; // DR-#038: towers no longer block, so check occupancy directly
       const gx=c*CFG.tile, gy=TOP+r*CFG.tile, T=CFG.tile;
       // filled ghost — brush's own hue when valid, red when not
       const ghost = !ok ? "rgba(224,96,96,0.22)" : buildMode==="door" ? "rgba(160,120,70,0.35)"

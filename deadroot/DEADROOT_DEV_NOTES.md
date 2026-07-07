@@ -1078,3 +1078,35 @@ with grouped elements; early waves = trivially clearable grunt waves, one new th
 
 **Tooling:** preview_screenshot dead all session; pixel-sampling on the small preview canvas
 unreliable — Mike should eyeball the new floor/walls/boon cards live and re-rate contrast.
+
+## DR-#038 — UNDERGROUND BURROW: open plan, root walls, Deadroot lore (2026-07-06, Mike)
+Mike: "need more of the play area to be playable; the setting is underground; the walls of the
+room are roots; the lore is Deadroot — the humans have come to our stronghold in the Deadroot
+forest and dared to enter our homes."
+
+1. **Open floor plan** — `WALLS` rect list replaces `ROOMS` (76% of the grid playable, was 50%).
+   Three chambers under the forest: west chamber (breached root-gate rows 8-9), the GREAT ROOT
+   (col 8, rows 5-12) forcing raiders around its top or bottom, center Hive chamber, and an
+   east deep-chamber behind a partition (build space). Two freestanding root clumps for cover.
+2. **Root-wall art** — `drawRocks()` now draws dark heartwood mass + gnarled quadratic root
+   strands + knots, with a BIOLUMINESCENT MOSS edge (#6f9b5a) facing open floor (the burrow's
+   glow = chamber-read tell). Floor recolored from grey stone to warm packed earth (58..70 R)
+   with moss patches. Value hierarchy from DR-#037 kept: dark walls < mid floor < bright actors.
+3. **Lore text** — run-start banner "THEY DARE ENTER OUR HOME"; wave 1 "humans breach the west
+   root-gate of the burrow"; 4 new LORE lines (Deadroot forest stronghold).
+4. **ZOMBIES NO LONGER BLOCK PATHING** (the big mechanical consequence). On the open map,
+   blocking towers made raiders path around every guard (whack-a-mole, untestable, unfun).
+   Zombies are now GUARDS standing in the open: raiders stop to brawl any zombie within 1.25
+   tiles (DR-#020 brawl), so placement = interception lines, not walls. Doors remain the only
+   physical blockers. placeUnit occupancy check replaces tryPlaceBlock; ghost cursor checks
+   tower occupancy directly. Zombie hp 120 (guards tank dogpiles — "their dead are your walls"),
+   spitter range 2.9→3.2 (open-map coverage).
+5. **RAID SPLITS AROUND THE GREAT ROOT** — the two routes are equal length, so the flow-field
+   tie-break silently sent the whole raid down one side (bot losses looked random). Each raider
+   now picks a side at spawn (`RAID_SPLIT` waypoints at the gap mouths, `e.wp` walked before
+   flow-following) — the party streams around BOTH sides and the whole burrow is defended space.
+
+Verified (reload, no HMR): parse OK, console clean; 76% playable, gate flow-dist 20, hive clear;
+two full campaign sims (dumb static bot, both gap mouths defended): waves 1-6 at 100 hive HP,
+first losses waves 7-8 (Butcher ramp) — humans with boons/actives/salvage will go further.
+Screenshot tooling still down — Mike eyeballs the root walls / earth floor / moss glow live.
