@@ -475,3 +475,57 @@ scroller." The crowd-brawler wave machine became a duel machine:
 VALIDATION: bot fairness suite 12/12 wins across all four districts, 0% unreactable (fast)
 hits, 0% pincer hits, ~0.4 hits taken per run, zero console errors. Avg 15.5 fells + 17.3
 counters per bot run — counters now outnumber kills, i.e. the fight really is exchange-driven.
+
+## JF-#040 — ATTACK & DEFENSE VARIETY: the real back-and-forth (2026-07-07)
+Mike's direction: "add attack and defense variations for enemy and player, we can add
+buttons and make this more a desktop game… find out how other games vary enemy combat
+behavior and implement all that make sense." Researched Punch-Out!! (every attack telegraphed,
+each boxer needs a different answer, some baited/some countered/some dodged) and general melee
+design (gamedeveloper.com "Enemy design and enemy AI", "Enemy Attacks and Telegraphing":
+attack variety via context+randomness, unblockable/grab as anti-turtle, combo strings with a
+defender break-out window, escalating-commitment tells). Implemented the parts that fit a
+2-verb counter-brawler:
+
+ENEMY ATTACK VARIETY — each windup now picks one of four attacks, each a different COLOR with a
+different correct answer (a clean rock-paper-scissors the telegraph teaches in place):
+- **strike (RED)** — the classic: COUNTER (strike the flash), BLOCK, PARRY, or dodge.
+- **high swing (AMBER, "DUCK!")** — only ducking avoids it; block & jump both eat it.
+- **low sweep (CYAN, "JUMP!")** — only jumping avoids it; block & duck both eat it.
+- **grab (PURPLE, "DODGE!")** — ARMORED: beats block AND can't be counter-struck; jump or duck
+  only. This is the anti-turtle answer — a foe that starts its windup while you hold block
+  heavily favors the grab (chooseAtk reads P.block), and a strike can even CONVERT to a grab
+  mid-windup if you raise guard (once, first half, reactable). Whiffed grab = long punish window.
+- **combo strings** — a rank-and-file strike sometimes chains ("AGAIN!") into a faster mixed-up
+  second swing (grab/high/low), so blocking the first doesn't end the exchange.
+- Per-type identity kept: brutes are grab/high bruisers (+ occasional counterable strike so the
+  fell-the-monk path survives); vipers snap quick strikes + high/low; spearmen stay ranged
+  throw + counterable jab (no long-reach grabs — they read wrong and can't be fairly dodged);
+  bosses stay pure-red counter fights. Non-strike windups floored to 32-36f so they clear the
+  reaction+dodge budget. Colors reuse the existing amber-high/cyan-low language from the
+  spearman throw dodge (#028), so nothing new to learn there.
+
+PLAYER DEFENSE + OFFENSE VARIETY:
+- **BLOCK (hold K / Shift, or the on-screen BLOCK button)** — a raised guard bounces a RED
+  strike (small pushback, no damage). Does NOTHING vs high/low/grab, so it's a tool, not an
+  answer to everything.
+- **PARRY** — starting the block within PARRY_WIN=10f of the blow landing = a parry: staggers
+  the attacker wide open + combo + 200pts. The high-skill defensive read.
+- **HEAVY blow (J, or the HEAVY button)** — a slow committed 2-damage strike; CRUSHES a raised
+  guard (+220), LAUNCHES brutes hard (still enrages them), the Master shrugs it. While winding
+  it you can't block/dodge and a whiff recovers slow — a spacing/punish tool, not a panic button.
+- Dodge (jump/duck, #028) now also slips a plain strike, and a clean dodge/slip pays +80◆.
+
+DESKTOP / BUTTONS: added an on-screen control pad during play (STRIKE ◀▶, DUCK, JUMP, BLOCK,
+HEAVY) — clickable with a mouse and tappable on touch, doubling as a live control legend. BLOCK
+holds while the pointer is down (released on pointerup/leave/blur). Keyboard stays primary:
+◀▶/AD strike, ▲▼/WS jump/duck, hold K/Shift block, J heavy. Onboarding + menu hints rewritten
+to teach the color language and the new verbs.
+
+VALIDATION: last-script `compileFunction` syntax check OK; bot fairness suite (?bot=4) 15/16
+wins across all four districts, 0.38 hits/run, 0% unreactable (fast), 0% pincer, zero console
+errors — the few hits taken were brute grabs (intended pressure). Defense matrix unit-tested via
+eval: strike→{block/parry/dodge all work, naked hits}; high→only duck; low→only jump; grab→jump
+or duck only, block eats it. Heavy unit-tested: crushes guard (2 dmg), launches+enrages brutes,
+Master shrugs. Control pad confirmed building all 6 buttons each play frame. (Preview screenshots
+still time out in the backgrounded renderer per prior notes — verified programmatically instead;
+Mike eyeballs on the live URL.)
