@@ -102,12 +102,13 @@ const CFG = {
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
     node:     { cost:70, name:"NODE",     desc:"+50% nearby fire rate", range:1.6 }
   },
-  enemies: {
-    scav:    { hp:42,  spd:2.2, dmg:5,  armor:0,    r:9,  col:"#7fb2d9" }, // DR-#033: hp 30→42 (playtest: enemies died too fast to threaten)
+  enemies: { // DR-#036: MMO-trinity raid roles (Mike) — tank/heal/dps/stealth, one signature attribute each
+    scav:    { hp:42,  spd:2.2, dmg:5,  armor:0,    r:9,  col:"#7fb2d9", role:"stealth" }, // THIEF — hidden until it AMBUSHES: stuns one zombie 1.5s
     butcher: { hp:520, spd:1.1, dmg:22, armor:0.25, r:16, col:"#b04a4a" },
-    troop:   { hp:120, spd:1.25,dmg:10, armor:0.30, r:12, col:"#4d7ea8" }, // DR-#033: hp 95→120
-    incin:   { hp:85,  spd:1.5, dmg:8,  armor:0.10, r:11, col:"#d98f4a" }, // DR-#033: hp 65→85
-    sweeper: { hp:90,  spd:1.9, dmg:0,  armor:0.20, r:11, col:"#e3d34e" }, // DR-#033: hp 75→90
+    troop:   { hp:200, spd:1.1, dmg:10, armor:0.30, r:13, col:"#4d7ea8", role:"tank", taunt:2.4 }, // KNIGHT — high HP + TAUNT: zombies inside his taunt radius must hit him (hp 300→200 first balance pass: 2 clerics out-healed 4 focused spitters = unkillable)
+    incin:   { hp:85,  spd:1.5, dmg:26, armor:0.10, r:11, col:"#d98f4a", role:"dps" }, // DPS — high attack (dmg 8→26)
+    cleric:  { hp:50,  spd:1.6, dmg:0,  armor:0,    r:10, col:"#efe3b4", role:"heal", healRate:8, healR:2.5 }, // CLERIC — low HP, mends the most-wounded raider (15→8: one cleric must lose to 2 focused zombies)
+    sweeper: { hp:90,  spd:1.9, dmg:0,  armor:0.20, r:11, col:"#e3d34e" },
     boss:    { hp:1400,spd:0.7, dmg:34, armor:0.35, r:20, col:"#c9d3dd" }
   },
   prepTime: 7,
@@ -150,19 +151,19 @@ const PHASES = [
   { name:"THE PURGE",         waves:[4,5,6,7] },
   { name:"THE EXTERMINATION", waves:[8,9,10,11] }
 ];
-const WAVES = [
-  [["scav",4,3.0]],
-  [["scav",7,1.8]],
-  [["scav",8,1.3],["sweeper",2,6]],
-  [["scav",6,1.0],["troop",3,3]],
-  [["troop",6,2.2],["sweeper",2,6]],
-  [["scav",10,0.8],["incin",3,4]],
-  [["troop",6,2.0],["incin",3,4],["sweeper",3,5]],
-  [["butcher",1,1],["scav",14,0.7],["troop",4,3]],
-  [["incin",6,2.2],["sweeper",4,4]],
-  [["troop",10,1.6],["scav",8,1.0]],
-  [["scav",12,0.7],["troop",6,2],["incin",5,2.5],["sweeper",4,4]],
-  [["boss",1,1],["troop",8,2.5],["sweeper",4,5]]
+const WAVES = [ // DR-#036: raid parties composed by role (intv unused — the batch releases at once)
+  [["scav",4,0]],
+  [["scav",5,0],["incin",2,0]],
+  [["scav",6,0],["sweeper",2,0]],
+  [["troop",2,0],["scav",4,0],["incin",2,0]],
+  [["troop",2,0],["cleric",1,0],["sweeper",2,0]],
+  [["scav",8,0],["incin",4,0],["cleric",2,0]],
+  [["troop",4,0],["incin",4,0],["cleric",2,0],["sweeper",3,0]],
+  [["butcher",1,0],["scav",10,0],["troop",3,0],["cleric",2,0]],
+  [["incin",6,0],["cleric",3,0],["sweeper",4,0]],
+  [["troop",6,0],["scav",8,0],["cleric",3,0]],
+  [["scav",10,0],["troop",5,0],["incin",5,0],["cleric",4,0],["sweeper",3,0]],
+  [["boss",1,0],["troop",5,0],["cleric",4,0],["sweeper",4,0]]
 ];
 function phaseOf(w){ for(const p of PHASES) if(p.waves.includes(w)) return p.name; return "THE LONG NIGHT"; }
 /* Endless (post-victory unlock): scale wave 11 upward */
@@ -170,7 +171,7 @@ function endlessWave(n){
   // count growth is capped (spawn-queue/perf safeguard); difficulty past the cap
   // keeps rising via run.endlessHpMult/endlessSpdMult (set in queueWave) instead
   const cn = Math.min(n, 40);
-  const grunts = [["scav",Math.floor(10+cn*2),0.7],["troop",Math.floor(5+cn),1.8],["incin",Math.floor(3+cn*0.7),2.5],["sweeper",Math.floor(3+cn*0.5),4]];
+  const grunts = [["scav",Math.floor(10+cn*2),0],["troop",Math.floor(5+cn),0],["incin",Math.floor(3+cn*0.7),0],["cleric",Math.floor(2+cn*0.4),0],["sweeper",Math.floor(3+cn*0.5),0]];
   if(n%3===2) grunts.push([Math.floor(n/3)%2===0 ? "boss" : "butcher", 1, 1]);
   return grunts;
 }
@@ -405,6 +406,7 @@ let noHitWaves = 0, waveStartHP = 0, waveT = 0, waveFlashT = 0;
 let stains = [], rings = [];
 // first-time flags + pointer
 let seenSweeper = false, lastSurvivorShown = false, secondWindUsed = false, adFailReason = null;
+let seenTank = false, seenCleric = false, seenAmbush = false; // DR-#036 first-encounter teaching banners
 let ptrX = 0, ptrY = 0;
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
@@ -680,10 +682,13 @@ function spawnEnemy(type){
   y += Math.random()*CFG.tile; // DR-#035: spread across the 2-wide entrance (rows 8-9), never into the wall above
   const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
-    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0, mazeT:0 }); // DR-#030 C4: mazeT = seconds spent walking the maze
+    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0, mazeT:0,
+    role:e.role||null, hidden:e.role==="stealth", healTgt:null }); // DR-#036: trinity roles — stealth spawns hidden
   // spawn poof — the human shoves out through the treeline
   burst(x,y,"#4a5a3a",6); rings.push({x,y,r:0,maxR:e.r+10,maxT:0.3,t:0.3,col:"rgba(120,150,100,0.5)"});
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they clear your biomass"); }
+  if(type==="troop" && !seenTank){ seenTank=true; showBanner("A KNIGHT TAUNTS YOUR ZOMBIES","they can't resist hitting him — he soaks it"); } // DR-#036
+  if(type==="cleric" && !seenCleric){ seenCleric=true; showBanner("CLERICS MEND THE RAID","kill the healers first"); } // DR-#036
 }
 function dropCorpse(x,y){
   const [c,r] = xyToTile(x,y);
@@ -852,7 +857,7 @@ function newRun(){
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  stains=[]; rings=[]; seenSweeper=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
+  stains=[]; rings=[]; seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
   rotTipT=0; evolveTipT=0;
   save.plays=(save.plays|0)+1; persist();
   genDecor(); // fresh treeline + growing bone piles each run
@@ -993,11 +998,38 @@ function update(){
     e.snared = false;
     let strangled = false, slowMul = 1; // DR-#025 B1: grabber zombies contribute their own slow
     for(const t of towers){
+      if(t.stunT>0) continue; // DR-#036: a stunned zombie's aura is out too
       if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*(1+run.rootR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul,1-CFG.towers.rootmass.slow); if(t.tier===1) strangled=true; }
       else if(t.type==="grabber" && dist2(e,t) < sq(CFG.towers.grabber.range*(1+run.grabR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul, Math.max(0.15, 1-CFG.towers.grabber.slow-run.grabSlow)); }
     }
     if(strangled) e.hp -= 8*DT*meta.dmg;
     let spd = e.spd * CFG.tile * slowMul;
+    // DR-#036 STEALTH: a hidden thief creeping within reach of a zombie AMBUSHES it — stuns that
+    // one unit for 1.5s and breaks stealth. Towers can't target it while hidden.
+    if(e.hidden){
+      let vt=null, vbd=sq(CFG.tile*1.5);
+      for(const t of towers){ const d=dist2(e,t); if(d<vbd){ vbd=d; vt=t; } }
+      if(vt){
+        e.hidden=false; vt.stunT=1.5;
+        popup(vt.x,vt.y-22,"AMBUSHED!","#e3d34e"); SFX.hit();
+        rings.push({x:vt.x,y:vt.y,r:0,maxR:30,maxT:0.35,t:0.35,col:"rgba(240,225,140,0.8)"});
+        if(!seenAmbush){ seenAmbush=true; showBanner("THIEVES STRIKE FROM THE SHADOWS","the ambush stuns a zombie for 1.5s"); }
+      } else if(nearHive(e)) e.hidden=false; // no one to ambush — cover breaks at the Hive
+    }
+    // DR-#036 HEAL: the cleric mends the most-wounded raider in range while marching
+    e.healTgt=null;
+    if(e.role==="heal"){
+      let worst=1;
+      for(const a of enemies){
+        if(a===e || a.hp>=a.max) continue;
+        const fr=a.hp/a.max;
+        if(fr<worst && dist2(e,a)<sq(CFG.enemies.cleric.healR*CFG.tile)){ worst=fr; e.healTgt=a; }
+      }
+      if(e.healTgt){
+        e.healTgt.hp = Math.min(e.healTgt.max, e.healTgt.hp + CFG.enemies.cleric.healRate*DT);
+        if(Math.random()<0.05) addParticle({x:e.healTgt.x+(Math.random()-0.5)*12, y:e.healTgt.y-e.healTgt.r, vx:0, vy:-28, t:0.6, col:"#9be07f"});
+      }
+    }
     if(overgrowthT>0) spd *= 0.15;
     if(e.type==="sweeper") spd *= (1-run.sweepSlow) * (e.panicT>0 ? 1.8 : 1);
 
@@ -1117,6 +1149,7 @@ function update(){
       triggerReabsorb(); // DR-#025 B2: burned-down zombie also starts the reabsorb delay
       continue;
     }
+    if(t.stunT>0){ t.stunT-=DT; continue; } // DR-#036: ambush-stunned — can't act for 1.5s
     if(t.type==="rootmass"||t.type==="node"||t.type==="grabber") continue; // DR-#025: grabber is a slow aura, not a shooter
     const def = CFG.towers[t.type];
     // Feast level scaling: each devoured corpse makes the zombie hit harder + faster
@@ -1126,10 +1159,14 @@ function update(){
     for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq((n.tier===1?2.4:CFG.towers.node.range)*CFG.tile)){ rate*=1.5; if(n.tier===1) dmgMult*=1.25; break; } }
     t.cd -= DT*rate;
     if(t.cd<=0){
-      // find target in range (pheromone: hunt sweepers first)
+      // find target in range (pheromone: hunt sweepers first; hidden thieves untargetable)
       let tgt=null, bd=Infinity;
-      if(pherT>0){ for(const e of enemies){ if(e.type!=="sweeper") continue; const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
-      if(!tgt){ bd=Infinity; for(const e of enemies){ const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
+      if(pherT>0){ for(const e of enemies){ if(e.type!=="sweeper"||e.hidden) continue; const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
+      // DR-#036 TAUNT: a knight inside his taunt radius pulls the zombie's attention — it MUST hit
+      // the nearest tank. Zombies beyond the taunt radius still target freely (counterplay: long-
+      // range back-liners can snipe the clerics behind the tank).
+      if(!tgt){ bd=Infinity; for(const e of enemies){ if(e.role!=="tank"||e.hidden) continue; const d=dist2(t,e); if(d<sq(Math.min(def.range, CFG.enemies.troop.taunt)*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
+      if(!tgt){ bd=Infinity; for(const e of enemies){ if(e.hidden) continue; const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
       if(tgt){
         t.cd = 1;
         if(t.type==="warden"){
@@ -1212,6 +1249,7 @@ function damage(e, amt, pierce){
   const arm = Math.max(0, e.armor - (e.drench>0?0.15:0) - (e.corroded>0?e.armor:0));
   const dealt = amt * (pierce?1:(1-arm));
   e.hp -= dealt; e.flash = 0.12;
+  if(e.hidden){ e.hidden=false; popup(e.x,e.y-e.r-8,"REVEALED","#e3d34e"); } // DR-#036: taking a hit blows a thief's cover
   if(dealt >= 30) popup(e.x, e.y-e.r-4, Math.floor(dealt)+"", "#ffd080");
 }
 function kill(e){
@@ -2237,6 +2275,12 @@ function draw(){
       ctx.restore();
     }
     if(t.hp<t.max){ const tc=TCOL[t.type]; ctx.fillStyle="#333"; ctx.fillRect(t.x-14,t.y-24,28,4); ctx.fillStyle=tc?tc.acc:"#e0a04a"; ctx.fillRect(t.x-14,t.y-24,28*(t.hp/t.max),4); }
+    // DR-#036: ambush-stun tell — dizzy stars orbiting the zombie's head
+    if(t.stunT>0){
+      ctx.save(); ctx.fillStyle="#f0dc78"; ctx.font="bold 13px monospace"; ctx.textAlign="center";
+      for(let k=0;k<3;k++){ const a=perfNow*5+k*2.09; ctx.fillText("★", t.x+Math.cos(a)*14, t.y-26+Math.sin(a)*5); }
+      ctx.restore();
+    }
     // level pips (feast upgrades): small chevrons above a leveled-up zombie
     if(lvl>1){ ctx.fillStyle="#e0a0f0"; for(let p=0;p<Math.min(lvl-1,5);p++){ ctx.beginPath(); ctx.arc(t.x-8+p*4, t.y-30, 1.6, 0, 6.283); ctx.fill(); } }
   }
@@ -2258,7 +2302,15 @@ function draw(){
   for(const e of enemies){
     // contact shadow grounds the enemy (drawn in world space, under the bob)
     contactShadow(e.x, e.y+e.r*0.72, e.r*0.85, e.r*0.34, 0.3);
+    // DR-#036: cleric heal beam (world space, under bodies)
+    if(e.healTgt && enemies.includes(e.healTgt)){
+      ctx.save(); ctx.globalAlpha=0.4+0.2*Math.sin(perfNow*8);
+      ctx.strokeStyle="#9be07f"; ctx.lineWidth=2; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.healTgt.x,e.healTgt.y); ctx.stroke();
+      ctx.setLineDash([]); ctx.restore();
+    }
     ctx.save(); ctx.translate(e.x,e.y);
+    if(e.hidden) ctx.globalAlpha = 0.3; // DR-#036: stealthed thief — the PLAYER sees a ghost, zombies see nothing
     // goofy shamble: walk-bob + squash-stretch (calmer for the big bosses)
     if(!REDUCED_MOTION){
       const amp = (e.type==="boss"||e.type==="butcher") ? 0.5 : 1;
@@ -2293,7 +2345,13 @@ function draw(){
       ctx.fillRect(-e.r,-e.r,e.r*2,e.r*2);
       ctx.fillStyle="#2a2a1a"; ctx.fillRect(-e.r*0.5,-e.r*0.5,e.r,e.r*0.6); // visor
       if(e.chanT>0){ ctx.strokeStyle="#e3d34e"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,0,e.r+6,-Math.PI/2,-Math.PI/2+6.283*(e.chanT/3)); ctx.stroke(); }
+    } else if(e.type==="cleric"){ // DR-#036: white-robed healer with a cross
+      ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
+      ctx.fillStyle="#c04848"; ctx.fillRect(-2,-e.r*0.55,4,e.r*1.1); ctx.fillRect(-e.r*0.55,-2,e.r*1.1,4);
     } else if(e.type==="troop"){
+      // DR-#036 taunt tell: pulsing gold challenge ring
+      ctx.save(); ctx.globalAlpha=0.25+0.15*Math.sin(perfNow*5); ctx.strokeStyle="#e0c060"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(0,0,e.r+6,0,6.283); ctx.stroke(); ctx.restore();
       ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
       ctx.fillStyle="#2c4a63"; ctx.fillRect(-e.r,-e.r*0.9,e.r*0.7,e.r*1.8); // shield
     } else if(e.type==="incin"){
@@ -2313,7 +2371,7 @@ function draw(){
       ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.fill();
     }
     // googly eyes on the humanoid grunts — pupils nervously eye the Hive they're marching at
-    if(e.type==="scav"||e.type==="troop"||e.type==="incin"){
+    if(e.type==="scav"||e.type==="troop"||e.type==="incin"||e.type==="cleric"){
       const dx=hxE-e.x, dy=hyE-e.y, dm=Math.hypot(dx,dy)||1, px=dx/dm, py=dy/dm;
       const er=e.r, ex=er*0.34, ey=-er*0.12, ew=er*0.30, pr=er*0.14;
       ctx.fillStyle="#f4f2ea";

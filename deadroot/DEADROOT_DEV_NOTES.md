@@ -1000,3 +1000,43 @@ way around, make them flow-blockers behind the seal rule. Also candidates: more 
 variety, per-wave dungeon evolution events, loot rooms.
 **Needs Mike's feel:** door hp/cost, spike numbers, and whether the raid sizes need re-pacing
 now that they arrive as one batch.
+
+## DR-#036 — trinity raid roles (2026-07-06, Mike's direction)
+Mike: "enemy units should be tanks, dps, heals, stealth and have 1 appropriate attribute: high
+hp for tank with taunt, heals heal with lower hp, higher attack for dps, stealth can ambush and
+stun 1 unit for 1.5 sec." Mapped onto the fantasy war-host:
+
+- **KNIGHT (troop) = TANK.** hp 120→200 (started at 300, see balance note), TAUNT: any zombie
+  with the knight inside his 2.4-tile taunt radius MUST target the nearest knight. Zombies
+  farther away target freely — the counterplay is long-range back-liners sniping the clerics
+  behind the tank (spitter range 2.9 > taunt 2.4). Visual tell: pulsing gold challenge ring.
+- **CLERIC (new type) = HEALER.** hp 50 (lowest), dmg 0, heals the most-wounded raider within
+  2.5 tiles at 8 hp/s. Visual: pale body + red cross, dashed green heal beam to its target,
+  drifting green motes. First-seen banner: "CLERICS MEND THE RAID — kill the healers first."
+- **INCIN = DPS.** dmg 8→26 (keeps its tower-burn + thermobaric identity).
+- **THIEF (scav) = STEALTH.** Spawns HIDDEN: rendered at 0.3 alpha (player sees a ghost,
+  zombies can't target it). Creeping within 1.5 tiles of a zombie triggers AMBUSH: that one
+  zombie is stunned for 1.5s (can't shoot; grabber aura off too; dizzy-stars tell) and the
+  thief is revealed. Taking any damage (warden sweeps, spike traps) also reveals. First-ambush
+  banner teaches the rule.
+
+WAVES recomposed as role-based parties (clerics from wave 5; intv column now vestigial since
+DR-#035 releases everything at once); endless adds clerics. First-seen banners for knight+cleric.
+
+**Balance found + fixed during verify:** at tank 300hp/heal 15, two clerics out-healed FOUR
+focused spitters → tank+cleric parties were mathematically unkillable (taunt made it worse).
+Also fixed my own taunt bug: it originally used the tower's full range instead of the knight's
+taunt radius, which would have let one tank lock down every zombie forever. Final first pass:
+tank 200hp, heal 8/s (2 focused zombies now out-damage 1 cleric), wave 5 softened to
+2 knights + 1 cleric + 2 sweepers.
+
+Verified in preview (reload, no HMR): parse OK; thief spawns hidden, untargetable, ambush stuns
+1.48–1.5s then reveals; zombie targets the knight over a closer thief inside taunt radius, and
+snipes a cleric when the knight sits outside the 2.4-tile radius; cleric healed a wounded
+raider +29.6hp in 2s; wave 5 winnable with a reasonable 5-unit + doors/traps defense (hive
+untouched); wave 8 remains a hard spike (butcher party) — needs Mike's feel; console clean.
+(preview_screenshot tooling down again this session — behaviors verified via eval; Mike should
+eyeball the new cleric/knight/stealth art live.)
+
+**Needs Mike's feel:** tank hp / heal rate / taunt radius / stun duration (all in CFG.enemies,
+dev-menu tunable), wave 8+ difficulty, and whether stealth-at-0.3-alpha reads clearly.
