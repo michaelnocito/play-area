@@ -1161,3 +1161,35 @@ Verified in preview (reload, no HMR): waves 1-3 clear at 100 hive HP with a 6-sp
 bot; aggro/search/waypoints all observed in-sim; parse OK; console clean. NOT yet done from
 the note (next candidates): room-aware AI (torches/loot draws), retreat-when-wounded, per-role
 formation. Needs Mike's feel pass.
+
+## DR-#042 — LEVEL system: survive until the Queen opens the doorway (2026-07-07, Mike)
+Mike: "the point is to survive the waves until your queen can open the next doorway; queen
+is auto placed now; optimize level 1 around this; we don't need doors; start with zombies,
+grabbers and traps; zombies have a small roam radius; we get to build a dungeon with mobs
+for each level."
+- **LEVELS array** (3 levels): each = name, lore, fixed root-wall floor plan, Queen spot,
+  wave slice, raid-split waypoints, east-wall EXIT doorway. L1 THE BURROW GATE (waves 1-4,
+  the DR-#038 burrow), L2 THE ROOTMAW (waves 5-8, serpentine baffles), L3 THE DEEP THRONE
+  (waves 9-12, arena + throne ring). `EDGE_WALLS` shared shell; `onFloor()` is level-aware.
+- **Queen AUTO-settles** (`settleQueen()`) at each level's deep spot — DR-#039 player
+  placement retired. Player builds the dungeon AROUND her.
+- **Doorway win-per-level**: clear the level's last wave → `beginDoorway()` (3.4s: banner,
+  purple exit flare, surviving units reabsorbed as biomass refund) → next level, fresh
+  build phase, hive HP restored. Final level's last wave = victory as before. Sealed exit
+  arch drawn faintly all level (orientation: you can SEE where you're going); flares open
+  during the transition (`drawExit`).
+- **Doors retired** (palette = ZOMBIE / GRABBER / SPIKES); door code dormant.
+- **Zombie roam** (`t.hx/hy/roamT`): idle units shamble ≤0.9 tiles around their post at
+  14px/s (solidAt-checked); freeze the instant prey is within range+1.2 tiles.
+- **Waypoint stuck-fix**: search waypoints are straight-line — no progress for 0.8s drops
+  the detour back to the flow field (a hidden thief used to grind on the east partition
+  forever = unwinnable wave).
+- HUD: wave count per-level (n/4) + "LEVEL n — NAME"; prep shows "survive N more raids —
+  the Queen opens the way".
+- Verified headless (deadroot-alt:4226; 4216 dead again, preview_screenshot dead → base64
+  fallback): all 3 layouts BFS-reachable (queen open+reachable, splits ok, 75-76% floor);
+  full campaign sim L1→L2→L3→victory; honest-economy L1 run clears at 100 HP with greedy
+  spitter play; roam drift ≤ radius; console clean.
+- NOT balance-tuned: L2/L3 with real numbers are hard (sim died w7 with a sloppy build) —
+  Mike playtest = next. Research batch (reverse-dungeon features) delivered in chat:
+  top picks = loot bait, adjacency synergy, kill-combo rewards, morale/retreat.

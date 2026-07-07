@@ -669,7 +669,7 @@ function placeUnit(c,r,type){
   }
   biomass -= cost;
   const thp = 120 + (run?run.towerHp:0); // DR-#038: guards intercept (non-blocking) so they tank dogpiles — "their dead are your walls"
-  towers.push({ type, c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
+  towers.push({ type, c, r, x, y, hx:x, hy:y, roamT:Math.random()*2, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 }); // DR-#042: hx/hy = post to roam around
   towersBuiltThisRun++; firstMutateDone=true;
   const acc=(TCOL[type]&&TCOL[type].acc)||"#9be07f";
   popup(x,y-28, grow?"GROWN":"-"+cost+"◈","#e07f7f"); burst(x,y,acc,14); SFX.squelch(); shakeIt(2);
@@ -695,12 +695,19 @@ function spawnEnemy(type){
   // DR-#041: adventurer waypoints — pick a side around the Great Root, then most raiders
   // "search" one spot in the burrow on their way in (they're delvers looting a dungeon,
   // not ants on a rail). Search points must be open reachable floor.
-  const side = Math.random()<0.5?0:1;
-  const wps = [(()=>{ const g2=RAID_SPLIT[side]; const p2=tileToXY(g2[0],g2[1]); return {x:p2[0],y:p2[1]}; })()];
+  // DR-#042: split waypoints are per-level now (level 1's Great Root has two ways around;
+  // other floors may have none). Search points are any open reachable floor tile.
+  const splits = raidSplits();
+  const wps = [];
+  if(splits.length){
+    const g2 = splits[Math.floor(Math.random()*splits.length)];
+    const p2 = tileToXY(g2[0],g2[1]);
+    wps.push({x:p2[0],y:p2[1]});
+  }
   if(Math.random()<0.65){
     for(let tries=0;tries<12;tries++){
-      const sc = 4+Math.floor(Math.random()*13), sr = side===0 ? 2+Math.floor(Math.random()*6) : 10+Math.floor(Math.random()*6);
-      if(onFloor(sc,sr) && !blocked[sr][sc] && flowDist && flowDist[sr][sc]!==Infinity){
+      const sc = 2+Math.floor(Math.random()*(CFG.cols-4)), sr = 1+Math.floor(Math.random()*(CFG.rows-2));
+      if(onFloor(sc,sr) && !blocked[sr][sc] && !isHive(sc,sr) && flowDist && flowDist[sr][sc]!==Infinity){
         const p=tileToXY(sc,sr); wps.push({x:p[0],y:p[1],search:true}); break;
       }
     }
@@ -846,37 +853,63 @@ function pathStep(fc,fr,tc,tr){
    to our stronghold in the Deadroot forest and dared to enter our homes." Three big open
    chambers beneath the forest, split by thin root walls (~75% of the grid playable, was ~50%).
    Raiders breach the west root-gate, go around the Great Root, into the Hive chamber. */
-const WALLS = [ // [c0,r0,c1,r1] ROOT-WALL rects; everything else is floor
-  [0,0,25,0], [0,17,25,17],            // burrow edges (packed earth + roots)
-  [0,1,0,7], [0,10,0,16],              // west edge (gap rows 8-9 = the breached root-gate)
-  [25,1,25,16],                         // east edge
-  [8,5,8,12],                           // the Great Root: blocks the straight line — go around top/bottom
-  [17,1,17,7], [17,10,17,16],           // east partition (gap rows 8-9 into the deep chamber)
-  [12,2,13,3], [12,14,13,15]            // freestanding root clumps (cover / tactics)
+/* DR-#042 LEVELS (Mike): "the point is to survive the waves until your Queen can open the next
+   doorway — we get to build a dungeon with mobs for each level." Each level = a fixed root-burrow
+   floor plan the player populates (zombies · grabbers · traps), a Queen spot (auto-placed — she
+   settles where the deep magic is, the player builds AROUND her), a run of waves, and an EXIT
+   doorway in the east wall that the Queen tears open once the last raid is repelled. */
+const EDGE_WALLS = [ // shared burrow shell: edges + the breached west root-gate (rows 8-9)
+  [0,0,25,0], [0,17,25,17],
+  [0,1,0,7], [0,10,0,16],
+  [25,1,25,16]
 ];
-function onFloor(c,r){ return !WALLS.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3]); }
-// DR-#038: the two ways around the Great Root are equal length, so the flow field's tie-break
-// would send the WHOLE raid down one invisible-to-the-player side. Instead each raider picks a
-// side at spawn -- the party streams around both, and the whole burrow is defended space.
-const RAID_SPLIT = [ [8,2], [8,15] ]; // waypoint tiles: mouth of the top / bottom gap
-/* DR-#039 ROOTQUEEN (Mike): the fixed central eye is gone. The player places the RootQueen --
-   she occupies 2x2 (4 tiles), she is what the humans came for, and she is the boss of each
-   level. Placement is the FIRST act of every run; everything (flow field, nearHive, abilities)
-   already reads CFG.hive, so placement just rewrites that rect and rebuilds the flow. */
-function placeQueen(c,r){
-  c = Math.max(0, Math.min(CFG.cols-2, c)); r = Math.max(0, Math.min(CFG.rows-2, r));
-  for(let rr=r; rr<=r+1; rr++) for(let cc=c; cc<=c+1; cc++){
-    if(!inGrid(cc,rr) || blocked[rr][cc] || gateAt(cc,rr)){ SFX.deny(); popup(...tileToXY(c,r),"NEEDS 4 OPEN TILES","#e07f7f"); return false; }
-  }
-  const prev = {...CFG.hive};
-  CFG.hive.c0=c; CFG.hive.r0=r; CFG.hive.c1=c+1; CFG.hive.r1=r+1;
+const LEVELS = [
+  { name:"THE BURROW GATE", lore:"hold the gate — the Queen gathers strength to open the way",
+    queen:{c:21,r:8}, exit:{c:25,r:8}, waves:[0,1,2,3],
+    splits:[[8,2],[8,15]], // DR-#038: each raider picks a side around the Great Root
+    walls:[
+      [8,5,8,12],                 // the Great Root: go around top/bottom
+      [17,1,17,7], [17,10,17,16], // east partition (gap rows 8-9 into the deep chamber)
+      [12,2,13,3], [12,14,13,15]  // freestanding root clumps
+    ] },
+  { name:"THE ROOTMAW", lore:"a winding gullet of roots — make every turn cost them blood",
+    queen:{c:21,r:8}, exit:{c:25,r:8}, waves:[4,5,6,7],
+    splits:[],
+    walls:[ // serpentine baffles: down, up, down again
+      [6,1,6,11],                 // first baffle (pass below, rows 12-16)
+      [12,6,12,16],               // second baffle (pass above, rows 1-5)
+      [18,1,18,11]                // third baffle (pass below again)
+    ] },
+  { name:"THE DEEP THRONE", lore:"her throne chamber — they end here, one way or the other",
+    queen:{c:16,r:8}, exit:{c:25,r:8}, waves:[8,9,10,11],
+    splits:[[4,3],[4,14]],
+    walls:[ // open arena with a throne ring around the Queen (two mouths, rows 8-9 east+west)
+      [13,5,19,5], [13,12,19,12],
+      [13,6,13,7], [13,10,13,11],
+      [19,6,19,7], [19,10,19,11],
+      [6,2,7,3], [6,14,7,15]      // outer root clumps (cover / tactics)
+    ] }
+];
+let levelIdx = 0, levelTransT = 0; // levelTransT>0 = the Queen is opening the doorway
+function curLevel(){ return LEVELS[Math.min(levelIdx, LEVELS.length-1)]; }
+function onFloor(c,r){
+  const L = curLevel();
+  return !EDGE_WALLS.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3]) &&
+         !L.walls.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3]);
+}
+function raidSplits(){ return curLevel().splits; }
+/* DR-#039/#042 ROOTQUEEN: she occupies 2x2 (4 tiles) and is the boss of each level from the
+   raiders' side. DR-#042: she AUTO-settles at each level's deep spot (Mike: "queen is auto
+   placed now in this spot") — the player's job is to build the dungeon around her and keep
+   her alive until she can open the next doorway. Everything (flow field, nearHive, abilities)
+   already reads CFG.hive, so settling just rewrites that rect and rebuilds the flow. */
+function settleQueen(){
+  const q = curLevel().queen;
+  CFG.hive.c0=q.c; CFG.hive.r0=q.r; CFG.hive.c1=q.c+1; CFG.hive.r1=q.r+1;
   rebuildFlow();
-  if(!gatesReachable(flowDist)){ Object.assign(CFG.hive, prev); rebuildFlow(); SFX.deny(); return false; }
   queenPlaced = true;
-  const [qx,qy]=tileToXY(c,r);
+  const [qx,qy]=tileToXY(q.c,q.r);
   bigBurst(qx+CFG.tile/2, qy+CFG.tile/2, "#b088e0", 22); SFX.squelch(); shakeIt(3);
-  showBanner("THE ROOTQUEEN SETTLES","she is what they came for -- she must not fall");
-  return true;
 }
 function buildDungeon(){
   rock = Array.from({length:CFG.rows},(_,r)=>Array.from({length:CFG.cols},(_,c)=>!onFloor(c,r)));
@@ -887,30 +920,54 @@ function buildDungeon(){
 /* ===== Game flow ===== */
 function newRun(){
   meta = metaVals();
-  biomass = meta.bio; hiveMax = meta.hp; hiveHP = hiveMax;
-  waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0;
-  enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
-  blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
-  hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#023 placed maze walls
-  hedgePaid = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false)); // DR-#025 C5
-  buildMode = null;
-  rebuildFlow();
-  firstMutateDone = false; onboardT = 0; menu = null; queenPlaced = false; // DR-#039
+  biomass = meta.bio; hiveMax = meta.hp;
+  waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0; levelIdx = 0; // DR-#042
   run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
   gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  stains=[]; rings=[]; seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
-  rotTipT=0; evolveTipT=0;
+  seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
+  rotTipT=0; evolveTipT=0; firstMutateDone = false;
   save.plays=(save.plays|0)+1; persist();
-  genDecor(); // fresh treeline + growing bone piles each run
-  doors=[]; traps=[]; // DR-#035
-  buildDungeon(); // DR-#035: fixed dungeon floor plan the player populates
-  showBanner("THEY DARE ENTER OUR HOME","fortify the burrow — zombies · doors · traps — then start the raid");
-  mode = "prep"; prepT = 0; // DR-#035: no prep timer — the player clicks START RAID
+  startLevel(); // DR-#042: build level 1's dungeon, settle the Queen
+  showBanner("THEY DARE ENTER OUR HOME","fortify the burrow — zombies · grabbers · traps — then start the raid");
   CG.gameplayStart();
+}
+/* DR-#042: enter the current level — fresh dungeon to populate, Queen auto-settled at her spot.
+   Called by newRun (level 1) and by the doorway transition (levels 2+). */
+function startLevel(){
+  hiveHP = hiveMax; // the Queen recovers as she moves deeper
+  levelTransT = 0;
+  enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
+  stains=[]; rings=[]; doors=[]; traps=[];
+  blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
+  hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
+  hedgePaid = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
+  buildMode = null; menu = null; onboardT = 0; reabsorbCD = 0;
+  genDecor();
+  buildDungeon();
+  settleQueen();
+  const L = curLevel();
+  showBanner("LEVEL "+(levelIdx+1)+" — "+L.name, L.lore);
+  mode = "prep"; prepT = 0; // no timer — the player clicks START RAID
+}
+/* DR-#042: last raid of the level repelled — the Queen tears open the east doorway, then the
+   Hive descends to the next level (a fresh dungeon to build). */
+function beginDoorway(){
+  levelTransT = 3.4;
+  mode = "prep";
+  // the Hive reabsorbs its children — surviving units/traps come back as biomass for the next floor
+  let reclaim = 0;
+  for(const t of towers) reclaim += CFG.towers[t.type].cost;
+  for(const tp of traps) reclaim += Math.round(CFG.spikes.cost*tp.uses/CFG.spikes.uses);
+  if(reclaim>0){ biomass += reclaim; popup(W/2,H/2-64,"THE HIVE REABSORBS ITS CHILDREN  +"+reclaim+"◈","#8fd9a8"); }
+  const [ex,ey] = tileToXY(curLevel().exit.c, curLevel().exit.r);
+  bigBurst(ex,ey,"#c9a0f0",26); bigBurst(ex,ey+CFG.tile,"#8fd9a8",18);
+  SFX.boom(); shakeIt(6);
+  showBanner("THE QUEEN OPENS THE WAY","the roots part — the Hive descends deeper");
+  CG.happytime();
 }
 function queueWave(){
   if(endless){ run.endlessHpMult = 1+endlessN*0.15; run.endlessSpdMult = 1+endlessN*0.05; }
@@ -954,6 +1011,13 @@ function waveCleared(){
   if(!endless && waveIdx>=WAVES.length-1){ mode="victory"; save.won=true; persist(); stopDrone(); CG.gameplayStop(); return; }
   if(endless){ endlessN++; save.endlessBest=Math.max(save.endlessBest,endlessN); persist(); }
   else waveIdx++;
+  // DR-#042: last raid of the LEVEL repelled → the Queen opens the next doorway
+  const lw = curLevel().waves;
+  if(!endless && waveIdx > lw[lw.length-1]){
+    beginDoorway();
+    if(CFG.boonWaves.includes(waveIdx)) offerBoons();
+    return;
+  }
   mode = "prep"; prepT = CFG.prepTime;
   popup(W/2, H/2-40, '"'+HIVE_TALK[wn % HIVE_TALK.length]+'"', "#5a9068");
   // boon choice: the Hive adapts — every run differs
@@ -1009,6 +1073,11 @@ function update(){
 
   if(mode==="prep"){
     onboardT += DT; // DR-#035: no countdown — the raid starts when the player clicks START RAID
+    // DR-#042: the Queen is opening the doorway — hold the moment, then descend to the next level
+    if(levelTransT>0 && !boonChoice){
+      levelTransT -= DT;
+      if(levelTransT<=0){ levelIdx++; startLevel(); }
+    }
   }
   if(mode==="play"){
     spawnT += DT;
@@ -1158,7 +1227,16 @@ function update(){
         }
         }
         const m=Math.hypot(dx,dy)||1;
+        const ox=e.x, oy=e.y;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
+        // DR-#042: waypoints are straight-line (no pathfinding) — a search point behind a root
+        // wall would pin the raider against it forever. No progress for ~0.8s → forget the
+        // detour and fall back to the flow field.
+        if(e.wp){
+          const moved=Math.hypot(e.x-ox,e.y-oy);
+          if(moved < spd*DT*0.25){ e.stuckT=(e.stuckT||0)+DT; if(e.stuckT>0.8){ e.wp=null; e.wps=[]; e.stuckT=0; } }
+          else e.stuckT=0;
+        }
         // DR-#037: the DR-#030 maze-rot DoT is REMOVED (playtest: it killed everything and was
         // overpowered — raiders melted before reaching a single zombie). A mob-applied DoT can
         // come back later as a specific tower/trap ability instead of free ambient damage.
@@ -1206,6 +1284,28 @@ function update(){
       continue;
     }
     if(t.stunT>0){ t.stunT-=DT; continue; } // DR-#036: ambush-stunned — can't act for 1.5s
+    // DR-#042 ROAM (Mike: "zombies have a small roam radius"): idle zombies shamble around
+    // their post — the dungeon feels stocked with restless mobs, not turrets. They hold
+    // still the moment prey comes near their reach.
+    if(t.hx!==undefined){
+      const roamR = CFG.tile*0.9;
+      let nearD = Infinity;
+      for(const e of enemies){ const d=dist2(t,e); if(d<nearD) nearD=d; }
+      if(nearD > sq(((CFG.towers[t.type].range||2)+1.2)*CFG.tile)){
+        t.roamT = (t.roamT||0) - DT;
+        if(t.roamT<=0 || t.rx===undefined){
+          const a=Math.random()*6.283, rr2=Math.random()*roamR;
+          t.rx = t.hx + Math.cos(a)*rr2; t.ry = t.hy + Math.sin(a)*rr2*0.8;
+          t.roamT = 1.5 + Math.random()*2.5;
+        }
+        const rdx=t.rx-t.x, rdy=t.ry-t.y, rm=Math.hypot(rdx,rdy);
+        if(rm>2){
+          const sp=14*DT, nx=t.x+rdx/rm*sp, ny=t.y+rdy/rm*sp;
+          if(!solidAt(nx,t.y)) t.x=nx;
+          if(!solidAt(t.x,ny)) t.y=ny;
+        }
+      }
+    }
     if(t.type==="rootmass"||t.type==="node"||t.type==="grabber") continue; // DR-#025: grabber is a slow aura, not a shooter
     const def = CFG.towers[t.type];
     // Feast level scaling: each devoured corpse makes the zombie hit harder + faster
@@ -1406,11 +1506,6 @@ function onTap(x,y){
     }
     return;
   }
-  // DR-#039: before anything else each run, the tap places the RootQueen (2x2)
-  if((mode==="prep") && !queenPlaced){
-    if(y>TOP){ const [c,r]=xyToTile(x,y); if(placeQueen(c,r)) return; }
-    return;
-  }
   // speed toggle (bottom-right) — 68px logical box, padded to a real 44px min tap target
   { const p=hitPad(68); if(x>W-78-p && x<W-10+p && y>H-78-p && y<H-10+p){ gameSpeed = gameSpeed===1?2:1; SFX.ui(); return; } }
   // DR-#023 build palette (bottom-center): toggle the hedge / spitter brush
@@ -1421,7 +1516,7 @@ function onTap(x,y){
     }
   }
   // DR-#035: START RAID button (top-center) — releases the whole party at once
-  if(mode==="prep" && firstMutateDone && x>W/2-120 && x<W/2+120 && y>TOP+8 && y<TOP+66){
+  if(mode==="prep" && firstMutateDone && levelTransT<=0 && x>W/2-120 && x<W/2+120 && y>TOP+8 && y<TOP+66){
     SFX.ui(); queueWave(); return;
   }
   // hive mind ability buttons (bottom-left) — padded to a real 44px min tap target
@@ -1437,9 +1532,8 @@ function onTap(x,y){
       // (playtest: "deselecting should happen automatically when another item/action is selected").
       const onUnit = towers.find(t=>t.c===c&&t.r===r&&t.type!=="warden");
       if(onUnit){ buildMode=null; menu={tower:onUnit}; SFX.ui(); return; }
-      if(buildMode==="door") placeDoor(c,r);
-      else if(buildMode==="spikes") placeTrap(c,r);
-      else placeUnit(c,r,buildMode); // DR-#035: hedge brush retired
+      if(buildMode==="spikes") placeTrap(c,r); // DR-#042: door brush retired — the dungeon IS the wall
+      else placeUnit(c,r,buildMode);
     }
     return;
   }
@@ -1784,7 +1878,7 @@ window.addEventListener("keydown", ev=>{
   // desktop-first: Enter/Space restarts from the end screen without hunting for the button
   if((k==="enter"||k===" ") && (mode==="over"||mode==="victory")){ ev.preventDefault(); newRun(); return; }
   // desktop-first: Enter/Space sends the wave early during prep (matches the SEND button)
-  if((k==="enter"||k===" ") && mode==="prep" && firstMutateDone && !boonChoice && !paused){ ev.preventDefault(); SFX.ui(); queueWave(); return; } // DR-#035: start the raid
+  if((k==="enter"||k===" ") && mode==="prep" && firstMutateDone && levelTransT<=0 && !boonChoice && !paused){ ev.preventDefault(); SFX.ui(); queueWave(); return; } // DR-#035: start the raid; DR-#042: not while the doorway opens
   // desktop-first: Enter/Space starts a run from the title screen
   if((k==="enter"||k===" ") && mode==="title"){ ev.preventDefault(); daily=false; audio(); newRun(); return; }
 });
@@ -2152,6 +2246,29 @@ function drawGates(){
     ctx.restore();
   });
 }
+/* DR-#042: the sealed doorway to the next level — a faint arch in the east root wall so the
+   player always sees WHERE they're going (orientation law); it flares and tears open while the
+   Queen works (levelTransT). */
+function drawExit(){
+  if(endless || mode==="title") return;
+  const ex = curLevel().exit;
+  const [x,y0]=tileToXY(ex.c,ex.r);
+  const y = y0 + CFG.tile/2; // arch spans the rows-8/9 seam
+  const opening = levelTransT>0;
+  ctx.save();
+  const a = opening ? 0.65+0.35*Math.sin(perfNow*9) : 0.22+0.10*Math.sin(perfNow*1.6);
+  ctx.globalAlpha = a;
+  ctx.strokeStyle = opening ? "#e0c9ff" : "#8a6fb0"; ctx.lineWidth = opening?4:2.5; ctx.lineCap="round";
+  ctx.beginPath(); ctx.arc(x-6, y, 24, -Math.PI/2, Math.PI/2); ctx.stroke(); // arch facing the floor
+  if(opening){ // roots tearing apart + spilling light
+    ctx.globalAlpha = 0.5+0.5*Math.sin(perfNow*12);
+    const gr = ctx.createRadialGradient(x,y,4, x,y,60);
+    gr.addColorStop(0,"rgba(201,160,240,0.55)"); gr.addColorStop(1,"rgba(201,160,240,0)");
+    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(x,y,60,0,6.283); ctx.fill();
+    if(Math.random()<0.3) addParticle({x:x-10+Math.random()*14, y:y-20+Math.random()*40, vx:-30-Math.random()*30, vy:(Math.random()-0.5)*30, t:0.5, col:"#c9a0f0"});
+  }
+  ctx.restore();
+}
 /* DR-#033: grabber gets its OWN body — NOT the green zombie sprite (playtest: "grabber looks like a
    regular zombie"). A squat amber root-sac with a dark maw + many grasping arms: unmistakably a snare,
    not a shooter. Aura ring shows its slow zone; it never has a reload arc (it doesn't attack). */
@@ -2211,11 +2328,10 @@ function drawGrabTendrils(t){
 }
 /* DR-#023: bottom-center build palette. */
 function paletteBtns(){
-  const w=126,h=58,gap=12,y=H-h-14, total=w*4+gap*3, x0=W/2-total/2; // DR-#035: monsters + doors + traps
+  const w=126,h=58,gap=12,y=H-h-14, total=w*3+gap*2, x0=W/2-total/2; // DR-#042: monsters + traps (doors retired)
   return [ {x:x0, y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
            {x:x0+(w+gap), y, w, h, mode:"grabber", label:"GRABBER", cost:CFG.towers.grabber.cost, unit:true},
-           {x:x0+(w+gap)*2, y, w, h, mode:"door", label:"DOOR", cost:CFG.door.cost, unit:false},
-           {x:x0+(w+gap)*3, y, w, h, mode:"spikes", label:"SPIKES", cost:CFG.spikes.cost, unit:false} ];
+           {x:x0+(w+gap)*2, y, w, h, mode:"spikes", label:"SPIKES", cost:CFG.spikes.cost, unit:false} ];
 }
 function drawPalette(){
   if(mode!=="play"&&mode!=="prep") return;
@@ -2242,7 +2358,7 @@ function drawPalette(){
       const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && !doorAt(c,r) && !trapAt(c,r) && !towers.some(t=>t.c===c&&t.r===r) && biomass>=cost && !cool; // DR-#038: towers no longer block, so check occupancy directly
       const gx=c*CFG.tile, gy=TOP+r*CFG.tile, T=CFG.tile;
       // filled ghost — brush's own hue when valid, red when not
-      const ghost = !ok ? "rgba(224,96,96,0.22)" : buildMode==="door" ? "rgba(160,120,70,0.35)"
+      const ghost = !ok ? "rgba(224,96,96,0.22)"
                     : buildMode==="spikes" ? "rgba(170,175,185,0.30)"
                     : buildMode==="grabber" ? "rgba(200,146,90,0.30)" : "rgba(126,208,56,0.30)";
       ctx.fillStyle=ghost; ctx.fillRect(gx+2,gy+2,T-4,T-4);
@@ -2285,6 +2401,7 @@ function draw(){
   if(queenPlaced) drawHive();
   if(queenPlaced) drawFlowOverlay(); // DR-#021 lanes; DR-#039: meaningless until the Queen is placed
   drawGates();       // DR-#023: labyrinth entrances
+  drawExit();        // DR-#042: the sealed next-level doorway the Queen will open
   drawTraps();       // DR-#035: spike traps (floor layer, under bodies)
   drawDoors();       // DR-#035: breakable doors
   // ground stains (fading death marks)
@@ -2657,10 +2774,12 @@ function drawHUD(){
   }
   // wave: big fraction + phase under it
   ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 26px monospace";
-  const wn = endless ? "∞ "+(endlessN+1) : (waveIdx+1)+"/"+WAVES.length;
+  // DR-#042: wave count is per-LEVEL now (survive them and the Queen opens the way)
+  const lw = curLevel().waves;
+  const wn = endless ? "∞ "+(endlessN+1) : Math.min(waveIdx-lw[0]+1, lw.length)+"/"+lw.length;
   ctx.fillText(wn, W/2+90, 34);
   ctx.font="bold 13px monospace"; ctx.fillStyle="#8a94a0";
-  ctx.fillText(endless?"THE LONG NIGHT":phaseOf(waveIdx), W/2+90, 56);
+  ctx.fillText(endless?"THE LONG NIGHT":("LEVEL "+(levelIdx+1)+" — "+curLevel().name), W/2+90, 56);
   // DNA
   ctx.fillStyle="#c9a0f0"; ctx.textAlign="right"; ctx.font="bold 20px monospace";
   ctx.fillText("◆"+save.dna, W-146, 44);
@@ -2766,22 +2885,12 @@ function drawMenu(){
 }
 function drawPrep(){
   ctx.textAlign="center";
-  if(!queenPlaced){ // DR-#039: step 1 of every run
-    const bob = 8*Math.sin(perfNow*4);
-    ctx.fillStyle="#d8b8f8"; ctx.font="bold 24px monospace";
-    ctx.fillText("PLACE YOUR ROOTQUEEN", W/2, TOP+46+bob);
+  if(levelTransT>0){ // DR-#042: the Queen opens the doorway — the level is won
+    const bob = 6*Math.sin(perfNow*3);
+    ctx.fillStyle="#d8b8f8"; ctx.font="bold 26px monospace";
+    ctx.fillText("THE QUEEN OPENS THE WAY", W/2, TOP+46+bob);
     ctx.font="bold 15px monospace"; ctx.fillStyle="#a08cc0";
-    ctx.fillText(TAP_WORD.toLowerCase()+" 4 open tiles of earth -- she is what they came for", W/2, TOP+72+bob);
-    if(ptrY>TOP){ // 2x2 ghost cursor
-      const [c,r]=xyToTile(ptrX,ptrY); const T=CFG.tile;
-      const cc=Math.max(0,Math.min(CFG.cols-2,c)), rr=Math.max(0,Math.min(CFG.rows-2,r));
-      let ok=true; for(let r2=rr;r2<=rr+1;r2++) for(let c2=cc;c2<=cc+1;c2++) if(!inGrid(c2,r2)||blocked[r2][c2]||gateAt(c2,r2)) ok=false;
-      ctx.fillStyle = ok?"rgba(176,136,224,0.30)":"rgba(224,96,96,0.25)";
-      ctx.fillRect(cc*T+2, TOP+rr*T+2, T*2-4, T*2-4);
-      ctx.strokeStyle = ok?"rgba(216,184,248,0.95)":"rgba(224,96,96,0.95)"; ctx.lineWidth=2.5;
-      ctx.strokeRect(cc*T+1, TOP+rr*T+1, T*2-2, T*2-2); ctx.lineWidth=1;
-    }
-    // rotating lore line still shows
+    ctx.fillText("descending to level "+(levelIdx+2)+"...", W/2, TOP+72+bob);
     ctx.fillStyle="rgba(150,162,175,0.8)"; ctx.font="13px monospace";
     ctx.fillText(LORE[Math.floor(perfNow*0.07)%LORE.length], W/2, H-12);
     return;
@@ -2800,7 +2909,11 @@ function drawPrep(){
     ctx.fillStyle="#8fd9a8"; ctx.font="bold 22px monospace";
     ctx.fillText("⚔ START RAID", W/2, TOP+38);
     ctx.font="bold 12px monospace"; ctx.fillStyle="#8a94a0";
-    ctx.fillText("build freely — they wait for you", W/2, TOP+58);
+    // DR-#042: the level's goal, always visible — survive the raids, the Queen opens the way
+    if(!endless){
+      const lw = curLevel().waves, left = lw[lw.length-1]-waveIdx+1;
+      ctx.fillText("survive "+left+" more raid"+(left===1?"":"s")+" — the Queen opens the way", W/2, TOP+58);
+    } else ctx.fillText("build freely — they wait for you", W/2, TOP+58);
     // goal gradient: how far to the next named moment
     if(!endless){
       let tease = "";
