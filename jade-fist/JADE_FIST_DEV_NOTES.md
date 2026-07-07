@@ -450,3 +450,28 @@ caused #036→#037's regressions. Said so and scoped down instead of padding. Wh
 
 VALIDATION: `node --check` on master + both regenerated alt builds; bot suite 12/12 wins, zero
 console errors.
+
+## JF-#039 — DUEL REWORK: Punch-Out pacing (2026-07-07)
+Mike's direction: "way less enemies but a tougher back and forth — think a Punch-Out side
+scroller." The crowd-brawler wave machine became a duel machine:
+- **Waves are duels now**: non-boss waves spawn `min(3, 1 + wave/2)` foes (was `3 + wave*1.3`,
+  i.e. 4-9). Wave 1 of a district is a single challenger.
+- **One at a time**: the next duelist only enters when the ring is empty (past difficulty 6 a
+  second may join, so pincers, sweeps, and thrown-body payoffs still exist late + in boss
+  phases, where the boss still calls two students at once). The old duo-rush spawn block and
+  density-based spawn cadence are gone.
+- **Tougher foes**: hp raised across the board — NORM 3 (+1 past diff 6), FAST 2 (+1 past 7),
+  SPEAR 3 (+1 past 9), BRUTE now takes 2 counters (was 1). `hpMax` stored on every enemy.
+- **The back-and-forth**: on stagger recovery a wounded duelist comes back meaner — telegraph
+  windup tightens toward 70% of base as hp drops (floored at 20f, still reactable), wounded
+  vipers roll fresh feints (40%), wounded spearmen re-arm and throw again if range opens (45%).
+  Boss excluded (his phase system already does this).
+- **HP pips on everyone**: the boss-only pip row now draws over every multi-hit foe (smaller
+  dots), so each read visibly chips the duelist down — the Punch-Out "progress on a tough
+  opponent" feel.
+- **Belts rebalanced**: kill milestones roughly halved (12/40/80/150/250/400) since duels
+  yield ~15 fells a run instead of 30+.
+
+VALIDATION: bot fairness suite 12/12 wins across all four districts, 0% unreactable (fast)
+hits, 0% pincer hits, ~0.4 hits taken per run, zero console errors. Avg 15.5 fells + 17.3
+counters per bot run — counters now outnumber kills, i.e. the fight really is exchange-driven.

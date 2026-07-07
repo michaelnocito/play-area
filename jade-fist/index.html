@@ -427,13 +427,14 @@ function botFrame(){
 }
 // belts = lifetime-kill milestones (CG "achievable objectives"); sash shows your rank
 const BELTS = [
+  // JF-#039: thresholds halved-ish — duels mean ~8-12 fells a run, not 30+
   { name: 'WHITE',  need: 0,   col: '#e8e8e8' },
-  { name: 'YELLOW', need: 25,  col: '#e8d05a' },
-  { name: 'ORANGE', need: 75,  col: '#e89a4a' },
-  { name: 'GREEN',  need: 150, col: '#3fae7c' },
-  { name: 'BLUE',   need: 300, col: '#4a8ae8' },
-  { name: 'BROWN',  need: 500, col: '#a8794a' },
-  { name: 'BLACK',  need: 800, col: '#3a3f48' }
+  { name: 'YELLOW', need: 12,  col: '#e8d05a' },
+  { name: 'ORANGE', need: 40,  col: '#e89a4a' },
+  { name: 'GREEN',  need: 80,  col: '#3fae7c' },
+  { name: 'BLUE',   need: 150, col: '#4a8ae8' },
+  { name: 'BROWN',  need: 250, col: '#a8794a' },
+  { name: 'BLACK',  need: 400, col: '#3a3f48' }
 ];
 function beltOf(k){ let b = 0; BELTS.forEach((B, i) => { if (k >= B.need) b = i; }); return b; }
 // JF-#010: techniques — belt promotions teach new play, not just a sash color.
@@ -675,14 +676,15 @@ function spawnEnemy(forceSide){
     // JF-#028: a spearman hurls ONE spear from range before closing to melee.
     // high throw -> DUCK, low throw -> JUMP. After it throws, it fights normally.
     willThrow: type === T_SPEAR, projHigh: Math.random() < 0.5,
-    // JF-#038: multi-hit toughness — brute stays a 1-counter fell (already softened by
-    // shoves/rage first); everyone else needs 2+ good hits, more as waves climb.
-    hp: type === T_BRUTE ? 1
-      : type === T_FAST  ? (1 + (difficulty > 8 ? 1 : 0))
-      : type === T_SPEAR ? (2 + (difficulty > 9 ? 1 : 0))
-      : (2 + (difficulty > 7 ? 1 : 0))   // T_NORM
+    // JF-#039: DUEL toughness — far fewer bodies, so every foe is a real
+    // back-and-forth: 2-4 good reads to fell, more as waves climb.
+    hp: type === T_BRUTE ? 2
+      : type === T_FAST  ? (2 + (difficulty > 7 ? 1 : 0))
+      : type === T_SPEAR ? (3 + (difficulty > 9 ? 1 : 0))
+      : (3 + (difficulty > 6 ? 1 : 0))   // T_NORM
   });
   const ne = enemies[enemies.length - 1];
+  ne.hpMax = ne.hp;                           // JF-#039: pips + wounded-pressure scale off this
   ne.windup0 = ne.windup;                     // base windup (brute rage floors off this)
   mutter(ne);                                 // JF-#030: the odd approach one-liner
   if (ne.guard && combo >= 8 && !adaptShown){
@@ -728,7 +730,7 @@ function beginWave(n){
     if (bz.flavor) popup(W/2, 210, '“' + bz.flavor.taunt + '”', '#e8b06a', true);   // taunt on entry
     Snd.windup(60);
   } else {
-    toSpawn = 3 + Math.round(wave * 1.3);   // JF-#038: fewer bodies, each one tougher
+    toSpawn = Math.min(3, 1 + Math.floor(wave / 2));   // JF-#039: DUELS — 1-3 tough foes per wave, not a crowd
     banner('WAVE ' + wave, '#e8dcc0', 90);
   }
   spawnT = 40;
@@ -1355,15 +1357,14 @@ function update(){
     }
   } else {
     spawnT -= dt;
-    if (spawnT <= 0 && toSpawn > 0){
+    // JF-#039: Punch-Out pacing — duelists enter ONE AT A TIME. The next
+    // challenger only walks in once the ring is empty (late game: a second
+    // may join, so pincers and throw payoffs still exist past difficulty 6).
+    const ringCap = difficulty > 6 ? 2 : 1;
+    const live = enemies.reduce((n, e) => n + (e.st !== E_DOWN && e.st !== E_THROWN ? 1 : 0), 0);
+    if (spawnT <= 0 && toSpawn > 0 && live < ringCap){
       toSpawn--; spawnEnemy();
-      // duo rush scales with difficulty; late duos may split to opposite sides
-      if (toSpawn > 0 && difficulty > 2 && Math.random() < Math.min(0.16 + difficulty * 0.035, 0.4)){   // JF-#038: fewer duos, fights stay 1-2 deep
-        toSpawn--;
-        spawnEnemy(difficulty > 7 && Math.random() < 0.4 ? -lastSpawnSide : lastSpawnSide);
-      }
-      spawnT = Math.max(26, 90 - difficulty * 7) * (0.7 + Math.random() * 0.6) *
-               (DISTRICTS[sel].quirk === 'crowd' ? 0.78 : 1);   // MARKET: they crowd
+      spawnT = 40 + Math.random() * 30;
     }
     if (toSpawn <= 0 && enemies.length === 0) onWaveClear();
   }
@@ -1451,7 +1452,20 @@ function update(){
             }
           }
         }
-        if (e.stT >= 25){ e.st = E_WALK; e.stT = 0; e.chained = false; }
+        if (e.stT >= 25){
+          e.st = E_WALK; e.stT = 0; e.chained = false;
+          // JF-#039: the back-and-forth — a wounded duelist comes back MEANER.
+          // Telegraphs tighten as hp drops (still floored reactable), vipers
+          // start throwing desperate feints, spearmen re-arm if range opens.
+          // Boss excluded: his phases already tune windup per counter taken.
+          if (e.type !== T_BOSS && e.hpMax > 1 && e.hp < e.hpMax){
+            e.windup = Math.max(20, e.windup0 * (0.7 + 0.3 * e.hp / e.hpMax));
+            if (e.type === T_FAST) e.feint = Math.random() < 0.4;
+            if (e.type === T_SPEAR && !e.willThrow && Math.random() < 0.45){
+              e.willThrow = true; e.projHigh = Math.random() < 0.5;
+            }
+          }
+        }
         break;
       case E_FEINT:
         // JF-#007: pale flash while springing back out of reach, then resume (next approach is real)
@@ -1909,11 +1923,14 @@ function draw(){
       spear: e.type === T_SPEAR,
       guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER)
     });
-    // boss hp pips: one jade dot per counter still owed
-    if (e.type === T_BOSS && e.st !== E_THROWN && e.st !== E_DOWN){
+    // hp pips: one dot per good read still owed — JF-#039: every multi-hit
+    // duelist shows them (Punch-Out reads need visible progress), boss biggest
+    if (e.hpMax > 1 && e.st !== E_THROWN && e.st !== E_DOWN){
+      const pr = e.type === T_BOSS ? 5 : 3.5, ps = pr * 3.2;
+      const py = e.y - (e.type === T_BOSS ? 160 : 112 + (size - 1) * 44);
       for (let i = 0; i < e.hpMax; i++){
         cx.fillStyle = i < e.hp ? '#e86a6a' : 'rgba(140,148,166,0.35)';
-        cx.beginPath(); cx.arc(e.x - (e.hpMax - 1) * 8 + i * 16, e.y - 160, 5, 0, 7); cx.fill();
+        cx.beginPath(); cx.arc(e.x - (e.hpMax - 1) * ps / 2 + i * ps, py, pr, 0, 7); cx.fill();
       }
     }
   }
