@@ -960,3 +960,43 @@ over screen, console clean. Screenshot eyeballed: cross-of-4-lanes composition r
 
 **Needs Mike's feel:** lane width (4 tiles) and plaza size are first guesses; balance from
 DR-#033 now plays on lanes instead of open field, so expect a re-tune pass after his playtest.
+
+## DR-#035 — DUNGEON pivot, core slice (2026-07-06, Mike's direction)
+Mike's shift: "still tower defense, but the player creates a D&D-on-NES type level using
+zombies, monsters, doors and traps, then we release the whole batch of enemies at once like
+a raiding party. Player builds the dungeon before clicking start; evolve it wave by wave."
+Scoped with him (all recommendations accepted): fixed dungeon floor plan / build-freely-then-
+START / core slice first (doors + spikes now, monster variety later).
+
+Shipped:
+- **Fixed dungeon floor plan** (`ROOMS` rect list + `onFloor()` + `buildDungeon()`, reuses the
+  DR-#034 `rock` terrain): ONE west entrance → guard room → NORTH branch (hall B → room D) or
+  SOUTH branch (hall C → room E) → both converge on the east approach → Hive chamber. 37-tile
+  crawl, corridors 2-wide, rooms are the garrison/build spaces. `sideHasPath` now just checks
+  gate-reachability (was all-4-edges); `openGates()` always returns the single entrance.
+- **Free build phase**: prep has NO timer (never auto-starts). Pulsing "⚔ START RAID" button
+  (top-center; Enter/Space too) releases the whole party AT ONCE — `queueWave` pours every
+  raider through the entrance 0.1s apart with y-jitter across the 2-wide doorway. Wave-by-wave
+  evolve = existing loop: clear raid → biomass/boons → build more → bigger party (WAVES table
+  unchanged, party preview relabeled "raid party").
+- **DOOR (15◈, 150hp)**: breakable barrier. Walkable for the flow field (zero seal-rule
+  interaction) but PHYSICALLY solid (`solidAt`) — raiders stop and hack it (min 8 dmg/s so
+  dmg-0 sweepers can't stall forever). Plank+iron-band art, damage cracks, hp bar, oriented
+  to the corridor.
+- **SPIKES (20◈, 30 dmg, 3 uses)**: floor trap, fires on all raiders standing on it (pierces
+  armor), 0.9s re-arm, uses pips, dulls out at 0.
+- **Palette = ZOMBIE / GRABBER / DOOR / SPIKES**; ghost cursor knows the new costs/validity.
+  Tap a door/trap with no brush → REMOVE menu (60% refund), mirroring the hedge pattern.
+- Banners rewritten for one entrance ("a raiding party breaches the west door").
+
+Verified in preview (reload, no HMR): parse OK; gate flow-dist 37; 1200 idle frames stay in
+prep; placements land, door-on-rock rejected; raid releases 4-at-once over 0.3s; full 60s sim —
+raiders hacked both doors down, trap fired (uses 3→2), zombie cleared the wave, hive untouched,
+enemies never on rock, wave loop returned to build phase; console clean; screenshot eyeballed.
+
+**Design note for the next slice:** doors do NOT redirect pathing (raiders bash through rather
+than reroute), so the flow field always picks one branch. If we want doors to force the long
+way around, make them flow-blockers behind the seal rule. Also candidates: more monster/trap
+variety, per-wave dungeon evolution events, loot rooms.
+**Needs Mike's feel:** door hp/cost, spike numbers, and whether the raid sizes need re-pacing
+now that they arrive as one batch.
