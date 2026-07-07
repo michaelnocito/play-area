@@ -389,8 +389,16 @@ function botThink(){
   // and spamming them re-staggers forever and stalls the wave)
   if (t % 10 === 0){
     const e = nearestInReach(0);
-    if (e && e.st !== E_WINDUP && e.type !== T_BRUTE && e.type !== T_BOSS)
+    if (e && e.st !== E_WINDUP && e.type !== T_BRUTE && e.type !== T_BOSS){
+      // JF-#041: a line-guarded foe — crush the guard with a HEAVY when nothing
+      // is threatening; otherwise poke it (2 bounces bait a counterable retaliation)
+      if (e.guard && (e.st === E_WALK || e.st === E_STAGGER) &&
+          !enemies.some(o => o.st === E_WINDUP || o.st === E_AIM) &&
+          P.heavyT <= 0 && whiffT <= 0 && !darts.some(d => !d.hit)){
+        heavy(); return;
+      }
       strike(Math.sign(e.x - P.x) || 1);
+    }
   }
 }
 function botHit(e){
@@ -583,6 +591,19 @@ const SCROLLS = [
   { k: 'bighead', name: 'BIG-HEAD SCROLL',desc: 'everybody gets a comically huge head' },
   { k: 'tiny',    name: 'TINY-FISTS SCROLL', desc: 'itty-bitty arms, absurd knockback' }
 ];
+// JF-#041: player ATTACK LINES — strike while airborne = HIGH, while ducking =
+// LOW, otherwise MID. No new buttons: the dodge keys double as attack stances
+// (Nidhogg three-height fencing). lineUse tracks what you favor this run so
+// guarded foes can adapt to it (Punch-Out Title Defense: they learn your habits).
+let lineUse = { mid: 0, low: 0, high: 0 };
+let guardTaught = false;              // "they guard X — vary your line" shown once per run
+function atkLineNow(){ return P.duckT > 0 ? 'low' : P.jumpT > 0 ? 'high' : 'mid'; }
+function pickGuardLine(){
+  if (Math.random() < 0.3) return ['mid', 'low', 'high'][(Math.random() * 3) | 0];
+  let best = 'mid';
+  for (const k of ['low', 'high']) if (lineUse[k] > lineUse[best]) best = k;
+  return best;
+}
 let run = {};                         // run-scoped scroll flags (k: 1)
 let scrollOffer = null;               // {a, b} SCROLLS indices while choosing
 function offerScrolls(){
@@ -719,7 +740,7 @@ function heavyLand(){
 // ---------------------------------------------------------------- enemies ---
 // Enemy lifecycle: walk in -> windup (RED TELEGRAPH = counter window) ->
 // strike (hits you if still standing there) -> recover -> walk again.
-const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5, E_STAGGER = 6, E_FEINT = 7, E_AIM = 8;   // JF-#028: E_AIM = spearman throw wind-up
+const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_DOWN = 4, E_THROWN = 5, E_STAGGER = 6, E_FEINT = 7, E_AIM = 8, E_EVADE = 9;   // JF-#028: E_AIM = spearman throw wind-up · JF-#041: E_EVADE = hopping back from YOUR strike
 // types: 0 initiate · 1 viper (fast, short telegraph) · 2 iron monk (brute — strikes
 // only SHOVE him, counter to fell) · 3 spearman (attacks from long range — counter at range)
 const T_NORM = 0, T_FAST = 1, T_BRUTE = 2, T_SPEAR = 3, T_BOSS = 4;
@@ -766,6 +787,14 @@ function spawnEnemy(forceSide){
   const ne = enemies[enemies.length - 1];
   ne.hpMax = ne.hp;                           // JF-#039: pips + wounded-pressure scale off this
   ne.windup0 = ne.windup;                     // base windup (brute rage floors off this)
+  // JF-#041: enemy DEFENSE — a raised guard now covers ONE line (high/mid/low,
+  // shown by where the bracer sits) and PERSISTS: matching-line strikes bounce,
+  // any other line lands (an OPENING). Adapts toward your favorite line.
+  if (ne.guard) ne.guardLine = pickGuardLine();
+  // JF-#041: evaders (Punch-Out dodge) — vipers early, rank-and-file late. They
+  // hop back from your strike, then land in a long punishable recover: bait them.
+  ne.canEvade = (type === T_FAST && difficulty > 2) || (type === T_NORM && difficulty > 6);
+  ne.evadeCd = 0;
   mutter(ne);                                 // JF-#030: the odd approach one-liner
   if (ne.guard && combo >= 8 && !adaptShown){
     adaptShown = true;
@@ -889,7 +918,7 @@ const REACH = 92;   // strike range from player center
 function nearestInReach(dir){
   let bestE = null, bd = 1e9;
   for (const e of enemies){
-    if (e.st === E_DOWN || e.st === E_THROWN || e.st === E_FEINT) continue;   // feint = springing away, unhittable
+    if (e.st === E_DOWN || e.st === E_THROWN || e.st === E_FEINT || e.st === E_EVADE) continue;   // feint/evade = springing away, unhittable
     const dx = e.x - P.x;
     if (dir && Math.sign(dx) !== dir) continue;
     const d = Math.abs(dx);
@@ -975,6 +1004,8 @@ function strike(dir){
   if (P.block || P.heavyT > 0) return;                  // JF-#040: guarding / committed
   if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
   P.face = dir; P.punchT = 12; P.punchSide = dir;
+  const atkLine = atkLineNow();   // JF-#041: mid, or low (ducking) / high (airborne)
+  lineUse[atkLine]++;
   const e = nearestInReach(dir);
   if (!e){ Snd.whoosh(); whiffT = run.monkey ? 7 : 14; return; }   // JF-#006 whiff recovery (JF-#025: MONKEY halves it)
 
@@ -1106,11 +1137,31 @@ function strike(dir){
       }
     } else if (!perfect) perfChain = 0;
     kills++;
-  } else if (e.guard > 0){                       // ---- BLOCKED (guard break) ----
-    e.guard = 0; e.st = E_STAGGER; e.stT = 0; e.vx = dir * 2.5;
-    popup(e.x, e.y - 80, 'BLOCKED', '#a8b4c8');
+  } else if (e.st === E_WALK && e.canEvade && e.evadeCd <= 0 && Math.random() < 0.55){
+    // ---- JF-#041 EVADE: they hop back from your strike (Punch-Out dodge) ----
+    // The whiff stings, but they LAND in a long recover — bait it, then punish.
+    e.st = E_EVADE; e.stT = 0; e.evadeCd = 210;
+    e.vx = Math.sign(e.x - P.x || 1) * 4.5;
+    popup(e.x, e.y - 100, 'DODGED!', '#c8d4e0');
+    Snd.whoosh(); whiffT = 10;
+  } else if (e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER) &&
+             atkLine === (e.guardLine || 'mid')){
+    // ---- JF-#041 BLOCKED: their guard covers this line and HOLDS ----
+    e.blockedN = (e.blockedN || 0) + 1;
+    popup(e.x, e.y - 80, 'BLOCKED ' + (e.guardLine || 'mid').toUpperCase(), '#a8b4c8');
     Snd.block(); hitStop = 2; shake = 2;
     burst(e.x, e.y - 58, '#a8b4c8', 6, 2);
+    if (!guardTaught){
+      guardTaught = true;
+      popup(W/2, 220, 'THEY GUARD ' + (e.guardLine || 'mid').toUpperCase() + ' — STRIKE ANOTHER LINE', '#a8b4c8', true);
+    }
+    if (e.blockedN >= 2 && e.st === E_WALK){   // keep hammering the guard = they punish you
+      e.blockedN = 0;
+      e.st = E_WINDUP; e.stT = 0; e.atk = 'strike'; e.converted = true; e.follow = false;
+      e.windup = Math.max(22, e.windup0 * 0.7);
+      popup(e.x, e.y - 104, 'RETALIATES!', '#e8a06a');
+      Snd.windup(e.windup);
+    }
   } else if (e.type === T_BOSS){                 // ---- the Master shrugs strikes off ----
     e.x += dir * 8;
     popup(e.x, e.y - 110, 'SHRUGGED OFF', '#a8b4c8');
@@ -1135,14 +1186,17 @@ function strike(dir){
     Snd.hit(combo + 3); hitStop = 5; shake = 6;
     burst(e.x, e.y - 45, '#e8c76a', 14, 4);
   } else {                                       // ---- CLEAN STRIKE ----
+    // JF-#041: hitting AROUND a raised guard (a different line) is an OPENING —
+    // it strips the guard and pays extra. The reward for varying your line.
+    const opening = e.guard > 0;
     // JF-#038: also multi-hit — a strike that doesn't finish the foe just staggers it
     e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
     if (e.hp > 0){
       e.st = E_STAGGER; e.stT = 0; e.vx = dir * 3; e.guard = 0;
       combo++; comboT = CW;
-      const pts = 60 * Math.min(combo, 5);
+      const pts = Math.round((opening ? 90 : 60) * Math.min(combo, 5));
       score += pts;
-      popup(e.x, e.y - 80, 'HIT +' + pts, '#d8d0c0');
+      popup(e.x, e.y - 80, (opening ? 'OPENING! +' : 'HIT +') + pts, opening ? '#e8c76a' : '#d8d0c0');
       Snd.hit(combo); hitStop = 2; shake = 2;
       burst(e.x, e.y - 40, '#d8d0c0', 6, 2);
       if (combo > bestCombo) bestCombo = combo;
@@ -1159,9 +1213,9 @@ function strike(dir){
       finisherCue = true;
       popup(W/2, 190, 'ONE MORE — THROW READY', '#e8c76a', true);
     }
-    const pts = 100 * Math.min(combo, 5);
+    const pts = Math.round((opening ? 150 : 100) * Math.min(combo, 5));
     score += pts; kills++; jadeRun++;
-    popup(e.x, e.y - 80, (combo > 1 ? '×' + Math.min(combo,5) + ' ' : '') + '+' + pts, '#e8dcc0');
+    popup(e.x, e.y - 80, (opening ? 'OPENING! ' : combo > 1 ? '×' + Math.min(combo,5) + ' ' : '') + '+' + pts, opening ? '#e8c76a' : '#e8dcc0');
     Snd.hit(combo); hitStop = 3; shake = 4;
     burst(e.x, e.y - 45, '#d8d0c0', 10, 3);
   }
@@ -1221,7 +1275,12 @@ function resolveEnemyHit(e){
   if (avoided){                                    // ---- clean dodge: rewarded ----
     if (atk === 'grab'){ e.recoverLong = true; e.st = E_STRIKE; }   // whiffed grab = long punish window
     score += 80; jadeRun++;
+    // JF-#041: BULLET TIME — the swing sails over your duck / under your jump in
+    // slow motion. The freeze IS the reward: you watch the miss, then punish.
+    slowMo = Math.max(slowMo, 26); hitStop = Math.max(hitStop, 3);
+    shake = Math.max(shake, 3);
     popup(P.x, P.y - (ducked ? 58 : 100), (atk === 'grab' ? 'SLIPPED +80' : 'DODGE +80'), '#7ce8a8');
+    burst(P.x + (Math.sign(e.x - P.x) || 1) * 30, ducked ? P.y - 88 : P.y - 16, '#7ce8a8', 8, 3);
     return;
   }
   if (BOT) botHit(e);                              // JF-#022: classify before it lands
@@ -1488,6 +1547,7 @@ function beginRun(){
   enemies.length = 0; popups.length = 0; parts.length = 0; darts.length = 0;
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
   P.block = false; P.blockAge = 0; P.heavyT = 0; padBlockActive = false;   // JF-#040
+  lineUse = { mid: 0, low: 0, high: 0 }; guardTaught = false;   // JF-#041
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
   hypeShown = -1; longestSend = 0;   // JF-#030: reset silly-run trackers
@@ -1545,6 +1605,7 @@ function update(){
       const dodged = d.high ? P.duckT > 0 : P.jumpT > 0;
       if (dodged){
         score += 150; jadeRun++; bumpTrial('dodge');
+        slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
         popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
         burst(P.x, d.y0, '#7ce8a8', 8, 3);
       } else {
@@ -1585,6 +1646,7 @@ function update(){
 
   for (const e of enemies){
     e.stT += dt;
+    if (e.evadeCd > 0) e.evadeCd -= dt;   // JF-#041
     // JF-#034: THE BUTCHER lobs a cleaver from range — a high or low throw you
     // duck/jump like a spearman's (reuses the dart system, boss keeps fighting).
     if (e.type === T_BOSS && e.flavor && e.flavor.cleaver && e.st !== E_DOWN && e.st !== E_THROWN){
@@ -1717,6 +1779,12 @@ function update(){
         // JF-#007: pale flash while springing back out of reach, then resume (next approach is real)
         e.x += Math.sign(e.x - P.x) * 5 * dt;
         if (e.stT >= 16){ e.st = E_WALK; e.stT = 0; e.feint = false; }
+        break;
+      case E_EVADE:
+        // JF-#041: backflip away from your strike — unhittable in the air, then
+        // LANDS into a long recover. The Punch-Out lesson: their dodge is your window.
+        e.x += e.vx * dt; e.vx *= 0.94;
+        if (e.stT >= 22){ e.st = E_RECOVER; e.stT = 0; e.recoverLong = true; }
         break;
       case E_DOWN: case E_THROWN:
         e.x += e.vx * dt; e.y += e.vy * dt; e.vy += 0.5 * dt;
@@ -1885,10 +1953,17 @@ function fighter(x, y, face, opts){
   if (run.tiny) ext *= 0.5;             // JF-#032: TINY-FISTS — itty-bitty arms
   if (pose === 'duck'){                 // arms tuck in tight to the crouch
     arm(-8, -58, -15, -46);
-    arm(8, -58, 8 + ext * 0.8, -52 - (punch > 0 ? 2 : -4));
+    // JF-#041: a crouched LOW attack sweeps at ankle height — the leg-line read
+    arm(8, -58, 8 + ext * (o.line === 'low' ? 1.15 : 0.8),
+        o.line === 'low' ? -34 - (punch > 0 ? 0 : 6) : -52 - (punch > 0 ? 2 : -4));
   } else if (pose === 'air'){           // trailing + leading (flying-kick read)
     arm(-8, -64, -20, -58);
     arm(8, -64, 8 + ext, -66 - (punch > 0 ? 6 : 0));
+  } else if (o.line === 'high'){
+    // JF-#041: HIGH-line attack — the lead arm cocks up then swings at HEAD
+    // height, so a duck visibly slips UNDER it. Windup = raised; strike = out high.
+    arm(-7, -62, -18, -50);
+    arm(5, -66, 5 + (punch > 0 ? ext : 6), punch > 0 ? -86 : -96);
   } else {
     arm(-7, -62, -18, -50);
     arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7));
@@ -1907,10 +1982,13 @@ function fighter(x, y, face, opts){
     cx.strokeStyle = OUT; cx.lineWidth = 2; cx.stroke();
   }
   if (o.guard){                         // raised-guard bracer arc in front
+    // JF-#041: the bracer sits at the LINE it covers — high (head), mid, or low
+    // (shins) — so you can read which of your attack heights will bounce.
+    const gy = o.guardLine === 'high' ? -86 : o.guardLine === 'low' ? -30 : -62;
     cx.strokeStyle = OUT; cx.lineWidth = 7;
-    cx.beginPath(); cx.arc(23, -62, 14, -1.1, 1.1); cx.stroke();
+    cx.beginPath(); cx.arc(23, gy, 14, -1.1, 1.1); cx.stroke();
     cx.strokeStyle = '#cfe0f8'; cx.lineWidth = 4;
-    cx.beginPath(); cx.arc(23, -62, 14, -1.1, 1.1); cx.stroke();
+    cx.beginPath(); cx.arc(23, gy, 14, -1.1, 1.1); cx.stroke();
   }
   cx.restore();   // end torsoDrop group
   cx.restore();   // end fighter transform
@@ -2209,13 +2287,28 @@ function draw(){
       cx.restore();
     }
     else if (e.st === E_DOWN || e.st === E_THROWN){ eyes = 'x'; }
+    // JF-#041: evade — a pale backflip away from your fist, unhittable till it lands
+    let evY = 0;
+    if (e.st === E_EVADE){
+      const p = Math.min(1, e.stT / 22);
+      evY = Math.sin(p * Math.PI) * 36;
+      rot += -Math.sign(e.vx || 1) * p * 5.2;   // full flip in the hop direction
+      col = '#c8d4e0'; eyes = 'idle';
+    }
+    // JF-#041: attack POSES sell the line — a low sweep crouches to ankle height
+    // (jump clears it), a high swing cocks and lashes at head height (duck slips it)
+    const atkActive = e.st === E_WINDUP || e.st === E_STRIKE;
+    const epose = atkActive && e.atk === 'low' ? 'duck' : '';
     // squash: pop on spawn-walk and squish when knocked down
     const squash = (e.st === E_DOWN || e.st === E_THROWN) ? -0.5 : 0;
-    fighter(e.x, e.y, -e.side, {
+    fighter(e.x, e.y - evY, -e.side, {
       col, punch, rot, size, eyes, squash,
+      pose: epose,
+      line: atkActive ? e.atk : null,
       sash: e.type === T_BOSS ? '#a02828' : e.type === T_BRUTE ? '#3a3050' : e.type === T_SPEAR ? '#2a6a48' : '#a04848',
       spear: e.type === T_SPEAR,
-      guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER)
+      guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER),
+      guardLine: e.guardLine
     });
     // hp pips: one dot per good read still owed — JF-#039: every multi-hit
     // duelist shows them (Punch-Out reads need visible progress), boss biggest
@@ -2281,6 +2374,7 @@ function draw(){
   }
   fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
     punch: P.punchT, pose: pPose, rot: run.drunken ? Math.sin(t * 0.14) * 0.1 : 0,   // JF-#032: DRUNKEN sway
+    line: P.duckT > 0 && P.punchT > 0 ? 'low' : null,   // JF-#041: crouch sweep read
     acc: wornAcc(),   // JF-#033
     guard: P.block,   // JF-#040: raised-guard bracer
     eyes: P.punchT > 0 || hurtFlash > 0 || P.heavyT > 0 ? 'angry' : 'idle' });
@@ -2439,7 +2533,7 @@ function draw(){
       cx.fillText(cap, W/2, 236);
     }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap L/R strike · swipe ↑ jump ↓ duck · on-screen BLOCK & HEAVY buttons' : '◀▶ strike · ▲ jump · ▼ duck · hold K block/parry · J heavy blow', W/2, 332);
+    cx.fillText(TOUCH ? 'tap L/R strike · swipe ↑ jump ↓ duck · on-screen BLOCK & HEAVY buttons' : '◀▶ strike · ▲▼ dodge (strike while dodging = high/low attack) · K block · J heavy', W/2, 332);
     // JF-#009: district selector — the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';

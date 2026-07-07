@@ -529,3 +529,43 @@ or duck only, block eats it. Heavy unit-tested: crushes guard (2 dmg), launches+
 Master shrugs. Control pad confirmed building all 6 buttons each play frame. (Preview screenshots
 still time out in the backgrounded renderer per prior notes — verified programmatically instead;
 Mike eyeballs on the live URL.)
+
+## JF-#041 — LINES OF ATTACK: animations sell the dodge, enemies defend too (2026-07-07)
+Mike's playtest notes on #040: (1) the jump/duck windows need animations that reflect the need —
+the enemy should visibly attack HIGH so the duck goes UNDER, same for jump; (2) either dodge
+should give a bullet-time freeze; (3) enemies should also block/jump/dodge, requiring jump
+attacks, low attacks, and mid attacks from the player. Researched: Punch-Out (opponents block
+and dodge YOUR punches — Von Kaiser/Piston Hondo/Don Flamenco/Great Tiger dodge, and an
+opponent's dodge/miss is your vulnerability window; baiting is core), Nidhogg (three sword
+heights, matching-height guard blocks, change height to open them), For Honor (stance guards +
+guard-break mixups). Implemented:
+- **Attack poses sell the line**: a HIGH swing now cocks the lead arm up and lashes at head
+  height (fighter() o.line='high' arm at y≈-86..-96), so a duck (torsoDrop 30) visibly slips
+  UNDER it; a LOW sweep crouches the attacker into the duck pose with the arm extended at ankle
+  height (y≈-34), so a jump visibly clears it. Player's crouch-strike gets the same sweep arm.
+- **BULLET TIME on a clean dodge**: ducking a high / jumping a low / slipping a grab now grants
+  slowMo 26 + a hitStop beat + burst where the swing sailed past — you watch the miss in slow
+  motion, then punish. Spear/cleaver dodges get slowMo 18.
+- **Player ATTACK LINES, no new buttons**: strike while airborne = HIGH (jump attack), strike
+  while ducking = LOW (crouch sweep), otherwise MID. The dodge keys double as attack stances
+  (Nidhogg heights). lineUse{} tracks your habit per run.
+- **Enemy line GUARDS**: a raised guard now covers ONE line — the bracer is drawn AT that height
+  (head/waist/shins) so it reads — and PERSISTS: a matching-line strike bounces ("BLOCKED MID"),
+  any other line lands as an OPENING (+50% pts, strips the guard). Guard placement adapts toward
+  your most-used line (70%) à la Punch-Out Title Defense. Hammering the same guard twice makes
+  them RETALIATE with an instant counterable strike windup — punishing button-mash, feeding the
+  counter loop. One-time teach popup: "THEY GUARD MID — STRIKE ANOTHER LINE". Counters and HEAVY
+  still ignore/crush guards (For Honor guard-break role). Guard only active in WALK/STAGGER —
+  matching exactly when the bracer is drawn.
+- **Enemy EVADES** (E_EVADE): vipers past diff 2 (rank-and-file past 6) hop back from your strike
+  ~55% of the time (cd 210f) — a pale backflip, unhittable in the air — then LAND into the long
+  recoverLong punish window. The Punch-Out bait loop: their dodge is your opening.
+- Bot: crushes line-guards with HEAVY when nothing threatens; a blocked-poke retaliation is a
+  plain red windup the bot counters naturally.
+
+VALIDATION: syntax OK (compileFunction); bot suite ?bot=4 = 14/16 wins, 0.69 hits/run, 0%
+unreactable, 0% pincer, zero console errors. Unit tests via eval (forced S_PLAY — NOTE: strike()
+no-ops outside S_PLAY, a prior test pass silently failed on that): mid-vs-mid-guard blocked /
+low-vs-mid lands OPENING + strips guard / high guard blocks jump attack, mid lands / 2 blocked
+pokes → RETALIATES with counterable windup / evade rate 13/20 with long-recover landing /
+bullet-time slowMo=26 on ducked high swing.
