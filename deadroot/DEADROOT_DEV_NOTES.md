@@ -1130,3 +1130,34 @@ make it only 4 tiles big; turn it from the eye into the RootQueen — she is the
 - Strategy consequence: her position sets the raid's path length — deep east chamber = long
   gauntlet, near the gate = suicide. Verified: placement rejects the Great Root and the gate;
   deep-chamber placement gives flow-dist 28 (vs 20 center); waves 1-3 win at 100 HP; console clean.
+
+## DR-#040 — Dev menu: global enemy HP / attack multipliers (2026-07-07, Mike)
+Mike: "add to the dev controls enemy health so i can tweak their health and attack, just
+global for all enemies that adjusts their current value."
+- Two new `?dev=1` sliders: **Enemy HP ×** (0.2–4) and **Enemy attack ×** (0–4), globals
+  `devEnemyHpMult` / `devEnemyDmgMult` applied at spawn AND live — moving the slider rescales
+  every enemy already on the field (hp+max proportionally; dmg recomputed from CFG base), so
+  the effect is visible mid-wave without a restart.
+- Verified in preview: troop 200→400hp/10→30dmg on slider move, fresh spawns inherit both
+  multipliers; console clean.
+
+## DR-#041 — ADVENTURER AI slice: the raid acts like player characters (2026-07-07, Mike)
+Inbox note (2026-07-07): "this should mimic the feel of a dungeon crawler but we are the
+dungeon and the enemy are the heros... combat pacing (right now it's more of a follow-a-path
+then the enemies free exploring. the enemies should act like player characters as much as we
+can make them."  First slice, three behaviors:
+1. **FIGHT BACK (aggro)** — when a raider with dmg>0 takes a hit, it (and party members within
+   2 tiles) turns on the nearest zombie within 3.5 tiles and hunts it for 4s (`e.aggro`/
+   `e.aggroT`, decays / clears when the zombie dies). Clerics + sweepers (dmg 0) keep to their
+   jobs. Teaching banner "THE RAID FIGHTS BACK" on first trigger. This also answers the
+   standing "too easy — enemies never pose a real threat" fail: bot sim now loses 2 guards by
+   wave 3 (was 0).
+2. **EXPLORE** — ~65% of raiders queue one "search point" (random open reachable floor tile on
+   their side of the Great Root) between the gap-mouth waypoint and the queen (`e.wps` queue
+   replacing the single `e.wp`), so the raid fans out and sweeps chambers instead of railing.
+3. **SEARCH PAUSE (pacing)** — on reaching a search point the raider rummages 0.6–1.3s
+   (`e.searchT`) before moving on — delver rhythm, not a march.
+Verified in preview (reload, no HMR): waves 1-3 clear at 100 hive HP with a 6-spitter static
+bot; aggro/search/waypoints all observed in-sim; parse OK; console clean. NOT yet done from
+the note (next candidates): room-aware AI (torches/loot draws), retreat-when-wounded, per-role
+formation. Needs Mike's feel pass.

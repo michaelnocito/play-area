@@ -339,6 +339,7 @@ let godMode = false, showRanges = false;
 // wired per-type as their atlases land). Atlas loads async; procedural draw is the
 // fallback if it 404s or before it's ready, so the game always runs.
 let useSprites = true;
+let devEnemyHpMult = 1, devEnemyDmgMult = 1; // DR-#040: global enemy HP/attack multipliers (dev menu); slider also rescales LIVE enemies
 let enemySpriteScale = 6.0;   // × enemy radius (tunable via dev menu)
 let towerSpriteScale = 96;    // px (tunable via dev menu)
 const SPR = {
@@ -406,7 +407,7 @@ let noHitWaves = 0, waveStartHP = 0, waveT = 0, waveFlashT = 0;
 let stains = [], rings = [];
 // first-time flags + pointer
 let seenSweeper = false, lastSurvivorShown = false, secondWindUsed = false, adFailReason = null;
-let seenTank = false, seenCleric = false, seenAmbush = false; // DR-#036 first-encounter teaching banners
+let seenTank = false, seenCleric = false, seenAmbush = false, seenAggro = false; // DR-#036/#041 first-encounter teaching banners
 let ptrX = 0, ptrY = 0;
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
@@ -690,11 +691,24 @@ function spawnEnemy(type){
   const c=g.c, r=g.r;
   let [x,y] = tileToXY(c,r);
   y += Math.random()*CFG.tile; // DR-#035: spread across the 2-wide entrance (rows 8-9), never into the wall above
-  const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
-  enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
+  const eHp=e.hp*devEnemyHpMult*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
+  // DR-#041: adventurer waypoints — pick a side around the Great Root, then most raiders
+  // "search" one spot in the burrow on their way in (they're delvers looting a dungeon,
+  // not ants on a rail). Search points must be open reachable floor.
+  const side = Math.random()<0.5?0:1;
+  const wps = [(()=>{ const g2=RAID_SPLIT[side]; const p2=tileToXY(g2[0],g2[1]); return {x:p2[0],y:p2[1]}; })()];
+  if(Math.random()<0.65){
+    for(let tries=0;tries<12;tries++){
+      const sc = 4+Math.floor(Math.random()*13), sr = side===0 ? 2+Math.floor(Math.random()*6) : 10+Math.floor(Math.random()*6);
+      if(onFloor(sc,sr) && !blocked[sr][sc] && flowDist && flowDist[sr][sc]!==Infinity){
+        const p=tileToXY(sc,sr); wps.push({x:p[0],y:p[1],search:true}); break;
+      }
+    }
+  }
+  enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg*devEnemyDmgMult, armor:e.armor, r:e.r,
     col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0,
     role:e.role||null, hidden:e.role==="stealth" && (endless || waveIdx>=2), healTgt:null,
-    wp:(()=>{ const g2=RAID_SPLIT[Math.random()<0.5?0:1]; const p2=tileToXY(g2[0],g2[1]); return {x:p2[0],y:p2[1]}; })() }); // DR-#036/#037 stealth from wave 3; DR-#038 pick a side around the Great Root
+    aggro:null, aggroT:0, searchT:0, wp:wps.shift(), wps }); // DR-#036/#037 stealth from wave 3; DR-#038 pick a side; DR-#041 explore + fight back
   // spawn poof — the human shoves out through the treeline
   burst(x,y,"#4a5a3a",6); rings.push({x,y,r:0,maxR:e.r+10,maxT:0.3,t:0.3,col:"rgba(120,150,100,0.5)"});
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they clear your biomass"); }
@@ -888,7 +902,7 @@ function newRun(){
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  stains=[]; rings=[]; seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
+  stains=[]; rings=[]; seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
   rotTipT=0; evolveTipT=0;
   save.plays=(save.plays|0)+1; persist();
   genDecor(); // fresh treeline + growing bone piles each run
@@ -1023,6 +1037,8 @@ function update(){
     if(e.flash>0) e.flash-=DT;
     if(e.drench>0) e.drench-=DT;
     if(e.panicT>0) e.panicT-=DT;
+    // DR-#041: aggro decays; drop it if the target zombie is already destroyed
+    if(e.aggroT>0){ e.aggroT-=DT; if(e.aggroT<=0 || !towers.includes(e.aggro)){ e.aggro=null; e.aggroT=0; } }
     // spore coat DoT
     if(e.coat>0){ e.coat-=DT; e.hp -= 6*DT*meta.dmg; }
     if(e.corroded>0) e.corroded -= DT;
@@ -1125,14 +1141,21 @@ function update(){
         // stop and hack at the zombie tower
         e.atkT += DT;
         if(e.atkT>=1){ e.atkT=0; damageTower(brawl, e.dmg); burst(brawl.x,brawl.y-4,"#c86060",4); }
+      } else if(e.searchT>0){
+        // DR-#041: pausing to search the chamber — delvers rummage, they don't march
+        e.searchT -= DT;
       } else {
         let dx=0,dy=0;
+        // DR-#041: a wounded raider HUNTS the zombie that hit it (party fights back like players)
+        if(e.aggro && e.aggroT>0){ dx=e.aggro.x-e.x; dy=e.aggro.y-e.y; }
+        else{
         // DR-#038: head for the chosen side of the Great Root first, then follow the flow
-        if(e.wp){ dx=e.wp.x-e.x; dy=e.wp.y-e.y; if(dx*dx+dy*dy < sq(24)) e.wp=null; }
+        if(e.wp){ dx=e.wp.x-e.x; dy=e.wp.y-e.y; if(dx*dx+dy*dy < sq(24)){ if(e.wp.search) e.searchT=0.6+Math.random()*0.7; e.wp=(e.wps&&e.wps.length)?e.wps.shift():null; } }
         if(!e.wp && dx===0 && dy===0){
         const f = inGrid(ec,er) ? flow[er][ec] : null;
         if(f){ const [nx,ny]=tileToXY(ec+f[0],er+f[1]); dx=nx-e.x; dy=ny-e.y; }
         else { const [hx,hy]=tileToXY((CFG.hive.c0+CFG.hive.c1+1)/2-0.5,(CFG.hive.r0+CFG.hive.r1+1)/2-0.5); dx=hx-e.x; dy=hy-e.y; } // DR-#039 dynamic queen position
+        }
         }
         const m=Math.hypot(dx,dy)||1;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
@@ -1284,6 +1307,18 @@ function damage(e, amt, pierce){
   e.hp -= dealt; e.flash = 0.12;
   if(e.hidden){ e.hidden=false; popup(e.x,e.y-e.r-8,"REVEALED","#e3d34e"); } // DR-#036: taking a hit blows a thief's cover
   if(dealt >= 30) popup(e.x, e.y-e.r-4, Math.floor(dealt)+"", "#ffd080");
+  // DR-#041 FIGHT BACK: a wounded raider (and nearby party members) turns on the nearest
+  // zombie — adventurers hunt what hurts them instead of marching past it. dmg-0 units
+  // (clerics, sweepers) keep to their jobs.
+  if(e.hp>0 && e.dmg>0 && !e.aggro){
+    let at=null, abd=sq(CFG.tile*3.5);
+    for(const t of towers){ const d=dist2(e,t); if(d<abd){ abd=d; at=t; } }
+    if(at){
+      e.aggro=at; e.aggroT=4;
+      for(const a of enemies){ if(a!==e && a.dmg>0 && !a.aggro && !a.hidden && dist2(a,e)<sq(CFG.tile*2)){ a.aggro=at; a.aggroT=4; } }
+      if(!seenAggro){ seenAggro=true; showBanner("THE RAID FIGHTS BACK","wounded adventurers hunt your zombies"); }
+    }
+  }
 }
 function kill(e){
   const idx = enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
@@ -3059,6 +3094,11 @@ if(DEV){
     { label:'Hedge cost',       min:1,  max:20, step:1,   get:()=>CFG.hedgeCost, set:v=>CFG.hedgeCost=v },
     { label:'Kill bounty',      min:1,  max:20, step:1,   get:()=>CFG.killBounty, set:v=>CFG.killBounty=v },
     { label:'Reabsorb secs',    min:0,  max:12, step:0.5, get:()=>CFG.reabsorbTime, set:v=>CFG.reabsorbTime=v },
+    // DR-#040: GLOBAL enemy tuning — slider rescales enemies already on the field, not just future spawns
+    { label:'Enemy HP ×',       min:0.2,max:4,  step:0.1, get:()=>devEnemyHpMult,
+      set:v=>{ const f=v/devEnemyHpMult; devEnemyHpMult=v; for(const e of enemies){ e.hp*=f; e.max*=f; } } },
+    { label:'Enemy attack ×',   min:0,  max:4,  step:0.1, get:()=>devEnemyDmgMult,
+      set:v=>{ devEnemyDmgMult=v; for(const e of enemies){ e.dmg=CFG.enemies[e.type].dmg*v; } } },
     { label:'Enemy sprite size',min:3,  max:12, step:0.2, get:()=>enemySpriteScale, set:v=>enemySpriteScale=v },
     { label:'Tower sprite size',min:48, max:180,step:2,   get:()=>towerSpriteScale, set:v=>towerSpriteScale=v },
   ];
