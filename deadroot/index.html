@@ -88,25 +88,23 @@ const CFG = {
   killBounty: 6,
   hedgeCost: 5,             // DR-#023: cheap wall; ~1/8 of a Spitter so a full maze ≈ one tower
   reabsorbTime: 4,          // DR-#025 B2: Hive-wide delay before a NEW zombie can be raised after one dies
-  mazeDoT: 0.55,            // DR-#030 C4: rot dmg/sec GAINED per second an enemy spends walking your maze
-  mazeDoTCap: 16,           // DR-#030 C4: cap on that ramping rot so a long maze rewards, not trivializes
   gates: [ {c:0,r:8} ], // DR-#035: ONE dungeon entrance (west) — the raiding party pours in as a batch
   door:   { cost:15, hp:150 },            // DR-#035: breakable barrier — raiders stop and hack it down
   spikes: { cost:20, dmg:30, uses:3 },    // DR-#035: floor trap — fires on raiders standing on it, then dulls
   corpse: { rot: 15, payout: 25 },
   towers: {
     warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
-    spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:2.9, rate:1.1, dmg:9 },  // DR-#033: dmg 13→9 + range 3.3→2.9 (playtest: spitters too strong, a back-line wall covered too much — placement now matters)
+    spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:2.9, rate:1.1, dmg:14 },  // DR-#037 standard: 3 hits kills a base raider. Batch release (whole party at once) gives towers fewer shot windows than a trickle TD, so per-hit damage must be higher. Maze-rot DoT removed — it was the real killer before.
     grabber:  { cost:45, name:"GRABBER",  desc:"slows nearby foes", range:2.0, slow:0.4, dmg:0 }, // DR-#025 B1: snare-aura zombie, grasping look. DR-#033: dmg:0 made explicit — grabber NEVER attacks (playtest confusion; the real tell fix is the distinct art below)
     rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
     node:     { cost:70, name:"NODE",     desc:"+50% nearby fire rate", range:1.6 }
   },
   enemies: { // DR-#036: MMO-trinity raid roles (Mike) — tank/heal/dps/stealth, one signature attribute each
-    scav:    { hp:42,  spd:2.2, dmg:5,  armor:0,    r:9,  col:"#7fb2d9", role:"stealth" }, // THIEF — hidden until it AMBUSHES: stuns one zombie 1.5s
+    scav:    { hp:40,  spd:1.7, dmg:5,  armor:0,    r:9,  col:"#7fb2d9", role:"stealth" }, // THIEF — hidden until it AMBUSHES: stuns one zombie 1.5s. DR-#037 standard: 3 base hits kill; spd 2.2→1.7 (batch release: the whole party sprinting past the kill zone at once was uncatchable)
     butcher: { hp:520, spd:1.1, dmg:22, armor:0.25, r:16, col:"#b04a4a" },
     troop:   { hp:200, spd:1.1, dmg:10, armor:0.30, r:13, col:"#4d7ea8", role:"tank", taunt:2.4 }, // KNIGHT — high HP + TAUNT: zombies inside his taunt radius must hit him (hp 300→200 first balance pass: 2 clerics out-healed 4 focused spitters = unkillable)
-    incin:   { hp:85,  spd:1.5, dmg:26, armor:0.10, r:11, col:"#d98f4a", role:"dps" }, // DPS — high attack (dmg 8→26)
+    incin:   { hp:85,  spd:1.5, dmg:20, armor:0.10, r:11, col:"#d98f4a", role:"dps" }, // DPS — high attack (2× the knight's; 25 was a tower-shredding cliff at its wave-6 intro)
     cleric:  { hp:50,  spd:1.6, dmg:0,  armor:0,    r:10, col:"#efe3b4", role:"heal", healRate:8, healR:2.5 }, // CLERIC — low HP, mends the most-wounded raider (15→8: one cleric must lose to 2 focused zombies)
     sweeper: { hp:90,  spd:1.9, dmg:0,  armor:0.20, r:11, col:"#e3d34e" },
     boss:    { hp:1400,spd:0.7, dmg:34, armor:0.35, r:20, col:"#c9d3dd" }
@@ -152,12 +150,13 @@ const PHASES = [
   { name:"THE EXTERMINATION", waves:[8,9,10,11] }
 ];
 const WAVES = [ // DR-#036: raid parties composed by role (intv unused — the batch releases at once)
+  // DR-#037 standard ramp: waves 1-2 = plain grunts (learnable), then ONE new role per wave
   [["scav",4,0]],
-  [["scav",5,0],["incin",2,0]],
-  [["scav",6,0],["sweeper",2,0]],
-  [["troop",2,0],["scav",4,0],["incin",2,0]],
-  [["troop",2,0],["cleric",1,0],["sweeper",2,0]],
-  [["scav",8,0],["incin",4,0],["cleric",2,0]],
+  [["scav",6,0]],
+  [["scav",8,0],["sweeper",2,0]],            // stealth unlocks here (waves 1-2 arrive revealed)
+  [["troop",2,0],["scav",5,0]],              // tank intro
+  [["troop",2,0],["cleric",1,0],["sweeper",2,0]], // healer intro
+  [["scav",6,0],["incin",2,0],["cleric",1,0]],    // dps intro
   [["troop",4,0],["incin",4,0],["cleric",2,0],["sweeper",3,0]],
   [["butcher",1,0],["scav",10,0],["troop",3,0],["cleric",2,0]],
   [["incin",6,0],["cleric",3,0],["sweeper",4,0]],
@@ -657,7 +656,7 @@ function placeUnit(c,r,type){
   if(grow){ hedge[r][c]=false; hedgePaid[r][c]=false; } // tile stays blocked; swap hedge → zombie
   else if(!tryPlaceBlock(c,r)){ SFX.deny(); popup(x,y-12,"KEEP A 2-WIDE PATH","#e3d34e"); return false; }
   biomass -= cost;
-  const thp = 60 + (run?run.towerHp:0);
+  const thp = 90 + (run?run.towerHp:0); // DR-#037 standard: survives ~3 DPS-raider hits
   towers.push({ type, c, r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
   towersBuiltThisRun++; firstMutateDone=true;
   const acc=(TCOL[type]&&TCOL[type].acc)||"#9be07f";
@@ -682,8 +681,8 @@ function spawnEnemy(type){
   y += Math.random()*CFG.tile; // DR-#035: spread across the 2-wide entrance (rows 8-9), never into the wall above
   const eHp=e.hp*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   enemies.push({ id:nextId++, type, x, y, hp:eHp, max:eHp, spd:eSpd, dmg:e.dmg, armor:e.armor, r:e.r,
-    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0, mazeT:0,
-    role:e.role||null, hidden:e.role==="stealth", healTgt:null }); // DR-#036: trinity roles — stealth spawns hidden
+    col:e.col, flash:0, drench:0, coat:0, corroded:0, snared:false, state:"walk", chanT:0, target:null, atkT:0, burnT:0, panicT:0,
+    role:e.role||null, hidden:e.role==="stealth" && (endless || waveIdx>=2), healTgt:null }); // DR-#036/#037: stealth spawns hidden — but waves 1-2 arrive revealed (standard, learnable first level; all-stealth wave 1 was unwinnable)
   // spawn poof — the human shoves out through the treeline
   burst(x,y,"#4a5a3a",6); rings.push({x,y,r:0,maxR:e.r+10,maxT:0.3,t:0.3,col:"rgba(120,150,100,0.5)"});
   if(type==="sweeper" && !seenSweeper){ seenSweeper=true; showBanner("SWEEPERS SANITIZE CORPSES","kill them before they clear your biomass"); }
@@ -711,7 +710,7 @@ function mutate(k, type){
   const [x,y] = tileToXY(k.c,k.r);
   popup(x,y-30,"-"+t.cost+"◈","#e07f7f");
   towersBuiltThisRun++;
-  const thp = 60 + run.towerHp;
+  const thp = 90 + run.towerHp; // DR-#037 standard
   towers.push({ type, c:k.c, r:k.r, x, y, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 });
   SFX.squelch(); burst(x,y,"#9be07f",14); shakeIt(2);
   if(!firstMutateDone){ firstMutateDone = true; }
@@ -1101,11 +1100,9 @@ function update(){
         else { const [hx,hy]=tileToXY(12.5,8.5); dx=hx-e.x; dy=hy-e.y; }
         const m=Math.hypot(dx,dy)||1;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
-        // DR-#030 C4: the longer they wind through your maze, the harder the creeping rot bites (rewards long routes)
-        e.mazeT += DT;
-        const rot = Math.min(CFG.mazeDoT*e.mazeT, CFG.mazeDoTCap)*meta.dmg;
-        e.hp -= rot*DT;
-        if(e.mazeT>4 && Math.sin(perfNow*7+e.id)>0.9) addParticle({x:e.x+(Math.random()-0.5)*e.r,y:e.y-e.r*0.4,vx:0,vy:-24,t:0.5,col:"#7cae5a"});
+        // DR-#037: the DR-#030 maze-rot DoT is REMOVED (playtest: it killed everything and was
+        // overpowered — raiders melted before reaching a single zombie). A mob-applied DoT can
+        // come back later as a specific tower/trap ability instead of free ambient damage.
       }
       // incinerator: burns adjacent towers; detonates spore clouds
       if(e.type==="incin"){
@@ -1599,10 +1596,21 @@ function abilBtns(){
 }
 function boonCards(){
   const n = boonChoice ? boonChoice.length : 2;
-  const w=290,h=150,gap=30;
+  const w=330,h=176,gap=30; // DR-#037: bigger cards so every sub-line fits at a readable size
   const total = n*w+(n-1)*gap, startX = W/2-total/2;
   const cards=[]; for(let i=0;i<n;i++) cards.push({x:startX+i*(w+gap),y:H/2-h/2,w,h});
   return cards;
+}
+/* DR-#037: word-wrap for canvas text — set ctx.font BEFORE calling. Text never overflows a box. */
+function wrapLines(text, maxW){
+  const words=String(text).split(' '); const lines=[]; let cur='';
+  for(const wd of words){
+    const t = cur ? cur+' '+wd : wd;
+    if(ctx.measureText(t).width <= maxW) cur = t;
+    else { if(cur) lines.push(cur); cur = wd; }
+  }
+  if(cur) lines.push(cur);
+  return lines;
 }
 function activateAbility(a){
   if(a.cd>0 || (mode!=="play" && mode!=="prep")){ SFX.deny(); return; }
@@ -1917,23 +1925,40 @@ function drawFlowOverlay(){
   ctx.stroke();
   ctx.restore();
 }
-/* DR-#034: castle-wall rock — dark stone mass with a lit parapet edge wherever it borders a
-   walkable lane, so the four paths read instantly. Deterministic per-tile detail (no flicker). */
+/* DR-#037 readability rework (research: strongest value contrast wins — darkest values on the
+   walls, mid-value desaturated floor, bright saturated actors on top).
+   Floor = mid-value slate slabs with per-tile variation + seams; walls = near-black mass with a
+   BRIGHT lit parapet edge facing every lane, so the dungeon plan reads at a glance. */
+function drawFloor(){
+  const T=CFG.tile;
+  for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){
+    if(!rock[r] || rock[r][c]) continue;
+    const x=c*T, y=TOP+r*T;
+    const v = hedgeHash(c*11+r, r*13-c);                    // deterministic slab tint
+    const base = 48 + Math.floor(v*12);                     // 48..60 grey-blue
+    ctx.fillStyle = "rgb("+base+","+(base+3)+","+(base+9)+")";
+    ctx.fillRect(x,y,T,T);
+    ctx.strokeStyle="rgba(12,14,18,0.55)"; ctx.lineWidth=1; // slab seams
+    ctx.strokeRect(x+0.5,y+0.5,T-1,T-1);
+    if(v<0.25){ ctx.fillStyle="rgba(255,255,255,0.04)"; ctx.fillRect(x+4,y+4,T-8,3); } // worn highlight
+    else if(v>0.8){ ctx.fillStyle="rgba(0,0,0,0.12)"; ctx.fillRect(x+6+v*8,y+8+v*10,8,5); } // scuff
+  }
+}
 function drawRocks(){
   const T=CFG.tile;
   for(let r=0;r<CFG.rows;r++) for(let c=0;c<CFG.cols;c++){
     if(!rock[r] || !rock[r][c]) continue;
     const x=c*T, y=TOP+r*T;
-    ctx.fillStyle="#1c2026"; ctx.fillRect(x,y,T,T);                      // stone body
+    ctx.fillStyle="#0e1116"; ctx.fillRect(x,y,T,T);                      // near-black stone body
     const h1=hedgeHash(c*13+r, r*7-c);                                    // reuse deterministic hash
-    if(h1<0.5){ ctx.fillStyle="rgba(60,70,84,0.25)";                      // block face variation
+    if(h1<0.5){ ctx.fillStyle="rgba(58,68,84,0.20)";                      // block face variation
       ctx.fillRect(x+3+h1*10, y+3+hedgeHash(c-r,r+c)*10, 14, 9); }
     // mortar seams (brick whisper)
-    ctx.strokeStyle="rgba(0,0,0,0.35)"; ctx.lineWidth=1;
+    ctx.strokeStyle="rgba(0,0,0,0.4)"; ctx.lineWidth=1;
     ctx.strokeRect(x+0.5,y+0.5,T-1,T-1);
-    // parapet: lit edge + crenellation teeth on sides facing a lane
+    // parapet: BRIGHT lit edge + crenellation teeth on sides facing a lane (main lane-read tell)
     const open=(rr,cc)=> inGrid(cc,rr) && !rock[rr][cc];
-    ctx.fillStyle="#39424f";
+    ctx.fillStyle="#5c6b82";
     if(open(r-1,c)){ ctx.fillRect(x,y,T,3);       for(let k=0;k<2;k++) ctx.fillRect(x+5+k*20, y, 10, 7); }
     if(open(r+1,c)){ ctx.fillRect(x,y+T-3,T,3);   for(let k=0;k<2;k++) ctx.fillRect(x+5+k*20, y+T-7, 10, 7); }
     if(open(r,c-1)){ ctx.fillRect(x,y,3,T);       for(let k=0;k<2;k++) ctx.fillRect(x, y+5+k*20, 7, 10); }
@@ -2168,7 +2193,8 @@ function draw(){
   if(mode==="title"){ drawTitle(); ctx.restore(); return; }
 
   drawEnvironment();
-  drawRocks();       // DR-#034: castle walls framing the four lanes
+  drawFloor();       // DR-#037: mid-value floor slabs — actors and walls both pop against them
+  drawRocks();       // DR-#034/#035: dungeon walls
   drawHive();
   drawFlowOverlay(); // DR-#021: show the maze lanes under the entities
   drawGates();       // DR-#023: labyrinth entrances
@@ -2336,8 +2362,8 @@ function draw(){
       spriteDrawn = blitFrame('thief', ang, e.id*1.3, e.r*enemySpriteScale, e.flash);
     }
     if(!spriteDrawn){
-    // cel outline silhouette (pops against the busier environment)
-    ctx.strokeStyle="rgba(8,10,12,0.9)"; ctx.lineWidth=2.5;
+    // cel outline silhouette (DR-#037: thicker, fully dark — silhouettes must read on the lighter floor)
+    ctx.strokeStyle="rgba(5,6,8,0.95)"; ctx.lineWidth=3.5;
     if(e.type==="sweeper"){ ctx.strokeRect(-e.r,-e.r,e.r*2,e.r*2); }
     else { ctx.beginPath(); ctx.arc(0,0,e.r,0,6.283); ctx.stroke(); }
     ctx.fillStyle = e.flash>0 ? "#ffffff" : e.col;
@@ -2676,7 +2702,7 @@ function drawPrep(){
     drawWavePreview(W/2, TOP+118);
   }
   // rotating lore line
-  ctx.fillStyle="rgba(100,110,120,0.65)"; ctx.font="11px monospace"; ctx.textAlign="center";
+  ctx.fillStyle="rgba(150,162,175,0.8)"; ctx.font="13px monospace"; ctx.textAlign="center"; // DR-#037: readable lore line
   ctx.fillText(LORE[Math.floor(perfNow*0.07)%LORE.length], W/2, H-12);
 }
 function nextWaveDef(){ return endless ? endlessWave(endlessN) : WAVES[waveIdx]; }
@@ -2732,34 +2758,38 @@ function drawSpeedBtn(){
   ctx.fillText(on?"»2x":"›1x", W-44, H-36);
 }
 function drawBoons(){
-  ctx.fillStyle="rgba(5,7,9,0.75)"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="rgba(5,7,9,0.85)"; ctx.fillRect(0,0,W,H); // DR-#037: darker scrim, text pops
   ctx.textAlign="center";
-  ctx.fillStyle="#c9a0f0"; ctx.font="bold 22px monospace";
-  ctx.fillText("THE HIVE ADAPTS — choose a mutation", W/2, H/2-100);
+  ctx.fillStyle="#e0c8ff"; ctx.font="bold 26px monospace";
+  ctx.fillText("THE HIVE ADAPTS", W/2, H/2-128);
+  ctx.fillStyle="#a08cc0"; ctx.font="15px monospace";
+  ctx.fillText("choose a mutation — this run only", W/2, H/2-104);
   const cards = boonCards();
   for(let i=0;i<cards.length;i++){
     const o=cards[i], b=boonChoice[i];
     const hover=ptrX>=o.x&&ptrX<=o.x+o.w&&ptrY>=o.y&&ptrY<=o.y+o.h;
-    ctx.fillStyle=hover?"rgba(40,28,68,0.98)":"rgba(26,19,48,0.95)"; ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.fillStyle=hover?"rgba(44,32,74,0.98)":"rgba(24,18,44,0.97)"; ctx.fillRect(o.x,o.y,o.w,o.h);
     ctx.strokeStyle=hover?"#e0d0ff":"#b088e0"; ctx.lineWidth=hover?3:2; ctx.strokeRect(o.x,o.y,o.w,o.h); ctx.lineWidth=1;
-    ctx.fillStyle="#dfe6ec"; ctx.font="bold 21px monospace";
-    ctx.fillText(b.txt, o.x+o.w/2, o.y+60);
-    ctx.fillStyle="#8fd9a8"; ctx.font="16px monospace";
-    ctx.fillText(b.sub, o.x+o.w/2, o.y+94);
-    if(!IS_TOUCH){ ctx.fillStyle="#6a7480"; ctx.font="11px monospace"; ctx.fillText("["+(i+1)+"]", o.x+o.w/2, o.y+o.h-12); }
+    // title — wrapped so long names never spill out of the card
+    ctx.fillStyle="#f0f4f8"; ctx.font="bold 22px monospace";
+    const tl = wrapLines(b.txt, o.w-28);
+    tl.forEach((ln,k)=>ctx.fillText(ln, o.x+o.w/2, o.y+52+k*26));
+    // effect — wrapped, high-contrast green
+    ctx.fillStyle="#9be07f"; ctx.font="17px monospace";
+    const sl = wrapLines(b.sub, o.w-28);
+    sl.forEach((ln,k)=>ctx.fillText(ln, o.x+o.w/2, o.y+52+tl.length*26+18+k*22));
+    if(!IS_TOUCH){ ctx.fillStyle="#8a94a0"; ctx.font="13px monospace"; ctx.fillText("press ["+(i+1)+"]", o.x+o.w/2, o.y+o.h-14); }
   }
-  ctx.fillStyle="#8a94a0"; ctx.font="12px monospace";
-  ctx.fillText("this run only — every run differs", W/2, H/2+100);
 }
 function drawBanner(){
   const a = Math.min(1, banner.t/0.5);
   ctx.save(); ctx.globalAlpha = a;
   ctx.fillStyle="rgba(5,7,9,0.6)"; ctx.fillRect(0,H/2-70,W,110);
   ctx.textAlign="center";
-  ctx.fillStyle="#e0d0f0"; ctx.font="bold 42px Georgia, serif";
+  ctx.fillStyle="#efe4fb"; ctx.font="bold 42px Georgia, serif"; // DR-#037: brighter title + bigger sub
   ctx.fillText(banner.txt, W/2, H/2-14);
-  ctx.fillStyle="#8a94a0"; ctx.font="14px monospace";
-  ctx.fillText(banner.sub, W/2, H/2+20);
+  ctx.fillStyle="#c2ccd6"; ctx.font="bold 17px monospace";
+  ctx.fillText(banner.sub, W/2, H/2+22);
   ctx.restore();
 }
 function pauseBtns(){
@@ -2953,8 +2983,6 @@ if(DEV){
     { label:'Hedge cost',       min:1,  max:20, step:1,   get:()=>CFG.hedgeCost, set:v=>CFG.hedgeCost=v },
     { label:'Kill bounty',      min:1,  max:20, step:1,   get:()=>CFG.killBounty, set:v=>CFG.killBounty=v },
     { label:'Reabsorb secs',    min:0,  max:12, step:0.5, get:()=>CFG.reabsorbTime, set:v=>CFG.reabsorbTime=v },
-    { label:'Maze rot / sec',   min:0,  max:2,  step:0.05,get:()=>CFG.mazeDoT, set:v=>CFG.mazeDoT=v },
-    { label:'Maze rot cap',     min:0,  max:40, step:1,   get:()=>CFG.mazeDoTCap, set:v=>CFG.mazeDoTCap=v },
     { label:'Enemy sprite size',min:3,  max:12, step:0.2, get:()=>enemySpriteScale, set:v=>enemySpriteScale=v },
     { label:'Tower sprite size',min:48, max:180,step:2,   get:()=>towerSpriteScale, set:v=>towerSpriteScale=v },
   ];

@@ -1040,3 +1040,41 @@ eyeball the new cleric/knight/stealth art live.)
 
 **Needs Mike's feel:** tank hp / heal rate / taunt radius / stun duration (all in CFG.enemies,
 dev-menu tunable), wave 8+ difficulty, and whether stealth-at-0.3-alpha reads clearly.
+
+## DR-#037 — rot DoT removed + readability pass + wave-1 standards (2026-07-06, Mike)
+Mike: "remove the rot dot, it's killing everything and overpowered (mob DoT can come later);
+best visual upgrade you can — better contrast between background and elements; text easier to
+read and fitting all boxes, especially the buff picks between stages; redo buffs/attacks/hp to
+be standard for the 1st level; research how other games do it first."
+
+Research (see chat sources): TD/game-art readability canon = darkest values on background
+walls, mid-value desaturated floor, bright saturated actors, thick silhouettes, minimal UI
+with grouped elements; early waves = trivially clearable grunt waves, one new threat per wave.
+
+1. **Maze-rot DoT (DR-#030) REMOVED** — CFG.mazeDoT/mazeDoTCap, per-frame rot, mazeT field and
+   dev knobs all deleted. It was free ambient damage that melted whole raids. A DoT can return
+   later as a specific tower/trap ability.
+2. **Contrast rework**: new `drawFloor()` — walkable tiles are mid-value grey-blue slabs
+   (48..60 RGB, hash-varied, seams + worn highlights) instead of near-black gradient; rock
+   walls darkened to #0e1116 with much brighter parapets (#5c6b82); enemy cel outlines
+   2.5→3.5px. Layer order: environment → floor → rocks → hive → entities.
+3. **Text pass**: `wrapLines()` helper (canvas word-wrap) — boon card titles AND effects wrap
+   inside the card; cards 290×150→330×176; scrim darker; title/effect/hint sizes 22/17/13px
+   (was 21/16/11, and long subs like "corpses rot 5s slower (more biomass)" used to overflow —
+   verified all 7 boons now fit). Banner sub 14→17px bold, brighter. Lore line 11→13px.
+4. **Wave-1 standards** (balance re-derived post-rot-removal, all sim-verified):
+   - SPITTER dmg 9→14 (3 hits kills a base raider). KEY FINDING: the batch release gives
+     towers far fewer shot windows than a trickle TD — the whole party crosses the kill zone
+     at once — so per-hit damage must be higher than classic TD numbers.
+   - SCAV hp 40, spd 2.2→1.7 (sprinting batch was uncatchable).
+   - Zombie base HP 60→90 (survives ~3 DPS-raider hits). INCIN dmg 25→20.
+   - THIEF stealth only from wave 3 — waves 1-2 arrive revealed (all-stealth wave 1 was
+     literally unwinnable: untargetable until adjacent, then chain-stunned both zombies).
+   - WAVES 1-6 recomposed: w1 4 scavs, w2 6 scavs, w3 stealth unlock (+sweepers), w4 tank
+     intro, w5 healer intro, w6 dps intro (2 incins).
+   Campaign sim (dumb static bot, no boons/actives/salvage): waves 1-3 clear at 100 hive HP,
+   4-5 minor chip, wave 6 is the first real wall — reasonable mid-game ramp for a human
+   using grabber slows/actives. Parse OK, console clean.
+
+**Tooling:** preview_screenshot dead all session; pixel-sampling on the small preview canvas
+unreliable — Mike should eyeball the new floor/walls/boon cards live and re-rate contrast.
