@@ -95,7 +95,7 @@ const CFG = {
   towers: {
     warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
     spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:3.2, rate:1.1, dmg:14 },  // DR-#037 standard: 3 hits kills a base raider. Batch release (whole party at once) gives towers fewer shot windows than a trickle TD, so per-hit damage must be higher. Maze-rot DoT removed — it was the real killer before.
-    grabber:  { cost:45, name:"GRABBER",  desc:"slows nearby foes", range:2.0, slow:0.4, dmg:0 }, // DR-#025 B1: snare-aura zombie, grasping look. DR-#033: dmg:0 made explicit — grabber NEVER attacks (playtest confusion; the real tell fix is the distinct art below)
+    grabber:  { cost:45, name:"GRABBER",  desc:"slows + rots nearby foes", range:2.0, slow:0.4, dmg:0, dot:2.5, evolve:30 }, // DR-#025 B1 snare aura; DR-#033 dmg:0 (never attacks). DR-#043b (Mike): grabbers are now an EVOLUTION of a placed zombie (evolve cost 30◈) and their aura applies a low DoT (the old maze-rot's home, per his note)
     rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
     node:     { cost:70, name:"NODE",     desc:"+50% nearby fire rate", range:1.6 }
@@ -320,6 +320,7 @@ let dnaEarned = 0;
 let run = null;
 let boonChoice = null; // [boon, boon] while a pick is pending
 let banner = null;     // {txt, sub, t}
+let infoModal = null;  // DR-#043a: stage-boundary info = a PAUSED modal (playtest: banners overlapped the action) — game frozen until the player taps it away
 let overgrowthT = 0, pherT = 0;
 let reabsorbCD = 0;   // DR-#025 B2: Hive-wide reabsorption cooldown; blocks raising a new zombie while >0
 let gateOpenT = [0,0,0,0], prevGateN = 0; // DR-#029 C9: per-gate open-flash timers + how many gates were open last wave
@@ -408,6 +409,7 @@ let stains = [], rings = [];
 // first-time flags + pointer
 let seenSweeper = false, lastSurvivorShown = false, secondWindUsed = false, adFailReason = null;
 let seenTank = false, seenCleric = false, seenAmbush = false, seenAggro = false; // DR-#036/#041 first-encounter teaching banners
+let seenEvolveTeach = false; // DR-#043b: one-time "tap a zombie to EVOLVE it" nudge
 let ptrX = 0, ptrY = 0;
 
 /* Daily trial: two date-picked modifiers, DNA x1.5, own best tracking */
@@ -488,6 +490,7 @@ function offerBoons(){
   CG.gameplayStop(); // this is a decision menu, not active play — bible: "menus... = stopped"
 }
 function showBanner(txt,sub){ banner = {txt, sub, t:2.6}; }
+function showInfo(txt,sub){ infoModal = {txt, sub}; } // DR-#043a: pauses the game until dismissed
 function pickBoon(i){
   const b = boonChoice[i];
   b.apply(run);
@@ -671,6 +674,8 @@ function placeUnit(c,r,type){
   const thp = 120 + (run?run.towerHp:0); // DR-#038: guards intercept (non-blocking) so they tank dogpiles — "their dead are your walls"
   towers.push({ type, c, r, x, y, hx:x, hy:y, roamT:Math.random()*2, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 }); // DR-#042: hx/hy = post to roam around
   towersBuiltThisRun++; firstMutateDone=true;
+  // DR-#043b: teach the one upgrade path the first time a zombie stands up
+  if(type==="spitter" && !seenEvolveTeach){ seenEvolveTeach=true; showBanner("ZOMBIES CAN EVOLVE", tapWord+" a zombie → EVOLVE → GRABBER (slows + rots nearby raiders)"); }
   const acc=(TCOL[type]&&TCOL[type].acc)||"#9be07f";
   popup(x,y-28, grow?"GROWN":"-"+cost+"◈","#e07f7f"); burst(x,y,acc,14); SFX.squelch(); shakeIt(2);
   return true;
@@ -928,11 +933,10 @@ function newRun(){
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
+  seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; seenEvolveTeach=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
   rotTipT=0; evolveTipT=0; firstMutateDone = false;
   save.plays=(save.plays|0)+1; persist();
-  startLevel(); // DR-#042: build level 1's dungeon, settle the Queen
-  showBanner("THEY DARE ENTER OUR HOME","fortify the burrow — zombies · grabbers · traps — then start the raid");
+  startLevel(); // DR-#042: build level 1's dungeon, settle the Queen (shows the level info modal)
   CG.gameplayStart();
 }
 /* DR-#042: enter the current level — fresh dungeon to populate, Queen auto-settled at her spot.
@@ -950,7 +954,7 @@ function startLevel(){
   buildDungeon();
   settleQueen();
   const L = curLevel();
-  showBanner("LEVEL "+(levelIdx+1)+" — "+L.name, L.lore);
+  showInfo("LEVEL "+(levelIdx+1)+" — "+L.name, L.lore+(levelIdx===0?" · fortify the burrow, then start the raid":"")); // DR-#043a: paused modal, not a banner
   mode = "prep"; prepT = 0; // no timer — the player clicks START RAID
 }
 /* DR-#042: last raid of the level repelled — the Queen tears open the east doorway, then the
@@ -966,7 +970,7 @@ function beginDoorway(){
   const [ex,ey] = tileToXY(curLevel().exit.c, curLevel().exit.r);
   bigBurst(ex,ey,"#c9a0f0",26); bigBurst(ex,ey+CFG.tile,"#8fd9a8",18);
   SFX.boom(); shakeIt(6);
-  showBanner("THE QUEEN OPENS THE WAY","the roots part — the Hive descends deeper");
+  showInfo("THE QUEEN OPENS THE WAY","the roots part — the Hive descends deeper"); // DR-#043a: paused modal
   CG.happytime();
 }
 function queueWave(){
@@ -983,13 +987,15 @@ function queueWave(){
   mode = "play";
   SFX.wave();
   gateOpenT[0]=3.5; // DR-#035: flare the entrance arch as the party breaches
+  // DR-#043a: wave-start story beats are paused modals now — the raid doesn't pour in
+  // until the player clears the text (playtest: banners overlapped the action)
   if(!endless){
-    if(waveIdx===0) showBanner("THE SCOUTS","humans breach the west root-gate of the burrow");
-    else if(waveIdx===4) showBanner("THE PURGE BEGINS","a bigger party, better armed");
-    else if(waveIdx===7) showBanner("THE BUTCHER","he burned a hundred hives");
-    else if(waveIdx===8) showBanner("THE EXTERMINATION","everything they have left");
-    else if(waveIdx===11){ showBanner("THE PURIFIER","kill it and the surface is yours"); tone(80,60,1.2,"sawtooth",0.2); tone(80,60,1.2,"sawtooth",0.2,1.3); }
-  } else if(endlessN%3===2) showBanner("PURIFIER INBOUND","the long night deepens");
+    if(waveIdx===0) showInfo("THE SCOUTS","humans breach the west root-gate of the burrow");
+    else if(waveIdx===4) showInfo("THE PURGE BEGINS","a bigger party, better armed");
+    else if(waveIdx===7) showInfo("THE BUTCHER","he burned a hundred hives");
+    else if(waveIdx===8) showInfo("THE EXTERMINATION","everything they have left");
+    else if(waveIdx===11){ showInfo("THE PURIFIER","kill it and the surface is yours"); tone(80,60,1.2,"sawtooth",0.2); tone(80,60,1.2,"sawtooth",0.2,1.3); }
+  } else if(endlessN%3===2) showInfo("PURIFIER INBOUND","the long night deepens");
 }
 function waveCleared(){
   const wn = endless ? 12+endlessN+1 : waveIdx+1;
@@ -1061,6 +1067,7 @@ const DT = 1/60;
 function update(){
   if(shake>0) shake = Math.max(0, shake-20*DT); // DR-#034: decay BEFORE the end-screen early return — the death-recap shake used to freeze on screen forever (playtest bug)
   if(mode==="title"||mode==="over"||mode==="victory"||mode==="secondwind") return;
+  if(infoModal) return; // DR-#043a: stage-info modal freezes the whole sim until dismissed
   if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
   if(overgrowthT>0) overgrowthT -= DT;
   if(pherT>0) pherT -= DT;
@@ -1116,7 +1123,7 @@ function update(){
     for(const t of towers){
       if(t.stunT>0) continue; // DR-#036: a stunned zombie's aura is out too
       if(t.type==="rootmass" && dist2(e,t) < sq(CFG.towers.rootmass.range*(1+run.rootR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul,1-CFG.towers.rootmass.slow); if(t.tier===1) strangled=true; }
-      else if(t.type==="grabber" && dist2(e,t) < sq(CFG.towers.grabber.range*(1+run.grabR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul, Math.max(0.15, 1-CFG.towers.grabber.slow-run.grabSlow)); }
+      else if(t.type==="grabber" && dist2(e,t) < sq(CFG.towers.grabber.range*(1+run.grabR)*CFG.tile)){ e.snared=true; slowMul=Math.min(slowMul, Math.max(0.15, 1-CFG.towers.grabber.slow-run.grabSlow)); e.hp -= CFG.towers.grabber.dot*DT*meta.dmg; } // DR-#043b: grasping rot — low DoT inside the aura
     }
     if(strangled) e.hp -= 8*DT*meta.dmg;
     let spd = e.spd * CFG.tile * slowMul;
@@ -1274,6 +1281,7 @@ function update(){
     const t = towers[i];
     t.pulse += DT;
     if(t.flash>0) t.flash-=DT;
+    if(t.evolveT>0) t.evolveT-=DT; // DR-#043b: evolve morph timer
     if(t.hp<=0){
       burst(t.x,t.y,"#7a8f6a",16); popup(t.x,t.y,"BURNED DOWN","#e0a04a");
       if(menu&&menu.tower===t) menu=null;
@@ -1475,6 +1483,7 @@ function onTap(x,y){
   }
   if(mode==="over"||mode==="victory"){ handleEndScreen(x,y); return; }
   if(mode==="secondwind"){ handleSecondWind(x,y); return; }
+  if(infoModal){ infoModal=null; SFX.ui(); return; } // DR-#043a: any tap clears the stage-info modal
   if(paused){
     const b=pauseBtns();
     // buttons sit close together — cap padding to half the gap to each neighbor so
@@ -1545,6 +1554,7 @@ function onTap(x,y){
     if(picked==='removefixture'){ removeFixture(menu.fixture); return; } // DR-#035
     if(picked==='heal'){ feastHeal(menu.tower); return; }
     if(picked==='upgrade'){ feastUpgrade(menu.tower); return; }
+    if(picked==='evolve'){ evolveToGrabber(menu.tower); return; } // DR-#043b
     if(picked==='salvage'){
       const refund=20+((menu.tower.level||1)-1)*10;
       biomass+=refund; popup(menu.tower.x,menu.tower.y,"+"+refund+"◈ SALVAGED","#e3d34e");
@@ -1567,6 +1577,22 @@ function onTap(x,y){
   { const [c,r]=xyToTile(x,y); if(inGrid(c,r)){ const f=doorAt(c,r)||trapAt(c,r); if(f){ menu = {fixture:f}; SFX.ui(); return; } } }
   // DR-#027 C5: tap a hedge (no brush active) → open a REMOVE menu (refunds paid hedges)
   { const [c,r]=xyToTile(x,y); if(inGrid(c,r) && hedge[r] && hedge[r][c]){ menu = {hedge:{c,r}}; SFX.ui(); return; } }
+}
+/* DR-#043b (Mike, blocker): ONE monster choice — the zombie. A placed zombie EVOLVES into a
+   grabber (slow aura + the old walls' low rot-DoT) for CFG.towers.grabber.evolve biomass.
+   Transformation gets a real moment: amber morph (t.evolveT drives a grow-in + husk-burst in
+   drawGrabber), root-burst, ring, popup. Matching Engvee-pack grabber sprite is ASSET-GATED
+   (only zombie/thief atlases exist) — procedural morph until Mike drops a sheet. */
+function evolveToGrabber(t){
+  const cost = CFG.towers.grabber.evolve;
+  if(t.type!=="spitter") return;
+  if(biomass < cost){ SFX.deny(); popup(t.x,t.y-12,"NEED BIOMASS","#e07f7f"); return; }
+  biomass -= cost;
+  t.type = "grabber"; t.evolveT = 0.9; t.cd = 0;
+  popup(t.x,t.y-30,"EVOLVED — GRABBER","#e6b072");
+  bigBurst(t.x,t.y,"#c8925a",18); burst(t.x,t.y,"#7ed038",10); SFX.squelch(); shakeIt(3);
+  rings.push({x:t.x,y:t.y,r:0,maxR:CFG.towers.grabber.range*CFG.tile,maxT:0.5,t:0.5,col:"rgba(230,176,114,0.8)"});
+  menu = null;
 }
 function fixtureRefund(f){ const cost = f.max!==undefined ? CFG.door.cost : CFG.spikes.cost; return Math.max(1, Math.round(cost*0.6)); } // DR-#035
 function removeFixture(f){
@@ -1601,9 +1627,12 @@ function menuOpts(){
     return [ {type:'removefixture', x:cx, y:Math.max(TOP+52, fy-64), r:34} ];
   }
   if(menu.tower){
-    const t=menu.tower; // DR-#023: FEAST retired — a unit's only menu action is SALVAGE (biomass refund)
+    const t=menu.tower;
     const cx=Math.max(90, Math.min(W-90, t.x));
-    return [ {type:'salvage', x:cx, y:Math.max(TOP+52, t.y-72), r:36} ];
+    const y=Math.max(TOP+52, t.y-72);
+    // DR-#043b: a ZOMBIE can EVOLVE into a GRABBER (slow aura + rot DoT) — the one upgrade path
+    if(t.type==="spitter") return [ {type:'evolve', x:Math.max(46,cx-46), y, r:36}, {type:'salvage', x:Math.min(W-46,cx+46), y, r:36} ];
+    return [ {type:'salvage', x:cx, y, r:36} ];
   }
   const [kx,ky] = menuAnchor();
   const types = ["spitter","rootmass","spore","node"];
@@ -1875,6 +1904,8 @@ window.addEventListener("keydown", ev=>{
       const b = abilBtns()[i]; if(b) activateAbility(b.a);
     }
   }
+  // DR-#043a: Enter/Space clears the stage-info modal
+  if((k==="enter"||k===" ") && infoModal){ ev.preventDefault(); infoModal=null; SFX.ui(); return; }
   // desktop-first: Enter/Space restarts from the end screen without hunting for the button
   if((k==="enter"||k===" ") && (mode==="over"||mode==="victory")){ ev.preventDefault(); newRun(); return; }
   // desktop-first: Enter/Space sends the wave early during prep (matches the SEND button)
@@ -2328,10 +2359,9 @@ function drawGrabTendrils(t){
 }
 /* DR-#023: bottom-center build palette. */
 function paletteBtns(){
-  const w=126,h=58,gap=12,y=H-h-14, total=w*3+gap*2, x0=W/2-total/2; // DR-#042: monsters + traps (doors retired)
+  const w=126,h=58,gap=12,y=H-h-14, total=w*2+gap, x0=W/2-total/2; // DR-#043b: ONE monster brush (Mike) — grabbers are evolved from placed zombies, not bought
   return [ {x:x0, y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
-           {x:x0+(w+gap), y, w, h, mode:"grabber", label:"GRABBER", cost:CFG.towers.grabber.cost, unit:true},
-           {x:x0+(w+gap)*2, y, w, h, mode:"spikes", label:"SPIKES", cost:CFG.spikes.cost, unit:false} ];
+           {x:x0+(w+gap), y, w, h, mode:"spikes", label:"SPIKES", cost:CFG.spikes.cost, unit:false} ];
 }
 function drawPalette(){
   if(mode!=="play"&&mode!=="prep") return;
@@ -2478,7 +2508,18 @@ function draw(){
     const lvl = t.level||1;
     if(isGrab){
       // DR-#033: grabber draws its own distinct amber sac + arms (never the green zombie sprite)
-      drawGrabber(t, lvl);
+      // DR-#043b: evolve morph — the zombie husk bursts and the grabber wobbles up to size
+      if(t.evolveT>0){
+        const p = 1 - t.evolveT/0.9;
+        const s = 0.45 + 0.55*p + (p<1?0.10*Math.sin(p*22)*(1-p):0);
+        if(Math.random()<0.5) addParticle({x:t.x+(Math.random()-0.5)*26, y:t.y+(Math.random()-0.5)*22, vx:(Math.random()-0.5)*40, vy:-40-Math.random()*30, t:0.5, col:Math.random()<0.4?"#7ed038":"#e6b072"});
+        ctx.save(); ctx.translate(t.x,t.y); ctx.scale(s,s); ctx.translate(-t.x,-t.y);
+        drawGrabber(t, lvl);
+        ctx.restore();
+        // fading green husk-glow of the zombie it was
+        ctx.save(); ctx.globalAlpha=0.5*(1-p); ctx.strokeStyle="#7ed038"; ctx.lineWidth=3;
+        ctx.beginPath(); ctx.arc(t.x,t.y,20+p*16,0,6.283); ctx.stroke(); ctx.restore();
+      } else drawGrabber(t, lvl);
     } else if(useZombie){
       // stronger zombies are visibly bigger + glow more (mods change the look)
       const lvlF = 1 + (lvl-1)*0.10;
@@ -2668,6 +2709,7 @@ function draw(){
   if(mode==="prep") drawPrep();
   if(boonChoice) drawBoons();
   if(banner) drawBanner();
+  if(infoModal) drawInfoModal(); // DR-#043a
   if(paused) drawPaused();
   if(mode==="over") drawEnd(false);
   if(mode==="victory") drawEnd(true);
@@ -2833,14 +2875,15 @@ function drawMenu(){
     ctx.fillStyle="#c8e0a8"; ctx.textAlign="center"; ctx.font="bold 12px monospace"; ctx.fillText("LVL "+(t.level||1), t.x, t.y-32);
     for(const o of opts){
       const feast = (o.type==='heal'||o.type==='upgrade');
-      const enabled = feast ? hasCorpse : true;
-      const col = o.type==='heal'?"#9be07f":o.type==='upgrade'?"#e0a0f0":"#e3d34e";
+      const enabled = feast ? hasCorpse : o.type==='evolve' ? biomass>=CFG.towers.grabber.evolve : true; // DR-#043b
+      const col = o.type==='heal'?"#9be07f":o.type==='upgrade'?"#e0a0f0":o.type==='evolve'?"#e6b072":"#e3d34e";
       ctx.save(); if(!enabled) ctx.globalAlpha=0.4;
       ctx.fillStyle="rgba(14,16,20,0.96)"; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.fill();
       ctx.strokeStyle=col; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
       ctx.fillStyle=col; ctx.textAlign="center";
       if(o.type==='heal'){ ctx.font="bold 13px monospace"; ctx.fillText("DEVOUR", o.x, o.y-6); ctx.fillText("HEAL", o.x, o.y+10); }
       else if(o.type==='upgrade'){ ctx.font="bold 13px monospace"; ctx.fillText("DEVOUR", o.x, o.y-6); ctx.fillText("LVL "+((t.level||1)+1), o.x, o.y+10); }
+      else if(o.type==='evolve'){ ctx.font="bold 12px monospace"; ctx.fillText("EVOLVE", o.x, o.y-9); ctx.fillText("GRABBER", o.x, o.y+4); ctx.fillStyle=enabled?"#8fd9a8":"#e07f7f"; ctx.fillText(CFG.towers.grabber.evolve+"◈", o.x, o.y+18); } // DR-#043b
       else { ctx.font="bold 11px monospace"; ctx.fillText("SALVAGE", o.x, o.y-3); ctx.fillStyle="#8fd9a8"; ctx.font="bold 12px monospace"; ctx.fillText("+"+(20+((t.level||1)-1)*10)+"◈", o.x, o.y+12); }
       ctx.restore();
     }
@@ -2882,6 +2925,22 @@ function drawMenu(){
     ctx.fillText("◈"+def.cost, o.x, o.y+34);
     ctx.restore();
   }
+}
+/* DR-#043a: stage-boundary info as a PAUSED modal — the sim is frozen (update early-returns)
+   until the player taps/keys it away, so info text can never overlap the action. */
+function drawInfoModal(){
+  ctx.fillStyle="rgba(5,7,9,0.72)"; ctx.fillRect(0,0,W,H);
+  ctx.textAlign="center";
+  ctx.fillStyle="#d8b8f8"; ctx.font="bold 34px monospace";
+  ctx.fillText(infoModal.txt, W/2, H/2-40);
+  if(infoModal.sub){
+    ctx.fillStyle="#a9b4c0"; ctx.font="bold 17px monospace";
+    const lines = wrapLines(infoModal.sub, W-160);
+    for(let i=0;i<lines.length;i++) ctx.fillText(lines[i], W/2, H/2+i*24);
+  }
+  const p = 0.55+0.45*Math.sin(perfNow*3.2);
+  ctx.save(); ctx.globalAlpha=p; ctx.fillStyle="#8fd9a8"; ctx.font="bold 18px monospace";
+  ctx.fillText(TAP_WORD+" TO CONTINUE", W/2, H/2+86); ctx.restore();
 }
 function drawPrep(){
   ctx.textAlign="center";

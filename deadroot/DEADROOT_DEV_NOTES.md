@@ -1193,3 +1193,27 @@ for each level."
 - NOT balance-tuned: L2/L3 with real numbers are hard (sim died w7 with a sloppy build) —
   Mike playtest = next. Research batch (reverse-dungeon features) delivered in chat:
   top picks = loot bait, adjacency synergy, kill-combo rewards, morale/retreat.
+
+## DR-#043 — playtest triage: paused stage modals + zombie→grabber evolve (2026-07-08, Mike)
+Triage of today's inbox (2 items, both shipped) + 8 checklist fails (all were stale/already
+addressed — claude fields re-lost again; rewritten in Supabase, 0 untriaged remain).
+- **DR-#043a (inbox bug):** "info text between stages overlaps the action — pause until the
+  user clears it." New `infoModal`/`showInfo()`: level intros, wave-start story beats (THE
+  SCOUTS/PURGE/BUTCHER/EXTERMINATION/PURIFIER, endless PURIFIER INBOUND), and THE QUEEN OPENS
+  THE WAY are now PAUSED modals — `update()` early-returns and the raid doesn't spawn until
+  tap/Enter dismisses (`drawInfoModal`, dim overlay + wrapped sub + TAP TO CONTINUE). Mid-wave
+  teach banners (ambush/taunt/etc) still passing banners — flagged to Mike.
+- **DR-#043b (inbox idea, Mike: BLOCKER):** ONE monster choice. Palette = ZOMBIE + SPIKES.
+  Tap a placed zombie → **EVOLVE → GRABBER** (30◈, `CFG.towers.grabber.evolve`,
+  `evolveToGrabber()`): keeps slow aura, gains **rot DoT 2.5/s** in aura (the old maze-rot's
+  new home, `CFG.towers.grabber.dot`). Morph animation `t.evolveT` 0.9s: wobble grow-in +
+  husk ring + green/amber particles + aura-radius ring; one-time teach banner on first zombie.
+  ⛔ Matching Engvee grabber sprite ASSET-GATED (only zombie/thief atlases) — procedural morph
+  until a sheet lands in assets/raw/ (flagged in the Supabase note).
+- Stale fails re-answered: grabber one-shot/looks/shoots (DR-#033), hedges (removed DR-#034),
+  too-easy ×3 (DR-#037/#041/#042 + this evolve variety), onboarding (DR-#042 goal line +
+  these modals). All set state=fixed → Mike's retest queue.
+- Verified headless (deadroot-alt:4226, reload first): modal freezes sim (onboardT/spawnT
+  pinned) + dismiss resumes; wave modal holds the raid at 0 spawns; palette=ZOMBIE/SPIKES;
+  zombie menu = EVOLVE+SALVAGE; evolve swaps type/charges 30◈/closes menu; DoT 5hp over 2s;
+  morph frame draws; console clean. Parse OK.
