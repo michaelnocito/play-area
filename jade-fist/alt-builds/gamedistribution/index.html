@@ -599,7 +599,14 @@ let msg = null, msgT = 0;
 const GROUND_Y = 420;
 const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, jumpT: 0, duckT: 0,
   backT: 0, backDir: 0,                     // JF-#042: back-step evade (mid attacks)
-  flourishT: 0 };                           // JF-#044: kung-fu hero flourish
+  flourishT: 0, duckAge: 0 };               // JF-#044 flourish Â· JF-#047 frames spent crouched
+// JF-#047: NES Kung Fu duck â€” DOWN is a HELD STANCE, not a timed window. Hold â–¼
+// and you stay crouched under high swings and high spears until you let go
+// (crouch-punching all the while); release to stand. Tap/swipe still gives the
+// timed duck for touch. duckAge (frames since the crouch began) gates rewards:
+// a FRESH read pays points + bullet time, a lazy held crouch just makes them
+// whiff â€” the NES paid you nothing for sitting down either.
+let duckHeld = false, padDuckActive = false;
 // JF-#046: block/parry, heavy blow, and taunt REMOVED â€” Mike's call: the whole
 // fight fits on the arrow keys (â—€â–¶ strike/evade, â–²â–¼ dodge + attack lines).
 // Mid attacks are answered by counter or back-step; guards are answered by
@@ -624,7 +631,7 @@ function duck(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
   if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
-  P.duckT = DUCK_DUR; Snd.whoosh();
+  P.duckT = DUCK_DUR; P.duckAge = 0; Snd.whoosh();   // JF-#047: fresh crouch
 }
 // JF-#042: BACK-STEP â€” the mid-line evade that completes the dodge triad:
 //   AMBER high  -> DUCK under it
@@ -1252,30 +1259,37 @@ function resolveEnemyHit(e){
   else if (atk === 'low')  avoided = airborne;               // jump the low sweep
   else if (atk === 'grab') avoided = airborne || ducked;     // dodge only
   else                     avoided = P.backT > 0;            // mid: press away
-  if (avoided){                                    // ---- clean dodge: rewarded ----
+  if (avoided){                                    // ---- clean dodge ----
     if (atk === 'grab'){ e.recoverLong = true; e.st = E_STRIKE; }   // whiffed grab = long punish window
+    // JF-#047: duckAge counts frames in the crouch (held ducks never expire, so
+    // DUCK_DUR - duckT stopped measuring age). FRESH (â‰¤20f) = a read: pays points,
+    // FLOW, and bullet time. A lazy held crouch just makes them whiff â€” the NES
+    // paid you nothing for sitting down either.
+    const dodgeAge = ducked ? P.duckAge : airborne ? JUMP_DUR - P.jumpT
+                   : P.backT > 0 ? BACK_DUR - P.backT : 99;
     // JF-#044: PERFECT READ â€” a dodge input within 8f of the blow landing leaves
     // the foe hanging in a LONG recover. The last-instant read, paid like one.
-    const dodgeAge = ducked ? DUCK_DUR - P.duckT : airborne ? JUMP_DUR - P.jumpT
-                   : P.backT > 0 ? BACK_DUR - P.backT : 99;
     if (dodgeAge <= 8 && e.type !== T_BOSS){
       e.st = E_RECOVER; e.stT = 0; e.recoverLong = true;
       score += 160;
       popup(e.x, e.y - 108, 'PERFECT READ +160', '#e8c76a', true);
     }
-    score += 80; jadeRun++;
-    combo++; comboT = CW;                          // JF-#043: defense feeds FLOW too
-    if (combo > bestCombo) bestCombo = combo;
-    if (combo === FINISH_AT - 1 && !finisherCue){  // a dodge can ready the throw
-      finisherCue = true;
-      popup(W/2, 190, 'ONE MORE â€” THROW READY', '#e8c76a', true);
+    if (dodgeAge <= 20){                           // fresh read: full reward
+      score += 80; jadeRun++;
+      combo++; comboT = CW;                        // JF-#043: defense feeds FLOW too
+      if (combo > bestCombo) bestCombo = combo;
+      if (combo === FINISH_AT - 1 && !finisherCue){
+        finisherCue = true;
+        popup(W/2, 190, 'ONE MORE â€” THROW READY', '#e8c76a', true);
+      }
+      // JF-#041: BULLET TIME â€” the swing sails past in slow motion; punish it.
+      slowMo = Math.max(slowMo, 26); hitStop = Math.max(hitStop, 3);
+      shake = Math.max(shake, 3);
+      popup(P.x, P.y - (ducked ? 58 : 100),
+        atk === 'grab' ? 'SLIPPED +80' : atk === 'strike' ? 'EVADED +80' : 'DODGE +80', '#7ce8a8');
+    } else {
+      popup(P.x, P.y - (ducked ? 58 : 100), ducked ? 'under it' : 'over it', '#9aa2b0');
     }
-    // JF-#041: BULLET TIME â€” the swing sails over your duck / under your jump in
-    // slow motion. The freeze IS the reward: you watch the miss, then punish.
-    slowMo = Math.max(slowMo, 26); hitStop = Math.max(hitStop, 3);
-    shake = Math.max(shake, 3);
-    popup(P.x, P.y - (ducked ? 58 : 100),
-      atk === 'grab' ? 'SLIPPED +80' : atk === 'strike' ? 'EVADED +80' : 'DODGE +80', '#7ce8a8');
     burst(P.x + (Math.sign(e.x - P.x) || 1) * 30,
       ducked ? P.y - 88 : atk === 'strike' ? P.y - 58 : P.y - 16, '#7ce8a8', 8, 3);
     return;
@@ -1430,10 +1444,15 @@ addEventListener('keydown', e => {
   // JF-#028: vertical dodge â€” up/W jump, down/S duck (KeyW/KeyS are physical
   // positions, so they land on AZERTY's Z/S up-down keys too)
   if (e.code === 'ArrowUp' || e.code === 'KeyW'){ Snd.unlock(); jump(); return; }
-  if (e.code === 'ArrowDown' || e.code === 'KeyS'){ Snd.unlock(); duck(); return; }
+  // JF-#047: NES crouch â€” holding â–¼ keeps you down (duckHeld tops duckT up each frame)
+  if (e.code === 'ArrowDown' || e.code === 'KeyS'){ Snd.unlock(); duckHeld = true; duck(); return; }
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.code === 'KeyQ') press(-1);
   else if (e.code === 'ArrowRight' || e.code === 'KeyD') press(1);
   else if (e.code === 'Space' || e.code === 'Enter') press(P.face);
+});
+// JF-#047: release â–¼ = stand back up
+addEventListener('keyup', e => {
+  if (e.code === 'ArrowDown' || e.code === 'KeyS') duckHeld = false;
 });
 cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect();
@@ -1469,7 +1488,7 @@ cv.addEventListener('pointerdown', e => {
         if (b.id === 'strikeL') press(-1);
         else if (b.id === 'strikeR') press(1);
         else if (b.id === 'jump' || b.id === 'jump2') jump();
-        else if (b.id === 'duck' || b.id === 'duck2') duck();
+        else if (b.id === 'duck' || b.id === 'duck2'){ padDuckActive = true; duck(); }   // JF-#047: hold to stay down
         return;
       }
     }
@@ -1478,6 +1497,12 @@ cv.addEventListener('pointerdown', e => {
   touchStartY = e.clientY; touchSwiped = false;
   press(x < W/2 ? -1 : 1);
 });
+// JF-#047: releasing the pointer stands you back up from a pad-held crouch
+function padRelease(){ padDuckActive = false; }
+cv.addEventListener('pointerup', padRelease);
+cv.addEventListener('pointercancel', padRelease);
+addEventListener('pointerup', padRelease);
+addEventListener('blur', padRelease);
 // JF-#028: a vertical drag during play is a dodge (swipe up = jump, down = duck).
 // The tap already fired a strike on pointerdown so counters stay instant; if that
 // strike only hit air, the swipe refunds the whiff so a pure dodge costs nothing.
@@ -1547,6 +1572,7 @@ function beginRun(){
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
   lineUse = { mid: 0, low: 0, high: 0 }; guardTaught = false;   // JF-#041
   grapple = null; P.flourishT = 0; clashT = 0;   // JF-#044
+  P.duckAge = 0; padDuckActive = false;          // JF-#047 (duckHeld follows the physical key)
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
   hypeShown = -1; longestSend = 0;   // JF-#030: reset silly-run trackers
@@ -1557,7 +1583,7 @@ function beginRun(){
   msg = save.kills > 50
     ? DISTRICTS[sel].name + ' â€” ' + DISTRICTS[sel].line
     : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade Â· AMBER duck â–¼ Â· CYAN jump â–²'
-             : 'RED: strike INTO it (counter) or press AWAY (evade) Â· AMBER duck Â· CYAN jump Â· PURPLE dodge');
+             : 'RED: strike INTO it or press AWAY Â· AMBER: HOLD â–¼ to duck under Â· CYAN: â–² jump');
   msgT = 300;
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS â€” DOUBLE JADE' +
     (save.streak > 1 ? '  Â·  DAY ' + save.streak : ''), '#7ce8a8', true);
@@ -1609,6 +1635,11 @@ function update(){
   // JF-#028: dodge timers + jump arc (world-time so it slows with hit-stop/slow-mo)
   if (P.jumpT > 0){ P.jumpT -= dt; if (P.jumpT < 0) P.jumpT = 0; }
   if (P.duckT > 0){ P.duckT -= dt; if (P.duckT < 0) P.duckT = 0; }
+  // JF-#047: NES held crouch â€” while â–¼ is held (key or pad button) the duck never
+  // expires; release and the last sliver of duckT runs out and you stand.
+  if ((duckHeld || padDuckActive) && P.jumpT <= 0 && !grapple && !scrollOffer)
+    P.duckT = Math.max(P.duckT, 1.5);
+  P.duckAge = P.duckT > 0 ? P.duckAge + dt : 0;   // frames spent in this crouch
   P.y = GROUND_Y - (P.jumpT > 0 ? Math.sin((1 - P.jumpT / JUMP_DUR) * Math.PI) * JUMP_H : 0);
   if (P.backT > 0){ P.backT -= dt; if (P.backT < 0) P.backT = 0; }   // JF-#042
   // JF-#028: thrown spears fly flat at their telegraphed height; dodge or wear it
@@ -1617,23 +1648,30 @@ function update(){
     if (!d.hit && !d.returned && Math.abs(d.x - P.x) < 30){
       const dodged = d.high ? P.duckT > 0 : P.jumpT > 0;
       if (dodged){
-        // JF-#044: SPEAR CATCH â€” a dodge input within 7f of impact snatches the
-        // projectile out of the air and hurls it straight back at the crowd
-        const age = d.high ? DUCK_DUR - P.duckT : JUMP_DUR - P.jumpT;
-        combo++; comboT = CW;            // JF-#043: defense feeds FLOW
-        if (combo > bestCombo) bestCombo = combo;
+        // JF-#047: duckAge-based timing (held crouches never expire duckT).
+        // NES knives: a held crouch lets the high spear sail over for free â€”
+        // only a FRESH read pays, and a last-instant one CATCHES it (JF-#044).
+        const age = d.high ? P.duckAge : JUMP_DUR - P.jumpT;
         if (age <= 7){
+          combo++; comboT = CW;
+          if (combo > bestCombo) bestCombo = combo;
           d.returned = true; d.vx *= -1.15; d.life = 120;
           score += 100; jadeRun++;
           popup(P.x, d.y0 - 20, 'CAUGHT!', '#e8c76a', true);
           Snd.counter(); slowMo = Math.max(slowMo, 22);
           burst(P.x, d.y0, '#e8c76a', 10, 4);
-        } else {
+        } else if (age <= 20){
+          combo++; comboT = CW;            // JF-#043: defense feeds FLOW
+          if (combo > bestCombo) bestCombo = combo;
           d.hit = true; d.dead = true;
           score += 150; jadeRun++; bumpTrial('dodge');
           slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
           popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
           burst(P.x, d.y0, '#7ce8a8', 8, 3);
+        } else {
+          d.hit = true; d.dead = true;     // lazy crouch: it just sails over
+          bumpTrial('dodge');
+          popup(P.x, GROUND_Y - (d.high ? 60 : 96), d.high ? 'under it' : 'over it', '#9aa2b0');
         }
       } else {
         d.hit = true; d.dead = true;
@@ -2175,11 +2213,11 @@ function drawControlPad(){
   };
   // left cluster: strike + dodge
   btn('strikeL', 24, 60, 'â—€', 'A', false);
-  btn('duck',    90, 78, 'DUCK', 'â–¼ / S', P.duckT > 0);
+  btn('duck',    90, 78, 'DUCK', 'hold â–¼', P.duckT > 0);   // JF-#047: held stance
   btn('jump',   172, 78, 'JUMP', 'â–² / W', P.jumpT > 0);
   btn('strikeR',254, 60, 'â–¶', 'D', false);
   // JF-#046: right cluster removed â€” the four arrows are the whole fight
-  btn('duck2',  794, 68, 'DUCK', 'â–¼', P.duckT > 0);
+  btn('duck2',  794, 68, 'DUCK', 'hold', P.duckT > 0);
   btn('jump2',  868, 68, 'JUMP', 'â–²', P.jumpT > 0);
 }
 
@@ -2700,7 +2738,7 @@ function draw(){
       cx.fillText(cap, W/2, 236);
     }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap toward = strike Â· tap away = evade Â· swipe â†‘ jump â†“ duck' : 'â—€â–¶ strike toward / evade away Â· â–²â–¼ dodge â€” strike while dodging = high/low attack', W/2, 332);
+    cx.fillText(TOUCH ? 'tap toward = strike Â· tap away = evade Â· swipe â†‘ jump â†“ duck' : 'â—€â–¶ strike / evade away Â· HOLD â–¼ crouch Â· â–² jump Â· strike while down/up = low/high attack', W/2, 332);
     // JF-#009: district selector â€” the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';

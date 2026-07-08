@@ -729,3 +729,33 @@ confirms blockStart/heavy/heavyLand/taunt/PARRY_WIN/HEAVY_WIND undefined; pad = 
 buttons; defense matrix re-verified (high→duck only, low→jump only, mid→back-step only,
 grab→jump/duck, wrong answers HIT); bot suite ?bot=4 = 16/16 wins, 0.5 hits/run, 0%
 unreactable, 0% pincer, zero console errors.
+
+## JF-#047 — NES KUNG FU DUCK: hold ▼ to stay crouched (2026-07-08)
+Mike: "the duck/jump exchange is still not intuitive — Kung Fu on NES did this well, mimic
+that." The NES insight: DUCK IS A HELD STANCE, not a timed window. In Kung Fu (Irem/Nintendo
+1985) you see a high knife, hold down, stay crouched until it passes, and crouch-punch from
+down there; jump is a discrete hop for low knives. Our 30f duck timer forced a timing read on
+what should be a posture. Changes:
+- **Hold ▼ / S = crouch indefinitely**: while held, duckT is topped up every frame (keyboard
+  keyup or pad-button release stands you up; window blur releases too). Tap/swipe still gives
+  the 30f timed duck for touch. Jump unchanged (discrete NES arc). duck() while crouched still
+  no-ops; jump requires standing (release first — also NES).
+- **P.duckAge** (frames in the current crouch) replaces `DUCK_DUR - duckT` for all timing
+  reads — a held duck never expires duckT, so the old expression stopped measuring age.
+- **Freshness gate (≤20f)**: a fresh crouch/jump/back-step pays the +80, FLOW, and bullet
+  time; the ≤8f window still gives PERFECT READ; a LAZY held crouch just makes the swing whiff
+  ("under it", grey, no reward, no slow-mo) — the NES paid you nothing for sitting down.
+  Same for spears: fresh dodge +150, ≤7f still CATCHES, stale crouch lets it sail over free.
+  This keeps the stance intuitive without making crouch-camping a FLOW farm (mid strikes,
+  low sweeps, and retaliations all still hit a crouched player, so camping dies anyway).
+- Pad DUCK buttons are hold-to-crouch (padDuckActive, pointerup/cancel/blur releases).
+- Copy: menu "HOLD ▼ crouch", onboarding "AMBER: HOLD ▼ to duck under", pad sublabel "hold ▼".
+- Grapple mash-out already mirrors NES Kung Fu's grippers — untouched.
+
+VALIDATION: syntax OK; unit tests (NOTE/test-gotcha #4: an empty arena during multi-frame
+update() tests triggers onWaveClear → scrollOffer, which blocks the held-crouch top-up and
+ends the wave — park a far-off idler enemy to keep the wave machine quiet): held crouch
+persists 80f+, release stands up, lazy crouch whiffs a high swing with zero reward, fresh
+crouch pays + perfect-reads, stale crouch lets a high spear sail over free. Bot suite ?bot=4 =
+15/16 (50% pincer on 8 total hits — variance) re-run ?bot=3 = 10/12, 0% pincer, 0%
+unreactable both, zero console errors.
