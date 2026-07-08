@@ -593,3 +593,46 @@ VALIDATION: syntax OK; bot suite ?bot=4 = 15/16 wins, 0.88 hits/run, 0% unreacta
 back-step, back-step evades the landing mid + slowMo 26, jump vs mid now HITS (correct), away-
 press with no threat = normal whiff strike, counter INTO the red flash still lands, away-press
 vs grab windup does not back-step.
+
+## JF-#043 — COMBAT BATCH: feel/juice + enemy behavior + structure (2026-07-07)
+Mike picked 8 of the 12 proposed combat improvements (skipped the depth group: perfect-dodge
+counter window, grab escape, corner pressure, throw aiming — parked for a future batch).
+
+FEEL / JUICE:
+- **Counter CLASH freeze-frame** — every PERFECT counter (and every boss counter) fires
+  clash(): hitStop 8 holds the world while the screen drops dark and a white+gold star burst
+  spikes at the contact point with an expanding ring. The signature verb now has a signature
+  frame.
+- **Stamina wobble** — below half hp, foes in walk/stagger/recover visibly pant (slow body
+  sway) and flick sweat drops (~every 46f), so the pips aren't the only wounded read.
+- **Directional hit reactions** — every stagger source (counter, clean hit, heavy, parry) sets
+  leanT/leanDir; the body snaps ~0.32rad away from the blow and decays over 10-14f. Heavies
+  snap hardest.
+
+ENEMY BEHAVIOR:
+- **Named ELITE duelists** (wave 3 of every district cycle, ELITES[sel]): name-card banner,
+  gold sash, +1 hp, ONE signature habit each — IRON ELBOW (Courtyard): answers a blocked
+  strike with an immediate grab; THE HAGGLER (Market): opens with a feint; BRASS PALM
+  (Temple): guards and slides the line after every block; TWO STEPS (Rooftop): always evades
+  your FIRST strike; THE ECHO (Legend): every strike chains a follow-up. Opponents-as-puzzles.
+- **Stance switching** — any guarded foe slides his bracer to a different line every 160-240f
+  while walking, so guard-reading is ongoing, never solved once.
+- **Team-up telegraph** — past difficulty 6, when one foe commits to a windup, a far-side
+  partner (30%) springs a FEINT rush with a shared "!!" cue. The feint can't hit — the
+  pressure is psychological, the fairness real.
+
+STRUCTURE:
+- **Duel stare-down** — a lone challenger stops at ~280px, holds 40f, and announces itself
+  (type name card: INITIATE/VIPER/IRON MONK/SPEARMAN, or the elite's name in gold) before
+  engaging. Reinforces the one-opponent Punch-Out framing. Skipped when 2+ foes are live.
+- **FLOW (was COMBO)** — dodges, back-steps, parries, and spear-dodges now feed the same chain
+  as hits and counters (combo++/comboT reset), and a dodge can ready the empowered throw
+  ("ONE MORE — THROW READY" cue added to the avoided path). HUD label renamed ×N FLOW.
+  Defensive play finally charges the finisher instead of feeling unrewarded.
+
+VALIDATION: syntax OK; bot suite ?bot=4 = 16/16 wins, 0.88 hits/run, 0% unreactable, 0%
+pincer, zero console errors. Unit tests (forced S_PLAY, hitStop cleared between cases — a
+leftover hitStop from a prior strike froze update() and false-failed two cases before the
+retest): elite spawns wave 3 (+1 hp, habit attached), grabnext answers block with grab windup,
+guardshift moves line on block, timed stance-switch fires, stare-down stops + engages after,
+clash fires on perfect counter, hit-lean set, dodge grants FLOW ×1.

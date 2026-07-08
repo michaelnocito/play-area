@@ -692,6 +692,7 @@ function heavyLand(){
   combo++; comboT = CW;
   if (e.hp > 0){
     e.st = E_STAGGER; e.stT = 0; e.vx = dir * 7;
+    e.leanT = 14; e.leanDir = dir;   // JF-#043: heavies snap the head hardest
     const pts = (crushed ? 220 : 160) * Math.min(combo, 5);
     score += pts;
     popup(e.x, e.y - 90, (crushed ? 'GUARD CRUSHED +' : 'HEAVY BLOW +') + pts, '#e8b06a', crushed);
@@ -767,6 +768,17 @@ function spawnEnemy(forceSide){
   // hop back from your strike, then land in a long punishable recover: bait them.
   ne.canEvade = (type === T_FAST && difficulty > 2) || (type === T_NORM && difficulty > 6);
   ne.evadeCd = 0;
+  // JF-#043: the district's named elite â€” one per cycle, first foe of wave 3
+  if (eliteQueued && type !== T_BOSS){
+    eliteQueued = false;
+    const EL = ELITES[sel];
+    ne.elite = EL;
+    ne.hp += 1; ne.hpMax = ne.hp;
+    if (EL.habit === 'feintfirst') ne.feint = true;
+    if (EL.habit === 'evadefirst'){ ne.canEvade = true; ne.evadeCd = 0; ne.eliteEvade = true; }
+    if (EL.habit === 'guardshift'){ ne.guard = 1; ne.guardLine = pickGuardLine(); }
+    banner(EL.name, '#e8c76a', 100);
+  }
   mutter(ne);                                 // JF-#030: the odd approach one-liner
   if (ne.guard && combo >= 8 && !adaptShown){
     adaptShown = true;
@@ -828,6 +840,29 @@ function atkTell(atk){
        : ['#c86ae8', 'DODGE!'];   // grab
 }
 
+// ---- JF-#043: combat batch â€” feel/juice + enemy behavior + structure ----
+// Counter CLASH: a perfect counter freezes the moment â€” dark flash, white burst.
+let clashT = 0, clashX = 0, clashY = 0;
+function clash(x, y){ clashT = 10; clashX = x; clashY = y; hitStop = Math.max(hitStop, 8); }
+// Duel stare-down name cards (structure #11): each type announces itself once.
+const TYPE_NAMES = { [T_NORM]: 'INITIATE', [T_FAST]: 'VIPER', [T_BRUTE]: 'IRON MONK', [T_SPEAR]: 'SPEARMAN' };
+// Named mini-boss duelists (behavior #8): wave 3 of each district fields an
+// ELITE with a name card, +1 hp, a gold sash, and ONE signature habit â€” the
+// Punch-Out opponents-as-puzzles idea at its cheapest:
+//   grabnext   â€” answers a blocked strike with an immediate grab
+//   feintfirst â€” always opens the exchange with a feint
+//   guardshift â€” guards, and moves the guard line after every block
+//   evadefirst â€” always evades your first strike (bait him)
+//   chain      â€” every strike chains into a follow-up swing
+const ELITES = [
+  { name: 'IRON ELBOW',  habit: 'grabnext'   },   // COURTYARD
+  { name: 'THE HAGGLER', habit: 'feintfirst' },   // MARKET
+  { name: 'BRASS PALM',  habit: 'guardshift' },   // TEMPLE
+  { name: 'TWO STEPS',   habit: 'evadefirst' },   // ROOFTOP
+  { name: 'THE ECHO',    habit: 'chain'      }    // LEGEND
+];
+let eliteQueued = false;   // set by beginWave, consumed by the next spawn
+
 // JF-#034: boss personalities â€” a taunt on the name-card, a jab when staggered,
 // and one silly signature. The Butcher hurls cleavers you DUCK/JUMP (reuses darts).
 const BOSS_FLAVOR = {
@@ -853,6 +888,8 @@ function beginWave(n){
     Snd.windup(60);
   } else {
     toSpawn = Math.min(3, 1 + Math.floor(wave / 2));   // JF-#039: DUELS â€” 1-3 tough foes per wave, not a crowd
+    // JF-#043: wave 3 of every district cycle fields the district's named ELITE
+    eliteQueued = wave % WAVES_PER_DISTRICT === 3;
     banner('WAVE ' + wave, '#e8dcc0', 90);
   }
   spawnT = 40;
@@ -1000,6 +1037,7 @@ function strike(dir){
     score += 1000;
     popup(e.x, e.y - 110, 'MASTER STAGGERED +1000', '#7ce8a8', true);
     if (e.flavor) popup(e.x, e.y - 140, 'â€œ' + e.flavor.jab + 'â€', '#e8b06a');   // JF-#034: boss grumbles
+    clash(e.x, e.y - 60);   // JF-#043: the clash freeze â€” boss counters always earn it
     Snd.counter(); hitStop = 8; shake = 14; slowMo = 30;
     burst(e.x, e.y - 50, '#e86a6a', 26, 6);
     banner('HE CALLS HIS STUDENTS', '#e8b06a', 80);
@@ -1027,10 +1065,12 @@ function strike(dir){
 
     if (!lethal){                              // ---- STAGGER: foe is hurt, not felled ----
       e.st = E_STAGGER; e.stT = 0; e.vx = dir * 5; e.guard = 0;
+      e.leanT = 12; e.leanDir = dir;           // JF-#043: head snaps away from the hit
       combo++; comboT = CW;
       const pts = (perfect ? 150 : 100) * Math.min(combo, 5);
       score += pts;
       popup(e.x, e.y - 90, (perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8');
+      if (perfect) clash(e.x, e.y - 55);       // JF-#043: perfect = the freeze-frame moment
       Snd.counter(); hitStop = 5; shake = perfect ? 8 : 6; slowMo = 18;
       burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4);
       if (perfect && hasTech(2)){ perfChain++; } else if (!perfect) perfChain = 0;
@@ -1062,6 +1102,7 @@ function strike(dir){
     const pts = Math.round(baseC * (perfect ? 1.5 : 1)) * Math.min(combo, 5);
     score += pts;
     popup(e.x, e.y - 90, (ironCatch ? 'IRON CATCH +' : perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8', true);
+    if (perfect) clash(e.x, e.y - 55);   // JF-#043
     Snd.counter(); hitStop = empowered ? 7 : 5; shake = empowered ? (perfect ? 13 : 10) : 6; slowMo = empowered ? 26 : 18;
     burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4);
     if (empowered){
@@ -1109,7 +1150,9 @@ function strike(dir){
       }
     } else if (!perfect) perfChain = 0;
     kills++;
-  } else if (e.st === E_WALK && e.canEvade && e.evadeCd <= 0 && Math.random() < 0.55){
+  } else if (e.st === E_WALK && e.canEvade && e.evadeCd <= 0 &&
+             (e.eliteEvade || Math.random() < 0.55)){
+    if (e.eliteEvade) e.eliteEvade = false;   // JF-#043: TWO STEPS always dodges the FIRST one
     // ---- JF-#041 EVADE: they hop back from your strike (Punch-Out dodge) ----
     // The whiff stings, but they LAND in a long recover â€” bait it, then punish.
     e.st = E_EVADE; e.stT = 0; e.evadeCd = 210;
@@ -1127,7 +1170,18 @@ function strike(dir){
       guardTaught = true;
       popup(W/2, 220, 'THEY GUARD ' + (e.guardLine || 'mid').toUpperCase() + ' â€” STRIKE ANOTHER LINE', '#a8b4c8', true);
     }
-    if (e.blockedN >= 2 && e.st === E_WALK){   // keep hammering the guard = they punish you
+    // JF-#043: elite habits fire off a block â€” IRON ELBOW answers with a grab,
+    // BRASS PALM slides his guard to a new line (keep reading, keep varying)
+    if (e.elite && e.elite.habit === 'grabnext' && e.st === E_WALK){
+      e.blockedN = 0;
+      e.st = E_WINDUP; e.stT = 0; e.atk = 'grab'; e.converted = true; e.follow = false;
+      e.windup = Math.max(34, e.windup0);
+      popup(e.x, e.y - 104, 'GRAB!', '#c86ae8');
+      Snd.windup(e.windup);
+    } else if (e.elite && e.elite.habit === 'guardshift'){
+      const lines = ['mid', 'low', 'high'].filter(l => l !== e.guardLine);
+      e.guardLine = lines[(Math.random() * 2) | 0];
+    } else if (e.blockedN >= 2 && e.st === E_WALK){   // keep hammering the guard = they punish you
       e.blockedN = 0;
       e.st = E_WINDUP; e.stT = 0; e.atk = 'strike'; e.converted = true; e.follow = false;
       e.windup = Math.max(22, e.windup0 * 0.7);
@@ -1165,6 +1219,7 @@ function strike(dir){
     e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
     if (e.hp > 0){
       e.st = E_STAGGER; e.stT = 0; e.vx = dir * 3; e.guard = 0;
+      e.leanT = 10; e.leanDir = dir;   // JF-#043
       combo++; comboT = CW;
       const pts = Math.round((opening ? 90 : 60) * Math.min(combo, 5));
       score += pts;
@@ -1230,6 +1285,7 @@ function resolveEnemyHit(e){
       Snd.counter(); hitStop = 6; shake = 8; return;
     }
     e.st = E_STAGGER; e.stT = 0; e.vx = dir * 8; e.guard = 0; e.parried = true;
+    e.leanT = 12; e.leanDir = dir;   // JF-#043
     combo++; comboT = CW;
     const pts = 200 * Math.min(combo, 5);
     score += pts;
@@ -1249,6 +1305,12 @@ function resolveEnemyHit(e){
   if (avoided){                                    // ---- clean dodge: rewarded ----
     if (atk === 'grab'){ e.recoverLong = true; e.st = E_STRIKE; }   // whiffed grab = long punish window
     score += 80; jadeRun++;
+    combo++; comboT = CW;                          // JF-#043: defense feeds FLOW too
+    if (combo > bestCombo) bestCombo = combo;
+    if (combo === FINISH_AT - 1 && !finisherCue){  // a dodge can ready the throw
+      finisherCue = true;
+      popup(W/2, 190, 'ONE MORE â€” THROW READY', '#e8c76a', true);
+    }
     // JF-#041: BULLET TIME â€” the swing sails over your duck / under your jump in
     // slow motion. The freeze IS the reward: you watch the miss, then punish.
     slowMo = Math.max(slowMo, 26); hitStop = Math.max(hitStop, 3);
@@ -1550,6 +1612,7 @@ function update(){
   if (hurtFlash > 0) hurtFlash--;
   if (msgT > 0) msgT--;
   if (bannerT > 0) bannerT--;
+  if (clashT > 0) clashT--;   // JF-#043
   if (P.punchT > 0) P.punchT--;
   if (moonWakeT > 0) moonWakeT--;      // JF-#031
   if (propHitT > 0) propHitT--;
@@ -1583,6 +1646,8 @@ function update(){
       const dodged = d.high ? P.duckT > 0 : P.jumpT > 0;
       if (dodged){
         score += 150; jadeRun++; bumpTrial('dodge');
+        combo++; comboT = CW;            // JF-#043: defense feeds FLOW
+        if (combo > bestCombo) bestCombo = combo;
         slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
         popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
         burst(P.x, d.y0, '#7ce8a8', 8, 3);
@@ -1625,6 +1690,7 @@ function update(){
   for (const e of enemies){
     e.stT += dt;
     if (e.evadeCd > 0) e.evadeCd -= dt;   // JF-#041
+    if (e.leanT > 0) e.leanT -= dt;       // JF-#043: hit-reaction decay
     // JF-#034: THE BUTCHER lobs a cleaver from range â€” a high or low throw you
     // duck/jump like a spearman's (reuses the dart system, boss keeps fighting).
     if (e.type === T_BOSS && e.flavor && e.flavor.cleaver && e.st !== E_DOWN && e.st !== E_THROWN){
@@ -1639,6 +1705,29 @@ function update(){
     switch (e.st){
       case E_WALK: {
         const d = Math.abs(e.x - P.x);
+        // JF-#043: duel STARE-DOWN â€” a lone challenger stops at the edge of the
+        // fight and announces itself (name card) before engaging. Punch-Out framing.
+        if (e.staredown > 0){ e.staredown -= dt; break; }
+        if (!e.met && d < 280 && e.type !== T_BOSS){
+          e.met = true;
+          const live = enemies.reduce((n, o) => n + (o.st !== E_DOWN && o.st !== E_THROWN ? 1 : 0), 0);
+          if (live === 1){
+            e.staredown = 40;
+            popup(e.x, e.y - 132, e.elite ? e.elite.name : TYPE_NAMES[e.type] || '',
+                  e.elite ? '#e8c76a' : '#c8bfa8', true);
+            break;
+          }
+        }
+        // JF-#043: STANCE SWITCH â€” a guarded foe slides his bracer to a new line
+        // every few seconds, so reading guards is ongoing, never solved once
+        if (e.guard > 0){
+          e.guardShiftT = (e.guardShiftT === undefined ? 160 + Math.random() * 80 : e.guardShiftT) - dt;
+          if (e.guardShiftT <= 0){
+            e.guardShiftT = 160 + Math.random() * 80;
+            const lines = ['mid', 'low', 'high'].filter(l => l !== e.guardLine);
+            e.guardLine = lines[(Math.random() * 2) | 0];
+          }
+        }
         // fairness guard: never open a windup while the OTHER side is already
         // threatening â€” hold just outside reach instead of pincering.
         // JF-#006: guard lifts past difficulty 6 â€” late game allows true pincers.
@@ -1668,8 +1757,21 @@ function update(){
           e.followed = false;
           e.follow = (e.type === T_NORM || e.type === T_FAST) && difficulty > 4 &&
                      e.atk === 'strike' && Math.random() < 0.3;
+          // JF-#043: THE ECHO always chains â€” every strike has a follow-up swing
+          if (e.elite && e.elite.habit === 'chain' && e.atk === 'strike') e.follow = true;
           e.followAtk = Math.random() < 0.4 ? 'grab' : Math.random() < 0.5 ? 'high' : 'low';
           Snd.windup(e.windup);
+          // JF-#043: TEAM-UP â€” late game, a partner on the far side fakes a rush
+          // as this one commits, with a shared "!!" cue. Scary, but the feint
+          // itself can't hit: the pressure is psychological, the fairness real.
+          if (difficulty > 6 && Math.random() < 0.3){
+            const partner = enemies.find(o => o !== e && o.st === E_WALK && o.type !== T_BOSS &&
+              Math.sign(o.x - P.x) !== Math.sign(e.x - P.x) && Math.abs(o.x - P.x) < 420);
+            if (partner){
+              partner.st = E_FEINT; partner.stT = 0;
+              popup(W/2, 250, '!!', '#e8a06a', true);
+            }
+          }
         } else e.x += e.side * e.speed * dt;
         break;
       }
@@ -2273,6 +2375,17 @@ function draw(){
       rot += -Math.sign(e.vx || 1) * p * 5.2;   // full flip in the hop direction
       col = '#c8d4e0'; eyes = 'idle';
     }
+    // JF-#043: directional hit reaction â€” the body snaps away from the blow, decays fast
+    if (e.leanT > 0) rot += e.leanDir * 0.32 * (e.leanT / 12);
+    // JF-#043: stamina wobble â€” below half hp they visibly pant and sweat, so the
+    // pips aren't the only wounded read and the finish feels earned
+    const winded = e.hpMax > 1 && e.hp <= e.hpMax / 2 &&
+      (e.st === E_WALK || e.st === E_STAGGER || e.st === E_RECOVER);
+    if (winded){
+      rot += Math.sin(t * 0.18 + e.x * 0.05) * 0.045;
+      if (t % 46 === 0) parts.push({ x: e.x + 10, y: e.y - 96, vx: 1.2, vy: -1.5,
+        life: 22, col: '#9ad8f0', sz: 2.4 });
+    }
     // JF-#041: attack POSES sell the line â€” a low sweep crouches to ankle height
     // (jump clears it), a high swing cocks and lashes at head height (duck slips it)
     const atkActive = e.st === E_WINDUP || e.st === E_STRIKE;
@@ -2283,7 +2396,7 @@ function draw(){
       col, punch, rot, size, eyes, squash,
       pose: epose,
       line: atkActive ? e.atk : null,
-      sash: e.type === T_BOSS ? '#a02828' : e.type === T_BRUTE ? '#3a3050' : e.type === T_SPEAR ? '#2a6a48' : '#a04848',
+      sash: e.elite ? '#e8c76a' : e.type === T_BOSS ? '#a02828' : e.type === T_BRUTE ? '#3a3050' : e.type === T_SPEAR ? '#2a6a48' : '#a04848',   // JF-#043: elites wear gold
       spear: e.type === T_SPEAR,
       guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER),
       guardLine: e.guardLine
@@ -2386,6 +2499,21 @@ function draw(){
   cx.globalAlpha = 1;
   cx.restore();
 
+  // JF-#043: counter CLASH â€” a perfect counter freezes the moment: the screen
+  // drops dark, a white burst spikes at the point of contact. hitStop holds the
+  // world still underneath, so it reads as a freeze-frame, not an effect.
+  if (clashT > 0){
+    const cp = clashT / 10;
+    cx.fillStyle = `rgba(6,8,12,${0.5 * cp})`;
+    cx.fillRect(0, 0, W, H);
+    cx.globalAlpha = cp;
+    drawStar(clashX, clashY, 60 + (1 - cp) * 50, '#ffffff', clashT * 0.25);
+    drawStar(clashX, clashY, 30 + (1 - cp) * 24, '#e8c76a', -clashT * 0.35);
+    cx.strokeStyle = `rgba(255,255,255,${0.7 * cp})`; cx.lineWidth = 3;
+    cx.beginPath(); cx.arc(clashX, clashY, 40 + (1 - cp) * 90, 0, 7); cx.stroke();
+    cx.globalAlpha = 1;
+  }
+
   // ------------------------------------------------------------- HUD ----
   cx.textAlign = 'center'; cx.fillStyle = '#e8dcc0';
   if (state === S_PLAY){
@@ -2407,8 +2535,9 @@ function draw(){
     }
     cx.fillStyle = '#e8dcc0';
     if (combo > 1){
+      // JF-#043: FLOW â€” counters, hits, AND dodges/parries all feed one chain
       cx.fillStyle = '#7ce8a8'; cx.font = 'bold 20px Georgia';
-      cx.fillText('Ã—' + Math.min(combo, 5) + ' COMBO', W/2, 72);
+      cx.fillText('Ã—' + Math.min(combo, 5) + ' FLOW', W/2, 72);
       const bw = 120 * (comboT / CW);                // visible combo-decay bar
       cx.fillStyle = 'rgba(124,232,168,0.6)';
       cx.fillRect(W/2 - bw/2, 80, bw, 4);
