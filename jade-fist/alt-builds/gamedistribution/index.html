@@ -1401,6 +1401,15 @@ function resolveEnemyHit(e){
     return;
   }
   if (BOT) botHit(e);                              // JF-#022: classify before it lands
+  // JF-#045: say WHERE it landed â€” the high swing hits the head, the sweep takes
+  // the legs â€” so the miss teaches the dodge you should have used
+  if (atk === 'high'){
+    popup(P.x, P.y - 120, 'RIGHT IN THE HEAD', '#e86a6a', true);
+    burst(P.x, P.y - 84, '#e86a6a', 12, 4);
+  } else if (atk === 'low'){
+    popup(P.x, P.y - 120, 'SWEPT THE LEGS', '#e86a6a', true);
+    burst(P.x, P.y - 8, '#e86a6a', 12, 4);
+  }
   // JF-#044: a landed GRAB opens the mash-out grapple instead of instant damage
   // (bots keep the instant path so fairness numbers stay comparable)
   if (atk === 'grab' && !BOT){
@@ -2189,8 +2198,9 @@ function fighter(x, y, face, opts){
   } else if (o.line === 'high'){
     // JF-#041: HIGH-line attack â€” the lead arm cocks up then swings at HEAD
     // height, so a duck visibly slips UNDER it. Windup = raised; strike = out high.
+    // JF-#045: strike arm reaches 1.35Ã— so the fist visually crosses to the head.
     arm(-7, -62, -18, -50);
-    arm(5, -66, 5 + (punch > 0 ? ext : 6), punch > 0 ? -86 : -96);
+    arm(5, -66, 5 + (punch > 0 ? ext * 1.35 : 6), punch > 0 ? -84 : -96);
   } else {
     arm(-7, -62, -18, -50);
     arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7));
@@ -2475,12 +2485,41 @@ function draw(){
       cx.fillStyle = tcol; cx.globalAlpha = (0.18 + prog * 0.28) * (0.7 + 0.3 * pulse);
       cx.beginPath(); cx.arc(e.x, e.y - 55, (38 + prog * 16) * size, 0, 7); cx.fill();
       cx.globalAlpha = 1;
-      // caption above the foe teaches the answer in place
-      cx.save(); cx.translate(e.x, e.y - 118 - (size - 1) * 40); cx.scale(0.92, 0.92);
-      cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-      cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(tcap, 0, 0);
-      cx.fillStyle = tcol; cx.fillText(tcap, 0, 0);
-      cx.restore();
+      if (e.atk === 'high' || e.atk === 'low'){
+        // JF-#045: the swing is AIMED â€” a dashed threat line runs from the cocked
+        // fist to the exact body part it will hit (standing HEAD height for high,
+        // ankles for low), with a target ring pulsing on it. Duck and the line
+        // visibly passes over your head; stand there and that's where it lands.
+        // Same language as the spearman's aim line (JF-#028), so it's pre-taught.
+        const high = e.atk === 'high';
+        const ty = high ? GROUND_Y - 84 : GROUND_Y - 12;                // head / ankles
+        const dirP = Math.sign(P.x - e.x) || 1;
+        const fx = e.x + dirP * 14, fy = e.y - (high ? 96 : 20) * size; // from the fist
+        cx.strokeStyle = tcol; cx.globalAlpha = 0.4 + prog * 0.45; cx.lineWidth = 2.5;
+        cx.setLineDash([7, 7]); cx.lineDashOffset = -e.stT * 2;
+        cx.beginPath(); cx.moveTo(fx, fy); cx.lineTo(P.x, ty); cx.stroke();
+        cx.setLineDash([]);
+        // target ring locked on the head (or shins) â€” tightens as the swing ripens
+        const rr = (high ? 19 : 13) - prog * 5;
+        cx.lineWidth = 3; cx.globalAlpha = 0.5 + 0.5 * pulse;
+        cx.beginPath(); cx.arc(P.x, ty, rr, 0, 7); cx.stroke();
+        cx.beginPath(); cx.moveTo(P.x - rr - 5, ty); cx.lineTo(P.x - rr + 2, ty);
+        cx.moveTo(P.x + rr - 2, ty); cx.lineTo(P.x + rr + 5, ty); cx.stroke();
+        cx.globalAlpha = 1;
+        // the answer, written AT the threatened body part
+        cx.save(); cx.translate(P.x, ty - rr - 10);
+        cx.font = 'bold 21px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
+        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(tcap, 0, 0);
+        cx.fillStyle = tcol; cx.fillText(tcap, 0, 0);
+        cx.restore();
+      } else {
+        // grab keeps its caption above the foe (it targets all of you)
+        cx.save(); cx.translate(e.x, e.y - 118 - (size - 1) * 40); cx.scale(0.92, 0.92);
+        cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
+        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(tcap, 0, 0);
+        cx.fillStyle = tcol; cx.fillText(tcap, 0, 0);
+        cx.restore();
+      }
     } else if (e.st === E_WINDUP){
       const late = e.stT / e.windup > perfTh();   // final third: solid bright = NOW (JF-#025: CRANE widens)
       const flash = late || Math.sin(e.stT * 0.6) > 0;
@@ -2491,7 +2530,24 @@ function draw(){
     } else if (e.st === E_FEINT){
       // feint tell: PALE flash, no red, no audio â€” only real telegraphs go red
       col = Math.sin(e.stT * 0.8) > 0 ? '#c8a8a0' : '#b8c8d8';
-    } else if (e.st === E_STRIKE){ col = '#e8b06a'; punch = 10; eyes = 'angry'; }
+    } else if (e.st === E_STRIKE){
+      col = '#e8b06a'; punch = 10; eyes = 'angry';
+      // JF-#045: the swing itself sweeps THROUGH the head/ankle plane â€” a fading
+      // swipe streak from the fist across the player's position, so a ducked
+      // high swing visibly whooshes over where your head just was
+      if (e.atk === 'high' || e.atk === 'low'){
+        const high = e.atk === 'high';
+        const ty = high ? GROUND_Y - 84 : GROUND_Y - 12;
+        const dirP = Math.sign(P.x - e.x) || 1;
+        const [tcol] = atkTell(e.atk);
+        const sw = Math.max(0, 1 - e.stT / 10);
+        cx.strokeStyle = tcol; cx.globalAlpha = 0.75 * sw; cx.lineWidth = 7; cx.lineCap = 'round';
+        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 26, ty); cx.stroke();
+        cx.globalAlpha = 0.3 * sw; cx.lineWidth = 14;
+        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 26, ty); cx.stroke();
+        cx.globalAlpha = 1; cx.lineWidth = 1;
+      }
+    }
     else if (e.st === E_RECOVER){ col = '#7a6a9a'; rot += 0.12 * Math.sign(e.x - P.x); eyes = 'dizzy'; }  // slumped = punishable
     else if (e.st === E_STAGGER){ col = '#9a90b0'; rot += 0.2 * Math.sign(e.vx || 1); eyes = 'dizzy'; }
     else if (e.st === E_AIM){

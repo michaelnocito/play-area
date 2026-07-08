@@ -680,3 +680,27 @@ cornered counter deals 2; duck-counter = low skid; taunt speeds foe + flourish; 
 projectile dodge catches + reversed dart fells its sender; stare-down fires flourish + quip;
 FIGHT! on expiry; boss finale clash + slowMo 60. TEST GOTCHA #3: unit-testing on a ?bot= URL
 makes BOT truthy and grapple deliberately takes the instant-damage path — test on the clean URL.
+
+## JF-#045 — HEAD-HUNTER TELEGRAPHS: high/low swings aim at the body part (2026-07-08)
+Mike's playtest note: duck-attacks "still feel a bit like they are coming at our center — be
+clear it's coming at the head, so if the player did not duck it would hit them in the head."
+The tell now targets the PART, not the person:
+- **Threat line to the body part**: a high/low windup draws a dashed line from the cocked fist
+  to the player's STANDING head height (GROUND_Y-84) or ankles (GROUND_Y-12) — same dashed-aim
+  language as the spearman throw (JF-#028), so it's pre-taught. Duck and the line visibly sits
+  above your lowered head.
+- **Target ring**: a pulsing reticle (ring + side ticks) locks on the head/shins and TIGHTENS
+  as the swing ripens. The DUCK!/JUMP! caption moved from over the enemy to right at the
+  threatened body part. (Grab keeps its over-the-foe DODGE! caption — it targets all of you.)
+- **Swipe streak**: the strike frame sweeps a fading amber/cyan streak THROUGH the head/ankle
+  plane from the fist across the player's position — a ducked swing visibly whooshes over
+  where your head just was.
+- **Arm reaches the head**: the high-strike lead arm extends 1.35× so the fist visually
+  crosses the gap at head height instead of stopping short (the "coming at our center" feel
+  was partly the short arm reading as a body punch).
+- **Located hits**: an undodged high swing pops "RIGHT IN THE HEAD" + burst at head height;
+  a low sweep pops "SWEPT THE LEGS" + burst at the ankles — the miss teaches the dodge.
+
+VALIDATION: syntax OK; all new draw paths exercised via eval (high/low windup + strike,
+ducked/jumped variants, grab caption) with no exceptions; head-hit feedback confirmed; bot
+suite ?bot=3 = 10/12 wins, 0% unreactable, 9% pincer, zero console errors (draw-only change).
