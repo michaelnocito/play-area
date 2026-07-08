@@ -569,3 +569,27 @@ no-ops outside S_PLAY, a prior test pass silently failed on that): mid-vs-mid-gu
 low-vs-mid lands OPENING + strips guard / high guard blocks jump attack, mid lands / 2 blocked
 pokes → RETALIATES with counterable windup / evade rate 13/20 with long-recover landing /
 bullet-time slowMo=26 on ducked high swing.
+
+## JF-#042 — BACK-STEP: the mid-line evade completes the dodge triad (2026-07-07)
+Mike's note on #041: "the counter feature feels off or extra — we have jump for low, duck for
+high, maybe press AWAY from the opponent to evade straight middle attacks." Exactly right: every
+attack line now has a pure evade answer, and the counter becomes the GREEDY option on red rather
+than the forced one (Punch-Out's dodge-is-safe / counter-is-reward split):
+- **AMBER high → DUCK** · **CYAN low → JUMP** · **RED mid → press AWAY (back-step)**, or stand
+  your ground with counter / block / parry. PURPLE grab stays jump-or-duck.
+- **Back-step (BACK_DUR 20f)**: pressing away from a foe that is mid-RED-windup (or mid-swing,
+  pre-impact) is an evade — a lean-and-slide-away animation (draw-only x shift + body lean,
+  springs back) — instead of a wasted whiff. Same +80/bullet-time reward as the other dodges
+  ("EVADED"). Pressing away at any other time still strikes that direction, so two-sided offense
+  is untouched: the evade only claims the press while a mid threat is live on the other side.
+  Away-press vs a GRAB windup deliberately does NOT back-step (grab keeps its jump/duck answer).
+- **Matrix sharpened**: jump/duck no longer sloppily dodge mid strikes (previously airborne/
+  ducked slipped them) — one dodge per line, so the reads stay meaningful.
+- Dodges mutually exclusive (jump/duck/back-step/block/heavy all lock each other out).
+- Onboarding + menu copy reworded: "strike INTO it (counter) or press AWAY (evade)".
+
+VALIDATION: syntax OK; bot suite ?bot=4 = 15/16 wins, 0.88 hits/run, 0% unreactable, 14% pincer
+(threshold 35%), zero console errors. Unit tests (forced S_PLAY): away-press during red windup =
+back-step, back-step evades the landing mid + slowMo 26, jump vs mid now HITS (correct), away-
+press with no threat = normal whiff strike, counter INTO the red flash still lands, away-press
+vs grab windup does not back-step.

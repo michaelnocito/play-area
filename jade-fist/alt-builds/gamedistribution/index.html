@@ -604,7 +604,8 @@ let msg = null, msgT = 0;
 
 const GROUND_Y = 420;
 const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, jumpT: 0, duckT: 0,
-  block: false, blockAge: 0, heavyT: 0 };   // JF-#040: block/parry + heavy blow
+  block: false, blockAge: 0, heavyT: 0,     // JF-#040: block/parry + heavy blow
+  backT: 0, backDir: 0 };                   // JF-#042: back-step evade (mid attacks)
 // JF-#028: vertical dodge axis. Jump = airborne (dodges LOW throws); duck = crouch
 // (dodges HIGH throws). Brief action windows, not held stances, so the fight stays
 // snappy and you commit to a read the same way a counter commits.
@@ -613,15 +614,39 @@ let darts = [];   // in-flight thrown spears: {x, vx, high, y0, life}
 function jump(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0) return;   // one dodge at a time
+  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return;   // one dodge at a time
   P.jumpT = JUMP_DUR; Snd.whoosh();
 }
 function duck(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0) return;
+  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return;
   if (P.block || P.heavyT > 0) return;   // JF-#040: guarding/committed = feet planted
   P.duckT = DUCK_DUR; Snd.whoosh();
+}
+// JF-#042: BACK-STEP â€” the mid-line evade that completes the dodge triad:
+//   AMBER high  -> DUCK under it
+//   CYAN  low   -> JUMP over it
+//   RED   mid   -> press AWAY to lean out of it (or counter/block/parry it)
+// Pressing away from a foe mid-RED-windup is an evade, not a whiffed punch.
+// Pressing away at any other time still strikes that direction (two-sided
+// offense is untouched â€” the evade only claims the press when a mid threat
+// is live on the other side).
+const BACK_DUR = 20;
+function tryBackstep(dir){
+  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || P.block || P.heavyT > 0) return false;
+  for (const e of enemies){
+    if (e.st !== E_WINDUP && !(e.st === E_STRIKE && !e.didHit)) continue;
+    if (e.atk && e.atk !== 'strike') continue;              // high/low/grab keep their own answers
+    if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 30) continue;
+    const s = Math.sign(e.x - P.x) || 1;
+    if (dir === -s){
+      P.backT = BACK_DUR; P.backDir = dir;
+      Snd.whoosh();
+      return true;
+    }
+  }
+  return false;
 }
 // JF-#040: BLOCK (hold K/Shift/F). Held = a RED strike bounces off; started
 // within PARRY_WIN frames of the blow landing = PARRY, which staggers the
@@ -642,7 +667,7 @@ const HEAVY_WIND = 22;
 function heavy(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.heavyT > 0 || whiffT > 0 || P.block || P.jumpT > 0 || P.duckT > 0) return;
+  if (P.heavyT > 0 || whiffT > 0 || P.block || P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return;
   P.heavyT = HEAVY_WIND; Snd.windup(HEAVY_WIND);
 }
 function heavyLand(){
@@ -1196,9 +1221,11 @@ function resolveEnemyHit(e){
   if (atk === 'high')      avoided = ducked;                 // duck the high swing
   else if (atk === 'low')  avoided = airborne;               // jump the low sweep
   else if (atk === 'grab') avoided = airborne || ducked;     // dodge only â€” armored vs block
-  else {                                                     // plain strike
+  else {                                                     // plain (MID) strike
+    // JF-#042: one dodge per line â€” the mid answer is the BACK-STEP (press away),
+    // not jump/duck. Block/parry/counter remain the stand-your-ground answers.
     if (P.block) (P.blockAge <= PARRY_WIN) ? parried = true : blocked = true;
-    else avoided = airborne || ducked;                       // a clean dodge also slips it
+    else avoided = P.backT > 0;
   }
   const dir = Math.sign(e.x - P.x) || 1;
   if (parried){                                    // ---- PARRY: the sweet spot ----
@@ -1231,8 +1258,10 @@ function resolveEnemyHit(e){
     // slow motion. The freeze IS the reward: you watch the miss, then punish.
     slowMo = Math.max(slowMo, 26); hitStop = Math.max(hitStop, 3);
     shake = Math.max(shake, 3);
-    popup(P.x, P.y - (ducked ? 58 : 100), (atk === 'grab' ? 'SLIPPED +80' : 'DODGE +80'), '#7ce8a8');
-    burst(P.x + (Math.sign(e.x - P.x) || 1) * 30, ducked ? P.y - 88 : P.y - 16, '#7ce8a8', 8, 3);
+    popup(P.x, P.y - (ducked ? 58 : 100),
+      atk === 'grab' ? 'SLIPPED +80' : atk === 'strike' ? 'EVADED +80' : 'DODGE +80', '#7ce8a8');
+    burst(P.x + (Math.sign(e.x - P.x) || 1) * 30,
+      ducked ? P.y - 88 : atk === 'strike' ? P.y - 58 : P.y - 16, '#7ce8a8', 8, 3);
     return;
   }
   if (BOT) botHit(e);                              // JF-#022: classify before it lands
@@ -1321,6 +1350,7 @@ function press(dir){
     else startRun();                   // next tap: restart (tallyDone flips on next draw)
     return;
   }
+  if (tryBackstep(dir)) return;   // JF-#042: away-press during a mid threat = evade
   strike(dir);
 }
 // JF-#016: rewarded ad = bank the run's jade twice (once per tally)
@@ -1509,8 +1539,8 @@ function beginRun(){
   // JF-#012: veterans get the district's line instead of the controls lesson
   msg = save.kills > 50
     ? DISTRICTS[sel].name + ' â€” ' + DISTRICTS[sel].line
-    : (TOUCH ? 'RED flash: tap to counter Â· AMBER: duck â–¼ Â· CYAN: jump â–² Â· PURPLE: dodge'
-             : 'RED: counter or hold K to block Â· AMBER duck Â· CYAN jump Â· PURPLE dodge Â· J heavy');
+    : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade Â· AMBER duck â–¼ Â· CYAN jump â–²'
+             : 'RED: strike INTO it (counter) or press AWAY (evade) Â· AMBER duck Â· CYAN jump Â· PURPLE dodge');
   msgT = 300;
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS â€” DOUBLE JADE' +
     (save.streak > 1 ? '  Â·  DAY ' + save.streak : ''), '#7ce8a8', true);
@@ -1549,6 +1579,7 @@ function update(){
   // JF-#040: block age drives the parry window; heavy blow lands when its wind ends
   if (P.block) P.blockAge += dt;
   if (P.heavyT > 0){ P.heavyT -= dt; if (P.heavyT <= 0){ P.heavyT = 0; heavyLand(); } }
+  if (P.backT > 0){ P.backT -= dt; if (P.backT < 0) P.backT = 0; }   // JF-#042
   // JF-#028: thrown spears fly flat at their telegraphed height; dodge or wear it
   for (const d of darts){
     d.x += d.vx * dt; d.spin += 0.5 * dt;
@@ -2324,8 +2355,11 @@ function draw(){
     cx.strokeStyle = 'rgba(232,176,106,0.85)'; cx.lineWidth = 4;
     cx.beginPath(); cx.arc(P.x + P.face * 28, P.y - 60, 26, -Math.PI/2, -Math.PI/2 + chg * Math.PI * 2); cx.stroke();
   }
-  fighter(P.x, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
-    punch: P.punchT, pose: pPose, rot: run.drunken ? Math.sin(t * 0.14) * 0.1 : 0,   // JF-#032: DRUNKEN sway
+  // JF-#042: back-step evade â€” a quick lean-and-slide away, then spring back
+  const backP = P.backT > 0 ? Math.sin((P.backT / BACK_DUR) * Math.PI) : 0;
+  fighter(P.x + P.backDir * backP * 26, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
+    punch: P.punchT, pose: pPose,
+    rot: (run.drunken ? Math.sin(t * 0.14) * 0.1 : 0) + P.backDir * backP * 0.22,   // JF-#032 sway + JF-#042 lean
     line: P.duckT > 0 && P.punchT > 0 ? 'low' : null,   // JF-#041: crouch sweep read
     acc: wornAcc(),   // JF-#033
     guard: P.block,   // JF-#040: raised-guard bracer
@@ -2485,7 +2519,7 @@ function draw(){
       cx.fillText(cap, W/2, 236);
     }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap L/R strike Â· swipe â†‘ jump â†“ duck Â· on-screen BLOCK & HEAVY buttons' : 'â—€â–¶ strike Â· â–²â–¼ dodge (strike while dodging = high/low attack) Â· K block Â· J heavy', W/2, 332);
+    cx.fillText(TOUCH ? 'tap toward = strike Â· tap away = evade Â· swipe â†‘ jump â†“ duck Â· BLOCK & HEAVY buttons' : 'â—€â–¶ strike toward / evade away Â· â–²â–¼ dodge or attack high/low Â· K block Â· J heavy', W/2, 332);
     // JF-#009: district selector â€” the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';
