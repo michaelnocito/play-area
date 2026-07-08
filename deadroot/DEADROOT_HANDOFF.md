@@ -1,59 +1,40 @@
-# DEADROOT — Handoff & Roadmap (2026-07-05)
+# DEADROOT — Handoff & Roadmap (2026-07-08, post DR-#042)
 
 Live: https://michaelnocito.github.io/play-area/deadroot/
 Local: C:\Users\Mike\Projects\GAMES\play-area\deadroot\index.html
-Full history: DEADROOT_DEV_NOTES.md (read DR-#021 → DR-#024 for the maze work).
-Rules: single-file index.html, canvas + vanilla JS, fixed 60Hz, no build step, CG fast-load. `?dev=1` dev menu (strip before launch). Read GAME_BIBLE.md at chat start.
+Full history: DEADROOT_DEV_NOTES.md (read DR-#035 → DR-#042 for the dungeon era).
+Rules: single-file index.html, canvas + vanilla JS, fixed 60Hz, no build step, CG fast-load. `?dev=1` dev menu with live tunables incl. Enemy HP × / Enemy attack × (strip before launch). Read GAME_BIBLE.md at chat start. Commits `DR-#NNN`, author Michael Nocito <hello.michaelnocito@gmail.com>, no AI trailers, parse-check + push every change. ⚠️ Stage explicit paths only (`git add deadroot/...`) — `git add -A` from a subdir stages the whole monorepo (ca07c55 swept in another session's jade-fist JF-#040 WIP).
 
-## Where it is now
-A **buy-and-place hedge-maze tower defense**. You are the undead Hive; a human war-host enters through fixed **gates** and winds toward the central Hive. Kills give **biomass**; you spend it via a 3-brush palette: **HEDGE** walls (5◈, permanent, **drag to paint a line**), **ZOMBIE** units (40◈, bite), and **GRABBER** units (45◈, slow-aura). A hedge can be **grown into a zombie/grabber** for the difference. Paths are guaranteed **≥2 tiles wide**. Zombies/grabbers are **destructible** — a slain one leaves a **gap** AND starts a **4s Hive-wide reabsorption cooldown** before you can raise a new unit. The longer enemies wind your maze, the more **creeping-rot DoT** cooks them (rewards long routes). Tap a hedge/zombie to **sell/remove** it. Gates **flare** when a new front opens. Corpses are decorative + passive biomass income. A concentric **labyrinth** is pre-seeded each run.
+## What the game is now (DR-#042)
+A **level-based dungeon-builder defense**. You are the undead Hive. Each LEVEL is a fixed root-burrow floor plan you populate with mobs during an untimed build phase (palette: **ZOMBIE** 40◈ bite / **GRABBER** 45◈ slow-aura / **SPIKES** 20◈ 3-use trap), then **START RAID** releases the whole adventuring party through the one west entrance. **The point: survive the level's 4 waves until your ROOTQUEEN can open the next doorway.** She is **auto-placed** at each level's deep spot (2×2, boss of the level); the sealed east **exit arch** is faintly visible all level; on clearing the last wave she tears it open (3.4s flare), surviving units are **reabsorbed as biomass**, and you descend to a fresh dungeon at full HP.
 
-Recent slices: DR-#023 pivot to buy-and-place; DR-#024 hedge↔zombie unify + 2-wide + destructible gaps; **DR-#025 Grabber + reabsorption cooldown; DR-#026→#032 the full C polish backlog (boon/onboarding text, sell/remove, drag-paint + ghost cursor, gate flares, path-length rot, leafy hedges, dead-code rip).**
+- **Levels:** L1 THE BURROW GATE (DR-#038 burrow, Great Root split, waves 1-4) · L2 THE ROOTMAW (serpentine baffles, waves 5-8) · L3 THE DEEP THRONE (arena + throne ring, waves 9-12). Final wave = victory → endless (L1 layout). Data in `LEVELS[]` (walls/queen/exit/waves/splits); `onFloor()` is level-aware.
+- **Raiders** (DR-#036/#041): KNIGHT tank+taunt 2.4, CLERIC heals 8hp/s, INCIN dps, THIEF stealth-ambush-stun; they fight back when wounded, explore/search, and drop stuck straight-line waypoints after 0.8s (DR-#042 fix).
+- **Zombies roam** ≤0.9 tiles around their post, freeze when prey is within range+1.2 tiles. Guards don't block pathing (DR-#038); doors and hedges are retired dormant code.
+- HUD: LEVEL n — NAME + wave n/4; prep shows "survive N more raids — the Queen opens the way".
 
-Known: canvas screenshots time out in tooling — verify via `preview_eval` (reload first, no HMR). Remaining dead code (harmless): feast/mutate corpse-menu tangle (interwoven with the live salvage menu).
+Known tooling: preview `deadroot` (4216) often dead → use `deadroot-alt` (4226); preview_screenshot times out → canvas→toDataURL→base64→decode→Read fallback; static file has NO HMR → `window.location.reload()` before preview_eval.
 
-## Decisions locked (2026-07-05, Mike playtest)
-- **The 2-wide maze feels good** — no tuning needed there. Direction is confirmed: this is a buy-and-place hedge-maze **Survival** game.
-- **FFT-style tactics is a separate game, PARKED.** Agreed it's a near-new core loop, not an evolution of this. Not on the near-term roadmap — revisit as its own project later. Everything below is about making the maze Survival game great.
-
----
+## Verified vs NOT verified
+✅ All 3 layouts BFS-reachable; full campaign sim L1→L2→L3→victory; honest-economy L1 clears at 100 HP; roam bounded; console clean.
+⚠️ **L2/L3 balance untested by a human** — waves 5-8 killed a sloppy sim garrison at 1× numbers. All numbers dev-tunable.
 
 ## ROADMAP — pick what to build next
+### Needs Mike first
+- **P1 — Playtest the level loop** (steps 042a-e from the DR-#042 chat: auto-Queen, roam, doorway transition, L2/L3 difficulty, 3-brush palette). Tuning notes → balance pass. **M**
+- **D1 — Human sprite roster.** ⛔ ASSET-GATED: Engvee Knight/Barbarian/Halberdier sheets into `assets/raw/` (SPR-#003 pipeline). **M**
+- **A3 — Shippable.** GAME_BIBLE Part 4 checklist + strip `?dev=1`. After the loop feels done. **M**
 
-### A. Direction / shippable
-- **A3 — Survival to shippable.** Balance pass, dead-code cleanup, art polish, GAME_BIBLE Part 4 pre-submission checklist. The finish line for this game. Effort: **M**. *(Recommended once the depth items below are in.)*
-- ~~A1 Mode select~~ — not needed while there's a single mode; revisit only if/when the tactics game exists.
-- ~~A2 Quest tactics (FFT)~~ — **PARKED** as a separate future game (see Decisions above).
+### Feature backlog (DR-#042 research, Mike to pick — rec: batch the 4 S items, then #5)
+1. **Treasure bait** (S) — placeable loot piles lure greedy heroes off-path into kill zones.
+2. **Adjacency synergy** (S) — zombie next to grabber hits harder; adjacent spikes re-arm faster.
+3. **Kill-combo bonus** (S) — extra biomass for trap+monster kills within a short window.
+4. **Party intel** (S) — richer pre-wave party preview to re-tune the dungeon.
+5. **Morale & retreat** (M) — party morale bar; at zero survivors rout to the entrance and drop loot. The signature reverse-dungeon moment.
+6. **Queen active abilities** (M) — root-slam AoE / terror scream on cooldown.
+7. **Room-purpose tiles** (M) — Nest (free zombie/wave), Larder (regen), Bone Pit (+essence).
+8. Later: torch/darkness ambush bonus, per-level modifiers, veteran carryover, monster fusion.
 
-### B. Your requested additions
-- ~~**B1 — Grabber zombie.**~~ **DONE (DR-#025).** 3rd build brush (GRABBER, 45◈, range 2.0, slow 0.40): a zombie that slows every enemy in its amber snare aura instead of shooting. Distinct look = amber disc + dashed aura ring + grasping clawed tendrils. Destructible, growable from a hedge. Tune slow%/range/cost on playtest.
-- ~~**B2 — Reabsorption cooldown.**~~ **DONE (DR-#025), GLOBAL Hive-wide (chosen over per-tile).** 4s lockout on raising a NEW zombie (fresh place AND grow) after any zombie dies; hedges/salvage exempt. Palette buttons dim + countdown; cursor red while cooling. Tune the 4s on playtest.
-
-### C. Maze / build polish — ✅ ALL DONE (DR-#026 → #032)
-- ~~C1 Drag-to-paint walls~~ **DONE (DR-#028)** — hold+drag the HEDGE brush lays a wall in one stroke.
-- ~~C2 Ghost + red/green drag preview~~ **DONE (DR-#028)** — filled ghost cursor in the brush hue, red+X when blocked.
-- ~~C3 Nicer art~~ **DONE (DR-#031)** — leafy dappled topiary + top-face highlight (clip-free/cheap). *Full 47-blob atlas + separate zombie-in-wall art judged not worth the weight; grown zombie already reads distinct.*
-- ~~C4 Path-length reward~~ **DONE (DR-#030)** — creeping-rot DoT ramps with time spent walking the maze.
-- ~~C5 Sell/remove for refund~~ **DONE (DR-#027)** — tap a hedge → REMOVE (60% refund for paid, free for seeded); zombie SALVAGE already existed.
-- ~~C6 Rip dead code~~ **DONE (DR-#032)** — removed spiderweb system + spawnWarden + applyTier2 (feast/mutate menu tangle left as harmless).
-- ~~C7 Rework boon + onboarding text~~ **DONE (DR-#026)** — grabber/hedge boons replace dead Spore/Rootmass ones; palette onboarding replaces "TAP A CORPSE".
-- **C8 Balance pass** — ⏳ NEEDS MIKE'S PLAYTEST. Kill bounty vs hedge/zombie/grabber costs, reabsorb 4s, grabber slow/range, maze-DoT ramp, wave difficulty. **M**
-- ~~C9 Gate-escalation banners~~ **DONE (DR-#029)** — directional banners + just-opened gate flare.
-
-### D. Content / progression — needs Mike
-- **D1 Human roster** (Knight→troop, Barbarian→incin, Halberdier→sweeper). ⛔ ASSET-GATED — drop the Engvee Knight/Barbarian/Halberdier sheets in `assets/raw/` (per SPR-#003) and I'll wire + pack them. **M**
-- **D2 Boss waves + named assaults tuned to the new loop.** ⏳ NEEDS PLAYTEST FEEL (content + balance). **M**
-- **D3 Meta (Mycelial Network) re-tuned for buy-and-place.** ⏳ Mostly still relevant; could add maze-flavored nodes (grabber/hedge/maze-DoT) — needs balance. **M**
-
----
-
-## Where we are now
-The whole **C polish/cleanup backlog + B additions are shipped** (DR-#025 → #032, 8 commits, each headless-verified).
-Everything left needs something only Mike can give:
-- **C8 / D2 / D3 / A3** need **your playtest feel** on the new mechanics — rebalancing blind would risk the confirmed-good maze.
-- **D1** needs **new sprite assets** (Engvee human sheets) dropped in `assets/raw/`.
-
-## Suggested next (pick one)
-1. **Playtest the current build** (grabber, reabsorb, drag-paint, maze-DoT, sell/remove, gate flares) and send tuning notes → I do **C8** balance from your numbers.
-2. **Drop the Engvee human sheets** → I wire **D1** (Knight/Barbarian/Halberdier).
-3. **A3 Survival → shippable** — I run the GAME_BIBLE Part 4 pre-submission checklist + strip the `?dev=1` menu for a release build (needs your go-ahead that the loop feels done).
+### Housekeeping
+- Dormant dead code: doors (placeDoor/drawDoors/CFG.door), hedges, feast/mutate menu tangle — rip when convenient. **S**
+- Meta (Mycelial Network) + boons still tuned for the old loop — revisit with balance. **M**
