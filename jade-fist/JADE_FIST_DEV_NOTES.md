@@ -704,3 +704,28 @@ The tell now targets the PART, not the person:
 VALIDATION: syntax OK; all new draw paths exercised via eval (high/low windup + strike,
 ducked/jumped variants, grab caption) with no exceptions; head-hit feedback confirmed; bot
 suite ?bot=3 = 10/12 wins, 0% unreactable, 9% pincer, zero console errors (draw-only change).
+
+## JF-#046 — ARROWS ONLY: block, heavy, and taunt removed (2026-07-08)
+Mike's call: "do away with taunt, block and heavy — we can accomplish what we need with just
+the arrow keys for now." The control surface collapses back to four arrows:
+- ◀▶ = strike toward / back-step evade away (when a mid threat is live)
+- ▲▼ = jump/duck dodges, attack lines (strike while dodging), and throw aiming
+REMOVED: block/parry (blockStart/End, PARRY_WIN, keyup handler, shield/parry visuals, pad
+button + pointer-hold plumbing, padBlockActive), HEAVY blow (heavy/heavyLand/HEAVY_WIND, charge
+ring, KeyJ), TAUNT (taunt(), tauntCd, KeyT, pad button, ANSWERED ×1.25 counter bonus,
+e.taunted), and everything that read P.block: chooseAtk's anti-turtle grab weighting and the
+mid-windup strike→grab conversion. Mid attacks are now answered by counter or back-step;
+enemy line-guards are answered by attacking another line or poking twice to bait the
+counterable RETALIATION (bot switched from heavy-crush to exactly that — still wins). KEPT:
+everything else — grapple mash-out (arrow presses mash), grab stays armored/dodge-only (its
+identity never needed block), elite habits incl. IRON ELBOW grab-after-HIS-guard-blocks
+(enemy guard, not player block), perfect read, spear catch, flourish (now fired only by
+stare-down/boss/wave-clear), FLOW. Control pad: right cluster replaced with mirrored
+DUCK/JUMP buttons so both hands have the pair. IRON ELBOW quip reworded ("go on — swing at
+me"). Menu/onboarding copy updated.
+
+VALIDATION: syntax OK; grep confirms zero references to any removed identifier; runtime check
+confirms blockStart/heavy/heavyLand/taunt/PARRY_WIN/HEAVY_WIND undefined; pad = 6 arrow-only
+buttons; defense matrix re-verified (high→duck only, low→jump only, mid→back-step only,
+grab→jump/duck, wrong answers HIT); bot suite ?bot=4 = 16/16 wins, 0.5 hits/run, 0%
+unreactable, 0% pincer, zero console errors.
