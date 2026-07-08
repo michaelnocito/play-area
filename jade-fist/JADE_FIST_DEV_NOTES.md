@@ -636,3 +636,47 @@ leftover hitStop from a prior strike froze update() and false-failed two cases b
 retest): elite spawns wave 3 (+1 hp, habit attached), grabnext answers block with grab windup,
 guardshift moves line on block, timed stance-switch fires, stare-down stops + engages after,
 clash fires on perfect counter, hit-lean set, dodge grants FLOW ×1.
+
+## JF-#044 — HERO FLOURISH + 12 combat changes (2026-07-07)
+Mike loved the stare-down ("adds pop") and asked for a kung-fu-movie hero flourish during it,
+then 12 more changes of my choosing. Took the 4 parked depth items from the #043 proposal plus
+8 new picks:
+- **HERO FLOURISH** (the ask): P.flourishT 40f — three beats (arm sweep / snap punches /
+  settle) with white wire-fu motion arcs circling the body and whooshes on the sweeps. Fires at
+  every stare-down, on boss entry ("prepping to fight the boss"), and as a victory pose on wave
+  clear. Any strike cancels it instantly — cosmetic, never costs input.
+- **Perfect READ**: a dodge input within 8f of a melee blow landing leaves the foe in the LONG
+  recover + 160pts. Last-instant reads pay like parries.
+- **Grab mash-ESCAPE**: a landed grab opens a grapple (30f) instead of instant damage — two
+  strike presses = BROKE FREE (foe staggered, no damage); expiry = SLAMMED (-1 heart). Player
+  trembles, all other actions locked, presses route to the mash. Bots keep the old instant
+  path so fairness stats stay comparable.
+- **CORNERED**: counters against non-boss foes within 100px of a screen edge deal 2 damage.
+  Throws push them there — arena space matters now.
+- **THROW AIMING**: counter while ducking = LOW SKID (flat, fast, trips at floor level);
+  while airborne = SKY THROW (high arc). Third use of the stance keys.
+- **FIGHT! flash** when a stare-down breaks (+ Snd.hit accent).
+- **DESPERATION**: at 1 heart, red radial vignette pulses at the screen edges + music
+  intensity +0.15.
+- **KO tumble variety**: felled foes roll one of 3 styles — flat spin / cartwheel (extra rot
+  while airborne) / sit-down slump (deep squash, no spin).
+- **TAUNT** (T key + pad button, 90f cd): short flourish + "COME." — walkers within 420px
+  speed up 1.5× and rush in; countering a taunted foe pays ×1.25 ("ANSWERED"). Bruce Lee
+  beckon as a risk/reward aggro pull.
+- **SPEAR CATCH**: a projectile dodge input within 7f of impact CATCHES the spear/cleaver and
+  hurls it back (reversed, ×1.15 speed); first foe it meets is felled — "RETURN TO SENDER
+  +300". Regular-timed dodges unchanged.
+- **BOSS FINALE**: the felling counter on any boss fires the clash + slowMo 60 + heavy shake +
+  the moon sits up (220f). Found + fixed in the same pass: the general counter line assigned
+  slowMo/hitStop directly and CLOBBERED the finale values set two lines earlier — all three
+  are Math.max now.
+- **Stare-down QUIPS**: each type talks trash at the face-off (STARE_QUIPS) and each elite has
+  a custom line (ELITE_QUIPS: "go on — block it" / "special price, just for you" / etc).
+
+VALIDATION: syntax OK; bot ?bot=4 = 15/16 then re-run ?bot=3 after the slowMo fix = 11/12,
+0.33 hits/run, 0% unreactable, 0% pincer, zero console errors. Unit tests: grapple opens with
+no damage → 2 mashes break free / expiry slams -1 heart; perfect read leaves long recover;
+cornered counter deals 2; duck-counter = low skid; taunt speeds foe + flourish; perfect
+projectile dodge catches + reversed dart fells its sender; stare-down fires flourish + quip;
+FIGHT! on expiry; boss finale clash + slowMo 60. TEST GOTCHA #3: unit-testing on a ?bot= URL
+makes BOT truthy and grapple deliberately takes the instant-damage path — test on the clean URL.

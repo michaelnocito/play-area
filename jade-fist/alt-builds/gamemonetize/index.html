@@ -600,7 +600,13 @@ let msg = null, msgT = 0;
 const GROUND_Y = 420;
 const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, jumpT: 0, duckT: 0,
   block: false, blockAge: 0, heavyT: 0,     // JF-#040: block/parry + heavy blow
-  backT: 0, backDir: 0 };                   // JF-#042: back-step evade (mid attacks)
+  backT: 0, backDir: 0,                     // JF-#042: back-step evade (mid attacks)
+  flourishT: 0, tauntCd: 0 };               // JF-#044: kung-fu hero flourish + taunt
+// JF-#044: GRAPPLE â€” a landed grab is a mash-out scramble, not an instant heart.
+// {e, t, hits}: strike twice within the window to BREAK FREE (no damage, foe
+// staggered); let it expire and you get slammed. Bots keep the old instant path
+// so fairness stats stay comparable.
+let grapple = null;
 // JF-#028: vertical dodge axis. Jump = airborne (dodges LOW throws); duck = crouch
 // (dodges HIGH throws). Brief action windows, not held stances, so the fight stays
 // snappy and you commit to a read the same way a counter commits.
@@ -609,13 +615,13 @@ let darts = [];   // in-flight thrown spears: {x, vx, high, y0, life}
 function jump(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return;   // one dodge at a time
+  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;   // one dodge at a time
   P.jumpT = JUMP_DUR; Snd.whoosh();
 }
 function duck(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return;
+  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
   if (P.block || P.heavyT > 0) return;   // JF-#040: guarding/committed = feet planted
   P.duckT = DUCK_DUR; Snd.whoosh();
 }
@@ -629,6 +635,7 @@ function duck(){
 // is live on the other side).
 const BACK_DUR = 20;
 function tryBackstep(dir){
+  if (grapple) return false;   // JF-#044: pinned â€” presses go to the mash-out
   if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || P.block || P.heavyT > 0) return false;
   for (const e of enemies){
     if (e.st !== E_WINDUP && !(e.st === E_STRIKE && !e.didHit)) continue;
@@ -650,7 +657,7 @@ function tryBackstep(dir){
 // (and the AI reaches for grabs when it sees a turtle).
 const PARRY_WIN = 10;
 function blockStart(){
-  if (state !== S_PLAY || scrollOffer || P.block) return;
+  if (state !== S_PLAY || scrollOffer || P.block || grapple) return;
   if (P.heavyT > 0) return;                 // committed to the heavy blow
   P.block = true; P.blockAge = 0;
 }
@@ -662,7 +669,7 @@ const HEAVY_WIND = 22;
 function heavy(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.heavyT > 0 || whiffT > 0 || P.block || P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return;
+  if (P.heavyT > 0 || whiffT > 0 || P.block || P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
   P.heavyT = HEAVY_WIND; Snd.windup(HEAVY_WIND);
 }
 function heavyLand(){
@@ -846,6 +853,26 @@ let clashT = 0, clashX = 0, clashY = 0;
 function clash(x, y){ clashT = 10; clashX = x; clashY = y; hitStop = Math.max(hitStop, 8); }
 // Duel stare-down name cards (structure #11): each type announces itself once.
 const TYPE_NAMES = { [T_NORM]: 'INITIATE', [T_FAST]: 'VIPER', [T_BRUTE]: 'IRON MONK', [T_SPEAR]: 'SPEARMAN' };
+// JF-#044: stare-down trash talk â€” one line per type, one per elite
+const STARE_QUIPS = { [T_NORM]: 'the guild sends its regards', [T_FAST]: 'blink and lose',
+  [T_BRUTE]: 'small monk. big problem.', [T_SPEAR]: 'stay RIGHT there' };
+const ELITE_QUIPS = { 'IRON ELBOW': 'go on â€” block it', 'THE HAGGLER': 'special price, just for you',
+  'BRASS PALM': 'find the opening, little fist', 'TWO STEPS': 'you are already too slow',
+  'THE ECHO': 'again. again. again.' };
+// JF-#044: TAUNT (T / pad button) â€” a movie-hero beckon. Nearby walkers rush in
+// (faster, committed); countering a taunted foe pays Ã—1.25 ("answered").
+function taunt(){
+  if (state !== S_PLAY || scrollOffer || grapple) return;
+  if (P.tauntCd > 0 || P.block || P.heavyT > 0) return;
+  P.tauntCd = 90;
+  P.flourishT = Math.max(P.flourishT, 18);
+  Snd.whoosh();
+  popup(P.x, P.y - 116, 'COME.', '#e8dcc0');
+  for (const e of enemies){
+    if (e.type === T_BOSS || e.st !== E_WALK) continue;
+    if (Math.abs(e.x - P.x) < 420){ e.taunted = true; e.speed = Math.min(e.speed * 1.5, 4); }
+  }
+}
 // Named mini-boss duelists (behavior #8): wave 3 of each district fields an
 // ELITE with a name card, +1 hp, a gold sash, and ONE signature habit â€” the
 // Punch-Out opponents-as-puzzles idea at its cheapest:
@@ -885,6 +912,7 @@ function beginWave(n){
     bz.flavor = BOSS_FLAVOR[D.boss]; bz.throwCd = 220;   // JF-#034: personality + cleaver cadence
     banner(D.boss, '#e86a6a', 140);
     if (bz.flavor) popup(W/2, 210, 'â€œ' + bz.flavor.taunt + 'â€', '#e8b06a', true);   // taunt on entry
+    P.flourishT = 40;   // JF-#044: the hero limbers up as the master arrives
     Snd.windup(60);
   } else {
     toSpawn = Math.min(3, 1 + Math.floor(wave / 2));   // JF-#039: DUELS â€” 1-3 tough foes per wave, not a crowd
@@ -913,6 +941,7 @@ function onWaveClear(){
   } else {
     banner('WAVE ' + wave + ' CLEARED', '#7ce8a8', 100);
     restT = 140; Snd.tick();
+    P.flourishT = 40;   // JF-#044: victory pose over the fallen wave
   }
   if (hitsWave === 0){ bumpTrial('nohit'); moonWake(120); popup(780, 150, 'ðŸ‘ slow clap', '#f0ead2'); }   // JF-#031: flawless wave earns a moon clap
   // JF-#031: a background cameo during the breather (straggler or a passing cat)
@@ -1009,9 +1038,24 @@ function hype(c){
 // ----------------------------------------------------------------- verbs ----
 function strike(dir){
   if (state !== S_PLAY) return;
+  // JF-#044: grabbed = every strike press is a mash-out attempt
+  if (grapple){
+    grapple.hits--;
+    burst(P.x, P.y - 60, '#c86ae8', 5, 2); Snd.hit(2); shake = 4;
+    if (grapple.hits <= 0){
+      const ge = grapple.e, gd = Math.sign(ge.x - P.x) || 1;
+      ge.grappled = false; ge.st = E_STAGGER; ge.stT = 0; ge.vx = gd * 7;
+      ge.leanT = 12; ge.leanDir = gd;
+      popup(P.x, P.y - 110, 'BROKE FREE!', '#7ce8a8', true);
+      Snd.counter(); hitStop = 4; shake = 8;
+      grapple = null;
+    }
+    return;
+  }
   if (whiffT > 0) return;                               // still recovering from a whiff
   if (P.block || P.heavyT > 0) return;                  // JF-#040: guarding / committed
   if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
+  P.flourishT = 0;                                      // JF-#044: fists cancel the pose
   P.face = dir; P.punchT = 12; P.punchSide = dir;
   const atkLine = atkLineNow();   // JF-#041: mid, or low (ducking) / high (airborne)
   lineUse[atkLine]++;
@@ -1060,16 +1104,25 @@ function strike(dir){
     // it only FELLS once hp hits 0, and only becomes the big wide throw once the
     // player has strung together FINISH_AT good hits in a row.
     e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
+    // JF-#044: CORNERED â€” a counter against a foe pinned near the screen edge
+    // hits double. Your throws push them there; the arena space finally matters.
+    if (e.hp > 0 && e.type !== T_BOSS && (e.x < 100 || e.x > W - 100)){
+      e.hp--;
+      popup(e.x, e.y - 122, 'CORNERED!', '#e8b06a');
+    }
     const lethal = e.hp <= 0;
     const empowered = lethal && (combo + 1 >= FINISH_AT);
+    // JF-#044: a taunted foe answered with a counter pays extra
+    const answered = e.taunted ? 1.25 : 1;
+    e.taunted = false;
 
     if (!lethal){                              // ---- STAGGER: foe is hurt, not felled ----
       e.st = E_STAGGER; e.stT = 0; e.vx = dir * 5; e.guard = 0;
       e.leanT = 12; e.leanDir = dir;           // JF-#043: head snaps away from the hit
       combo++; comboT = CW;
-      const pts = (perfect ? 150 : 100) * Math.min(combo, 5);
+      const pts = Math.round((perfect ? 150 : 100) * answered) * Math.min(combo, 5);
       score += pts;
-      popup(e.x, e.y - 90, (perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8');
+      popup(e.x, e.y - 90, (answered > 1 ? 'ANSWERED +' : perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8');
       if (perfect) clash(e.x, e.y - 55);       // JF-#043: perfect = the freeze-frame moment
       Snd.counter(); hitStop = 5; shake = perfect ? 8 : 6; slowMo = 18;
       burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4);
@@ -1088,6 +1141,11 @@ function strike(dir){
     const sweep = hasTech(0);
     e.vx = slip(dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1));   // JF-#025 TIGER, JF-#032 slip
     e.vy = perfect ? -8 : -7;
+    // JF-#044: THROW AIMING â€” counter from a stance to shape the throw. Ducking
+    // = a LOW SKID that trips everyone at floor level; airborne = a HIGH ARC
+    // that sails long. Same stance keys, third use.
+    if (P.duckT > 0){ e.vy = -3.5; e.vx *= 1.4; popup(e.x, e.y - 122, 'LOW SKID', '#c8bfa8'); }
+    else if (P.jumpT > 0){ e.vy = -12; popup(e.x, e.y - 122, 'SKY THROW', '#c8bfa8'); }
     // JF-#020: ~1 in 6 perfect EMPOWERED counters is a comedy send â€” twice the arc, wild spin
     if (empowered && perfect && e.type !== T_BOSS && Math.random() < 0.18){
       e.vx *= 1.7; e.vy = -11; e.bigSend = true;
@@ -1099,11 +1157,18 @@ function strike(dir){
       popup(W/2, 190, 'ONE MORE â€” THROW READY', '#e8c76a', true);
     }
     const baseC = e.type === T_BOSS ? 2000 : e.type === T_BRUTE ? 750 : e.type === T_SPEAR ? 600 : 500;
-    const pts = Math.round(baseC * (perfect ? 1.5 : 1)) * Math.min(combo, 5);
+    const pts = Math.round(baseC * (perfect ? 1.5 : 1) * answered) * Math.min(combo, 5);   // JF-#044: answered taunt
     score += pts;
     popup(e.x, e.y - 90, (ironCatch ? 'IRON CATCH +' : perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8', true);
     if (perfect) clash(e.x, e.y - 55);   // JF-#043
-    Snd.counter(); hitStop = empowered ? 7 : 5; shake = empowered ? (perfect ? 13 : 10) : 6; slowMo = empowered ? 26 : 18;
+    // JF-#044: BOSS FINALE â€” the felling counter on a boss is the run's biggest
+    // frame: long slow-mo, clash, the moon sits up to watch
+    if (e.type === T_BOSS){
+      clash(e.x, e.y - 60); slowMo = Math.max(slowMo, 60);
+      shake = Math.max(shake, 18); moonWake(220);
+    }
+    Snd.counter(); hitStop = Math.max(hitStop, empowered ? 7 : 5); shake = Math.max(shake, empowered ? (perfect ? 13 : 10) : 6);
+    slowMo = Math.max(slowMo, empowered ? 26 : 18);   // JF-#044: don't clobber the boss-finale slow-mo
     burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4);
     if (empowered){
       // ---- EMPOWERED THROW: the payoff â€” thrown body knocks down neighbors in its path ----
@@ -1304,6 +1369,15 @@ function resolveEnemyHit(e){
   }
   if (avoided){                                    // ---- clean dodge: rewarded ----
     if (atk === 'grab'){ e.recoverLong = true; e.st = E_STRIKE; }   // whiffed grab = long punish window
+    // JF-#044: PERFECT READ â€” a dodge input within 8f of the blow landing leaves
+    // the foe hanging in a LONG recover. The last-instant read, paid like one.
+    const dodgeAge = ducked ? DUCK_DUR - P.duckT : airborne ? JUMP_DUR - P.jumpT
+                   : P.backT > 0 ? BACK_DUR - P.backT : 99;
+    if (dodgeAge <= 8 && e.type !== T_BOSS){
+      e.st = E_RECOVER; e.stT = 0; e.recoverLong = true;
+      score += 160;
+      popup(e.x, e.y - 108, 'PERFECT READ +160', '#e8c76a', true);
+    }
     score += 80; jadeRun++;
     combo++; comboT = CW;                          // JF-#043: defense feeds FLOW too
     if (combo > bestCombo) bestCombo = combo;
@@ -1322,6 +1396,15 @@ function resolveEnemyHit(e){
     return;
   }
   if (BOT) botHit(e);                              // JF-#022: classify before it lands
+  // JF-#044: a landed GRAB opens the mash-out grapple instead of instant damage
+  // (bots keep the instant path so fairness numbers stay comparable)
+  if (atk === 'grab' && !BOT){
+    grapple = { e, t: 30, hits: 2 };
+    e.grappled = true;
+    popup(P.x, P.y - 112, 'GRABBED â€” MASH!', '#c86ae8', true);
+    Snd.hurt(); shake = 8;
+    return;
+  }
   hurtPlayer();
 }
 
@@ -1454,6 +1537,7 @@ addEventListener('keydown', e => {
   // key-repeat, so holding is safe.
   if (e.code === 'KeyK' || e.code === 'ShiftLeft' || e.code === 'ShiftRight'){ Snd.unlock(); blockStart(); return; }
   if (e.code === 'KeyJ'){ Snd.unlock(); heavy(); return; }
+  if (e.code === 'KeyT' && state === S_PLAY){ Snd.unlock(); taunt(); return; }   // JF-#044
   // JF-#028: vertical dodge â€” up/W jump, down/S duck (KeyW/KeyS are physical
   // positions, so they land on AZERTY's Z/S up-down keys too)
   if (e.code === 'ArrowUp' || e.code === 'KeyW'){ Snd.unlock(); jump(); return; }
@@ -1502,6 +1586,7 @@ cv.addEventListener('pointerdown', e => {
         else if (b.id === 'jump') jump();
         else if (b.id === 'duck') duck();
         else if (b.id === 'heavy') heavy();
+        else if (b.id === 'taunt') taunt();   // JF-#044
         else if (b.id === 'block'){ blockStart(); padBlockActive = true; }
         return;
       }
@@ -1587,6 +1672,7 @@ function beginRun(){
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
   P.block = false; P.blockAge = 0; P.heavyT = 0; padBlockActive = false;   // JF-#040
   lineUse = { mid: 0, low: 0, high: 0 }; guardTaught = false;   // JF-#041
+  grapple = null; P.flourishT = 0; P.tauntCd = 0; clashT = 0;   // JF-#044
   bannerT = 0; won = false; fought = sel; perfChain = 0;
   run = {}; scrollOffer = null;   // JF-#025: scrolls die with the run
   hypeShown = -1; longestSend = 0;   // JF-#030: reset silly-run trackers
@@ -1614,6 +1700,12 @@ function update(){
   if (bannerT > 0) bannerT--;
   if (clashT > 0) clashT--;   // JF-#043
   if (P.punchT > 0) P.punchT--;
+  // JF-#044: flourish pose beats (whooshes on the arm sweeps) + taunt cooldown
+  if (P.flourishT > 0){
+    P.flourishT--;
+    if (P.flourishT === 28 || P.flourishT === 14) Snd.whoosh();
+  }
+  if (P.tauntCd > 0) P.tauntCd--;
   if (moonWakeT > 0) moonWakeT--;      // JF-#031
   if (propHitT > 0) propHitT--;
   if (restGag){ restGag.x += restGag.dir * restGag.spd; if (restGag.x < -60 || restGag.x > W + 60) restGag = null; }
@@ -1630,6 +1722,17 @@ function update(){
   if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir; bufDir = 0; bufT = 0; strike(d); } }
   const dt = slowMo > 0 ? 0.35 : 1;
   if (slowMo > 0) slowMo--;
+  // JF-#044: grapple clock â€” mash out before it hits zero or get slammed
+  if (grapple){
+    grapple.t -= dt;
+    if (grapple.t <= 0){
+      const ge = grapple.e;
+      ge.grappled = false; ge.st = E_RECOVER; ge.stT = 0;
+      grapple = null;
+      popup(P.x, P.y - 110, 'SLAMMED', '#e86a6a', true);
+      hurtPlayer();
+    }
+  }
   // JF-#028: dodge timers + jump arc (world-time so it slows with hit-stop/slow-mo)
   if (P.jumpT > 0){ P.jumpT -= dt; if (P.jumpT < 0) P.jumpT = 0; }
   if (P.duckT > 0){ P.duckT -= dt; if (P.duckT < 0) P.duckT = 0; }
@@ -1641,20 +1744,47 @@ function update(){
   // JF-#028: thrown spears fly flat at their telegraphed height; dodge or wear it
   for (const d of darts){
     d.x += d.vx * dt; d.spin += 0.5 * dt;
-    if (!d.hit && Math.abs(d.x - P.x) < 30){
-      d.hit = true; d.dead = true;
+    if (!d.hit && !d.returned && Math.abs(d.x - P.x) < 30){
       const dodged = d.high ? P.duckT > 0 : P.jumpT > 0;
       if (dodged){
-        score += 150; jadeRun++; bumpTrial('dodge');
+        // JF-#044: SPEAR CATCH â€” a dodge input within 7f of impact snatches the
+        // projectile out of the air and hurls it straight back at the crowd
+        const age = d.high ? DUCK_DUR - P.duckT : JUMP_DUR - P.jumpT;
         combo++; comboT = CW;            // JF-#043: defense feeds FLOW
         if (combo > bestCombo) bestCombo = combo;
-        slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
-        popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
-        burst(P.x, d.y0, '#7ce8a8', 8, 3);
+        if (age <= 7){
+          d.returned = true; d.vx *= -1.15; d.life = 120;
+          score += 100; jadeRun++;
+          popup(P.x, d.y0 - 20, 'CAUGHT!', '#e8c76a', true);
+          Snd.counter(); slowMo = Math.max(slowMo, 22);
+          burst(P.x, d.y0, '#e8c76a', 10, 4);
+        } else {
+          d.hit = true; d.dead = true;
+          score += 150; jadeRun++; bumpTrial('dodge');
+          slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
+          popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
+          burst(P.x, d.y0, '#7ce8a8', 8, 3);
+        }
       } else {
+        d.hit = true; d.dead = true;
         // JF-#028: log dart hits for the fairness suite (marked type 'dart')
         if (BOT && BOT.cur) BOT.cur.hits.push({ wave, type: 'dart', windup: d.high ? 'high' : 'low', pincer: false, fast: false });
         hurtPlayer();
+      }
+    }
+    // JF-#044: a returned projectile fells the first foe it meets
+    if (d.returned && !d.dead){
+      for (const e of enemies){
+        if (e.st === E_DOWN || e.st === E_THROWN || e.st === E_EVADE || e.type === T_BOSS) continue;
+        if (Math.abs(e.x - d.x) < 34){
+          d.dead = true;
+          e.st = E_DOWN; e.stT = 0; e.vx = Math.sign(d.vx) * 5; e.vy = -4.5; e.hp = 0;
+          score += 300; kills++; jadeRun++;
+          popup(e.x, e.y - 90, 'RETURN TO SENDER +300', '#e8c76a', true); yelp(e.x, e.y - 114);
+          burst(e.x, e.y - 45, '#e8c76a', 12, 4);
+          Snd.hit(6); shake = Math.max(shake, 6);
+          break;
+        }
       }
     }
   }
@@ -1688,6 +1818,7 @@ function update(){
   }
 
   for (const e of enemies){
+    if (e.grappled) continue;             // JF-#044: held in the grapple, frozen
     e.stT += dt;
     if (e.evadeCd > 0) e.evadeCd -= dt;   // JF-#041
     if (e.leanT > 0) e.leanT -= dt;       // JF-#043: hit-reaction decay
@@ -1707,7 +1838,14 @@ function update(){
         const d = Math.abs(e.x - P.x);
         // JF-#043: duel STARE-DOWN â€” a lone challenger stops at the edge of the
         // fight and announces itself (name card) before engaging. Punch-Out framing.
-        if (e.staredown > 0){ e.staredown -= dt; break; }
+        if (e.staredown > 0){
+          e.staredown -= dt;
+          if (e.staredown <= 0){   // JF-#044: the face-off breaks
+            popup(W/2, 244, 'FIGHT!', '#e8c76a', true);
+            Snd.hit(4);
+          }
+          break;
+        }
         if (!e.met && d < 280 && e.type !== T_BOSS){
           e.met = true;
           const live = enemies.reduce((n, o) => n + (o.st !== E_DOWN && o.st !== E_THROWN ? 1 : 0), 0);
@@ -1715,6 +1853,10 @@ function update(){
             e.staredown = 40;
             popup(e.x, e.y - 132, e.elite ? e.elite.name : TYPE_NAMES[e.type] || '',
                   e.elite ? '#e8c76a' : '#c8bfa8', true);
+            // JF-#044: trash talk + the hero answers with a movie flourish
+            const quip = e.elite ? ELITE_QUIPS[e.elite.name] : STARE_QUIPS[e.type];
+            if (quip) popup(e.x, e.y - 160, 'â€œ' + quip + 'â€', '#9aa2b0');
+            P.flourishT = 40;
             break;
           }
         }
@@ -2174,7 +2316,8 @@ function drawControlPad(){
   btn('duck',    90, 78, 'DUCK', 'â–¼ / S', P.duckT > 0);
   btn('jump',   172, 78, 'JUMP', 'â–² / W', P.jumpT > 0);
   btn('strikeR',254, 60, 'â–¶', 'D', false);
-  // right cluster: defense + heavy
+  // right cluster: taunt + defense + heavy
+  btn('taunt',  646, 90, 'TAUNT', P.tauntCd > 0 ? 'â€¦' : 'T', P.flourishT > 0);   // JF-#044
   btn('block',  744, 96, 'BLOCK', P.block && P.blockAge <= PARRY_WIN ? 'PARRY!' : 'hold K', P.block);
   btn('heavy',  848, 88, 'HEAVY', 'J', P.heavyT > 0);
 }
@@ -2366,7 +2509,12 @@ function draw(){
       cx.fillStyle = tcol; cx.fillText(e.projHigh ? 'DUCK!' : 'JUMP!', 0, 0);
       cx.restore();
     }
-    else if (e.st === E_DOWN || e.st === E_THROWN){ eyes = 'x'; }
+    else if (e.st === E_DOWN || e.st === E_THROWN){
+      eyes = 'x';
+      // JF-#044: KO tumble variety â€” flat spin / cartwheel / sit-down slump
+      if (e.koStyle === undefined) e.koStyle = (Math.random() * 3) | 0;
+      if (e.koStyle === 1 && e.st === E_THROWN) rot += e.stT * 0.1;
+    }
     // JF-#041: evade â€” a pale backflip away from your fist, unhittable till it lands
     let evY = 0;
     if (e.st === E_EVADE){
@@ -2391,7 +2539,8 @@ function draw(){
     const atkActive = e.st === E_WINDUP || e.st === E_STRIKE;
     const epose = atkActive && e.atk === 'low' ? 'duck' : '';
     // squash: pop on spawn-walk and squish when knocked down
-    const squash = (e.st === E_DOWN || e.st === E_THROWN) ? -0.5 : 0;
+    let squash = (e.st === E_DOWN || e.st === E_THROWN) ? -0.5 : 0;
+    if (squash < 0 && e.koStyle === 2){ squash = -0.75; rot *= 0.3; }   // JF-#044: sit-down slump
     fighter(e.x, e.y - evY, -e.side, {
       col, punch, rot, size, eyes, squash,
       pose: epose,
@@ -2465,9 +2614,21 @@ function draw(){
   }
   // JF-#042: back-step evade â€” a quick lean-and-slide away, then spring back
   const backP = P.backT > 0 ? Math.sin((P.backT / BACK_DUR) * Math.PI) : 0;
-  fighter(P.x + P.backDir * backP * 26, P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,
-    punch: P.punchT, pose: pPose,
-    rot: (run.drunken ? Math.sin(t * 0.14) * 0.1 : 0) + P.backDir * backP * 0.22,   // JF-#032 sway + JF-#042 lean
+  // JF-#044: the hero FLOURISH â€” three quick beats: arm sweep, snap punches, settle.
+  // White motion arcs swing around the body like a wire-fu frame.
+  let flPunch = 0, flRot = 0;
+  if (P.flourishT > 0){
+    const fp = 1 - P.flourishT / 40;
+    flPunch = Math.abs(Math.sin(fp * Math.PI * 3)) * 11;
+    flRot = Math.sin(fp * Math.PI * 2) * 0.14;
+    cx.strokeStyle = `rgba(240,234,210,${0.45 * (1 - fp)})`; cx.lineWidth = 3; cx.lineCap = 'round';
+    const a0 = fp * Math.PI * 4;
+    cx.beginPath(); cx.arc(P.x, P.y - 56, 46, a0, a0 + 1.4); cx.stroke();
+    cx.beginPath(); cx.arc(P.x, P.y - 56, 34, -a0, -a0 + 1.1); cx.stroke();
+  }
+  fighter(P.x + P.backDir * backP * 26 + (grapple ? Math.sin(t * 1.2) * 3 : 0), P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,   // JF-#044: grapple tremble
+    punch: Math.max(P.punchT, flPunch), pose: pPose,
+    rot: (run.drunken ? Math.sin(t * 0.14) * 0.1 : 0) + P.backDir * backP * 0.22 + flRot,   // JF-#032 sway + JF-#042 lean + JF-#044 flourish
     line: P.duckT > 0 && P.punchT > 0 ? 'low' : null,   // JF-#041: crouch sweep read
     acc: wornAcc(),   // JF-#033
     guard: P.block,   // JF-#040: raised-guard bracer
@@ -2517,6 +2678,13 @@ function draw(){
   // ------------------------------------------------------------- HUD ----
   cx.textAlign = 'center'; cx.fillStyle = '#e8dcc0';
   if (state === S_PLAY){
+    // JF-#044: DESPERATION â€” one heart left pulses the screen edges red
+    if (hearts === 1){
+      const dp = 0.22 + 0.12 * Math.sin(t * 0.1);
+      const vg2 = cx.createRadialGradient(W/2, H/2, H * 0.32, W/2, H/2, H * 0.78);
+      vg2.addColorStop(0, 'rgba(200,40,40,0)'); vg2.addColorStop(1, `rgba(200,40,40,${dp})`);
+      cx.fillStyle = vg2; cx.fillRect(0, 0, W, H);
+    }
     cx.font = 'bold 30px Georgia';
     cx.fillText(score, W/2, 46);
     // wave counter, top right under the mute button
@@ -2906,7 +3074,7 @@ function loop(ts){
   // JF-#021: one intensity knob feeds the music every frame
   const bossUp = enemies.some(e => e.type === T_BOSS && e.st !== E_DOWN && e.st !== E_THROWN);
   const inten =
-    state === S_PLAY ? Math.min(1, 0.32 + difficulty * 0.045 + Math.min(combo, 8) * 0.025 + (bossUp ? 0.18 : 0)) :
+    state === S_PLAY ? Math.min(1, 0.32 + difficulty * 0.045 + Math.min(combo, 8) * 0.025 + (bossUp ? 0.18 : 0) + (hearts === 1 ? 0.15 : 0)) :   // JF-#044: desperation kick
     state === S_MENU || state === S_STORY ? 0.15 :
     state === S_DEAD ? (won ? 0.3 : 0.1) :
     state === S_END ? 0.35 : 0;      // S_PAUSE fades to silence
