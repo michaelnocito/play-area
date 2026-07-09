@@ -1235,3 +1235,21 @@ intrusive, overlap actual gameplay. do a friction test and fix."
 - Verified headless (deadroot-alt:4226): queue caps at 4 + plays in order; mid-field pixel
   IDENTICAL with a banner up (no dim); ticker renders after fade-in; full wave clean; parse OK;
   console clean.
+
+## DR-#045 — grabber sprite from the SAME pack (2026-07-08, Mike correction)
+Mike: "my instruction was that the grabber had to be part of the same graphic pack — right
+now it evolves into something obviously not from that pack." He was right — DR-#043b shipped
+a procedural stand-in and called the sprite asset-gated without checking what the pack had.
+- The Engvee zombie skin1 pack (assets/raw/) has 13 animation sets; we only used Walk. The
+  grabber is now the SAME zombie model using the **ROAR** animation (arms out, grasping) with
+  a strong **amber tint** baked at pack time — unmistakably the pack's art, unmistakably not
+  the green walking spitter.
+- New `scripts/pack_grabber_atlas.py` (Roar sheets are 6x4/24-frame grids vs Walk's 4x5/20)
+  → `assets/grabber_atlas.{png,json}` (172 KB, 8 dirs × 8 frames, tint #d9944a α0.55).
+- Runtime: SPR.grabber entry + atlas load; drawGrabber draws aura ring → amber under-glow →
+  `drawSpriteFrame('grabber', …)`; the DR-#033 procedural sac remains as the 404 fallback.
+  Evolve morph (DR-#043b) wraps the sprite unchanged.
+- Verified (deadroot-alt:4226, reload): atlas loads, evolve draws the amber Roar zombie
+  (pixel-sampled), morph completes, console clean, parse OK.
+- ⚠️ Lesson (see feedback_ask_before_substituting): check assets/raw/ BEFORE declaring
+  art asset-gated.

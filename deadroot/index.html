@@ -344,8 +344,9 @@ let devEnemyHpMult = 1, devEnemyDmgMult = 1; // DR-#040: global enemy HP/attack 
 let enemySpriteScale = 6.0;   // × enemy radius (tunable via dev menu)
 let towerSpriteScale = 96;    // px (tunable via dev menu)
 const SPR = {
-  zombie: { img: new Image(), meta: null, ready: false }, // your Spitter tower (risen dead)
-  thief:  { img: new Image(), meta: null, ready: false }  // scav attacker (fantasy human)
+  zombie:  { img: new Image(), meta: null, ready: false }, // your Spitter tower (risen dead)
+  grabber: { img: new Image(), meta: null, ready: false }, // DR-#045: SAME zombie model, Roar anim, amber tint (Mike: grabber must be from the same pack)
+  thief:   { img: new Image(), meta: null, ready: false }  // scav attacker (fantasy human)
 };
 (function loadSprites(list){
   for(const [key,png,jsn] of list){ const s=SPR[key];
@@ -358,6 +359,7 @@ const SPR = {
   }
 })([
   ['zombie','assets/zombie_atlas.png','assets/zombie_atlas.json'],
+  ['grabber','assets/grabber_atlas.png','assets/grabber_atlas.json'], // DR-#045
   ['thief','assets/thief_atlas.png','assets/thief_atlas.json']
 ]);
 function pickFrame(s, ang, animSeed){
@@ -2317,6 +2319,17 @@ function drawGrabber(t, lvl){
   ctx.globalAlpha = 0.4; ctx.strokeStyle="rgba(230,176,114,0.6)"; ctx.lineWidth=1.5; ctx.setLineDash([4,6]);
   ctx.beginPath(); ctx.arc(t.x,t.y,aR,0,6.283); ctx.stroke(); ctx.setLineDash([]);
   ctx.restore();
+  // DR-#045 (Mike): the grabber IS the pack's zombie — same Engvee model, ROAR animation
+  // (arms out, grasping), amber-tinted at pack time. Procedural sac below = fallback only.
+  if(useSprites && SPR.grabber.ready){
+    const lvlF2 = 1 + (lvl-1)*0.10, ds = towerSpriteScale*lvlF2;
+    const gg = ctx.createRadialGradient(t.x,t.y+8,2, t.x,t.y+8,26*lvlF2);
+    gg.addColorStop(0,"rgba(230,176,114,"+(0.45+0.12*Math.sin(t.pulse*2.0))+")");
+    gg.addColorStop(1,"rgba(230,176,114,0)");
+    ctx.save(); ctx.fillStyle=gg; ctx.beginPath(); ctx.ellipse(t.x,t.y+8,26*lvlF2,15*lvlF2,0,0,6.283); ctx.fill(); ctx.restore();
+    drawSpriteFrame('grabber', t.x, t.y-Math.round(ds*0.16), towerAimAngle(t), t.pulse*30, ds, t.flash);
+    return;
+  }
   const lvlF = 1 + (lvl-1)*0.10, R = 15*lvlF;
   const cx=t.x, cy=t.y;
   // grasping arms first (behind the sac), then the body over their roots
