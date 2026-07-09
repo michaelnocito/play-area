@@ -1254,6 +1254,74 @@ a procedural stand-in and called the sprite asset-gated without checking what th
 - ⚠️ Lesson (see feedback_ask_before_substituting): check assets/raw/ BEFORE declaring
   art asset-gated.
 
+## DR-#046 — UI/art batch: boss bar off the palette, size pass, raid routes, doorway juice, full reskin (2026-07-09)
+From the 2026-07-09 triage. One combined commit for DR-#046→#048 (edits interleave in the single file).
+1. **BLOCKER — boss HP bar relocated.** It sat at the bottom of the screen covering the build
+   palette (the primary action view). Now a slim inline strip (name + HP in one line) docked
+   over the TOP wall row — row 0 is solid rock, nothing playable there. The DR-#044 ticker
+   shares that row and draws on top for its 3s; the bar returns underneath.
+2. **Desktop-first size pass.** HUD biomass 30→36px, wave 26→30, level line 13→15, DNA 20→24,
+   popups 18→21, palette buttons 126×58→150×64 (fonts 16→19/15→17), START RAID 240×58→290×66
+   (font 22→26, hit region matched), onboarding 22→25, boon cards 330×176→360×192 (24/19),
+   ticker 17/15, info-modal 38/19, wave preview dots 8→10 + counts 14px, lore 13→15, ability
+   glyphs 34px, evolve/salvage menu circles r36→42 with 14-15px labels, enemy sprites
+   ×6.0→×6.8, tower sprites 96→110px (both still dev-menu tunable).
+3. **Raid splits are ROUTES now** (list of waypoints, one route picked per raider). L3's
+   throne ring has two mouths, so its raid splits across 3 routes: straight into the west
+   mouth, or around the top/bottom of the ring to storm the east mouth from behind — the
+   player must defend every approach. Verified 30 spawns split ~11/9/10 and all route
+   waypoints are open + flow-reachable. L1 unchanged in behavior (two Great Root routes).
+4. **Doorway juice.** The sealed exit arch CHARGES as the Queen nears opening it: glow +
+   line weight + pulse rate ramp with waves survived this level (`levelProgress()`), plus a
+   charging radial aura. Every kill tears the raider's soul loose — a glowing wisp drifts up
+   then homes on the Queen (`souls[]`); each arrival kicks `exitPulseT` so the arch visibly
+   swells per soul, with a small ring/burst at the Queen.
+5. **Full same-pack reskin (audited assets/raw/ FIRST — DR-#045 lesson).** The pack audit:
+   only engvee_thief (20 anim sets) + engvee_zombie_skin1 (13 sets) exist — but that's enough
+   for EVERYTHING: `scripts/pack_variant_atlases.py` packs one animation set + tint per role.
+   KNIGHT=Block/steel-blue, INCIN=Attack_Stance/orange, SWEEPER=Run/hazmat-yellow,
+   CLERIC=Buff/pale-robes, BUTCHER=Attack1/blood-red (96px), BOSS=Attack3/ash-white (96px),
+   QUEEN=zombie Idle/royal-purple (112px, tracks nearest raider, keeps crown/glow/distress
+   tells; procedural bulb stays as fallback). Enemy draw generalized via `ENEMY_SPR` map;
+   sweeper sanitize-ring + knight taunt-ring tells now also draw over the sprite path.
+   **Nothing still needs sourcing** — every unit + the Queen is covered by the two packs.
+   Atlas budget: +8 atlases ≈ 2.1 MB (total ≈ 2.7 MB); watch load time on CG review.
+   **Found+fixed a latent bug:** blitFrame's hit-flash used source-atop + white rect, which
+   composites against the opaque canvas = a solid white box (glaring at the new sizes).
+   Now a 'lighter' re-draw of the frame brightens only the sprite's own pixels.
+
+## DR-#047 — per-level economy: grant + capped carry (research-first) (2026-07-09)
+Mike: biomass carryover made L3 trivial (arrive rich) + the long-running "too easy" thread.
+**Research:** Kingdom Rush, BTD6 and Dungeon Warfare all RESET cash per level and route
+long-term reward through a meta layer (which Deadroot already has in DNA); BTD6 sells towers
+at 70% so banking value in units always costs something; Rogue Tower (true carryover) fights
+snowball with escalating per-copy prices instead. **Recommendation (shipped):** per-level
+budget + a small capped efficiency carry —
+- Each level grants `meta.bio + 30×levelIdx` (L1 ≈120, L2 ≈150, L3 ≈180 at tier 0).
+- 25% of leftover biomass carries, hard-capped at half the new grant; carry the cap eats
+  converts to a small DNA trickle (max 5) so efficiency still pays something.
+- Doorway reclaim of surviving units/traps cut from 100% → 60% (the full refund double-dipped
+  into the next budget). Ticker announces "THE HIVE BEGINS ANEW — grant · carried · DNA".
+Verified: arriving at L3 with 120◈ now starts it at 210◈ (was 120 carried + full refunds on
+top). L3 difficulty now tunes against a known budget; needs Mike's feel pass on the numbers.
+
+## DR-#048 — MENDER: evolvable healer zombie (2026-07-09)
+New second evolution beside GRABBER (same 30◈ pattern): tap a zombie → EVOLVE → MENDER.
+- `CFG.towers.mender` (range 2.2, heal 7 hp/s, dmg 0): heals the most-wounded friendly
+  zombie in range — the mirror of the raid's cleric, same dashed-green beam language so the
+  mechanic reads from either side. It's a tower: brawled/burned down like any zombie, leaves
+  a gap, triggers reabsorb, salvages normally.
+- `evolveTower(t,type)` generalizes the DR-#043b morph (grabber + mender share the wobble
+  grow-in + husk ring moment); zombie menu is now EVOLVE→GRABBER / EVOLVE→MENDER / SALVAGE.
+- Art from the SAME pack: zombie **Lookup** animation (arms raised, chanting), green tint
+  (`mender_atlas`, packed by the same variant script); procedural green sac + cross fallback.
+- Teach banner updated: "GRABBER (slows + rots) or MENDER (heals your zombies)".
+Verified headless (deadroot-alt:4226, reload): all 11 atlases load; evolve swaps type + morph
+plays; wounded zombie healed +19.5hp in 3s (≈7/s); souls spawn on kill and arrive (exit
+pulses); L3 routes split ~evenly and all waypoints reachable; 1500-tick all-enemy-types sim
+with boss bar + both evolutions clean; parse OK; console clean; screenshots eyeballed
+(boss bar top, palette clear, reskinned raid + purple Queen render).
+
 ## Triage 2026-07-09 — Mike's L1→L3 playtest (7 inbox + 2 fresh fails)
 All decisions written to Supabase (inbox statuses + claude fields; the tracker's
 PT-B2 merge fix now keeps them from being re-lost). Batches:

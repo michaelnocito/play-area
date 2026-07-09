@@ -96,6 +96,7 @@ const CFG = {
     warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
     spitter:  { cost:40, name:"SPITTER",  desc:"acid shot",   range:3.2, rate:1.1, dmg:14 },  // DR-#037 standard: 3 hits kills a base raider. Batch release (whole party at once) gives towers fewer shot windows than a trickle TD, so per-hit damage must be higher. Maze-rot DoT removed — it was the real killer before.
     grabber:  { cost:45, name:"GRABBER",  desc:"slows + rots nearby foes", range:2.0, slow:0.4, dmg:0, dot:2.5, evolve:30 }, // DR-#025 B1 snare aura; DR-#033 dmg:0 (never attacks). DR-#043b (Mike): grabbers are now an EVOLUTION of a placed zombie (evolve cost 30◈) and their aura applies a low DoT (the old maze-rot's home, per his note)
+    mender:   { cost:45, name:"MENDER",   desc:"heals nearby zombies", range:2.2, heal:7, dmg:0, evolve:30 }, // DR-#048: evolvable healer zombie — mends the most-wounded friendly unit in range; killable like any zombie
     rootmass: { cost:50, name:"ROOTMASS", desc:"snare aura",  range:1.9, slow:0.6 },
     spore:    { cost:65, name:"SPORE",    desc:"toxic cloud", range:2.4, rate:0.4, dmg:6, cloudR:1.7, cloudT:4 },
     node:     { cost:70, name:"NODE",     desc:"+50% nearby fire rate", range:1.6 }
@@ -138,6 +139,7 @@ const TCOL = {
   warden:   {body:"#9ab880", mid:"#6a8858", dark:"#3a4a30", acc:"#d8e060"},
   spitter:  {body:"#7ed038", mid:"#4a9018", dark:"#1a3a08", acc:"#c8f050"},
   grabber:  {body:"#c8925a", mid:"#8a5c2e", dark:"#3a2410", acc:"#e6b072"}, // DR-#025 B1: amber grasping zombie
+  mender:   {body:"#7fc98a", mid:"#4a8a56", dark:"#16301c", acc:"#9be07f"}, // DR-#048: pale-green healer zombie
   rootmass: {body:"#a06838", mid:"#704820", dark:"#2e1808", acc:"#d09050"},
   spore:    {body:"#40c068", mid:"#208048", dark:"#0e3818", acc:"#9af0a8"},
   node:     {body:"#8858d8", mid:"#5a38b0", dark:"#200848", acc:"#d0a0f8"},
@@ -341,12 +343,21 @@ let godMode = false, showRanges = false;
 // fallback if it 404s or before it's ready, so the game always runs.
 let useSprites = true;
 let devEnemyHpMult = 1, devEnemyDmgMult = 1; // DR-#040: global enemy HP/attack multipliers (dev menu); slider also rescales LIVE enemies
-let enemySpriteScale = 6.0;   // × enemy radius (tunable via dev menu)
-let towerSpriteScale = 96;    // px (tunable via dev menu)
+let enemySpriteScale = 6.8;   // × enemy radius (tunable via dev menu) — DR-#046 desktop size pass
+let towerSpriteScale = 110;   // px (tunable via dev menu) — DR-#046 desktop size pass
 const SPR = {
   zombie:  { img: new Image(), meta: null, ready: false }, // your Spitter tower (risen dead)
   grabber: { img: new Image(), meta: null, ready: false }, // DR-#045: SAME zombie model, Roar anim, amber tint (Mike: grabber must be from the same pack)
-  thief:   { img: new Image(), meta: null, ready: false }  // scav attacker (fantasy human)
+  mender:  { img: new Image(), meta: null, ready: false }, // DR-#048: zombie Lookup anim (arms raised, chanting), green tint
+  thief:   { img: new Image(), meta: null, ready: false }, // scav attacker (fantasy human)
+  // DR-#046: full raid reskin — SAME thief model, one animation set + tint per role
+  knight:  { img: new Image(), meta: null, ready: false }, // Block anim, steel-blue (shielded tank)
+  incin:   { img: new Image(), meta: null, ready: false }, // Attack_Stance anim, orange (aggressor)
+  sweeper: { img: new Image(), meta: null, ready: false }, // Run anim, hazmat yellow (fast cleanup crew)
+  cleric:  { img: new Image(), meta: null, ready: false }, // Buff anim, pale robes (caster)
+  butcher: { img: new Image(), meta: null, ready: false }, // Attack1 anim, blood red, bigger frame
+  boss:    { img: new Image(), meta: null, ready: false }, // Attack3 anim, ash white, bigger frame
+  queen:   { img: new Image(), meta: null, ready: false }  // DR-#046: zombie Idle anim, royal purple — the RootQueen herself
 };
 (function loadSprites(list){
   for(const [key,png,jsn] of list){ const s=SPR[key];
@@ -360,8 +371,17 @@ const SPR = {
 })([
   ['zombie','assets/zombie_atlas.png','assets/zombie_atlas.json'],
   ['grabber','assets/grabber_atlas.png','assets/grabber_atlas.json'], // DR-#045
-  ['thief','assets/thief_atlas.png','assets/thief_atlas.json']
+  ['mender','assets/mender_atlas.png','assets/mender_atlas.json'],   // DR-#048
+  ['thief','assets/thief_atlas.png','assets/thief_atlas.json'],
+  ['knight','assets/knight_atlas.png','assets/knight_atlas.json'],   // DR-#046 raid reskin
+  ['incin','assets/incin_atlas.png','assets/incin_atlas.json'],
+  ['sweeper','assets/sweeper_atlas.png','assets/sweeper_atlas.json'],
+  ['cleric','assets/cleric_atlas.png','assets/cleric_atlas.json'],
+  ['butcher','assets/butcher_atlas.png','assets/butcher_atlas.json'],
+  ['boss','assets/boss_atlas.png','assets/boss_atlas.json'],
+  ['queen','assets/queen_atlas.png','assets/queen_atlas.json']
 ]);
+const ENEMY_SPR = { scav:'thief', troop:'knight', incin:'incin', sweeper:'sweeper', cleric:'cleric', butcher:'butcher', boss:'boss' }; // DR-#046: enemy type → atlas key
 function pickFrame(s, ang, animSeed){
   const deg = (ang*180/Math.PI + 360) % 360;
   let dir = s.meta.dirs[0], best = 999;
@@ -376,7 +396,10 @@ function blitFrame(key, ang, animSeed, drawSize, flash){
   const f = pickFrame(s, ang, animSeed);
   if(!f) return false;
   ctx.drawImage(s.img, f.x, f.y, f.w, f.h, -drawSize/2, -drawSize/2, drawSize, drawSize);
-  if(flash>0){ ctx.save(); ctx.globalCompositeOperation='source-atop'; ctx.globalAlpha=0.6; ctx.fillStyle='#ffffff'; ctx.fillRect(-drawSize/2,-drawSize/2,drawSize,drawSize); ctx.restore(); }
+  // DR-#046 fix: the old flash was a source-atop WHITE RECT — over an opaque canvas that
+  // composites against the whole backdrop, i.e. a solid white box (very visible at the new
+  // bigger sprite sizes). 'lighter' re-draw brightens only the sprite's own pixels.
+  if(flash>0){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.7; ctx.drawImage(s.img, f.x, f.y, f.w, f.h, -drawSize/2, -drawSize/2, drawSize, drawSize); ctx.restore(); }
   return true;
 }
 // world-space wrapper — used by stationary towers
@@ -408,6 +431,7 @@ let comboT = 0, comboN = 0;
 let noHitWaves = 0, waveStartHP = 0, waveT = 0, waveFlashT = 0;
 // world effects
 let stains = [], rings = [];
+let souls = [], exitPulseT = 0; // DR-#046 doorway juice: dead raiders' souls fly to the Queen; each arrival pulses the sealed exit
 // first-time flags + pointer
 let seenSweeper = false, lastSurvivorShown = false, secondWindUsed = false, adFailReason = null;
 let seenTank = false, seenCleric = false, seenAmbush = false, seenAggro = false; // DR-#036/#041 first-encounter teaching banners
@@ -682,7 +706,7 @@ function placeUnit(c,r,type){
   towers.push({ type, c, r, x, y, hx:x, hy:y, roamT:Math.random()*2, cd:0, hp:thp, max:thp, flash:0, pulse:Math.random()*6, tier:0, level:1 }); // DR-#042: hx/hy = post to roam around
   towersBuiltThisRun++; firstMutateDone=true;
   // DR-#043b: teach the one upgrade path the first time a zombie stands up
-  if(type==="spitter" && !seenEvolveTeach){ seenEvolveTeach=true; showBanner("ZOMBIES CAN EVOLVE", tapWord+" a zombie → EVOLVE → GRABBER (slows + rots nearby raiders)"); }
+  if(type==="spitter" && !seenEvolveTeach){ seenEvolveTeach=true; showBanner("ZOMBIES CAN EVOLVE", tapWord+" a zombie → GRABBER (slows + rots) or MENDER (heals your zombies)"); } // DR-#048
   const acc=(TCOL[type]&&TCOL[type].acc)||"#9be07f";
   popup(x,y-28, grow?"GROWN":"-"+cost+"◈","#e07f7f"); burst(x,y,acc,14); SFX.squelch(); shakeIt(2);
   return true;
@@ -709,12 +733,14 @@ function spawnEnemy(type){
   // not ants on a rail). Search points must be open reachable floor.
   // DR-#042: split waypoints are per-level now (level 1's Great Root has two ways around;
   // other floors may have none). Search points are any open reachable floor tile.
+  // DR-#046: a split is now a ROUTE (list of [c,r] waypoints), picked at random per raider —
+  // when the Queen is reachable by 2+ approaches (L3's throne ring has two mouths), the raid
+  // divides between them and the player must defend every approach, not just the short one.
   const splits = raidSplits();
   const wps = [];
   if(splits.length){
-    const g2 = splits[Math.floor(Math.random()*splits.length)];
-    const p2 = tileToXY(g2[0],g2[1]);
-    wps.push({x:p2[0],y:p2[1]});
+    const route = splits[Math.floor(Math.random()*splits.length)];
+    for(const p2 of route){ const pt = tileToXY(p2[0],p2[1]); wps.push({x:pt[0],y:pt[1]}); }
   }
   if(Math.random()<0.65){
     for(let tries=0;tries<12;tries++){
@@ -878,7 +904,7 @@ const EDGE_WALLS = [ // shared burrow shell: edges + the breached west root-gate
 const LEVELS = [
   { name:"THE BURROW GATE", lore:"hold the gate — the Queen gathers strength to open the way",
     queen:{c:21,r:8}, exit:{c:25,r:8}, waves:[0,1,2,3],
-    splits:[[8,2],[8,15]], // DR-#038: each raider picks a side around the Great Root
+    splits:[ [[8,2]], [[8,15]] ], // DR-#038/#046: each raider picks a ROUTE around the Great Root
     walls:[
       [8,5,8,12],                 // the Great Root: go around top/bottom
       [17,1,17,7], [17,10,17,16], // east partition (gap rows 8-9 into the deep chamber)
@@ -894,7 +920,10 @@ const LEVELS = [
     ] },
   { name:"THE DEEP THRONE", lore:"her throne chamber — they end here, one way or the other",
     queen:{c:16,r:8}, exit:{c:25,r:8}, waves:[8,9,10,11],
-    splits:[[4,3],[4,14]],
+    // DR-#046: the throne ring has TWO mouths (west col 13, east col 19) — the Queen is
+    // reachable from both sides, so the raid splits across three routes: straight into the
+    // west mouth, or around the top/bottom of the ring to storm the east mouth from behind.
+    splits:[ [[4,3],[10,8]], [[10,2],[22,3],[21,8]], [[10,15],[22,14],[21,9]] ],
     walls:[ // open arena with a throne ring around the Queen (two mouths, rows 8-9 east+west)
       [13,5,19,5], [13,12,19,12],
       [13,6,13,7], [13,10,13,11],
@@ -950,9 +979,24 @@ function newRun(){
    Called by newRun (level 1) and by the doorway transition (levels 2+). */
 function startLevel(){
   hiveHP = hiveMax; // the Queen recovers as she moves deeper
+  /* DR-#047 (research-first: Kingdom Rush / BTD6 / Dungeon Warfare all reset per-level cash
+     and route long-term reward through a meta currency — which Deadroot already has in DNA).
+     Full biomass carryover + full unit refunds let a rich player trivialize L3. Now each level
+     grants a fixed budget that scales with depth; playing the previous level efficiently
+     carries 25% of leftover biomass, hard-capped at half the new grant; anything the cap eats
+     converts to a small DNA trickle so efficiency still pays SOMETHING. */
+  if(levelIdx>0 && !endless){
+    const grant = meta.bio + 30*levelIdx;
+    const rawCarry = Math.round(biomass*0.25);
+    const carry = Math.min(rawCarry, Math.round(grant*0.5));
+    const trickle = Math.min(5, Math.floor((rawCarry-carry)/25));
+    if(trickle>0){ save.dna += trickle; dnaEarned += trickle; persist(); }
+    biomass = grant + carry;
+    showBanner("THE HIVE BEGINS ANEW", grant+"◈ grant"+(carry>0?" · +"+carry+"◈ carried":"")+(trickle>0?" · +"+trickle+" DNA":""));
+  }
   levelTransT = 0;
   enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
-  stains=[]; rings=[]; doors=[]; traps=[];
+  stains=[]; rings=[]; doors=[]; traps=[]; souls=[]; exitPulseT=0; // DR-#046
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   hedgePaid = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
@@ -970,9 +1014,11 @@ function beginDoorway(){
   levelTransT = 3.4;
   mode = "prep";
   // the Hive reabsorbs its children — surviving units/traps come back as biomass for the next floor
+  // DR-#047: reclaim at 60% (BTD6 sells at 70%) — a full refund let survivors double-dip
+  // into the next level's budget and snowball the finale trivial.
   let reclaim = 0;
-  for(const t of towers) reclaim += CFG.towers[t.type].cost;
-  for(const tp of traps) reclaim += Math.round(CFG.spikes.cost*tp.uses/CFG.spikes.uses);
+  for(const t of towers) reclaim += Math.round(CFG.towers[t.type].cost*0.6);
+  for(const tp of traps) reclaim += Math.round(CFG.spikes.cost*0.6*tp.uses/CFG.spikes.uses);
   if(reclaim>0){ biomass += reclaim; showBanner("THE HIVE REABSORBS ITS CHILDREN","+"+reclaim+"◈ returned"); } // DR-#044: ticker, not center-screen
   const [ex,ey] = tileToXY(curLevel().exit.c, curLevel().exit.r);
   bigBurst(ex,ey,"#c9a0f0",26); bigBurst(ex,ey+CFG.tile,"#8fd9a8",18);
@@ -1321,6 +1367,23 @@ function update(){
         }
       }
     }
+    // DR-#048 MENDER: heals the most-wounded friendly zombie in range (mirror of the raid's
+    // cleric) — it never attacks, and being a tower it can be brawled down like any zombie.
+    if(t.type==="mender"){
+      t.healTgt=null;
+      let worst=1; const hr=CFG.towers.mender.range*CFG.tile;
+      for(const o of towers){
+        if(o===t || o.hp>=o.max) continue;
+        const fr=o.hp/o.max;
+        if(fr<worst && dist2(t,o)<sq(hr)){ worst=fr; t.healTgt=o; }
+      }
+      if(t.healTgt){
+        const o=t.healTgt;
+        o.hp = Math.min(o.max, o.hp + CFG.towers.mender.heal*DT);
+        if(Math.random()<0.06) addParticle({x:o.x+(Math.random()-0.5)*12, y:o.y-14, vx:0, vy:-26, t:0.6, col:"#9be07f"});
+      }
+      continue;
+    }
     if(t.type==="rootmass"||t.type==="node"||t.type==="grabber") continue; // DR-#025: grabber is a slow aura, not a shooter
     const def = CFG.towers[t.type];
     // Feast level scaling: each devoured corpse makes the zombie hit harder + faster
@@ -1394,6 +1457,27 @@ function update(){
   for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.t-=DT; p.y-=24*DT; if(p.t<=0) popups.splice(i,1); }
   for(let i=stains.length-1;i>=0;i--){ stains[i].t-=DT; if(stains[i].t<=0) stains.splice(i,1); }
   for(let i=rings.length-1;i>=0;i--){ const rr=rings[i]; rr.t-=DT; if(rr.t<=0){ rings.splice(i,1); continue; } rr.r=rr.maxR*(1-rr.t/rr.maxT); }
+  // DR-#046 souls: drift up briefly, then home on the Queen with rising speed; arrival pulses the exit
+  if(exitPulseT>0) exitPulseT -= DT;
+  {
+    const [qx0,qy0]=tileToXY(CFG.hive.c0,CFG.hive.r0), [qx1,qy1]=tileToXY(CFG.hive.c1,CFG.hive.r1);
+    const qx=(qx0+qx1)/2, qy=(qy0+qy1)/2;
+    for(let i=souls.length-1;i>=0;i--){
+      const s=souls[i]; s.t+=DT;
+      const home=Math.min(1,Math.max(0,(s.t-0.35)/0.5));           // free drift → full homing
+      const dx=qx-s.x, dy=qy-s.y, dm=Math.hypot(dx,dy)||1;
+      const spd=120+s.t*260;
+      s.vx = s.vx*(1-home*0.2) + dx/dm*spd*home*0.2;
+      s.vy = s.vy*(1-home*0.2) + dy/dm*spd*home*0.2;
+      s.x+=s.vx*DT; s.y+=s.vy*DT;
+      if(home>=1 && dm<16){
+        souls.splice(i,1);
+        exitPulseT=0.5;                                             // the spell drinks — the doorway pulses
+        burst(qx,qy,"#c9f0a8",5);
+        rings.push({x:qx,y:qy,r:0,maxR:30,maxT:0.3,t:0.3,col:"rgba(201,240,168,0.5)"});
+      }
+    }
+  }
 
   /* wave clear check */
   // DR-#035 spike traps: fire on any raider standing on them, then dull out
@@ -1455,6 +1539,9 @@ function kill(e){
   if(e.type==="sweeper" && e.chanT>0){ biomass+=30; popup(e.x,e.y,"INTERCEPTED! +30","#e3d34e"); }
   // sweeper panic: nearby sweepers flee faster
   if(e.type==="sweeper"){ for(const ne of enemies){ if(ne!==e && ne.type==="sweeper" && dist2(ne,e)<sq(CFG.tile*6)){ ne.panicT=2.5; popup(ne.x,ne.y-14,"RETREAT!","#e3d34e"); } } }
+  // DR-#046 doorway juice: the dead raider's soul tears loose and flies to the Queen,
+  // powering the doorway spell — each arrival pulses the sealed exit arch.
+  souls.push({x:e.x, y:e.y, vx:(Math.random()-0.5)*60, vy:-40-Math.random()*40, t:0});
   // ground stain
   stains.push({x:e.x,y:e.y,t:5,col:e.col}); if(stains.length>20) stains.shift();
   burst(e.x,e.y,e.col,10);
@@ -1531,8 +1618,8 @@ function onTap(x,y){
       if(x>=b.x-p&&x<=b.x+b.w+p&&y>=b.y-p&&y<=b.y+b.h+p){ buildMode = buildMode===b.mode?null:b.mode; menu=null; SFX.ui(); return; }
     }
   }
-  // DR-#035: START RAID button (top-center) — releases the whole party at once
-  if(mode==="prep" && firstMutateDone && levelTransT<=0 && x>W/2-120 && x<W/2+120 && y>TOP+8 && y<TOP+66){
+  // DR-#035: START RAID button (top-center) — releases the whole party at once (DR-#046 bigger)
+  if(mode==="prep" && firstMutateDone && levelTransT<=0 && x>W/2-145 && x<W/2+145 && y>TOP+8 && y<TOP+74){
     SFX.ui(); queueWave(); return;
   }
   // hive mind ability buttons (bottom-left) — padded to a real 44px min tap target
@@ -1562,6 +1649,7 @@ function onTap(x,y){
     if(picked==='heal'){ feastHeal(menu.tower); return; }
     if(picked==='upgrade'){ feastUpgrade(menu.tower); return; }
     if(picked==='evolve'){ evolveToGrabber(menu.tower); return; } // DR-#043b
+    if(picked==='evolvemender'){ evolveToMender(menu.tower); return; } // DR-#048
     if(picked==='salvage'){
       const refund=20+((menu.tower.level||1)-1)*10;
       biomass+=refund; popup(menu.tower.x,menu.tower.y,"+"+refund+"◈ SALVAGED","#e3d34e");
@@ -1590,17 +1678,24 @@ function onTap(x,y){
    Transformation gets a real moment: amber morph (t.evolveT drives a grow-in + husk-burst in
    drawGrabber), root-burst, ring, popup. Matching Engvee-pack grabber sprite is ASSET-GATED
    (only zombie/thief atlases exist) — procedural morph until Mike drops a sheet. */
-function evolveToGrabber(t){
-  const cost = CFG.towers.grabber.evolve;
+/* DR-#048: generalized — a zombie can evolve into a GRABBER (slow+rot aura) or a MENDER
+   (heals nearby zombies). Same 30◈ pattern, same morph moment. */
+function evolveTower(t, type){
+  const def = CFG.towers[type];
+  const cost = def.evolve;
   if(t.type!=="spitter") return;
   if(biomass < cost){ SFX.deny(); popup(t.x,t.y-12,"NEED BIOMASS","#e07f7f"); return; }
   biomass -= cost;
-  t.type = "grabber"; t.evolveT = 0.9; t.cd = 0;
-  popup(t.x,t.y-30,"EVOLVED — GRABBER","#e6b072");
-  bigBurst(t.x,t.y,"#c8925a",18); burst(t.x,t.y,"#7ed038",10); SFX.squelch(); shakeIt(3);
-  rings.push({x:t.x,y:t.y,r:0,maxR:CFG.towers.grabber.range*CFG.tile,maxT:0.5,t:0.5,col:"rgba(230,176,114,0.8)"});
+  t.type = type; t.evolveT = 0.9; t.cd = 0;
+  towersEvolvedThisRun++;
+  const acc = TCOL[type].acc;
+  popup(t.x,t.y-30,"EVOLVED — "+def.name, acc);
+  bigBurst(t.x,t.y,TCOL[type].body,18); burst(t.x,t.y,"#7ed038",10); SFX.squelch(); shakeIt(3);
+  rings.push({x:t.x,y:t.y,r:0,maxR:def.range*CFG.tile,maxT:0.5,t:0.5,col:"rgba(230,176,114,0.8)"});
   menu = null;
 }
+function evolveToGrabber(t){ evolveTower(t,"grabber"); }
+function evolveToMender(t){ evolveTower(t,"mender"); }
 function fixtureRefund(f){ const cost = f.max!==undefined ? CFG.door.cost : CFG.spikes.cost; return Math.max(1, Math.round(cost*0.6)); } // DR-#035
 function removeFixture(f){
   const refund = fixtureRefund(f);
@@ -1635,11 +1730,11 @@ function menuOpts(){
   }
   if(menu.tower){
     const t=menu.tower;
-    const cx=Math.max(90, Math.min(W-90, t.x));
-    const y=Math.max(TOP+52, t.y-72);
-    // DR-#043b: a ZOMBIE can EVOLVE into a GRABBER (slow aura + rot DoT) — the one upgrade path
-    if(t.type==="spitter") return [ {type:'evolve', x:Math.max(46,cx-46), y, r:36}, {type:'salvage', x:Math.min(W-46,cx+46), y, r:36} ];
-    return [ {type:'salvage', x:cx, y, r:36} ];
+    const cx=Math.max(150, Math.min(W-150, t.x));
+    const y=Math.max(TOP+58, t.y-78);
+    // DR-#043b/#048: a ZOMBIE can EVOLVE into a GRABBER (slow+rot aura) or a MENDER (healer)
+    if(t.type==="spitter") return [ {type:'evolve', x:cx-98, y, r:42}, {type:'evolvemender', x:cx, y, r:42}, {type:'salvage', x:cx+98, y, r:42} ];
+    return [ {type:'salvage', x:cx, y, r:42} ];
   }
   const [kx,ky] = menuAnchor();
   const types = ["spitter","rootmass","spore","node"];
@@ -1802,7 +1897,7 @@ function abilBtns(){
 }
 function boonCards(){
   const n = boonChoice ? boonChoice.length : 2;
-  const w=330,h=176,gap=30; // DR-#037: bigger cards so every sub-line fits at a readable size
+  const w=360,h=192,gap=30; // DR-#037 fit; DR-#046 desktop size pass
   const total = n*w+(n-1)*gap, startX = W/2-total/2;
   const cards=[]; for(let i=0;i<n;i++) cards.push({x:startX+i*(w+gap),y:H/2-h/2,w,h});
   return cards;
@@ -1916,7 +2011,7 @@ window.addEventListener("keydown", ev=>{
   // desktop-first: Enter/Space restarts from the end screen without hunting for the button
   if((k==="enter"||k===" ") && (mode==="over"||mode==="victory")){ ev.preventDefault(); newRun(); return; }
   // desktop-first: Enter/Space sends the wave early during prep (matches the SEND button)
-  if((k==="enter"||k===" ") && mode==="prep" && firstMutateDone && levelTransT<=0 && !boonChoice && !paused){ ev.preventDefault(); SFX.ui(); queueWave(); return; } // DR-#035: start the raid; DR-#042: not while the doorway opens
+  if((k==="enter"||k===" ") && mode==="prep" && firstMutateDone && levelTransT<=0 && !boonChoice && !paused && !infoModal){ ev.preventDefault(); SFX.ui(); queueWave(); return; } // DR-#035: start the raid; DR-#042: not while the doorway opens
   // desktop-first: Enter/Space starts a run from the title screen
   if((k==="enter"||k===" ") && mode==="title"){ ev.preventDefault(); daily=false; audio(); newRun(); return; }
 });
@@ -1929,20 +2024,22 @@ window.addEventListener("blur", ()=>{
   if((mode==="play"||mode==="prep") && !paused){ paused = true; CG.gameplayStop(); }
 });
 
+/* DR-#046 BLOCKER fix: the boss bar used to sit at the bottom of the screen, covering the
+   build palette (the primary action view). It now docks over the TOP wall row — row 0 is
+   solid rock, nothing playable ever happens there. Name + HP live inline in one slim strip;
+   the transient ticker (DR-#044) draws after it, so a 3s banner momentarily overlays it. */
 function drawBossBar(){
   const boss = enemies.find(e=>e.type==="boss"||e.type==="butcher");
   if(!boss) return;
-  const bw=W-100, bx=50, by=H-52;
-  ctx.fillStyle="rgba(14,18,20,0.92)"; ctx.fillRect(bx-4,by-22,bw+8,46);
+  const bw=W-460, bx=230, by=TOP+7, bh=26;
+  ctx.fillStyle="rgba(14,18,20,0.92)"; ctx.fillRect(bx-4,by-3,bw+8,bh+6);
   ctx.strokeStyle=boss.type==="boss"?"#8fa0b0":"#b04a4a"; ctx.lineWidth=2;
-  ctx.strokeRect(bx-4,by-22,bw+8,46); ctx.lineWidth=1;
-  ctx.fillStyle="#1a1e22"; ctx.fillRect(bx,by,bw,14);
+  ctx.strokeRect(bx-4,by-3,bw+8,bh+6); ctx.lineWidth=1;
+  ctx.fillStyle="#1a1e22"; ctx.fillRect(bx,by,bw,bh);
   ctx.fillStyle=boss.type==="boss"?"#6a8090":"#b04a4a";
-  ctx.fillRect(bx,by,bw*Math.max(0,boss.hp/boss.max),14);
-  ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 13px monospace";
-  ctx.fillText(boss.type==="boss"?"— THE PURIFIER —":"— THE BUTCHER —",W/2,by-6);
-  ctx.fillStyle="#8a94a0"; ctx.font="11px monospace";
-  ctx.fillText(Math.ceil(Math.max(0,boss.hp))+" HP",W/2,by+26);
+  ctx.fillRect(bx,by,bw*Math.max(0,boss.hp/boss.max),bh);
+  ctx.textAlign="center"; ctx.fillStyle="#f0f4f8"; ctx.font="bold 16px monospace";
+  ctx.fillText((boss.type==="boss"?"THE PURIFIER":"THE BUTCHER")+" — "+Math.ceil(Math.max(0,boss.hp))+" HP", W/2, by+bh-7);
 }
 
 /* ===== Environment decor (generated once; purely cosmetic, never touches sim) =====
@@ -2287,17 +2384,36 @@ function drawGates(){
 /* DR-#042: the sealed doorway to the next level — a faint arch in the east root wall so the
    player always sees WHERE they're going (orientation law); it flares and tears open while the
    Queen works (levelTransT). */
+/* DR-#046 doorway juice: the sealed arch CHARGES as the Queen nears opening it — glow ramps
+   with waves survived this level, and every arriving soul (kill) kicks a pulse. */
+function levelProgress(){
+  if(endless) return 0;
+  const lw = curLevel().waves;
+  return Math.max(0, Math.min(1, (waveIdx - lw[0]) / lw.length));
+}
 function drawExit(){
   if(endless || mode==="title") return;
   const ex = curLevel().exit;
   const [x,y0]=tileToXY(ex.c,ex.r);
   const y = y0 + CFG.tile/2; // arch spans the rows-8/9 seam
   const opening = levelTransT>0;
+  const prog = levelProgress();
+  const kick = Math.max(0, exitPulseT/0.5); // per-kill soul pulse
   ctx.save();
-  const a = opening ? 0.65+0.35*Math.sin(perfNow*9) : 0.22+0.10*Math.sin(perfNow*1.6);
+  // charging aura — grows brighter and wider as the Queen gathers strength
+  if(!opening && (prog>0 || kick>0)){
+    const ga = 0.10 + prog*0.28 + kick*0.25;
+    const gr2 = 26 + prog*26 + kick*10;
+    const g2 = ctx.createRadialGradient(x,y,3, x,y,gr2);
+    g2.addColorStop(0,"rgba(201,160,240,"+ga.toFixed(3)+")"); g2.addColorStop(1,"rgba(201,160,240,0)");
+    ctx.fillStyle=g2; ctx.beginPath(); ctx.arc(x,y,gr2,0,6.283); ctx.fill();
+  }
+  const a = opening ? 0.65+0.35*Math.sin(perfNow*9)
+                    : Math.min(0.95, 0.22 + prog*0.45 + kick*0.35 + (0.06+prog*0.10)*Math.sin(perfNow*(1.6+prog*4)));
   ctx.globalAlpha = a;
-  ctx.strokeStyle = opening ? "#e0c9ff" : "#8a6fb0"; ctx.lineWidth = opening?4:2.5; ctx.lineCap="round";
-  ctx.beginPath(); ctx.arc(x-6, y, 24, -Math.PI/2, Math.PI/2); ctx.stroke(); // arch facing the floor
+  ctx.strokeStyle = opening ? "#e0c9ff" : (prog>0.66 ? "#c9a0f0" : "#8a6fb0");
+  ctx.lineWidth = opening?4:(2.5+prog*1.5+kick*1.5); ctx.lineCap="round";
+  ctx.beginPath(); ctx.arc(x-6, y, 24 + prog*3 + kick*5, -Math.PI/2, Math.PI/2); ctx.stroke(); // arch facing the floor — swells with each soul
   if(opening){ // roots tearing apart + spilling light
     ctx.globalAlpha = 0.5+0.5*Math.sin(perfNow*12);
     const gr = ctx.createRadialGradient(x,y,4, x,y,60);
@@ -2375,9 +2491,47 @@ function drawGrabTendrils(t){
   }
   ctx.restore();
 }
+/* DR-#048: MENDER — the healer zombie. Same Engvee model (Lookup anim, arms raised in a
+   chant, green tint); dashed green aura = heal zone; beam to its patient mirrors the raid
+   cleric's tell so the mechanic reads instantly from either side. */
+function drawMender(t, lvl){
+  const aR = CFG.towers.mender.range*CFG.tile;
+  ctx.save();
+  ctx.globalAlpha = 0.08+0.04*Math.sin(t.pulse*2.0);
+  ctx.fillStyle = "#9be07f"; ctx.beginPath(); ctx.arc(t.x,t.y,aR,0,6.283); ctx.fill();
+  ctx.globalAlpha = 0.4; ctx.strokeStyle="rgba(155,224,127,0.6)"; ctx.lineWidth=1.5; ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.arc(t.x,t.y,aR,0,6.283); ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
+  // heal beam to the patient (same dashed-green language as the raid's cleric)
+  if(t.healTgt && towers.includes(t.healTgt)){
+    ctx.save(); ctx.globalAlpha=0.4+0.2*Math.sin(perfNow*8);
+    ctx.strokeStyle="#9be07f"; ctx.lineWidth=2; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(t.x,t.y); ctx.lineTo(t.healTgt.x,t.healTgt.y); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+  }
+  if(useSprites && SPR.mender.ready){
+    const lvlF2 = 1 + (lvl-1)*0.10, ds = towerSpriteScale*lvlF2;
+    const gg = ctx.createRadialGradient(t.x,t.y+8,2, t.x,t.y+8,26*lvlF2);
+    gg.addColorStop(0,"rgba(155,224,127,"+(0.40+0.12*Math.sin(t.pulse*2.0))+")");
+    gg.addColorStop(1,"rgba(155,224,127,0)");
+    ctx.save(); ctx.fillStyle=gg; ctx.beginPath(); ctx.ellipse(t.x,t.y+8,26*lvlF2,15*lvlF2,0,0,6.283); ctx.fill(); ctx.restore();
+    drawSpriteFrame('mender', t.x, t.y-Math.round(ds*0.16), towerAimAngle(t), t.pulse*30, ds, t.flash);
+    return;
+  }
+  // procedural fallback: pale-green sac with a bright cross
+  const lvlF = 1 + (lvl-1)*0.10, R = 14*lvlF;
+  ctx.save();
+  if(t.flash>0) ctx.globalAlpha=0.65;
+  const g = ctx.createRadialGradient(t.x-R*0.3,t.y-R*0.4,2, t.x,t.y,R*1.3);
+  g.addColorStop(0,"#a8e0a0"); g.addColorStop(1,"#4a8a56");
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(t.x,t.y+2,R*1.05,R*0.9,0,0,6.283); ctx.fill();
+  ctx.strokeStyle="#16301c"; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(t.x,t.y+2,R*1.05,R*0.9,0,0,6.283); ctx.stroke();
+  ctx.fillStyle="#eafce0"; ctx.fillRect(t.x-2,t.y-R*0.5,4,R); ctx.fillRect(t.x-R*0.5,t.y-2,R,4);
+  ctx.restore();
+}
 /* DR-#023: bottom-center build palette. */
 function paletteBtns(){
-  const w=126,h=58,gap=12,y=H-h-14, total=w*2+gap, x0=W/2-total/2; // DR-#043b: ONE monster brush (Mike) — grabbers are evolved from placed zombies, not bought
+  const w=150,h=64,gap=14,y=H-h-12, total=w*2+gap, x0=W/2-total/2; // DR-#043b: ONE monster brush; DR-#046 desktop size pass
   return [ {x:x0, y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
            {x:x0+(w+gap), y, w, h, mode:"spikes", label:"SPIKES", cost:CFG.spikes.cost, unit:false} ];
 }
@@ -2391,10 +2545,10 @@ function drawPalette(){
     ctx.fillStyle = sel?"#2b5a26":"rgba(16,20,18,0.9)";
     ctx.strokeStyle = sel?acc:"rgba(150,190,140,0.4)"; ctx.lineWidth=sel?3:1.5;
     ctx.beginPath(); if(ctx.roundRect)ctx.roundRect(b.x,b.y,b.w,b.h,10);else ctx.rect(b.x,b.y,b.w,b.h); ctx.fill(); ctx.stroke();
-    ctx.textAlign="left"; ctx.fillStyle=afford?"#dfeada":"#9a7060"; ctx.font="bold 16px monospace";
-    ctx.fillText(b.label, b.x+13, b.y+26);
-    if(locked){ ctx.fillStyle="#c99bd8"; ctx.font="bold 14px monospace"; ctx.fillText("reabsorbing "+Math.ceil(reabsorbCD)+"s", b.x+13, b.y+46); }
-    else { ctx.fillStyle=afford?"#8fd9a8":"#e06060"; ctx.font="bold 15px monospace"; ctx.fillText(b.cost+"◈", b.x+13, b.y+46); }
+    ctx.textAlign="left"; ctx.fillStyle=afford?"#dfeada":"#9a7060"; ctx.font="bold 19px monospace"; // DR-#046 size pass
+    ctx.fillText(b.label, b.x+14, b.y+28);
+    if(locked){ ctx.fillStyle="#c99bd8"; ctx.font="bold 15px monospace"; ctx.fillText("reabsorbing "+Math.ceil(reabsorbCD)+"s", b.x+14, b.y+50); }
+    else { ctx.fillStyle=afford?"#8fd9a8":"#e06060"; ctx.font="bold 17px monospace"; ctx.fillText(b.cost+"◈", b.x+14, b.y+50); }
     ctx.globalAlpha = 1;
   }
   // DR-#028 C2: ghost + red/green build cursor (filled ghost of what would be placed + validity ring)
@@ -2521,7 +2675,8 @@ function draw(){
     if(t.type==="warden" && t.swing>0) t.swing -= DT;
     // SPR-#002: the Spitter tower is a risen zombie (pre-rendered-3D sprite), aiming
     // at the nearest attacker. Falls back to procedural art until the atlas loads.
-    const isGrab = t.type==="grabber"; // DR-#025 B1
+    const isGrab = t.type==="grabber" || t.type==="mender"; // DR-#025 B1; DR-#048 mender shares the morph/aura path
+    const drawEvolved = t.type==="mender" ? drawMender : drawGrabber;
     const useZombie = (t.type==="spitter") && useSprites && SPR.zombie.ready; // DR-#033: grabber no longer borrows the zombie sprite
     const lvl = t.level||1;
     if(isGrab){
@@ -2532,12 +2687,12 @@ function draw(){
         const s = 0.45 + 0.55*p + (p<1?0.10*Math.sin(p*22)*(1-p):0);
         if(Math.random()<0.5) addParticle({x:t.x+(Math.random()-0.5)*26, y:t.y+(Math.random()-0.5)*22, vx:(Math.random()-0.5)*40, vy:-40-Math.random()*30, t:0.5, col:Math.random()<0.4?"#7ed038":"#e6b072"});
         ctx.save(); ctx.translate(t.x,t.y); ctx.scale(s,s); ctx.translate(-t.x,-t.y);
-        drawGrabber(t, lvl);
+        drawEvolved(t, lvl);
         ctx.restore();
         // fading green husk-glow of the zombie it was
         ctx.save(); ctx.globalAlpha=0.5*(1-p); ctx.strokeStyle="#7ed038"; ctx.lineWidth=3;
         ctx.beginPath(); ctx.arc(t.x,t.y,20+p*16,0,6.283); ctx.stroke(); ctx.restore();
-      } else drawGrabber(t, lvl);
+      } else drawEvolved(t, lvl);
     } else if(useZombie){
       // stronger zombies are visibly bigger + glow more (mods change the look)
       const lvlF = 1 + (lvl-1)*0.10;
@@ -2607,22 +2762,24 @@ function draw(){
       ctx.translate(0, -Math.abs(hop)*e.r*0.13);
       ctx.scale(1+hop*0.05, 1-hop*0.05);
     }
-    // speed streak for scavengers (drawn under everything, sprite or procedural)
+    // travel direction from the flow field (facing + scav speed streak)
     let scavFv = null;
-    if(e.type==="scav" && flow){
+    if(flow){
       const [ec2,er2]=xyToTile(e.x,e.y);
       scavFv=(inGrid(ec2,er2)&&flow[er2]&&flow[er2][ec2])?flow[er2][ec2]:null;
-      if(scavFv){ ctx.save(); ctx.globalAlpha=0.2; ctx.fillStyle=e.col;
+      if(scavFv && e.type==="scav"){ ctx.save(); ctx.globalAlpha=0.2; ctx.fillStyle=e.col;
         ctx.beginPath(); ctx.arc(-scavFv[0]*10,-scavFv[1]*10,e.r*0.65,0,6.283); ctx.fill();
         ctx.beginPath(); ctx.arc(-scavFv[0]*16,-scavFv[1]*16,e.r*0.35,0,6.283); ctx.fill();
         ctx.restore(); }
     }
-    // SPR-#003: scav attacker = the Thief (fantasy human, pre-rendered-3D sprite),
-    // facing its travel direction. Procedural block below is the fallback.
+    // SPR-#003/DR-#046: EVERY raider role now renders from the same Engvee thief model —
+    // one animation set + tint per role (Block=knight, Attack_Stance=incin, Run=sweeper,
+    // Buff=cleric, Attack1=butcher, Attack3=boss). Procedural block below is the fallback.
     let spriteDrawn = false;
-    if(e.type==="scav" && useSprites && SPR.thief.ready){
+    const sprKey = ENEMY_SPR[e.type];
+    if(sprKey && useSprites && SPR[sprKey].ready){
       const ang = scavFv ? Math.atan2(-scavFv[1], -scavFv[0]) : Math.atan2(hyE-e.y, hxE-e.x);
-      spriteDrawn = blitFrame('thief', ang, e.id*1.3, e.r*enemySpriteScale, e.flash);
+      spriteDrawn = blitFrame(sprKey, ang, e.id*1.3, e.r*enemySpriteScale, e.flash);
     }
     if(!spriteDrawn){
     // cel outline silhouette (DR-#037: thicker, fully dark — silhouettes must read on the lighter floor)
@@ -2671,6 +2828,11 @@ function draw(){
       ctx.beginPath(); ctx.arc(-ex+px*ew*0.5, ey+py*ew*0.5, pr, 0, 6.283); ctx.arc(ex+px*ew*0.5, ey+py*ew*0.5, pr, 0, 6.283); ctx.fill();
     }
     } // end !spriteDrawn procedural fallback
+    // DR-#046: behavior tells that must survive the sprite path (they lived inside the procedural branches)
+    if(spriteDrawn){
+      if(e.type==="sweeper" && e.chanT>0){ ctx.strokeStyle="#e3d34e"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,0,e.r+6,-Math.PI/2,-Math.PI/2+6.283*(e.chanT/3)); ctx.stroke(); ctx.lineWidth=1; }
+      if(e.role==="tank"){ ctx.save(); ctx.globalAlpha=0.25+0.15*Math.sin(perfNow*5); ctx.strokeStyle="#e0c060"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,e.r+8,0,6.283); ctx.stroke(); ctx.restore(); }
+    }
     // status tells: shape-coded (not color-only) for colorblind accessibility
     if(e.snared){ ctx.strokeStyle="#8a6a3f"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,e.r*0.6,e.r*0.8,0,3.14); ctx.stroke(); }
     if(e.drench>0){ // droplet triangle, top-right
@@ -2711,10 +2873,18 @@ function draw(){
   // particles
   for(const p of particles){ ctx.globalAlpha=p.big?Math.min(1,p.t*1.4):Math.min(1,p.t*2.5); ctx.fillStyle=p.col; const ps=p.big?7:3; ctx.fillRect(p.x-ps/2,p.y-ps/2,ps,ps); }
   ctx.globalAlpha=1;
+  // DR-#046 souls: pale wisps streaking to the Queen (over bodies, under HUD)
+  for(const s of souls){
+    ctx.save(); ctx.globalAlpha=0.35;
+    ctx.fillStyle="#c9f0a8"; ctx.beginPath(); ctx.arc(s.x-s.vx*0.03, s.y-s.vy*0.03, 3, 0, 6.283); ctx.fill();
+    ctx.globalAlpha=0.85; ctx.shadowColor="#c9f0a8"; ctx.shadowBlur=8;
+    ctx.fillStyle="#eafce0"; ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 6.283); ctx.fill();
+    ctx.restore();
+  }
   // ambient drifting spores (light foreground parallax layer)
   drawMotes();
   // popups
-  ctx.textAlign="center"; ctx.font="bold 18px monospace";
+  ctx.textAlign="center"; ctx.font="bold 21px monospace"; // DR-#046 desktop size pass
   for(const p of popups){ ctx.globalAlpha=Math.min(1,p.t); ctx.fillStyle=p.col; ctx.fillText(p.txt,p.x,p.y); }
   ctx.globalAlpha=1;
 
@@ -2781,6 +2951,21 @@ function drawHive(){
     ctx.lineTo(Math.cos(a)*(18+len), Math.sin(a)*(16+len)); ctx.stroke();
   }
   ctx.lineCap="butt";
+  // DR-#046: the RootQueen renders from the SAME Engvee pack — zombie Idle animation,
+  // royal-purple tint, seated over her glow with the root crown behind her. She still
+  // tracks the nearest raider. Procedural bulb below stays as the atlas-404 fallback.
+  if(useSprites && SPR.queen.ready){
+    ctx.restore(); // leave the pulse-scaled space; sprite scales itself
+    let qt=null, qbd=Infinity;
+    for(const e of enemies){ const d=(e.x-cx)**2+(e.y-cy)**2; if(d<qbd){ qbd=d; qt=e; } }
+    const qa = qt ? Math.atan2(qt.y-cy, qt.x-cx) : Math.PI/2;
+    drawSpriteFrame('queen', cx, cy-10, qa, 3, 116*pulse, 0);
+    if(hurt<0.35){ // distress: red wash pulses over her while she's badly wounded
+      ctx.save(); ctx.globalAlpha=0.22+0.12*Math.sin(perfNow*beat); ctx.fillStyle="#e05050";
+      ctx.beginPath(); ctx.ellipse(cx,cy-6,40,44,0,0,6.283); ctx.fill(); ctx.restore();
+    }
+    return;
+  }
   // body: royal bulb with cel outline (fits inside 80x80)
   ctx.strokeStyle="rgba(20,10,30,0.85)"; ctx.lineWidth=3;
   ctx.fillStyle="#5a3a78"; ctx.beginPath(); ctx.ellipse(0,4,32,28,0,0,6.283); ctx.fill(); ctx.stroke();
@@ -2815,8 +3000,8 @@ function drawHUD(){
   ctx.fillStyle="#8fd9a8";
   ctx.beginPath(); ctx.arc(30,38,11,0,6.283); ctx.fill();
   ctx.beginPath(); ctx.moveTo(30,14); ctx.lineTo(39,32); ctx.lineTo(21,32); ctx.closePath(); ctx.fill();
-  ctx.textAlign="left"; ctx.font="bold 30px monospace";
-  ctx.fillText(Math.floor(biomass), 52, 48);
+  ctx.textAlign="left"; ctx.font="bold 36px monospace"; // DR-#046 desktop size pass
+  ctx.fillText(Math.floor(biomass), 52, 50);
   // hive HP: hive icon + fat bar
   ctx.fillStyle="#7a4fa0"; ctx.beginPath(); ctx.ellipse(210,36,15,12,0,0,6.283); ctx.fill();
   ctx.fillStyle="#b088e0"; ctx.beginPath(); ctx.ellipse(210,36,7,5,0,0,6.283); ctx.fill();
@@ -2833,18 +3018,18 @@ function drawHUD(){
     ctx.lineTo(sx-8,sy-6); ctx.closePath(); ctx.fill(); ctx.restore();
   }
   // wave: big fraction + phase under it
-  ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 26px monospace";
+  ctx.textAlign="center"; ctx.fillStyle="#dfe6ec"; ctx.font="bold 30px monospace"; // DR-#046 desktop size pass
   // DR-#042: wave count is per-LEVEL now (survive them and the Queen opens the way)
   const lw = curLevel().waves;
   const wn = endless ? "∞ "+(endlessN+1) : Math.min(waveIdx-lw[0]+1, lw.length)+"/"+lw.length;
-  ctx.fillText(wn, W/2+90, 34);
-  ctx.font="bold 13px monospace"; ctx.fillStyle="#8a94a0";
-  ctx.fillText(endless?"THE LONG NIGHT":("LEVEL "+(levelIdx+1)+" — "+curLevel().name), W/2+90, 56);
+  ctx.fillText(wn, W/2+90, 36);
+  ctx.font="bold 15px monospace"; ctx.fillStyle="#9aa4b0";
+  ctx.fillText(endless?"THE LONG NIGHT":("LEVEL "+(levelIdx+1)+" — "+curLevel().name), W/2+90, 58);
   // DNA
-  ctx.fillStyle="#c9a0f0"; ctx.textAlign="right"; ctx.font="bold 20px monospace";
+  ctx.fillStyle="#c9a0f0"; ctx.textAlign="right"; ctx.font="bold 24px monospace";
   ctx.fillText("◆"+save.dna, W-146, 44);
   // kill counter
-  if(mode==="play"||mode==="prep"){ ctx.fillStyle="#5a6470"; ctx.textAlign="left"; ctx.font="11px monospace"; ctx.fillText("⚡"+killsThisRun, 52, 66); }
+  if(mode==="play"||mode==="prep"){ ctx.fillStyle="#6a7480"; ctx.textAlign="left"; ctx.font="13px monospace"; ctx.fillText("⚡"+killsThisRun, 52, 68); }
   // pause + mute buttons (56px touch targets)
   ctx.fillStyle="#1c2226"; ctx.fillRect(W-128,8,56,56); ctx.fillRect(W-64,8,56,56);
   ctx.strokeStyle="rgba(255,255,255,0.2)"; ctx.strokeRect(W-128,8,56,56); ctx.strokeRect(W-64,8,56,56);
@@ -2890,19 +3075,20 @@ function drawMenu(){
     ctx.strokeStyle=hasCorpse?"rgba(155,224,127,0.35)":"rgba(200,200,200,0.15)"; ctx.lineWidth=2;
     ctx.setLineDash([5,6]); ctx.beginPath(); ctx.arc(t.x,t.y,R,0,6.283); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth=1;
     // current level tag
-    ctx.fillStyle="#c8e0a8"; ctx.textAlign="center"; ctx.font="bold 12px monospace"; ctx.fillText("LVL "+(t.level||1), t.x, t.y-32);
+    ctx.fillStyle="#c8e0a8"; ctx.textAlign="center"; ctx.font="bold 14px monospace"; ctx.fillText("LVL "+(t.level||1), t.x, t.y-34); // DR-#046 size pass
     for(const o of opts){
       const feast = (o.type==='heal'||o.type==='upgrade');
-      const enabled = feast ? hasCorpse : o.type==='evolve' ? biomass>=CFG.towers.grabber.evolve : true; // DR-#043b
-      const col = o.type==='heal'?"#9be07f":o.type==='upgrade'?"#e0a0f0":o.type==='evolve'?"#e6b072":"#e3d34e";
+      const enabled = feast ? hasCorpse : o.type==='evolve' ? biomass>=CFG.towers.grabber.evolve : o.type==='evolvemender' ? biomass>=CFG.towers.mender.evolve : true; // DR-#043b/#048
+      const col = o.type==='heal'?"#9be07f":o.type==='upgrade'?"#e0a0f0":o.type==='evolve'?"#e6b072":o.type==='evolvemender'?"#9be07f":"#e3d34e";
       ctx.save(); if(!enabled) ctx.globalAlpha=0.4;
       ctx.fillStyle="rgba(14,16,20,0.96)"; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.fill();
       ctx.strokeStyle=col; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.stroke(); ctx.lineWidth=1;
       ctx.fillStyle=col; ctx.textAlign="center";
-      if(o.type==='heal'){ ctx.font="bold 13px monospace"; ctx.fillText("DEVOUR", o.x, o.y-6); ctx.fillText("HEAL", o.x, o.y+10); }
-      else if(o.type==='upgrade'){ ctx.font="bold 13px monospace"; ctx.fillText("DEVOUR", o.x, o.y-6); ctx.fillText("LVL "+((t.level||1)+1), o.x, o.y+10); }
-      else if(o.type==='evolve'){ ctx.font="bold 12px monospace"; ctx.fillText("EVOLVE", o.x, o.y-9); ctx.fillText("GRABBER", o.x, o.y+4); ctx.fillStyle=enabled?"#8fd9a8":"#e07f7f"; ctx.fillText(CFG.towers.grabber.evolve+"◈", o.x, o.y+18); } // DR-#043b
-      else { ctx.font="bold 11px monospace"; ctx.fillText("SALVAGE", o.x, o.y-3); ctx.fillStyle="#8fd9a8"; ctx.font="bold 12px monospace"; ctx.fillText("+"+(20+((t.level||1)-1)*10)+"◈", o.x, o.y+12); }
+      if(o.type==='heal'){ ctx.font="bold 15px monospace"; ctx.fillText("DEVOUR", o.x, o.y-7); ctx.fillText("HEAL", o.x, o.y+12); }
+      else if(o.type==='upgrade'){ ctx.font="bold 15px monospace"; ctx.fillText("DEVOUR", o.x, o.y-7); ctx.fillText("LVL "+((t.level||1)+1), o.x, o.y+12); }
+      else if(o.type==='evolve'){ ctx.font="bold 14px monospace"; ctx.fillText("EVOLVE", o.x, o.y-11); ctx.fillText("GRABBER", o.x, o.y+5); ctx.fillStyle=enabled?"#8fd9a8":"#e07f7f"; ctx.fillText(CFG.towers.grabber.evolve+"◈", o.x, o.y+22); } // DR-#043b
+      else if(o.type==='evolvemender'){ ctx.font="bold 14px monospace"; ctx.fillText("EVOLVE", o.x, o.y-11); ctx.fillText("MENDER", o.x, o.y+5); ctx.fillStyle=enabled?"#8fd9a8":"#e07f7f"; ctx.fillText(CFG.towers.mender.evolve+"◈", o.x, o.y+22); } // DR-#048
+      else { ctx.font="bold 13px monospace"; ctx.fillText("SALVAGE", o.x, o.y-4); ctx.fillStyle="#8fd9a8"; ctx.font="bold 14px monospace"; ctx.fillText("+"+(20+((t.level||1)-1)*10)+"◈", o.x, o.y+14); }
       ctx.restore();
     }
     return;
@@ -2949,15 +3135,15 @@ function drawMenu(){
 function drawInfoModal(){
   ctx.fillStyle="rgba(5,7,9,0.72)"; ctx.fillRect(0,0,W,H);
   ctx.textAlign="center";
-  ctx.fillStyle="#d8b8f8"; ctx.font="bold 34px monospace";
+  ctx.fillStyle="#d8b8f8"; ctx.font="bold 38px monospace"; // DR-#046 size pass
   ctx.fillText(infoModal.txt, W/2, H/2-40);
   if(infoModal.sub){
-    ctx.fillStyle="#a9b4c0"; ctx.font="bold 17px monospace";
+    ctx.fillStyle="#b4bfca"; ctx.font="bold 19px monospace";
     const lines = wrapLines(infoModal.sub, W-160);
-    for(let i=0;i<lines.length;i++) ctx.fillText(lines[i], W/2, H/2+i*24);
+    for(let i=0;i<lines.length;i++) ctx.fillText(lines[i], W/2, H/2+i*26);
   }
   const p = 0.55+0.45*Math.sin(perfNow*3.2);
-  ctx.save(); ctx.globalAlpha=p; ctx.fillStyle="#8fd9a8"; ctx.font="bold 18px monospace";
+  ctx.save(); ctx.globalAlpha=p; ctx.fillStyle="#8fd9a8"; ctx.font="bold 20px monospace";
   ctx.fillText(TAP_WORD+" TO CONTINUE", W/2, H/2+86); ctx.restore();
 }
 function drawPrep(){
@@ -2976,35 +3162,35 @@ function drawPrep(){
     // DR-#026 C7: teach the build palette (corpses are decorative now — the player builds from the palette)
     const bob = 8*Math.sin(perfNow*4);
     const py = H - 58 - 14 - 30 + bob; // just above the palette buttons
-    ctx.fillStyle="#9be07f"; ctx.font="bold 22px monospace";
+    ctx.fillStyle="#9be07f"; ctx.font="bold 25px monospace"; // DR-#046 size pass
     ctx.fillText("PICK A UNIT, THEN "+TAP_WORD.toUpperCase()+" A PATH TO BUILD", W/2, py); // DR-#034: "brush" was dev jargon (playtest bug)
-    ctx.fillText("▼", W/2, py+22);
+    ctx.fillText("▼", W/2, py+24);
   } else {
-    const pulse = 0.75+0.25*Math.sin(perfNow*3); // DR-#035: breathing START button — the one thing to click
-    ctx.fillStyle="rgba(14,18,20,0.9)"; ctx.fillRect(W/2-120,TOP+8,240,58);
-    ctx.globalAlpha=pulse; ctx.strokeStyle="#8fd9a8"; ctx.lineWidth=3; ctx.strokeRect(W/2-120,TOP+8,240,58); ctx.globalAlpha=1; ctx.lineWidth=1;
-    ctx.fillStyle="#8fd9a8"; ctx.font="bold 22px monospace";
-    ctx.fillText("⚔ START RAID", W/2, TOP+38);
-    ctx.font="bold 12px monospace"; ctx.fillStyle="#8a94a0";
+    const pulse = 0.75+0.25*Math.sin(perfNow*3); // DR-#035: breathing START button; DR-#046 bigger
+    ctx.fillStyle="rgba(14,18,20,0.9)"; ctx.fillRect(W/2-145,TOP+8,290,66);
+    ctx.globalAlpha=pulse; ctx.strokeStyle="#8fd9a8"; ctx.lineWidth=3; ctx.strokeRect(W/2-145,TOP+8,290,66); ctx.globalAlpha=1; ctx.lineWidth=1;
+    ctx.fillStyle="#8fd9a8"; ctx.font="bold 26px monospace";
+    ctx.fillText("⚔ START RAID", W/2, TOP+42);
+    ctx.font="bold 14px monospace"; ctx.fillStyle="#9aa4b0";
     // DR-#042: the level's goal, always visible — survive the raids, the Queen opens the way
     if(!endless){
       const lw = curLevel().waves, left = lw[lw.length-1]-waveIdx+1;
-      ctx.fillText("survive "+left+" more raid"+(left===1?"":"s")+" — the Queen opens the way", W/2, TOP+58);
-    } else ctx.fillText("build freely — they wait for you", W/2, TOP+58);
+      ctx.fillText("survive "+left+" more raid"+(left===1?"":"s")+" — the Queen opens the way", W/2, TOP+66);
+    } else ctx.fillText("build freely — they wait for you", W/2, TOP+66);
     // goal gradient: how far to the next named moment
     if(!endless){
       let tease = "";
       if(waveIdx<4) tease = (4-waveIdx)+" ➜ THE PURGE";
       else if(waveIdx<7) tease = (7-waveIdx)+" ➜ THE BUTCHER";
       else if(waveIdx<11) tease = (11-waveIdx)+" ➜ THE PURIFIER";
-      if(tease){ ctx.fillStyle="#c9a0f0"; ctx.font="bold 16px monospace"; ctx.fillText(tease, W/2, TOP+94); }
+      if(tease){ ctx.fillStyle="#c9a0f0"; ctx.font="bold 18px monospace"; ctx.fillText(tease, W/2, TOP+100); }
     }
     // next-wave preview: what's coming, so the player knows what's next (law #8)
-    drawWavePreview(W/2, TOP+118);
+    drawWavePreview(W/2, TOP+126);
   }
   // rotating lore line
-  ctx.fillStyle="rgba(150,162,175,0.8)"; ctx.font="13px monospace"; ctx.textAlign="center"; // DR-#037: readable lore line
-  ctx.fillText(LORE[Math.floor(perfNow*0.07)%LORE.length], W/2, H-12);
+  ctx.fillStyle="rgba(160,172,185,0.85)"; ctx.font="15px monospace"; ctx.textAlign="center"; // DR-#037 readable; DR-#046 bigger
+  ctx.fillText(LORE[Math.floor(perfNow*0.07)%LORE.length], W/2, H-10);
 }
 function nextWaveDef(){ return endless ? endlessWave(endlessN) : WAVES[waveIdx]; }
 function drawWavePreview(cx,cy){
@@ -3013,16 +3199,16 @@ function drawWavePreview(cx,cy){
   const counts = {};
   for(const [type,count] of def) counts[type] = (counts[type]||0)+count;
   const types = Object.keys(counts);
-  const spacing = 58, totalW = types.length*spacing;
+  const spacing = 64, totalW = types.length*spacing; // DR-#046 size pass
   let x = cx - totalW/2 + spacing/2;
-  ctx.textAlign="center"; ctx.font="9px monospace"; ctx.fillStyle="#6a7480";
-  ctx.fillText("raid party", cx, cy-14); // DR-#035
+  ctx.textAlign="center"; ctx.font="11px monospace"; ctx.fillStyle="#7a8490";
+  ctx.fillText("raid party", cx, cy-16); // DR-#035
   for(const t of types){
     const e = CFG.enemies[t];
     ctx.fillStyle = e ? e.col : "#888";
-    ctx.beginPath(); ctx.arc(x, cy, 8, 0, 6.283); ctx.fill();
-    ctx.fillStyle="#dfe6ec"; ctx.font="bold 11px monospace";
-    ctx.fillText("×"+counts[t], x, cy+22);
+    ctx.beginPath(); ctx.arc(x, cy, 10, 0, 6.283); ctx.fill();
+    ctx.fillStyle="#dfe6ec"; ctx.font="bold 14px monospace";
+    ctx.fillText("×"+counts[t], x, cy+26);
     x += spacing;
   }
 }
@@ -3037,9 +3223,9 @@ function drawAbilities(){
     ctx.fillRect(b.x,b.y,b.w,b.h);
     ctx.strokeStyle = ready ? "#8fd9a8" : "#444"; ctx.strokeRect(b.x,b.y,b.w,b.h);
     ctx.textAlign="center";
-    ctx.fillStyle = ready ? "#c9f0a8" : "#555"; ctx.font="30px monospace";
+    ctx.fillStyle = ready ? "#c9f0a8" : "#555"; ctx.font="34px monospace"; // DR-#046 size pass
     ctx.fillText(glyphs[b.a.id], b.x+b.w/2, b.y+36);
-    ctx.font="bold 9px monospace"; ctx.fillStyle = ready ? "#8fd9a8" : "#555";
+    ctx.font="bold 11px monospace"; ctx.fillStyle = ready ? "#8fd9a8" : "#555";
     ctx.fillText(names[b.a.id], b.x+b.w/2, b.y+56);
     if(!IS_TOUCH){ ctx.fillStyle="#5a6470"; ctx.font="9px monospace"; ctx.textAlign="left"; ctx.fillText(""+(i+1), b.x+4, b.y+12); ctx.textAlign="center"; }
     if(!ready){
@@ -3071,32 +3257,32 @@ function drawBoons(){
     const hover=ptrX>=o.x&&ptrX<=o.x+o.w&&ptrY>=o.y&&ptrY<=o.y+o.h;
     ctx.fillStyle=hover?"rgba(44,32,74,0.98)":"rgba(24,18,44,0.97)"; ctx.fillRect(o.x,o.y,o.w,o.h);
     ctx.strokeStyle=hover?"#e0d0ff":"#b088e0"; ctx.lineWidth=hover?3:2; ctx.strokeRect(o.x,o.y,o.w,o.h); ctx.lineWidth=1;
-    // title — wrapped so long names never spill out of the card
-    ctx.fillStyle="#f0f4f8"; ctx.font="bold 22px monospace";
-    const tl = wrapLines(b.txt, o.w-28);
-    tl.forEach((ln,k)=>ctx.fillText(ln, o.x+o.w/2, o.y+52+k*26));
+    // title — wrapped so long names never spill out of the card (DR-#046 size pass)
+    ctx.fillStyle="#f0f4f8"; ctx.font="bold 24px monospace";
+    const tl = wrapLines(b.txt, o.w-30);
+    tl.forEach((ln,k)=>ctx.fillText(ln, o.x+o.w/2, o.y+56+k*28));
     // effect — wrapped, high-contrast green
-    ctx.fillStyle="#9be07f"; ctx.font="17px monospace";
-    const sl = wrapLines(b.sub, o.w-28);
-    sl.forEach((ln,k)=>ctx.fillText(ln, o.x+o.w/2, o.y+52+tl.length*26+18+k*22));
-    if(!IS_TOUCH){ ctx.fillStyle="#8a94a0"; ctx.font="13px monospace"; ctx.fillText("press ["+(i+1)+"]", o.x+o.w/2, o.y+o.h-14); }
+    ctx.fillStyle="#9be07f"; ctx.font="19px monospace";
+    const sl = wrapLines(b.sub, o.w-30);
+    sl.forEach((ln,k)=>ctx.fillText(ln, o.x+o.w/2, o.y+56+tl.length*28+20+k*24));
+    if(!IS_TOUCH){ ctx.fillStyle="#8a94a0"; ctx.font="14px monospace"; ctx.fillText("press ["+(i+1)+"]", o.x+o.w/2, o.y+o.h-14); }
   }
 }
 function drawBanner(){ // DR-#044: slim ticker over the top wall row — never over the action
   const fadeIn = Math.min(1, (3.0-banner.t)/0.25+0.001), fadeOut = Math.min(1, banner.t/0.4);
   ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(fadeIn, fadeOut));
   ctx.translate(0, (1-fadeIn)*-8);
-  const y0 = TOP+3, hh = 34;
-  ctx.font="bold 15px monospace"; const tw = ctx.measureText(banner.txt).width;
-  ctx.font="13px monospace";      const sw = banner.sub ? ctx.measureText("  ·  "+banner.sub).width : 0;
+  const y0 = TOP+3, hh = 36; // DR-#046 size pass (still inside the 40px rock row)
+  ctx.font="bold 17px monospace"; const tw = ctx.measureText(banner.txt).width;
+  ctx.font="15px monospace";      const sw = banner.sub ? ctx.measureText("  ·  "+banner.sub).width : 0;
   const bw = Math.min(W-24, tw+sw+36), bx = W/2-bw/2;
   ctx.fillStyle="rgba(10,14,12,0.88)";
   ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(bx,y0,bw,hh,8); else ctx.rect(bx,y0,bw,hh); ctx.fill();
   ctx.fillStyle="#b088e0"; ctx.fillRect(bx+6,y0+7,3,hh-14); // accent bar
   ctx.textAlign="left";
   const x0 = bx+18;
-  ctx.fillStyle="#efe4fb"; ctx.font="bold 15px monospace"; ctx.fillText(banner.txt, x0, y0+22, bw-30);
-  if(banner.sub){ ctx.fillStyle="#c2ccd6"; ctx.font="13px monospace"; ctx.fillText("  ·  "+banner.sub, x0+tw, y0+22, Math.max(10, bw-30-tw)); }
+  ctx.fillStyle="#efe4fb"; ctx.font="bold 17px monospace"; ctx.fillText(banner.txt, x0, y0+24, bw-30);
+  if(banner.sub){ ctx.fillStyle="#c2ccd6"; ctx.font="15px monospace"; ctx.fillText("  ·  "+banner.sub, x0+tw, y0+24, Math.max(10, bw-30-tw)); }
   ctx.restore();
 }
 function pauseBtns(){
