@@ -1217,3 +1217,21 @@ addressed — claude fields re-lost again; rewritten in Supabase, 0 untriaged re
   pinned) + dismiss resumes; wave modal holds the raid at 0 spawns; palette=ZOMBIE/SPIKES;
   zombie menu = EVOLVE+SALVAGE; evolve swaps type/charges 30◈/closes menu; DoT 5hp over 2s;
   morph frame draws; console clean. Parse OK.
+
+## DR-#044 — friction fix: mid-play banners → slim top ticker (2026-07-08, Mike)
+Mike: "the text messages that appear, like saying that the enemy is here, really suck —
+intrusive, overlap actual gameplay. do a friction test and fix."
+- **Friction audit found:** drawBanner was a 110px dim band + 42px serif type across MID-FIELD,
+  firing during combat (first-seen sweeper/knight/cleric at spawn, thief ambush, RAID FIGHTS
+  BACK, last-survivor, 25-kill milestone); plus center-screen popups mid-combat (ability
+  activations) and at wave clear (repelled/unscathed/hive-talk/reabsorb).
+- **Fix:** banners are now a **queued ticker** (`bannerQ`, cap 4, plays one at a time 3.0s,
+  fade+slide) docked at TOP+3..TOP+37 — inside wall row 0, which is solid rock, so it can
+  never overlap action. Slim pill: dark bg, purple accent bar, 15px title + 13px sub inline,
+  NO screen dim. Center screen is reserved for DR-#043a paused modals + end screens.
+- All center popups during/around play routed to the ticker: wave repelled, unscathed
+  (UNBROKEN folded in), hive-talk quote, reabsorb refund, OVERGROWTH/FUNGAL BLOOM/PHEROMONE,
+  second wind. Only the boon-pick confirmation stays centered (decision menu, game stopped).
+- Verified headless (deadroot-alt:4226): queue caps at 4 + plays in order; mid-field pixel
+  IDENTICAL with a banner up (no dim); ticker renders after fade-in; full wave clean; parse OK;
+  console clean.

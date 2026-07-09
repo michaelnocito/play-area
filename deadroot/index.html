@@ -489,7 +489,12 @@ function offerBoons(){
   for(let i=0;i<count && pool.length;i++) boonChoice.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
   CG.gameplayStop(); // this is a decision menu, not active play — bible: "menus... = stopped"
 }
-function showBanner(txt,sub){ banner = {txt, sub, t:2.6}; }
+/* DR-#044 friction fix (Mike: mid-play banners "really suck — intrusive, overlap actual
+   gameplay"). Banners are now a QUEUED TICKER docked over the top wall row (row 0 is solid
+   rock — nothing ever happens there): slim strip, small type, no screen dim, one at a time.
+   Center-screen is reserved for the PAUSED stage modals (DR-#043a) and end screens only. */
+let bannerQ = [];
+function showBanner(txt,sub){ if(bannerQ.length<4) bannerQ.push({txt, sub, t:3.0}); }
 function showInfo(txt,sub){ infoModal = {txt, sub}; } // DR-#043a: pauses the game until dismissed
 function pickBoon(i){
   const b = boonChoice[i];
@@ -927,7 +932,7 @@ function newRun(){
   meta = metaVals();
   biomass = meta.bio; hiveMax = meta.hp;
   waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0; levelIdx = 0; // DR-#042
-  run = newRunMods(); boonChoice = null; banner = null; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
+  run = newRunMods(); boonChoice = null; banner = null; bannerQ = []; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
   gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
@@ -966,7 +971,7 @@ function beginDoorway(){
   let reclaim = 0;
   for(const t of towers) reclaim += CFG.towers[t.type].cost;
   for(const tp of traps) reclaim += Math.round(CFG.spikes.cost*tp.uses/CFG.spikes.uses);
-  if(reclaim>0){ biomass += reclaim; popup(W/2,H/2-64,"THE HIVE REABSORBS ITS CHILDREN  +"+reclaim+"◈","#8fd9a8"); }
+  if(reclaim>0){ biomass += reclaim; showBanner("THE HIVE REABSORBS ITS CHILDREN","+"+reclaim+"◈ returned"); } // DR-#044: ticker, not center-screen
   const [ex,ey] = tileToXY(curLevel().exit.c, curLevel().exit.r);
   bigBurst(ex,ey,"#c9a0f0",26); bigBurst(ex,ey+CFG.tile,"#8fd9a8",18);
   SFX.boom(); shakeIt(6);
@@ -1005,13 +1010,12 @@ function waveCleared(){
   save.bestWave = Math.max(save.bestWave, wn);
   if(daily){ if(!save.dailyBest)save.dailyBest={}; save.dailyBest[dayIndex()]=Math.max(save.dailyBest[dayIndex()]||0,wn); }
   persist();
-  popup(W/2, H/2-60, "WAVE "+wn+" REPELLED  +"+gain+" DNA  "+Math.floor(waveT)+"s", "#c9a0f0");
+  showBanner("WAVE "+wn+" REPELLED", "+"+gain+" DNA · "+Math.floor(waveT)+"s"); // DR-#044: ticker, not center-screen
   // perfect wave bonus
   if(hiveHP >= waveStartHP){
     noHitWaves++;
     save.dna+=3; dnaEarned+=3; persist();
-    popup(W/2, H/2-90, "UNSCATHED +3 DNA", "#c9f0c0");
-    if(noHitWaves>=3) showBanner("UNBROKEN", noHitWaves+" waves without damage");
+    showBanner("UNSCATHED", "+3 DNA"+(noHitWaves>=3?" · "+noHitWaves+" waves without damage":""));
   } else { noHitWaves=0; }
   CG.happytime(); slowMoT=0.45; timeScale=0.15;
   if(!endless && waveIdx>=WAVES.length-1){ mode="victory"; save.won=true; persist(); stopDrone(); CG.gameplayStop(); return; }
@@ -1025,7 +1029,7 @@ function waveCleared(){
     return;
   }
   mode = "prep"; prepT = CFG.prepTime;
-  popup(W/2, H/2-40, '"'+HIVE_TALK[wn % HIVE_TALK.length]+'"', "#5a9068");
+  showBanner('"'+HIVE_TALK[wn % HIVE_TALK.length]+'"'); // DR-#044: ticker, not center-screen
   // boon choice: the Hive adapts — every run differs
   if((!endless && CFG.boonWaves.includes(waveIdx)) || (endless && endlessN%3===1)) offerBoons();
 }
@@ -1053,7 +1057,7 @@ function takeSecondWind(){
       awaitingAd = false;
       hiveHP = Math.ceil(hiveMax*0.25);
       mode = "play";
-      popup(W/2, H/2-40, "SECOND WIND", "#8fd9a8");
+      showBanner("SECOND WIND","the Hive refuses to die"); // DR-#044
       edgePulseT = 1.0;
       CG.gameplayStart();
     }catch(e){ awaitingAd=false; }
@@ -1068,6 +1072,7 @@ function update(){
   if(shake>0) shake = Math.max(0, shake-20*DT); // DR-#034: decay BEFORE the end-screen early return — the death-recap shake used to freeze on screen forever (playtest bug)
   if(mode==="title"||mode==="over"||mode==="victory"||mode==="secondwind") return;
   if(infoModal) return; // DR-#043a: stage-info modal freezes the whole sim until dismissed
+  if(!banner && bannerQ.length) banner = bannerQ.shift(); // DR-#044: ticker plays the queue one at a time
   if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
   if(overgrowthT>0) overgrowthT -= DT;
   if(pherT>0) pherT -= DT;
@@ -1816,10 +1821,10 @@ function activateAbility(a){
   a.cd = CFG.abilityCD;
   if(a.id==="overgrowth"){
     overgrowthT = 4; SFX.squelch(); shakeIt(4);
-    popup(W/2,H/2-40,"OVERGROWTH","#8a6a3f");
+    showBanner("OVERGROWTH","roots erupt — the raid is near-stopped"); // DR-#044: ticker, not center-screen
     for(const e of enemies) burst(e.x,e.y,"#8a6a3f",5);
   } else if(a.id==="bloom"){
-    popup(W/2,H/2-40,"FUNGAL BLOOM","#8fd9a8"); SFX.decay();
+    showBanner("FUNGAL BLOOM","every corpse decays for full payout"); SFX.decay(); // DR-#044
     for(let i=corpses.length-1;i>=0;i--){
       const k = corpses[i];
       const pay = meta.decay * k.stack;
@@ -1832,7 +1837,7 @@ function activateAbility(a){
     menu = null;
   } else if(a.id==="pheromone"){
     pherT = 6; SFX.sweep();
-    popup(W/2,H/2-40,"PHEROMONE BURST","#e3d34e");
+    showBanner("PHEROMONE BURST","towers hunt sweepers — +40% fire rate"); // DR-#044
   }
 }
 function handleEndScreen(x,y){
@@ -3064,15 +3069,21 @@ function drawBoons(){
     if(!IS_TOUCH){ ctx.fillStyle="#8a94a0"; ctx.font="13px monospace"; ctx.fillText("press ["+(i+1)+"]", o.x+o.w/2, o.y+o.h-14); }
   }
 }
-function drawBanner(){
-  const a = Math.min(1, banner.t/0.5);
-  ctx.save(); ctx.globalAlpha = a;
-  ctx.fillStyle="rgba(5,7,9,0.6)"; ctx.fillRect(0,H/2-70,W,110);
-  ctx.textAlign="center";
-  ctx.fillStyle="#efe4fb"; ctx.font="bold 42px Georgia, serif"; // DR-#037: brighter title + bigger sub
-  ctx.fillText(banner.txt, W/2, H/2-14);
-  ctx.fillStyle="#c2ccd6"; ctx.font="bold 17px monospace";
-  ctx.fillText(banner.sub, W/2, H/2+22);
+function drawBanner(){ // DR-#044: slim ticker over the top wall row — never over the action
+  const fadeIn = Math.min(1, (3.0-banner.t)/0.25+0.001), fadeOut = Math.min(1, banner.t/0.4);
+  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(fadeIn, fadeOut));
+  ctx.translate(0, (1-fadeIn)*-8);
+  const y0 = TOP+3, hh = 34;
+  ctx.font="bold 15px monospace"; const tw = ctx.measureText(banner.txt).width;
+  ctx.font="13px monospace";      const sw = banner.sub ? ctx.measureText("  ·  "+banner.sub).width : 0;
+  const bw = Math.min(W-24, tw+sw+36), bx = W/2-bw/2;
+  ctx.fillStyle="rgba(10,14,12,0.88)";
+  ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(bx,y0,bw,hh,8); else ctx.rect(bx,y0,bw,hh); ctx.fill();
+  ctx.fillStyle="#b088e0"; ctx.fillRect(bx+6,y0+7,3,hh-14); // accent bar
+  ctx.textAlign="left";
+  const x0 = bx+18;
+  ctx.fillStyle="#efe4fb"; ctx.font="bold 15px monospace"; ctx.fillText(banner.txt, x0, y0+22, bw-30);
+  if(banner.sub){ ctx.fillStyle="#c2ccd6"; ctx.font="13px monospace"; ctx.fillText("  ·  "+banner.sub, x0+tw, y0+22, Math.max(10, bw-30-tw)); }
   ctx.restore();
 }
 function pauseBtns(){
