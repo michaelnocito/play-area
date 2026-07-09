@@ -1253,3 +1253,23 @@ a procedural stand-in and called the sprite asset-gated without checking what th
   (pixel-sampled), morph completes, console clean, parse OK.
 - ⚠️ Lesson (see feedback_ask_before_substituting): check assets/raw/ BEFORE declaring
   art asset-gated.
+
+## Triage 2026-07-09 — Mike's L1→L3 playtest (7 inbox + 2 fresh fails)
+All decisions written to Supabase (inbox statuses + claude fields; the tracker's
+PT-B2 merge fix now keeps them from being re-lost). Batches:
+- **DR-#046 — UI/art batch (has the BLOCKER):**
+  - BLOCKER bug: boss HP bar covers the bottom build palette → relocate.
+  - Desktop-first size pass: key elements AND all text bigger.
+  - Raid splits randomly between paths when the Queen is reachable 2+ ways.
+  - Doorway juice (from fail 7:3): exit glow ramps as the Queen nears opening,
+    pulses per kill, souls fly from dead raiders to the Queen.
+  - Art: audit assets/raw/ FIRST (DR-#045 lesson), reskin remaining enemies +
+    the Queen from the same Engvee pack; report what actually needs sourcing.
+- **DR-#047 — balance, research-first:** biomass carryover makes L3 trivial
+  (inbox + today's 3:1 fail + the older too-easy thread). Research TD economy
+  leveling (per-level reset/cap/soft-tax) before tuning.
+- **DR-#048 — healer unit:** evolvable zombie type that heals nearby units,
+  killable; slots into the evolve menu beside GRABBER.
+- Stale-fail cleanup: grabber one-shot/looks/attacks (fixed DR-#043b/#045),
+  hedge look (hedges removed DR-#034), onboarding + spitter-spam/maze-variety
+  (DR-#041/#042/#043) — all re-marked fixed → Mike's retest queue.
