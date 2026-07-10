@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Google Analytics — only fires on michaelnocito.github.io; inert in CrazyGames/itch/portal builds -->
+<script>
+if (location.hostname === 'michaelnocito.github.io') {
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function(){ dataLayer.push(arguments); };
+  var gaScript = document.createElement('script');
+  gaScript.async = true;
+  gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-6C09BL3WH1';
+  document.head.appendChild(gaScript);
+  gtag('js', new Date());
+  gtag('config', 'G-6C09BL3WH1');
+}
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="description" content="Deadroot: a corpse-mutation tower defense. Humans nearly wiped out the undead — the virus got smarter. Mutate the fallen into weapons and defend the Hive through 12 waves and beyond.">
