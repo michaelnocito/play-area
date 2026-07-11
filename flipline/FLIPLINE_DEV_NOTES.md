@@ -4,6 +4,27 @@
 **HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
 **Read first:** this file + **`FLIPLINE_ROADMAP.md`** (the dev-owned backlog — CrazyGames-grade rework, 🧦 ODD SOCK identity pivot 2026-07-02) + memory `project_flipline_state.md` (full per-feature + submission history). Also `FLIPLINE_HANDOFF.md`, `FLIPLINE_lore_bible.md` (⚠️ pre-sock lore — superseded by ROADMAP's Odd Sock section), `FLIPLINE_store_copy.md` (⚠️ rewrite gated on final name, Batch D).
 
+## ✅ BATCH B — Score & tally (2026-07-11) — DONE
+Every action now has visible value; the tally is the retention beat. In master `index.html`:
+- **Values:** `PTS_M=10/m · PTS_BTN=25×val · PTS_ORB=150 · PTS_LAND=250`; `score()=dist*10+bPts`
+  (bPts banks event bonuses; ptsB/orbsN tracked for the tally; zonesRun reused for lands).
+- **Best migration:** old best was metres → scaled ×10 once on load, `bestV:2` flag in the save
+  marks migrated (persist always writes it). Coin economy UNCHANGED: `lastEarned=(dist/14)+bonus`
+  stays distance-based so points don't inflate currency.
+- **HUD:** points top-centre (bold), metres small at VW/2+72, buttons counter left as before.
+- **Popups:** "+250 NEW LAND" (mint) on zone cross, "+150 <BUFF>" (buff colour) on orb grab —
+  single popup slot (popT/popTxt/popCol), rises under the HUD.
+- **Tally (dead screen rewritten):** CRASHED → 4 line items (DISTANCE Nm / BUTTONS / ORBS ×n /
+  LANDS ×n) reveal one per 0.45s with a Snd.point() tick, values count up over ~0.35s, rule line,
+  TOTAL counts up, then NEW BEST stinger (Snd.flow) or "best N"; retry pill / ad-double /
+  SHOP / next-unlock only draw once `tallyDone` (taps gated the same way — no stale-rect taps).
+  Tap during the count-up skips to the final numbers. Ticker runs in update() (dt side), not draw.
+- **Verified:** node --check clean; preview bot run → mid-run HUD + popup shot, tally mid/done
+  shots (`_shots/batchB_*.png`); line items sum exactly to TOTAL (1700+375+150+750=2975 on the
+  test run); NEW BEST path exercised. Physics/spawning untouched → no sim re-run needed
+  (2× buff still doubles worldX, so "2× SCORE" label stays true).
+**NEXT: Mike playtests feel, then Batch C (discrete lands campaign).**
+
 ## ✅ BATCH A — ODD SOCK visual identity (2026-07-10) — DONE, Mike playtests next
 The rejection lever, landed in master `index.html` only (portal builds regenerate in Batch D per
 the one-build-everywhere rule). What shipped:

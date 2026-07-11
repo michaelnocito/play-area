@@ -94,17 +94,17 @@ Procedural SFX in-key (PENT), directional flip, techno bed, ad ducking, mute + C
 - [ ] Per-land "wardrobe" milestone: each completed land banks a guaranteed shop discount or
   exclusive pattern unlock (gives lands a reward identity beyond distance).
 
-## 6. Score & tally — ❌ INVISIBLE VALUE → Batch B
+## 6. Score & tally — ✅ DONE (Batch B, 2026-07-11)
 
-**Now:** score = raw distance; formula invisible; dead screen is static numbers.
-**Standard:** every action has visible value; the tally is the retention beat.
-
-- [ ] Point values: distance 10/m · button pickup flat value · orb grab bonus · land-crossed bonus
-  · buff-earned bonus. (⚠️ NO near-miss/skim scoring — tried, physics-impossible, do not reattempt.)
-- [ ] End-of-run tally screen: line-item count-up w/ tick sounds + NEW BEST stinger; the
-  rewarded-ad "double it" offer moves onto the tally (its natural home).
-- [ ] In-run floating popups (+50 LAND!) so values are learned during play.
-- [ ] HUD: run points counter top-center.
+- [x] Point values: distance 10/m · button 25×val · orb +150 · land crossed +250
+  (`PTS_M/PTS_BTN/PTS_ORB/PTS_LAND`). Old metre-based best migrated ×10 once via `bestV:2`
+  save flag. Button/coin ECONOMY stays distance-based — points never inflate currency.
+  (⚠️ NO near-miss/skim scoring — physics-impossible, do not reattempt.)
+- [x] End-of-run tally: 4 line items + TOTAL count up one per beat w/ tick sounds, NEW BEST
+  stinger (Snd.flow), tap-to-skip; retry/shop/upsells only appear once the tally lands; the
+  rewarded-ad "double buttons" offer lives on the tally now.
+- [x] In-run floating popups: "+250 NEW LAND", "+150 <BUFF>" (buttons keep their "+N ●" pop).
+- [x] HUD: run points top-centre, metres small beside it.
 
 ## 7. Onboarding — [~] → Batch D
 
@@ -141,7 +141,7 @@ itch/GameJolt) ✓. Rewarded-ad double moves to tally screen in Batch B (no poli
 
 **BATCH A — Sock identity (the rejection lever): ✅ DONE 2026-07-10** (see §3/§4 above). Sim
 re-run at HEAD confirms hitbox-identical fairness. Mike playtests feel/look next.
-**BATCH B — Score & tally:** values, tally count-up, popups, HUD counter, ad-double onto tally.
+**BATCH B — Score & tally: ✅ DONE 2026-07-11** (see §6 above).
 **BATCH C — Campaign:** discrete lands + saves + level-complete ads + wardrobe milestones;
 upline only if the redesign proves fun (not a blocker).
 **BATCH D — Ship wave:** onboarding beat, text diet, prompts/AZERTY, name final call 🔷, store
