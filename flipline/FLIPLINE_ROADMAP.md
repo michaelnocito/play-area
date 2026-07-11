@@ -147,6 +147,40 @@ itch/GameJolt) ✓. Rewarded-ad double moves to tally screen in Batch B (no poli
 
 ---
 
+## 🧺 DRUM PLAN — 🔷 DRUM-ONLY ARC LOCKED (Mike 2026-07-11)
+One game, one control scheme: the drum dodger IS the submission. Flip-runner (Batches A/B/B2
+work) held as a post-launch content update ("the journey continues UNDER THE FLOOR") — scores
+CG's "frequently maintained" guideline; never mixed into the first review.
+
+### Gameplay-quality gaps vs CG top-100 (Slice Master / Drive Mad / OvO / Tunnel Rush tier),
+### researched 2026-07-11 — QUALITY FIRST, then compliance/content:
+- **GQ-1 Input feel:** steering is constant-velocity "cursor" movement — add ~80ms ease-in/out,
+  sock lean/stretch into travel, reversal dust kick. (Latency fine; feel is the gap.)
+- **GQ-2 Five-layer feedback + celebration hierarchy:** catch has 2/5 layers (sound, anim) —
+  add 60-90ms hit-stop, camera micro-zoom punch, catch-COMBO counter w/ rising-pitch audio
+  (port the pentatonic-ladder idea); PopCap model: action→combo→stage→journey tiers.
+- **GQ-3 Music:** none (rumble+beeps). Port procedural bed, re-voiced for the dryer; intensity
+  opens with vortex proximity + stage.
+- **GQ-4 Rhythm & near-miss:** linear ramp, no surge/relief waves (port TUMBLE concept), no
+  GRAZE reward — pass close to hot laundry = spark + static sliver. (Skim was physics-impossible
+  in the flip-runner — documented; drum geometry makes graze a one-subtraction check. Safe here.)
+- **GQ-5 Telegraphs at speed:** faint rim landing-arc markers once tumble speed crosses a
+  threshold (Tunnel Rush-style forewarning).
+- **GQ-6 Variety cadence:** top-100 = new read every 30-60s; we have 5 patterns/3 garments
+  forever → each stage adds ONE behavior (drifting towel, zipper whip, unbalanced-load wobble),
+  SPIN CYCLE finale gauntlet before the vortex.
+- **GQ-7 Ceremony:** vortex suck-in slow-mo + button confetti + stinger; stage/NEW BEST fanfares.
+- **GQ-8 First-60s teach beats:** one-time slow-time on first cool garment + first full static
+  (visual glyph, no text) — CG onboarding guideline.
+
+### Build order (locked): GQ-A feel & feedback (GQ-1,2,4-graze) → GQ-B sound & drama
+(GQ-3,4-surges,7) → C1 compliance (pause/auto-pause, music-mute persisted, AZERTY, CG SDK
+adapter w/ rewarded mend + stage-break interstitials, DEV:BEGIN/END menu, shared ODD SOCK
+save, real-device mobile pass) → C2 content depth (4-5 authored stages w/ GQ-5/6 reads,
+ENDING + endless unlock, drum bot-sim fairness harness) → C3 score/meta (Batch-B tally port,
+points, shop port = sock patterns, daily gift, milestones, GQ-8 beats) → C4 ship wave
+(covers/clips/store copy in sock voice, 🔷 name final call, CG QA tool, ONE resubmission).
+
 ## 🧺 DRUM AUDIT vs CG standards (2026-07-11, docs re-verified) — ~40-45% to retail-worthy
 
 Core loop + identity = SOLVED (the unfixable-by-polish rejection lever). Proto is 0%
