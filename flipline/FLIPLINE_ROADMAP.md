@@ -51,25 +51,35 @@ check Rooftop Sprint failed). Keep the perf contract sacred (see FLIPLINE_DEV_NO
 ## 3. Audio — ✅ AT STANDARD (theme pass optional)
 
 Procedural SFX in-key (PENT), directional flip, techno bed, ad ducking, mute + CG muteAudio.
-- [ ] Theme-flavor pass w/ Batch A (optional, cheap): softer "boing/flump" flip variant, dryer
-  rumble under the bed, squeaky coin — keep the in-key system, re-voice the timbres for silly.
+- [x] Theme-flavor pass w/ Batch A (2026-07-10): flip re-voiced as a soft directional cloth
+  "flump" (triangle + low noise puff), low looping dryer-rumble bed added under the music
+  (one-time nodes, routed through Music.gain so mute/duck still silence it). Coin sparkle kept.
 
 ## 4. Visuals & identity — ❌ THE REJECTION CAUSE → Batch A
 
 **Now:** hero = a small square; obstacles = banded rectangles; lore exists only as color math.
 **Standard (CG explicit):** "high quality… visually pleasing… originality of assets."
 
-- [ ] 🔷 **Sock hero:** drawn character (heel/toe silhouette, googly eyes, cloth flop on flip,
-  stretch on speed) — replaces the square. Shop shapes become sock patterns on the SAME body.
-- [ ] **World art per land:** layered parallax silhouettes themed per room-region (duct walls w/
-  rivets + lint drifts → floor joists + dust motes → garden bricks + fireflies → attic beams +
-  moonlight), pre-rendered to offscreen buffers (perf contract holds). Rooftop Sprint's
-  procedural-art pass is the proven template.
-- [ ] **Obstacles re-skinned:** red heat coils / lint clumps / hot vents — silhouette + seam
-  redraw, hitboxes and formations UNCHANGED (fairness data stays valid).
-- [ ] **Beacon made legible:** the pair-sock glowing on the horizon, visibly closer each land.
-- [ ] **Coins → buttons** (the currency everyone loses behind the couch). Same pools/physics.
-- [ ] Juice: flip squash-and-stretch, landing flump particles, static-spark trail at speed.
+- [x] 🔷 **Sock hero** (2026-07-10): baked sock sprite system (white mask tinted live for Chroma +
+  glows, 6 baked pattern socks) — heel/toe silhouette, googly eyes w/ glancing pupils, reactive
+  mouth, cloth-flop rotation with vertical motion, speed stretch, vertical mirror on the ceiling.
+  SHAPE shop axis became sock PATTERNS (Stripes/Polka/Argyle/Heel Pop/Holiday/Toe Hole) on the
+  same body — saves/costs/indexes unchanged.
+- [x] **World art per land** (2026-07-10): 4 themed parallax masks — dryer duct (riveted panels +
+  vent slats) → under-floor (joists + hanging studs) → garden wall (staggered bricks + stems) →
+  attic (rafters + box stacks); picked by land index, tinted per-land on the existing RIDGEBUF
+  pipeline (perf contract holds).
+- [x] **Obstacles re-skinned** (2026-07-10): style 0 = HEAT COIL (drifting glowing element rings),
+  style 1 = LINT CLUMP (mottled fluff, hot half-band, scalloped free edge carved INWARD so
+  visual ⊆ hitbox). Hitboxes/formations UNCHANGED — sim re-run confirms fairness holds.
+- [x] **Beacon made legible** (2026-07-10): the warm PAIR SOCK sprite drawn inside the horizon
+  glow — visibly a sock now, still grows/nears with best + lands crossed.
+- [x] **Coins → buttons** (2026-07-10): 4-hole stitched-rim button draw; currency glyph ◆ → ●
+  across HUD/tally/shop. Same pools/physics/values.
+- [x] Juice (2026-07-10): landing flump dust puffs (both surfaces), static-cling sparks above
+  305 px/s, cloth-flop + speed-stretch on the hero. (Flip squash was already in.)
+- Also fixed in passing: ready-screen "survives 1 hit" buff description overlapped the watch-ad
+  pill — description folded into the START BOOST header line.
 
 ## 5. Content depth & goals — ❌ "NEEDS CONTENT" → Batch C
 
@@ -129,9 +139,8 @@ itch/GameJolt) ✓. Rewarded-ad double moves to tally screen in Batch B (no poli
 
 ## Sequencing — ONE bar, ONE wave
 
-**BATCH A — Sock identity (the rejection lever):** hero + world art per land + obstacle re-skin +
-buttons + beacon legibility + juice + audio flavor pass. Re-run sim (hitboxes unchanged → expect
-identical numbers; verify anyway).
+**BATCH A — Sock identity (the rejection lever): ✅ DONE 2026-07-10** (see §3/§4 above). Sim
+re-run at HEAD confirms hitbox-identical fairness. Mike playtests feel/look next.
 **BATCH B — Score & tally:** values, tally count-up, popups, HUD counter, ad-double onto tally.
 **BATCH C — Campaign:** discrete lands + saves + level-complete ads + wardrobe milestones;
 upline only if the redesign proves fun (not a blocker).

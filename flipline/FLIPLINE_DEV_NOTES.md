@@ -4,6 +4,33 @@
 **HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
 **Read first:** this file + **`FLIPLINE_ROADMAP.md`** (the dev-owned backlog — CrazyGames-grade rework, 🧦 ODD SOCK identity pivot 2026-07-02) + memory `project_flipline_state.md` (full per-feature + submission history). Also `FLIPLINE_HANDOFF.md`, `FLIPLINE_lore_bible.md` (⚠️ pre-sock lore — superseded by ROADMAP's Odd Sock section), `FLIPLINE_store_copy.md` (⚠️ rewrite gated on final name, Batch D).
 
+## ✅ BATCH A — ODD SOCK visual identity (2026-07-10) — DONE, Mike playtests next
+The rejection lever, landed in master `index.html` only (portal builds regenerate in Batch D per
+the one-build-everywhere rule). What shipped:
+- **Sock hero sprite system:** `sockOutline`/`mkSock` bake a white sock mask + 6 pattern socks +
+  a warm pair-sock ONCE at boot; `sockSprite()` tints the mask live (Chroma / aura / shield glows)
+  on a shared 128² buffer — 3 ops, alloc-free; `blitSock()` draws. Googly eyes (glancing pupils),
+  reactive mouth, cloth-flop rotation w/ vy, speed stretch, vertical mirror on ceiling. `shapePath`
+  deleted. SHAPE shop axis = sock PATTERNS now (Stripes/Polka/Argyle/Heel Pop/Holiday/Toe Hole) —
+  same costs/indexes, saves compatible.
+- **Obstacle reskin:** style 0 HEAT COIL (drifting element rings), style 1 LINT CLUMP (hot
+  half-band, mottle tufts, scalloped free edge carved INWARD → visual ⊆ hitbox, fair). Hitboxes,
+  formations, physics UNTOUCHED.
+- **World art per land:** RIDGE → RIDGES[4] themed masks (dryer duct / under-floor / garden wall /
+  attic), picked by `(dist/ZONELEN)%4`, tinted on the unchanged RIDGEBUF pipeline.
+- **Buttons:** coin draw = 4-hole stitched button; currency glyph ◆→● everywhere (rarity ◆ kept).
+- **Pair-sock beacon:** SOCKGOLD sprite inside the horizon glow.
+- **Juice:** landing flump dust (`flump()`), static-cling sparks >305 px/s.
+- **Audio flavor:** flip = soft directional cloth "flump" (triangle+noise), dryer-rumble loop
+  under the music bed (one-time nodes through Music.gain — mute/duck still cover it).
+- **Fix in passing:** ready-screen buff description overlapped the watch-ad pill → folded into
+  the START BOOST header line (BDESC line removed).
+- **Verified:** `node --check` clean; booted + bot-driven to 230m in preview (screenshots in
+  `_shots/batchA_*.png`); 1,500-run sim re-run at HEAD → medians 390/553/897/1271/1408m,
+  0% early deaths — statistically identical to the pre-rework baseline. Name stays FLIPLINE
+  until Mike's Batch D call (tagline now "a lost sock, tumbling home — tap to flip").
+**NEXT: Mike eyeballs the sock/lands live, then Batch B (score & tally).**
+
 ## 🧭 NORTH STAR CHANGE (2026-07-02, Mike's call)
 No more speed-to-portals. **ONE quality bar (CrazyGames-grade), ONE build everywhere.** Full audit
 (guideline-grounded + 1,500-run bot-verified) + batch plan live in `FLIPLINE_ROADMAP.md`. Identity rework:

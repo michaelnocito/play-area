@@ -93,9 +93,9 @@ const Snd = {
     o.type=type||"triangle"; o.frequency.setValueAtTime(f,time);
     g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol||0.09,time+0.01); g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
     o.connect(g); g.connect(this.master); o.start(time); o.stop(time+dur+0.03); },
-  flip(up){ // action click + a whoosh that ASCENDS on an up-flip / DESCENDS on a down-flip — directional, smooth
-    if(up){ this.play(300,540,0.12,"sawtooth",0.09); this.burstN(900,3200,0.12,0.05,"bandpass"); }
-    else  { this.play(360,205,0.12,"sawtooth",0.10); this.burstN(2800,700,0.13,0.06,"bandpass"); } },
+  flip(up){ // soft cloth "flump" — still directional (ascends on up-flip / descends on down-flip), silly not techy
+    if(up){ this.play(220,430,0.13,"triangle",0.11); this.burstN(500,1700,0.13,0.05,"bandpass"); }
+    else  { this.play(300,150,0.13,"triangle",0.12); this.burstN(1500,420,0.14,0.06,"bandpass"); } },
   point(){ this.play(740,980,0.06,"triangle",0.07); },                  // soft milestone tick
   coin(){ const f=PENT[6+(Math.random()*3|0)]; this.play(f,f*1.5,0.06,"triangle",0.10); },   // bright in-key sparkle (high pentatonic)
   clean(n){ const f=PENT[Math.min(PENT.length-1,(n||1)-1+3)];           // skim chains WALK UP the A-minor scale → melodic combos
@@ -119,6 +119,10 @@ const Music = {
     this.gain=c.createGain(); this.gain.gain.value=0.0001; this.gain.connect(Snd.master);
     this.bassLP=c.createBiquadFilter(); this.bassLP.type="lowpass"; this.bassLP.frequency.value=420; this.bassLP.Q.value=6; this.bassLP.connect(this.gain);
     this.next=c.currentTime+0.12; this.step=0; this.lead=0;
+    { const rum=c.createBufferSource(); rum.buffer=Snd.noise; rum.loop=true;    // dryer rumble — a low looping bed under the music (one-time nodes)
+      const rlp=c.createBiquadFilter(); rlp.type="lowpass"; rlp.frequency.value=110; rlp.Q.value=0.6;
+      const rg2=c.createGain(); rg2.gain.value=0.4;
+      rum.connect(rlp); rlp.connect(rg2); rg2.connect(this.gain); rum.start(); }
     this.timer=setInterval(()=>this.sched(),25); this.applyMute(); },
   applyMute(){ if(!this.gain||!Snd.ctx) return; const tgt=(this.on&&!Snd.muted&&!Snd.platformMuted)?(this.flow?0.22:0.16):0.0001; this.gain.gain.setTargetAtTime(tgt,Snd.ctx.currentTime,0.1); },  // swell in Flow State
   sched(){ const c=Snd.ctx; if(!c) return; const sp16=(60/this.BPM)/4;
@@ -250,7 +254,9 @@ const OBPANEL="rgba(0,0,0,0.20)";       // internal tech-panel separator line
 /* ===== Precomputed art + lighting (built once at boot, then only blitted) =====
    Long Way Home is told wordlessly with light: a player-centred spotlight that breathes,
    a warm home-beacon on the horizon, and zones re-themed as lands. */
-let RIDGE=null, RIDGEBUF=null, RIDGECTX=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
+let RIDGES=null, RIDGEBUF=null, RIDGECTX=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
+let SOCKMASK=null, SOCKGOLD=null, SOCKPAT=[null,null,null,null,null,null,null], SOCKBUF=null, SOCKBCTX=null;
+const SOCKW=128;   // sock sprite sheet size; the silhouette spans ~2.67× its logical radius on it
 function mkCanvas(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
 function radialSprite(size,r,g,b){   // soft radial glow, baked ONCE; reused for spotlight + beacon
   const c=mkCanvas(size,size), x=c.getContext("2d");
@@ -261,13 +267,83 @@ function radialSprite(size,r,g,b){   // soft radial glow, baked ONCE; reused for
   gr.addColorStop(1,   "rgba("+r+","+g+","+b+",0)");
   x.fillStyle=gr; x.fillRect(0,0,size,size); return c;
 }
+/* ===== ODD SOCK hero sprites — baked ONCE at boot (clip/curves allowed HERE, never per-frame) ===== */
+function sockOutline(x,r){   // silhouette: cuff up, foot pointing right (direction of travel)
+  x.beginPath();
+  x.moveTo(-1.05*r,-1.0*r); x.lineTo(-0.05*r,-1.0*r);            // cuff
+  x.lineTo(-0.05*r,0.02*r); x.quadraticCurveTo(-0.05*r,0.2*r,0.18*r,0.2*r);  // shin → ankle
+  x.lineTo(0.72*r,0.2*r); x.quadraticCurveTo(1.14*r,0.24*r,1.08*r,0.64*r);   // foot top → toe
+  x.lineTo(0.96*r,1.0*r); x.lineTo(-0.72*r,1.0*r);               // toe base → sole
+  x.quadraticCurveTo(-1.1*r,1.0*r,-1.05*r,0.5*r);                // heel
+  x.closePath();
+}
+function mkSock(body,pat,acc){
+  const r=48, c=mkCanvas(SOCKW,SOCKW), x=c.getContext("2d");
+  x.translate(SOCKW/2,SOCKW/2);
+  sockOutline(x,r); x.fillStyle=body; x.fill();
+  x.save(); sockOutline(x,r); x.clip();
+  x.fillStyle="rgba(0,0,0,0.05)"; for(let yy=-r;yy<r;yy+=7) x.fillRect(-1.2*r,yy,2.4*r,2);   // knit ribbing
+  if(pat===1){ x.fillStyle=acc; for(let yy=-0.88*r;yy<r;yy+=0.44*r) x.fillRect(-1.2*r,yy,2.4*r,0.18*r); }  // stripes
+  else if(pat===2){ x.fillStyle=acc; for(let i=0;i<14;i++){ const px=-1.05*r+(i%5)*0.5*r+((i/5|0)%2)*0.25*r, py2=-0.9*r+(i/5|0)*0.55*r;
+      x.beginPath(); x.arc(px,py2,0.1*r,0,6.2832); x.fill(); } }                                            // polka dots
+  else if(pat===3){ x.fillStyle=acc; for(let i=0;i<8;i++){ const px=-1.0*r+(i%4)*0.55*r+((i/4|0)%2)*0.27*r, py2=-0.7*r+(i/4|0)*0.8*r, dz=0.24*r;
+      x.beginPath(); x.moveTo(px,py2-dz); x.lineTo(px+dz*0.7,py2); x.lineTo(px,py2+dz); x.lineTo(px-dz*0.7,py2); x.closePath(); x.fill(); }
+    x.strokeStyle="rgba(255,255,255,0.35)"; x.lineWidth=1.5;                                                // argyle cross-threads
+    x.beginPath(); x.moveTo(-1.2*r,-0.5*r); x.lineTo(1.2*r,0.7*r); x.moveTo(1.2*r,-0.5*r); x.lineTo(-1.2*r,0.7*r); x.stroke(); }
+  else if(pat===5){ x.strokeStyle=acc; x.lineWidth=0.13*r;                                                  // fair-isle zigzag rows
+    for(let yy=-0.75*r;yy<r;yy+=0.5*r){ x.beginPath();
+      for(let k=0;k<=12;k++){ const px=-1.2*r+k*0.2*r, zz=yy+(k%2)*0.16*r; if(k===0)x.moveTo(px,zz); else x.lineTo(px,zz); }
+      x.stroke(); } }
+  x.fillStyle=pat===4?acc:"rgba(0,0,0,0.18)";                                                               // heel + toe patches
+  x.beginPath(); x.arc(-0.72*r,0.78*r,0.42*r,0,6.2832); x.fill();
+  x.beginPath(); x.arc(1.0*r,0.75*r,0.42*r,0,6.2832); x.fill();
+  if(pat===6){ x.save(); x.translate(1.0*r,0.62*r); x.rotate(-0.5); x.scale(1,0.75);                        // the fabled toe hole
+    x.fillStyle="#0c0e14"; x.beginPath(); x.arc(0,0,0.26*r,0,6.2832); x.fill();
+    x.strokeStyle="rgba(255,255,255,0.4)"; x.lineWidth=2; x.beginPath(); x.arc(0,0,0.3*r,0,6.2832); x.stroke(); x.restore(); }
+  x.fillStyle=pat===4?acc:"rgba(255,255,255,0.45)"; x.fillRect(-1.05*r,-1.0*r,1.0*r,0.2*r);                 // cuff band
+  x.restore(); return c;
+}
+// pattern 0 (or any solid-tint request): tint the white mask on the shared buffer — 3 cheap ops, alloc-free
+function sockSprite(pat,tint){
+  if(pat>0) return SOCKPAT[pat];
+  const b=SOCKBCTX; b.globalCompositeOperation="source-over"; b.clearRect(0,0,SOCKW,SOCKW);
+  b.fillStyle=tint; b.fillRect(0,0,SOCKW,SOCKW);
+  b.globalCompositeOperation="destination-in"; b.drawImage(SOCKMASK,0,0);
+  b.globalCompositeOperation="source-over"; return SOCKBUF;
+}
+function blitSock(spr,r){ const s=r*2.7; ctx.drawImage(spr,-s/2,-s/2,s,s); }   // centred on the current transform
 function buildArt(){
-  // mid-parallax ridge — silhouettes baked as a WHITE MASK; tinted per-land each frame on RIDGEBUF
-  // (cool->warm with the zone) then wrap-blitted. Recedes behind the danger layer; never red.
-  RIDGE=mkCanvas(VW,VH); { const g=RIDGE.getContext("2d"); g.fillStyle="#fff";
-    let x=0; while(x<VW){ const w=20+((x*131)%18), hh=14+((x*97)%26);
-      g.fillRect(x,BOTY-hh,w,hh); g.fillRect(x,TOPY,w-4,10+((x*53)%16)); x+=w+8; } }
+  // per-land parallax silhouettes (Odd Sock house-world): 0 dryer duct · 1 under-floor · 2 garden wall · 3 attic.
+  // Baked as WHITE MASKS once; tinted per-land each frame on RIDGEBUF (cool->warm) then wrap-blitted. Never red.
+  RIDGES=[null,null,null,null];
+  for(let L=0;L<4;L++){ const c=mkCanvas(VW,VH), g=c.getContext("2d"); g.fillStyle="#fff";
+    if(L===0){        // DRYER DUCT — riveted panel sections below, vent slats above
+      let x=0; while(x<VW){ const w=36+((x*131)%20), hh=18+((x*97)%18);
+        g.fillRect(x,BOTY-hh,w,hh);
+        for(let rx=x+5;rx<x+w-4;rx+=9) g.clearRect(rx,BOTY-hh+3,2,2);       // rivet holes
+        g.clearRect(x+w-2,BOTY-hh,2,hh);                                    // panel seam
+        x+=w+6; }
+      for(let x2=8;x2<VW;x2+=54){ for(let s2=0;s2<3;s2++) g.fillRect(x2,TOPY+3+s2*5,34,2); }  // vent slats
+    } else if(L===1){ // UNDER-FLOOR — joist beams + caps, hanging studs above
+      for(let x2=0;x2<VW;x2+=42){ const hh=26+((x2*89)%14);
+        g.fillRect(x2,BOTY-hh,9,hh); g.fillRect(x2-6,BOTY-hh,21,4);
+        g.fillRect(x2+((x2*57)%2?14:20),TOPY,7,12+((x2*61)%10)); }
+    } else if(L===2){ // GARDEN WALL — staggered bricks w/ mortar lines + sprouting stems
+      for(let x2=0;x2<VW;x2+=26){ const off=((x2/26)|0)%2?7:0, hh=16+((x2*71)%10);
+        g.fillRect(x2+off,BOTY-hh,22,hh); g.clearRect(x2+off,BOTY-hh+6,22,1); g.clearRect(x2+off+10,BOTY-hh,1,6); }
+      for(let x2=18;x2<VW;x2+=74){ g.fillRect(x2,BOTY-30-((x2*43)%12),2,16); g.fillRect(x2-3,BOTY-32-((x2*43)%12),8,3); }
+    } else {          // ATTIC — sloped rafters above, stacked boxes below
+      for(let x2=0;x2<VW;x2+=64){ g.beginPath(); g.moveTo(x2,TOPY); g.lineTo(x2+30,TOPY+18); g.lineTo(x2+36,TOPY+18); g.lineTo(x2+6,TOPY); g.closePath(); g.fill(); }
+      for(let x2=10;x2<VW;x2+=58){ const bw=22+((x2*37)%14), bh=12+((x2*53)%10);
+        g.fillRect(x2,BOTY-bh,bw,bh); g.fillRect(x2+4,BOTY-bh-8,bw-9,8); }
+    }
+    RIDGES[L]=c; }
   RIDGEBUF=mkCanvas(VW,VH); RIDGECTX=RIDGEBUF.getContext("2d");
+  // sock sprites: white mask (tinted live for Chroma/glows), baked pattern socks, warm pair-sock beacon
+  SOCKBUF=mkCanvas(SOCKW,SOCKW); SOCKBCTX=SOCKBUF.getContext("2d");
+  SOCKMASK=mkSock("#ffffff",0,null);
+  for(let i=1;i<SKINS.length;i++) SOCKPAT[i]=mkSock("#e9e2d4",i,SKINS[i].col);
+  SOCKGOLD=mkSock("#ffd9a0",0,null);
   // emotional-light sprites (white spotlight + warm home glow) + reusable darkness buffer
   LIGHTSPR =radialSprite(128,255,255,255);
   LIGHTGOLD=radialSprite(128,255,205,120);
@@ -308,6 +384,8 @@ function spark(x,y){ for(let i=0;i<8;i++){ const a=Math.random()*6.283, s=30+Mat
   emit(x,y,Math.cos(a)*s,Math.sin(a)*s,0.30+Math.random()*0.25,1+(Math.random()*2|0),"#bff5e2"); } }
 function coinFx(x,y){ for(let i=0;i<9;i++){ const a=Math.random()*6.283, s=30+Math.random()*110;   // gold burst on coin grab
   emit(x,y,Math.cos(a)*s,Math.sin(a)*s-50,0.4+Math.random()*0.3,1+(Math.random()*2|0),"#ffcf5c"); } }
+function flump(x,y,up){ for(let i=0;i<6;i++){ const s=20+Math.random()*70;   // dusty landing puff (cloth on surface)
+  emit(x-4+Math.random()*8,y,(Math.random()-0.5)*90,up*(12+s*0.4),0.28+Math.random()*0.2,1+(Math.random()*2|0),"#cfc9bd"); } }
 
 /* ===== Glowing "surfing" trail (fixed ring buffer, zero alloc) ===== */
 const TRN=20, trail=[]; for(let i=0;i<TRN;i++) trail.push({x:0,y:0,on:false});
@@ -347,14 +425,16 @@ const BT=[0,0,0];                      // buff timers: 0 MAGNET, 1 SHIELD, 2 2×
    THREE independent axes: SHAPE (body silhouette), TRAIL (how the surf-trail renders),
    AURA (glow + trail colour). `reactive:true` = colour shifts with the zone palette →
    shown as a ◆ REACTIVE rarity badge; everything else is FIXED. */
+/* ODD SOCK rework: the SHAPE axis became sock PATTERNS on the one sock body.
+   `shape` = pattern id into the baked SOCKPAT sprites; col = pattern accent (null = zone-reactive tint). */
 const SKINS=[
-  {name:"Chroma", cost:0,   col:null,      shape:0, reactive:true},  // square, zone-reactive (default)
-  {name:"Orbit",  cost:30,  col:"#5ef2c2", shape:1},  // circle
-  {name:"Dart",   cost:50,  col:"#ffcf5c", shape:2},  // triangle (faces flip)
-  {name:"Gem",    cost:70,  col:"#c97bff", shape:3},  // diamond
-  {name:"Hex",    cost:100, col:"#5aa0ff", shape:4},  // hexagon
-  {name:"Nova",   cost:140, col:"#ff7a52", shape:5},  // star
-  {name:"Arrow",  cost:200, col:"#e8ecf1", shape:6}   // arrow (faces flip)
+  {name:"Chroma",   cost:0,   col:null,      shape:0, reactive:true},  // plain sock, zone-reactive tint (default)
+  {name:"Stripes",  cost:30,  col:"#5ef2c2", shape:1},
+  {name:"Polka",    cost:50,  col:"#ffcf5c", shape:2},
+  {name:"Argyle",   cost:70,  col:"#c97bff", shape:3},
+  {name:"Heel Pop", cost:100, col:"#5aa0ff", shape:4},  // accent heel + toe + cuff
+  {name:"Holiday",  cost:140, col:"#ff7a52", shape:5},  // fair-isle zigzag
+  {name:"Toe Hole", cost:200, col:"#e8ecf1", shape:6}   // the fabled hole in the toe
 ];
 const TRAILS=[
   {name:"Classic", cost:0,   r:0},                 // tapered squares (default)
@@ -765,19 +845,21 @@ function update(dt){
     const pcx=PX+PS/2;
     if(vy>=0){ for(const pl of plat){ if(!pl.on) continue;          // land on a platform top when descending across it
       if(pcx>pl.x && pcx<pl.x+pl.w && pyPrev+PS<=pl.y+4 && py+PS>=pl.y){ py=pl.y-PS; vy=0; onGround=true; gliding=false; break; } } }
-    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; onGround=true; gliding=false; }  // no squash on land (no bounce)
+    if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;flump(PX+PS/2,BOTY,-1);} py=BOTY-PS; vy=0; onGround=true; gliding=false; }  // no squash on land (no bounce)
     else if(py<TOPY){ py=TOPY; if(vy<0)vy=0; }
   } else {           // FLIP: gravity along gdir, snap floor<->ceiling (LOCKED feel)
     vy+=GRAV*gdir*dt; if(vy>MAXVY)vy=MAXVY; else if(vy<-MAXVY)vy=-MAXVY;
     py+=vy*dt;
-    if(py<TOPY){ if(vy<-40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=TOPY; vy=0; }
-    else if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;} py=BOTY-PS; vy=0; }
+    if(py<TOPY){ if(vy<-40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;flump(PX+PS/2,TOPY,1);} py=TOPY; vy=0; }
+    else if(py>BOTY-PS){ if(vy>40){bgPulse=Math.max(bgPulse,0.14);landT=0.22;flump(PX+PS/2,BOTY,-1);} py=BOTY-PS; vy=0; }
   }
   sq+=(1-sq)*Math.min(1,dt*14);   // ease squash back to 1
 
   // surfing trail (drift existing points with the world, add one at the player)
   for(const p of trail){ if(p.on){ p.x-=dx; if(p.x<-8)p.on=false; } }
   trailPush(PX+PS/2, py+PS/2);
+  // static-cling sparks once the run gets fast — the sock crackles at speed
+  if(speed>305 && Math.random()<dt*9) emit(PX-2, py+(gdir>0?PS-2:2), -60-Math.random()*80, (Math.random()-0.5)*40, 0.22, 1, "#bff0ff");
 
   // obstacles: move, recycle, collide, score
   spawnCd-=dx; if(spawnCd<=0 && xfade<=0){
@@ -857,19 +939,6 @@ function update(dt){
 /* ===== Draw ===== */
 function txt(s,x,y,size,col,w){ ctx.fillStyle=col; ctx.textAlign="center";
   ctx.font=(w||700)+" "+size+"px system-ui"; ctx.fillText(s,x,y); }
-// Build a player shape path at origin, radius r. `dir` (gravity facing) optional → defaults to gdir.
-function shapePath(shape,r,dir){ const d=dir===undefined?gdir:dir; ctx.beginPath();
-  switch(shape){
-    case 1: ctx.arc(0,0,r,0,6.2832); break;                                                   // circle
-    case 2: ctx.moveTo(0,r*d); ctx.lineTo(r,-r*0.8*d); ctx.lineTo(-r,-r*0.8*d); ctx.closePath(); break; // triangle
-    case 3: ctx.moveTo(0,-r); ctx.lineTo(r,0); ctx.lineTo(0,r); ctx.lineTo(-r,0); ctx.closePath(); break; // diamond
-    case 4: for(let i=0;i<6;i++){ const a=i*Math.PI/3+Math.PI/6,x=Math.cos(a)*r,y=Math.sin(a)*r; i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.closePath(); break; // hexagon
-    case 5: for(let i=0;i<10;i++){ const rr=i%2?r*0.45:r,a=-Math.PI/2+i*Math.PI/5,x=Math.cos(a)*rr,y=Math.sin(a)*rr; i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.closePath(); break; // star
-    case 6: ctx.moveTo(0,r*d); ctx.lineTo(r,-0.2*r*d); ctx.lineTo(0.4*r,-0.2*r*d); ctx.lineTo(0.4*r,-r*d);
-            ctx.lineTo(-0.4*r,-r*d); ctx.lineTo(-0.4*r,-0.2*r*d); ctx.lineTo(-r,-0.2*r*d); ctx.closePath(); break; // arrow
-    default: ctx.rect(-r,-r,2*r,2*r);                                                          // square
-  }
-}
 // One trail dot at (x,y); f=newness 0..1; alloc-free (colour passed in). Shared by gameplay + shop try-on.
 function trailDot(x,y,f,color,style){ ctx.fillStyle=color;
   if(style===2){ const s=2+Math.abs(Math.sin(t*7+x*0.25))*2.4*f; ctx.globalAlpha=0.10+f*0.5;   // Spark — twinkling motes
@@ -926,7 +995,7 @@ function draw(){
   { const rg=RIDGECTX;
     rg.globalCompositeOperation="source-over"; rg.clearRect(0,0,VW,VH);
     rg.fillStyle="rgb("+((28+ac[0]*0.15)|0)+","+((34+ac[1]*0.15)|0)+","+((44+ac[2]*0.15)|0)+")"; rg.fillRect(0,0,VW,VH);
-    rg.globalCompositeOperation="destination-in"; rg.drawImage(RIDGE,0,0);
+    rg.globalCompositeOperation="destination-in"; rg.drawImage(RIDGES[((dist/ZONELEN)|0)%4],0,0);   // house-world room per land
     rg.globalCompositeOperation="source-over"; }
   ridgeOff=(worldX*0.30)%VW; { const rx=-(ridgeOff|0); ctx.imageSmoothingEnabled=true; ctx.globalAlpha=0.20;
     ctx.drawImage(RIDGEBUF,rx,0); ctx.drawImage(RIDGEBUF,rx+VW,0); ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false; }
@@ -965,34 +1034,44 @@ function draw(){
     ctx.fillStyle="rgba(255,255,255,0.5)"; ctx.fillRect(x,pl.y,pl.w,1);
     ctx.fillStyle="rgba(0,0,0,0.20)"; ctx.fillRect(x,pl.y+5,pl.w,3); }
 
-  // obstacles (always red; tech-panel look: dual seam, panel lines, dual bevel, corner accents)
-  const seamY=(t*70)|0, seamY2=(t*47)|0;   // two seams marching in opposite directions
+  // obstacles (always red — pillar). Odd Sock reskin: style 0 = HEAT COIL (glowing heater rings),
+  // style 1 = LINT CLUMP (mottled fluff, scalloped free edge carved INWARD → visual ⊆ hitbox, fair).
+  const seamY=(t*70)|0;   // ring shimmer marches along the coil
   for(const o of obs){ if(!o.on) continue;
     const ry=o.side===0 ? BOTY-o.h : TOPY, ix=o.x|0;
     const near=Math.max(0,1-Math.abs((o.x+o.w/2)-PX)/220);
     if(o.k===1){ drawCritter(ix,ry,o,near); continue; }      // mine enemy (stomp the head)
     if(segType===2){ drawSpike(ix,ry,o,near); continue; }    // mine red spike (jump only)
-    ctx.fillStyle=OBGLOW[(near*7)|0]; ctx.fillRect(ix-4,ry-4,o.w+8,o.h+8);              // 1 tension glow (wider halo)
-    ctx.fillStyle="#5e0a12"; ctx.fillRect(ix,ry,o.w,o.h);                               // 2 dark base / frame
-    ctx.fillStyle="#b82034"; ctx.fillRect(ix+2,ry,o.w-4,o.h);                           // 3 body (richer dark-red)
-    const bh=(o.h*0.52)|0;                                                              // 4 volume band — hot half at play edge
-    ctx.fillStyle="#e8344f";
-    if(o.side===0) ctx.fillRect(ix+2,ry,o.w-4,bh); else ctx.fillRect(ix+2,ry+o.h-bh,o.w-4,bh);
-    const p1=(o.h*0.30)|0, p2=(o.h*0.62)|0;                                            // 4b tech panel separator lines
-    ctx.fillStyle=OBPANEL; ctx.fillRect(ix+2,ry+p1,o.w-4,1); ctx.fillRect(ix+2,ry+p2,o.w-4,1);
-    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(ix+2,ry,2,o.h);                // 5 left highlight bevel
-    ctx.fillStyle="rgba(0,0,0,0.16)"; ctx.fillRect(ix+o.w-4,ry,2,o.h);                 // 5b right shadow bevel (depth)
-    const sy=ry+((seamY+ix)%o.h);                                                       // 6 forward energy seam
-    ctx.fillStyle=OBSEAM; ctx.fillRect(ix+3,sy|0,o.w-6,2);
-    const sy2=ry+(o.h-1-((seamY2+ix)%o.h));                                            // 6b reverse energy seam (counterpoint)
-    ctx.fillStyle=OBSEAM2; ctx.fillRect(ix+4,sy2|0,o.w-8,1);
-    ctx.fillStyle="#ff7184";                                                            // 7 hot danger lip
-    if(o.side===0) ctx.fillRect(ix,ry,o.w,5); else ctx.fillRect(ix,ry+o.h-5,o.w,5);
-    ctx.fillStyle="rgba(0,0,0,0.28)";                                                   // 8 dark anchored edge
-    if(o.side===0) ctx.fillRect(ix,ry+o.h-3,o.w,3); else ctx.fillRect(ix,ry,o.w,3);
-    if(o.style===1){ ctx.fillStyle=bgFill;                                              // 8b pixel corner bevel: punches 4×4 off danger-lip corners → angular/crystalline silhouette
-      if(o.side===0){ ctx.fillRect(ix,ry,4,4); ctx.fillRect(ix+o.w-4,ry,4,4); }
-      else { ctx.fillRect(ix,ry+o.h-4,4,4); ctx.fillRect(ix+o.w-4,ry+o.h-4,4,4); } }
+    ctx.fillStyle=OBGLOW[(near*7)|0]; ctx.fillRect(ix-4,ry-4,o.w+8,o.h+8);              // tension glow (heat haze)
+    if(o.style===1){                                                                    // — LINT CLUMP —
+      const seed=(o.w*73+o.h*131)>>>0;
+      ctx.fillStyle="#5e0a12"; ctx.fillRect(ix,ry,o.w,o.h);                             // dark root
+      ctx.fillStyle="#a81c30"; ctx.fillRect(ix+1,ry+1,o.w-2,o.h-2);                     // fluff body
+      const lh=(o.h*0.45)|0; ctx.fillStyle="#cf2a42";                                   // hot half toward the play edge
+      if(o.side===0) ctx.fillRect(ix+1,ry+1,o.w-2,lh); else ctx.fillRect(ix+1,ry+o.h-1-lh,o.w-2,lh);
+      ctx.fillStyle="#ff7184";                                                          // hot lip first…
+      if(o.side===0) ctx.fillRect(ix,ry,o.w,5); else ctx.fillRect(ix,ry+o.h-5,o.w,5);
+      ctx.fillStyle=bgFill;                                                             // …then scallops carve a fluffy silhouette
+      for(let sx2=ix+2;sx2<ix+o.w-4;sx2+=7){ const h3=((sx2-ix)*37+seed)%3;
+        if(o.side===0) ctx.fillRect(sx2,ry,4,2+h3); else ctx.fillRect(sx2,ry+o.h-(2+h3),4,2+h3); }
+      ctx.fillStyle="#d63b52";                                                          // mottle tufts
+      for(let k=0;k<10;k++){ const h2=(seed+k*2654435761)>>>0, mx=ix+3+h2%(o.w-6), my=ry+5+(h2>>8)%(Math.max(1,o.h-10));
+        ctx.fillRect(mx,my,2+(h2>>16&1),2+(h2>>17&1)); }
+      ctx.fillStyle="rgba(0,0,0,0.28)";                                                 // anchored edge
+      if(o.side===0) ctx.fillRect(ix,ry+o.h-3,o.w,3); else ctx.fillRect(ix,ry,o.w,3);
+    } else {                                                                            // — HEAT COIL —
+      ctx.fillStyle="#5e0a12"; ctx.fillRect(ix,ry,o.w,o.h);                             // frame
+      ctx.fillStyle="#b82034"; ctx.fillRect(ix+2,ry,o.w-4,o.h);                         // element body
+      const ph=(seamY+ix)%7;                                                            // rings drift = live current
+      ctx.fillStyle="#e8344f"; for(let yy=ry+2+ph;yy<ry+o.h-3;yy+=7) ctx.fillRect(ix+2,yy,o.w-4,3);
+      ctx.fillStyle=OBSEAM;    for(let yy=ry+2+ph;yy<ry+o.h-3;yy+=7) ctx.fillRect(ix+3,yy+1,o.w-6,1);   // white-hot core per ring
+      ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(ix+2,ry,2,o.h);              // left bevel
+      ctx.fillStyle="rgba(0,0,0,0.16)"; ctx.fillRect(ix+o.w-4,ry,2,o.h);                // right bevel
+      ctx.fillStyle="#ff7184";                                                          // hot danger lip
+      if(o.side===0) ctx.fillRect(ix,ry,o.w,5); else ctx.fillRect(ix,ry+o.h-5,o.w,5);
+      ctx.fillStyle="rgba(0,0,0,0.28)";                                                 // anchored edge
+      if(o.side===0) ctx.fillRect(ix,ry+o.h-3,o.w,3); else ctx.fillRect(ix,ry,o.w,3);
+    }
   }
 
   // surfing trail — style by equipped TRAIL cosmetic, coloured by equipped AURA (newest=brightest)
@@ -1004,23 +1083,32 @@ function draw(){
   if(BT[0]>0){ const mr=MAG_R*(0.6+0.4*Math.abs(Math.sin(t*2.4)));   // MAGNET field — breathing cyan pull-ring (reads the radius; plain arcs, no glow churn)
     ctx.strokeStyle="rgba(90,220,255,0.16)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,mr,0,6.2832); ctx.stroke();
     ctx.fillStyle="rgba(90,220,255,0.06)"; ctx.beginPath(); ctx.arc(cx,cy,PS*1.5,0,6.2832); ctx.fill(); }
-  ctx.save(); ctx.translate(cx,cy); ctx.scale(2-sq,sq);
-  const shp=SKINS[equipped].shape;
-  if(BT[1]>0){ const pul=5+4*Math.sin(t*11); ctx.fillStyle="rgba(255,212,90,0.38)"; shapePath(shp,PS/2+pul); ctx.fill(); }
-  ctx.fillStyle=auraG; shapePath(shp,PS/2+3); ctx.fill();
-  ctx.fillStyle=pcol;  shapePath(shp,PS/2);   ctx.fill();
-  // expressive face: eyes glance with motion, mouth reacts (whoa / worried / grin / neutral)
-  ctx.fillStyle="rgba(12,14,20,0.9)";
+  // ODD SOCK hero: cloth flop tips with vertical motion; squash on flip; slight stretch with speed;
+  // vertical mirror on the ceiling (the sock genuinely flips). Sprites baked at boot — blits only here.
+  ctx.save(); ctx.translate(cx,cy);
+  const spdF=Math.max(0,(speed-SPEED0)/(SPEEDMX-SPEED0));
+  ctx.rotate(Math.max(-0.3,Math.min(0.3,vy*0.00045))*gdir);
+  ctx.scale((2-sq)*(1+spdF*0.08), sq*gdir);
+  ctx.imageSmoothingEnabled=true;
+  const pat=SKINS[equipped].shape;
+  if(BT[1]>0){ ctx.globalAlpha=0.38; blitSock(sockSprite(0,"#ffd45a"),PS/2+5+4*Math.sin(t*11)); ctx.globalAlpha=1; }  // SHIELD pulse silhouette
+  blitSock(sockSprite(0,auraG),PS/2+3);        // aura glow (alpha baked into the rgba tint)
+  blitSock(sockSprite(pat,pcol),PS/2);         // the sock (Chroma tints live; patterns are baked)
+  ctx.imageSmoothingEnabled=false;
+  // googly eyes on the cuff — whites + pupils that glance with motion; mouth reacts
   const lk=Math.max(-1.4,Math.min(1.4,vy*0.004));
-  ctx.fillRect(-4,-2+lk,2.6,2.6); ctx.fillRect(1.4,-2+lk,2.6,2.6);
-  if(landT>0){ ctx.fillRect(-3,3,6,1.6); ctx.fillRect(-4,2,1.8,1.8); ctx.fillRect(2.2,2,1.8,1.8); } // grin
-  else if(vy<-260){ ctx.fillRect(-1.8,2.2,3.6,3.6); }                  // whoa (launching)
-  else if(vy>260){ ctx.fillRect(-3,2.4,6,3.4); }                       // worried (falling fast)
-  else { ctx.fillRect(-2.4,3,4.8,1.6); }                               // neutral
+  ctx.fillStyle="#ffffff";
+  ctx.beginPath(); ctx.arc(-5.2,-3.2,2.5,0,6.2832); ctx.arc(-0.6,-3.2,2.5,0,6.2832); ctx.fill();
+  ctx.fillStyle="#0c0e14";
+  ctx.fillRect(-5.0,-4.0+lk,1.8,1.8); ctx.fillRect(-0.4,-4.0+lk,1.8,1.8);
+  if(landT>0){ ctx.fillRect(-4.6,0.6,4.6,1.4); ctx.fillRect(-5.4,-0.2,1.5,1.5); ctx.fillRect(-0.8,-0.2,1.5,1.5); } // grin
+  else if(vy*gdir<-260){ ctx.fillRect(-3.6,-0.4,3.2,3.2); }            // whoa (launching)
+  else if(vy*gdir>260){ ctx.fillRect(-4.4,0,4.6,2.6); }                // worried (falling fast)
+  else { ctx.fillRect(-4.2,0.6,3.8,1.3); }                             // neutral
   ctx.restore();
 
-  if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ◆" rising from the player
-    txt("+"+coinPopV+" ◆", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
+  if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.8);   // coin-grab "+N ●" rising from the player
+    txt("+"+coinPopV+" ●", PX+26, py-6-(0.7-coinPopT)*22, 12, "#ffe08a", 800); ctx.globalAlpha=1; }
   if(warpFx>0){ ctx.globalAlpha=Math.min(1,warpFx*2);   // nail-it "WARP +Nm" flourish
     txt("WARP +"+WARP_M+"m", PX+34, py-22-(0.6-warpFx)*26, 13, "#7af0ff", 800); ctx.globalAlpha=1; }
 
@@ -1045,6 +1133,7 @@ function draw(){
     const bgx=VW*(0.72-zr*0.05), bgy=12+zr*4;
     ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=Math.min(0.6,0.12+bl*0.24+zr*0.10+beaconPulse*0.28);
     ctx.drawImage(LIGHTGOLD, bgx-bsz, bgy-bsz, bsz*2, bsz*2);
+    ctx.drawImage(SOCKGOLD, bgx-bsz*0.55, bgy-bsz*0.55, bsz*1.1, bsz*1.1);   // the PAIR SOCK, glowing on the horizon — home
     // "new land" sweep: the new realm's light washes across once on each zone crossing (calmer with reduce-flashing)
     if(zoneSweep>0){ const sw=zoneSweep, bx=VW*(1.15-(1-sw)*1.3), amp=lowFx?0.10:0.22;
       ctx.globalAlpha=amp*sw; ctx.fillStyle="rgb("+ac[0]+","+ac[1]+","+ac[2]+")"; ctx.fillRect(bx-34,0,68,VH);
@@ -1057,12 +1146,17 @@ function draw(){
   ctx.imageSmoothingEnabled=true;
   for(const c of col){ if(!c.on) continue; const bx=c.x, by=c.y+Math.sin(t*4+c.bob)*2;
     ctx.globalAlpha=Math.max(0.5,1-Math.abs(bx-PX)/300);   // fade far loot so a distant dimmed-red jut stays the salient signal
-    if(c.kind===0){ const r=4+Math.sin(t*5+c.bob)*0.6;
+    if(c.kind===0){ const r=4+Math.sin(t*5+c.bob)*0.6;                         // BUTTON (the currency everyone loses behind the couch)
       ctx.fillStyle="rgba(255,207,92,0.28)";                                   // soft gold halo
-      ctx.beginPath(); ctx.moveTo(bx,by-r-1.6); ctx.lineTo(bx+r+1.6,by); ctx.lineTo(bx,by+r+1.6); ctx.lineTo(bx-r-1.6,by); ctx.closePath(); ctx.fill();
-      ctx.fillStyle="#ffcf5c";                                                 // gold diamond
-      ctx.beginPath(); ctx.moveTo(bx,by-r); ctx.lineTo(bx+r,by); ctx.lineTo(bx,by+r); ctx.lineTo(bx-r,by); ctx.closePath(); ctx.fill();
-      ctx.fillStyle="rgba(255,255,255,0.78)"; ctx.fillRect(bx-0.9,by-0.9,1.8,1.8);  // white sparkle → coins pop on warm zones
+      ctx.beginPath(); ctx.arc(bx,by,r+2,0,6.2832); ctx.fill();
+      ctx.fillStyle="#ffcf5c";                                                 // button face
+      ctx.beginPath(); ctx.arc(bx,by,r,0,6.2832); ctx.fill();
+      ctx.strokeStyle="rgba(160,110,40,0.9)"; ctx.lineWidth=1;                 // stitched rim
+      ctx.beginPath(); ctx.arc(bx,by,r-1,0,6.2832); ctx.stroke();
+      ctx.fillStyle="rgba(120,80,20,0.9)";                                     // 4 thread holes
+      ctx.fillRect(bx-1.7,by-1.7,1.3,1.3); ctx.fillRect(bx+0.4,by-1.7,1.3,1.3);
+      ctx.fillRect(bx-1.7,by+0.4,1.3,1.3); ctx.fillRect(bx+0.4,by+0.4,1.3,1.3);
+      ctx.fillStyle="rgba(255,255,255,0.78)"; ctx.fillRect(bx-r+0.6,by-r+0.6,1.5,1.5);  // glint → buttons pop on warm zones
     } else { const k=c.kind-1, sz=12+Math.sin(t*6+c.bob)*1.5;
       ctx.globalCompositeOperation="lighter";
       ctx.drawImage(ORBSPR[k], bx-sz, by-sz, sz*2, sz*2);                       // buff-colour halo (which buff)
@@ -1090,7 +1184,7 @@ function draw(){
     // HUD scrim — a single translucent band keeps score + coin readable across every zone (gold-on-gold luminance collision in warm zones)
     ctx.fillStyle="rgba(0,0,0,0.25)"; ctx.fillRect(0,0,VW,WALL);
     txt(sc+"m",VW/2,WALL-6,13,"#aeb8cc",700);
-    txt("◆ "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);
+    txt("● "+((sc/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);
     // pause chip — small corner affordance so phone-call recovery + intentional pause is always available
     ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_PAUSE.x,R_PAUSE.y,R_PAUSE.w,R_PAUSE.h);
     ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16);
@@ -1126,7 +1220,7 @@ function draw(){
   else if(mode==="shop"){ drawShop(); }
   else if(mode==="ready"){
     txt("FLIPLINE",VW/2,VH/2-18,34,"#ffcf5c",800);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to flip — thread the red",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("a lost sock, tumbling home — tap to flip",VW/2,VH/2+12,14,"#aeb8cc",600); ctx.globalAlpha=1;
     if(best>0) txt("BEST  "+best+"m",VW/2,VH/2+52,11,"#aeb8cc",700);                   // give a first-time player a number to chase
     R_SHOPBTN.y=VH/2+72;   // boost-row-only screen: shop sits below it, no dead-screen crowding to account for
     shopBtn(); drawBoostRow();
@@ -1134,7 +1228,7 @@ function draw(){
     txt("CRASHED",VW/2,VH/2-32,30,"#ff5468",800);
     txt(score()+"m",VW/2,VH/2+4,18,"#e8ecf1",700);
     txt(score()>=best?"★ NEW BEST ★":"best  "+best+"m",VW/2,VH/2+26,12,score()>=best?"#ffcf5c":"#aeb8cc",700);
-    txt("+◆ "+lastEarned+"   (◆ "+coins+")",VW/2,VH/2+42,12,"#ffcf5c",700);
+    txt("+● "+lastEarned+"   (● "+coins+")",VW/2,VH/2+42,12,"#ffcf5c",700);
     // explicit RETRY pill — rest of the dead screen is now inert so a casual tap on the score won't restart the run
     ctx.fillStyle="rgba(94,242,194,0.16)"; ctx.fillRect(R_RETRY.x,R_RETRY.y,R_RETRY.w,R_RETRY.h);
     ctx.globalAlpha=0.7+0.3*Math.sin(t*5); txt("▶  TAP TO RETRY",VW/2,R_RETRY.y+16,12,"#9bf0d0",800); ctx.globalAlpha=1;
@@ -1143,12 +1237,12 @@ function draw(){
     let dy=R_RETRY.y+R_RETRY.h+5;
     const showDouble=!doubledFlag && lastEarned>=5;
     if(showDouble){ R_DOUBLE.y=dy; ctx.fillStyle="rgba(255,207,92,0.12)"; ctx.fillRect(R_DOUBLE.x,R_DOUBLE.y,R_DOUBLE.w,R_DOUBLE.h);
-      txt("▶ watch ad → DOUBLE coins (+◆ "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); dy+=R_DOUBLE.h+5; }
+      txt("▶ watch ad → DOUBLE buttons (+● "+lastEarned+")",VW/2,R_DOUBLE.y+15,11,"#ffcf5c",700); dy+=R_DOUBLE.h+5; }
     R_SHOPBTN.y=dy; shopBtn(); dy+=R_SHOPBTN.h+8;
     // the coin-double offer and the next-unlock carrot are both upsell nudges — showing only one at a
     // time (prioritising the ad offer when it applies) keeps the 270px-tall screen from overflowing
     const nu=!showDouble && nextUnlock();
-    if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ◆ "+coins+" / "+nu.cost,VW/2,dy+8,10,"#9bf0d0",700);
+    if(nu){ txt("NEXT UNLOCK — "+nu.name+"   ● "+coins+" / "+nu.cost,VW/2,dy+8,10,"#9bf0d0",700);
       const bw=150,bx=VW/2-bw/2,by=dy+18,pr=Math.min(1,coins/nu.cost);
       ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(bx,by,bw,4);
       ctx.fillStyle="#ffcf5c"; ctx.fillRect(bx,by,bw*pr,4); }
@@ -1157,23 +1251,23 @@ function draw(){
 
 function shopBtn(){
   ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_SHOPBTN.x,R_SHOPBTN.y,R_SHOPBTN.w,R_SHOPBTN.h);
-  txt("SHOP   ◆ "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);
+  txt("SHOP   ● "+coins, VW/2, R_SHOPBTN.y+18, 12, "#ffcf5c", 700);
 }
 const BDESC=["pulls coins to you","survives 1 hit","doubles your score"];   // plain-language tooltip per buff (FTUE: name what it actually does)
 function drawBoostRow(){   // pre-run free pick-1 buff + opt-in rewarded "all 3" (the 'not ad-spam' flex)
-  txt(pickBuff>=0?"START BOOST — free":"START BOOST — tap one (free)",VW/2,33,10,"#9bf0d0",700);
+  // header carries the picked buff's plain-language description — a separate line under the chips collided with the ad pill
+  txt(pickBuff>=0?"START BOOST — "+BDESC[pickBuff]:"START BOOST — tap one (free)",VW/2,33,10,"#9bf0d0",700);
   for(let i=0;i<3;i++){ const r=R_BUFF[i], sel=pickBuff===i;
     ctx.fillStyle=sel?BUFFSEL[i]:"rgba(255,255,255,0.06)"; ctx.fillRect(r.x,r.y,r.w,r.h);
     if(sel){ ctx.strokeStyle=ORBCSS[i]; ctx.lineWidth=2; ctx.strokeRect(r.x+1,r.y+1,r.w-2,r.h-2); }
     txt(BSHORT[i],r.x+r.w/2,r.y+16,11,ORBCSS[i],700); }
-  if(pickBuff>=0) txt(BDESC[pickBuff],VW/2,R_BUFF[0].y+R_BUFF[0].h+11,10,"#aeb8cc",600);   // selected-buff plain-language description
   ctx.fillStyle="rgba(255,255,255,0.05)"; ctx.fillRect(R_BUFFALL.x,R_BUFFALL.y,R_BUFFALL.w,R_BUFFALL.h);
   ctx.globalAlpha=0.85+0.15*Math.sin(t*4); txt("▶ watch ad → start with ALL 3",VW/2,R_BUFFALL.y+15,11,"#ffcf5c",700); ctx.globalAlpha=1;
 }
 function drawShop(){
   ctx.fillStyle="rgba(8,10,16,0.9)"; ctx.fillRect(0,0,VW,VH);
   txt("COSMETICS",VW/2,30,20,"#e8ecf1",800);
-  txt("◆ "+coins,VW/2,48,12,"#ffcf5c",700);
+  txt("● "+coins,VW/2,48,12,"#ffcf5c",700);
 
   // category tabs (SHAPE / TRAIL / AURA)
   const TN=["SHAPE","TRAIL","AURA"];
@@ -1190,10 +1284,13 @@ function drawShop(){
   const tIt=TRAILS[sel[1]], trailCol=tIt.reactive?rc:auraCol;
   for(let n=0;n<10;n++){ const f=1-n/10, x=cx-22-n*9, y=cy+Math.sin(t*4+n*0.55)*3; trailDot(x,y,f,trailCol,tIt.r); }
   ctx.globalAlpha=1;
-  ctx.save(); ctx.translate(cx,cy); const bob=1+0.04*Math.sin(t*4); ctx.scale(bob,bob);
-  ctx.globalAlpha=0.30; ctx.fillStyle=auraCol; shapePath(SKINS[sel[0]].shape,20,1); ctx.fill(); ctx.globalAlpha=1;
-  ctx.fillStyle=bodyCol; shapePath(SKINS[sel[0]].shape,15,1); ctx.fill();
-  ctx.fillStyle="rgba(12,14,20,0.9)"; ctx.fillRect(-4,-2,2.6,2.6); ctx.fillRect(1.4,-2,2.6,2.6); ctx.fillRect(-2.4,3,4.8,1.6);
+  ctx.save(); ctx.translate(cx,cy); const bob=1+0.04*Math.sin(t*4); ctx.scale(bob*1.875,bob*1.875);   // sock drawn at hero scale, blown up for the pedestal
+  ctx.imageSmoothingEnabled=true;
+  ctx.globalAlpha=0.30; blitSock(sockSprite(0,auraCol),PS/2+3); ctx.globalAlpha=1;
+  blitSock(sockSprite(SKINS[sel[0]].shape,bodyCol),PS/2);
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle="#ffffff"; ctx.beginPath(); ctx.arc(-5.2,-3.2,2.5,0,6.2832); ctx.arc(-0.6,-3.2,2.5,0,6.2832); ctx.fill();
+  ctx.fillStyle="#0c0e14"; ctx.fillRect(-5.0,-3.6,1.8,1.8); ctx.fillRect(-0.4,-3.6,1.8,1.8); ctx.fillRect(-4.2,0.6,3.8,1.3);
   ctx.restore();
 
   ctx.globalAlpha=0.7+0.3*Math.sin(t*5);
@@ -1205,7 +1302,7 @@ function drawShop(){
 
   const isOwned=own.includes(i); let label, lcol;
   if(isOwned){ const eq=catEquipped(c)===i; label=eq?"EQUIPPED":"EQUIP"; lcol=eq?"#6f7a92":"#37e29a"; }
-  else { label="BUY   ◆ "+it.cost; lcol=coins>=it.cost?"#ffcf5c":"#6f7a92"; }
+  else { label="BUY   ● "+it.cost; lcol=coins>=it.cost?"#ffcf5c":"#6f7a92"; }
   ctx.fillStyle="rgba(255,255,255,0.08)"; ctx.fillRect(R_ACT.x,R_ACT.y,R_ACT.w,R_ACT.h);
   txt(label,VW/2,R_ACT.y+20,14,lcol,800);
 
