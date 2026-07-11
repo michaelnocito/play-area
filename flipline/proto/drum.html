@@ -51,6 +51,11 @@ const GHW=0.24;                        // one garment's angular half-width; hitb
    Balance: needs ~3-5s of real sliding to charge, grants ~1.6s safety + ~0.4s of distance —
    costs more time to earn than it saves, so it's a tool, not a win button. No charging mid-ride. */
 const RIDE_T=1.6, RIDE_BOOST=1.25;
+/* CATCH & FLING — some laundry tumbles in COOL (icy, harmless). Tap as it reaches the rim to
+   snatch it and fling it into the vortex: +5 buttons +0.25 static (rubbing cloth = charge).
+   The risk is POSITIONING: cool pieces land amid hot patterns — chasing the catch drags you
+   toward danger. Miss = it just tumbles past (a lost prize, never a punishment). */
+const CATCH_LO=0.86, CATCH_HI=1.08, CATCH_ARC=GHW+0.24, CATCH_BTN=5, CATCH_CLING=0.25;
 const LEVEL_LEN=600;                   // metres to THE LOST SOCK VORTEX (~35s run — 400 played out in ~20s, too thin for the orb cycle)
 const HP_MAX=3, MEND_COST=25;          // 3 hits → the sock unravels; buttons buy a mend between stages (🔷 Mike)
 const MPS=30;                          // metres per second base (scales with speed ramp)
@@ -144,6 +149,9 @@ function mkGarment(kind,pal){ const W=72,c=mkCanvas(W,W),x=c.getContext("2d"); x
   return c; }
 const GARM_HOT=[]; for(let k=0;k<3;k++) for(let p=0;p<PAL_HOT.length;p++) GARM_HOT.push(mkGarment(k,PAL_HOT[p]));   // kind*4+palette
 const GARM_BG =[]; for(let k=0;k<3;k++) GARM_BG.push(mkGarment(k,PAL_BG[k]));
+const PAL_COOL={body:"#7fb6d9",rim:"#eaf7ff",dark:"#2f5875",fold:"#5a92b5"};   // COOL laundry — catchable, never harmful
+const GARM_COOL=[mkGarment(0,PAL_COOL),mkGarment(1,PAL_COOL),mkGarment(2,PAL_COOL)];
+const COOLGLOW=glowSprite(64,190,235,255);
 
 /* ===== State ===== */
 let mode="ready";                          // ready | play | dead | win
@@ -177,7 +185,7 @@ function angDiff(x,y){ let d=(x-y)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TA
 function zBase(){ return ZSPD0*(1+0.08*(stage-1)); }   // each stage tumbles faster
 function reset(){ a=Math.PI/2; steer=0; cling=0; rideT=0; zspd=zBase(); dist=0; spawnCd=1.4; patCd=0;
   for(const o of obs)o.on=false; for(const c of col)c.on=false; shake=0; flash=0;
-  shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; patchCd=12; }
+  shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; patchCd=12; flingT=0; }
 function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
 function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
 
@@ -194,6 +202,9 @@ function spawnPattern(){
   else if(r<0.75){ garment(pa-D); garment(pa); garment(pa+D); }                    // wall of 3 — two seams + the long way
   else if(r<0.9){ const n=5; for(let k=0;k<n;k++) garment(pa+k*TAU/n); }           // ring of 5 — five ~0.78rad gaps
   else { for(let k=0;k<3;k++) garment(pa+k*1.5,k*0.10); }                          // spiral triplet
+  if(Math.random()<0.35){ let ca=Math.random()*TAU, tries=6;                       // ~1 in 3 waves carries a COOL catchable
+    while(tries-->0 && !colClear(ca,Z0+0.06)) ca=Math.random()*TAU;
+    if(tries>0){ const o=alloc(); if(o){ o.on=true; o.ang=ca; o.hw=GHW; o.z=Z0+0.06; o.kind=1; o.gi=(Math.random()*3)|0; } } }
 }
 
 /* ===== Input ===== */
@@ -201,7 +212,7 @@ const keys={};
 addEventListener("keydown",e=>{
   if(["ArrowLeft","ArrowRight","a","A","d","D"," ","ArrowUp"].includes(e.key)) e.preventDefault();
   if(e.repeat) return; keys[e.key]=true;
-  if(e.key===" "||e.key==="ArrowUp"){ if(mode==="play") tryLeap(); else advance(); }
+  if(e.key===" "||e.key==="ArrowUp"){ if(mode==="play") tryTap(); else advance(); }
 });
 addEventListener("keyup",e=>{ keys[e.key]=false; });
 const touches={};   // id -> {x, t0, moved}
@@ -218,11 +229,19 @@ addEventListener("pointerdown",e=>{ e.preventDefault(); Snd.ensure();
     advance(); return; }
   touches[e.pointerId]={x:e.clientX,t0:performance.now(),moved:false}; },{passive:false});
 addEventListener("pointerup",e=>{ const tc=touches[e.pointerId]; delete touches[e.pointerId];
-  if(mode==="play" && tc && performance.now()-tc.t0<170 && !tc.moved) tryLeap(); });
+  if(mode==='play' && tc && performance.now()-tc.t0<170 && !tc.moved) tryTap(); });
 addEventListener("pointercancel",e=>{ delete touches[e.pointerId]; });
 addEventListener("pointermove",e=>{ const tc=touches[e.pointerId]; if(tc && Math.abs(e.clientX-tc.x)>14) tc.moved=true; });
 function advance(){ if(mode==="ready"||mode==="dead") start(); else if(mode==="stage") startStage(); else if(mode==="win"){ mode="ready"; } }
 function tryLeap(){ if(cling>=1 && rideT<=0){ cling=0; rideT=RIDE_T; Snd.leap(); } }   // spend static → ride the centre current
+let flingT=0, flingAng=0, flingZ=0, flingGi=0;                                          // caught garment sailing into the vortex
+function tryCatch(){ if(rideT>0) return false;
+  for(const o of obs){ if(!o.on||o.kind!==1) continue;
+    if(o.z>CATCH_LO && o.z<CATCH_HI && Math.abs(angDiff(a,o.ang))<CATCH_ARC){
+      o.on=false; flingT=0.55; flingAng=o.ang; flingZ=Math.min(1,o.z); flingGi=o.gi;
+      Snd.orb(); return true; } }
+  return false; }
+function tryTap(){ if(tryCatch()) return; tryLeap(); }   // a landing cool garment takes tap priority over the ride
 
 /* ===== Update ===== */
 function update(dt){
@@ -271,6 +290,12 @@ function update(dt){
     let pa2=Math.random()*TAU, tries=6; while(tries-->0 && !colClear(pa2,Z0)) pa2=Math.random()*TAU;
     if(tries>0) placeCol(pa2, Z0, 4, 0); }
 
+  // caught garment sails into the vortex → pays out on arrival
+  if(flingT>0){ flingT-=dt;
+    if(flingT<=0){ flingT=0; runBtns+=CATCH_BTN; coinPopV+=CATCH_BTN; coinPopT=0.8;
+      cling=Math.min(1,cling+CATCH_CLING); Snd.coin(); Snd.win();
+      for(let i=0;i<10;i++) emit(CX+(Math.random()-0.5)*20,CY+(Math.random()-0.5)*20,(Math.random()-0.5)*160,(Math.random()-0.5)*160,0.4,"#c9b0ff"); } }
+
   // buffs tick
   if(magnetT>0){ magnetT-=dt; if(magnetT<0)magnetT=0; }
   if(graceT>0){ graceT-=dt; if(graceT<0)graceT=0; }
@@ -298,6 +323,7 @@ function update(dt){
   for(const o of obs){ if(!o.on) continue;
     o.z+=zspd*dt; o.ang+=DRUMSPIN*dt;                       // they ride the tumbling drum
     if(o.z>1.16){ o.on=false; continue; }
+    if(o.kind===1) continue;                                // COOL laundry never harms — catch it or let it tumble past
     if(o.z>HITLO && o.z<HITHI && rideT<=0 && graceT<=0){
       if(Math.abs(angDiff(a,o.ang))<o.hw*0.8+PHW){          // clipped by hot cloth (hitbox tighter than the visual — fair)
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
@@ -362,12 +388,26 @@ function draw(){
     const zz=Math.min(1,o.z), r=RIM*Math.pow(zz,PERSP), th=4+13*zz*zz, fade=o.z>1?Math.max(0,1-(o.z-1)/0.16):1;
     const near=o.z>0.8?(o.z-0.8)/0.2:0;
     ctx.globalAlpha=(0.35+0.65*zz)*fade;
-    if(near>0){ ctx.strokeStyle="rgba(255,84,104,0.32)"; ctx.lineWidth=th+8;      // heat haze under the garment at the rim
-      ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); }
-    { const gs=Math.max(9,2*o.hw*r*1.05);                                          // ONE garment per obstacle — no connecting line, gaps are real
-      const gx=CX+Math.cos(o.ang)*r, gy=CY+Math.sin(o.ang)*r;
+    const gs=Math.max(9,2*o.hw*r*1.05), gx=CX+Math.cos(o.ang)*r, gy=CY+Math.sin(o.ang)*r;
+    if(o.kind===1){                                                                // COOL laundry — icy, glowing, tap-to-catch
+      const os2=gs*0.9+4*Math.sin(t*6);
+      ctx.drawImage(COOLGLOW,gx-os2,gy-os2,os2*2,os2*2);
       ctx.save(); ctx.translate(gx,gy); ctx.rotate(o.ang+Math.PI/2+Math.sin(t*3+o.gi*2.1)*0.12);
-      ctx.drawImage(GARM_HOT[o.gi],-gs/2,-gs/2,gs,gs); ctx.restore(); }
+      ctx.drawImage(GARM_COOL[o.gi],-gs/2,-gs/2,gs,gs); ctx.restore();
+      if(o.z>0.55&&o.z<CATCH_HI){ ctx.globalAlpha=0.55+0.45*Math.sin(t*8);         // the cue: this one's catchable
+        txt("CATCH!",gx,gy-gs*0.7,9+4*zz,"#eaf7ff",800); ctx.globalAlpha=(0.35+0.65*zz)*fade; }
+    } else {
+      if(near>0){ ctx.strokeStyle="rgba(255,84,104,0.32)"; ctx.lineWidth=th+8;    // heat haze under the garment at the rim
+        ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); }
+      ctx.save(); ctx.translate(gx,gy); ctx.rotate(o.ang+Math.PI/2+Math.sin(t*3+o.gi*2.1)*0.12);
+      ctx.drawImage(GARM_HOT[o.gi],-gs/2,-gs/2,gs,gs); ctx.restore();
+    }
+    ctx.globalAlpha=1; }
+  // caught garment spiralling into the vortex
+  if(flingT>0){ const fp=1-flingT/0.55, fz=flingZ*(1-fp), fr=RIM*Math.pow(Math.max(0.02,fz),PERSP);
+    const fa2=flingAng+fp*2.4, fx=CX+Math.cos(fa2)*fr, fy=CY+Math.sin(fa2)*fr, fs=Math.max(6,2*GHW*fr*1.05);
+    ctx.globalAlpha=0.5+0.5*(1-fp);
+    ctx.save(); ctx.translate(fx,fy); ctx.rotate(fp*9); ctx.drawImage(GARM_COOL[flingGi],-fs/2,-fs/2,fs,fs); ctx.restore();
     ctx.globalAlpha=1; }
   ctx.imageSmoothingEnabled=false;
 
@@ -457,6 +497,7 @@ function draw(){
     txt("INSIDE THE DRYER",CX,96,26,"#ffcf5c",800);
     txt("ride the rim — dodge the heat — reach the vortex",CX,120,11,"#e8dcc8",600);
     txt("← → steer   ·   slide to charge STATIC   ·   tap/space to RIDE the current",CX,140,10,"#aeb8cc",600);
+    txt("tap an ICY garment as it lands — CATCH & FLING it into the vortex",CX,154,10,"#7fb6d9",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble",CX,176,13,"#9bf0d0",700); ctx.globalAlpha=1;
     if(best>0) txt("best "+(best|0)+"m   ·   ● "+buttons,CX,200,10,"#aeb8cc",600);
     ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_CTRL.x,R_CTRL.y,R_CTRL.w,R_CTRL.h);

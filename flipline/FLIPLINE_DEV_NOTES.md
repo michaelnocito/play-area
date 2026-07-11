@@ -82,9 +82,23 @@ ride the center"):**
   (untouchable, +25% speed, crackling tether visual, sock orbits small at the vortex).
   Balance: ~3-5s of real sliding to charge vs ~1.6s safety + ~0.4s distance gained — costs
   more than it saves; no charging and NO rim loot pickup while riding; 0.5s grace on landing.
-**NEXT: Mike feel-tests (gap threading feel, ride pacing, damage/mend). Then promote into
-main build as campaign Level 1 (Batch C): drum bot-sim harness, main-save integration,
-per-land drum variants.**
+**✅ 2026-07-11 — CATCH & FLING (🔷 Mike picked it from the 5 researched uniqueness options):**
+the hook mechanic — every incoming garment is now a decision, not just a dodge.
+- ~1 in 3 waves carries a COOL garment (icy blue palette + glow + pulsing "CATCH!" cue from
+  z 0.55). Harmless if ignored — a lost prize, never a punishment.
+- TAP while it's at the rim (z 0.86–1.08, arc GHW+0.24) → snatched + flung spiralling into
+  the vortex: **+5 buttons +0.25 static** (rubbing cloth = charge) + vortex burst on arrival.
+- Input priority: catch > ride (a landing catchable eats the tap; empty tap still rides).
+  Laundry-color variety also landed this day (`a395764`): 4 hot palettes × 3 kinds, muted
+  denim/olive/grey for bg clothes.
+- Risk = positioning: cool pieces land amid hot patterns, chasing them drags you toward
+  danger (graze-style risk-reward per the research; parry precedent).
+- Verified: catch-priority/payout/harmless/ride-fallback all pass; cue + fling screenshots
+  (`_shots/catch_*.png`).
+**NEXT: Mike feel-tests the catch loop (window tightness, +5/+0.25 payout). Runner-up ideas
+parked in chat/roadmap: SPIN-THE-DRUM control inversion (boldest), static polarity push,
+wet/dry rim terrain, thread pendulum. Then promote into main build as campaign Level 1
+(Batch C): drum bot-sim harness, main-save integration, per-land drum variants.**
 Test steps: D-a boot to ready screen · D-b steer both ways around the full rim · D-c slide to
 fill STATIC then tap/space — leap clears an arc at the rim · D-d die on purpose (SINGED! →
 tap retries) · D-e reach 400m — vortex win screen · D-f touch: hold halves steers, quick tap
