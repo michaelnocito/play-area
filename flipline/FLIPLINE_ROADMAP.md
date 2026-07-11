@@ -147,6 +147,18 @@ itch/GameJolt) ✓. Rewarded-ad double moves to tally screen in Batch B (no poli
 
 ---
 
+## 🧺 DRUM AUDIT vs CG standards (2026-07-11, docs re-verified) — ~40-45% to retail-worthy
+
+Core loop + identity = SOLVED (the unfixable-by-polish rejection lever). Proto is 0%
+platform-compliant. Rejection levers: identity 🟡 (needs drum art/music/juice), depth 🔴
+(same drum faster; CG bar = 10+ min avg playtime, 10-15% D1 retention), score 🔴 (port
+Batch B), onboarding 🔴 (text-only). Bible P1 fails: pause, mute+music, AZERTY, SDK, dev
+menu, drum sim harness, shared save, device pass. Critical test: pitch ✅ ("lost sock
+dodging burning laundry inside the dryer"), ending ❌, run-variety ❌, 4th-run reason thin.
+**Path: C1 compliance (1 session) → C2 content depth/stage identities + ending (2+) →
+C3 score/tally/shop port (1-2) → C4 ship wave (1-2). 🔷 Open call: submit drum-only
+(rec) vs drum+flip-runner combined.**
+
 ## Sequencing — ONE bar, ONE wave
 
 **BATCH A — Sock identity (the rejection lever): ✅ DONE 2026-07-10** (see §3/§4 above). Sim
