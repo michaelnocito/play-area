@@ -48,6 +48,7 @@ const PHW=0.16;                        // player's angular half-width for collis
 const CLING_RATE=0.5;                  // static charge per second WHILE STEERING (slide = friction = static)
 const LEAP_T=0.6;                      // airborne seconds per leap
 const LEVEL_LEN=600;                   // metres to THE LOST SOCK VORTEX (~35s run — 400 played out in ~20s, too thin for the orb cycle)
+const HP_MAX=3, MEND_COST=25;          // 3 hits → the sock unravels; buttons buy a mend between stages (🔷 Mike)
 const MPS=30;                          // metres per second base (scales with speed ramp)
 const DRUMSPIN=0.22;                   // the drum itself slowly tumbles (rad/s) — sells the dryer
 
@@ -98,6 +99,25 @@ function glowSprite(sz,r,g,b){ const c=mkCanvas(sz,sz),x=c.getContext("2d");
   gr.addColorStop(1,"rgba("+r+","+g+","+b+",0)"); x.fillStyle=gr; x.fillRect(0,0,sz,sz); return c; }
 const VORTEX=glowSprite(160,190,150,255), WARM=glowSprite(128,255,190,110);
 const ORBSPR=[null,glowSprite(64,255,212,90),glowSprite(64,90,220,255),glowSprite(64,191,240,255)];   // SHIELD gold · MAGNET cyan · BOLT static-blue (main game's buff colour language)
+const MEND=glowSprite(64,155,240,208);                                                                // health patch glow (mint — never red)
+/* garment sprites — the barriers ARE clothes now (hot red laundry), plus muted ones tumbling in the bg */
+function mkGarment(kind,hot){ const W=64,c=mkCanvas(W,W),x=c.getContext("2d"); x.translate(W/2,W/2);
+  const body=hot?"#e8344f":"#4a4038", rim=hot?"#ff8a9a":"#5c5248", dark=hot?"#8f1425":"#332c26";
+  x.fillStyle=body;
+  if(kind===0){ x.fillRect(-14,-10,28,26); x.fillRect(-24,-10,10,12); x.fillRect(14,-10,10,12);   // t-shirt: torso + sleeves
+    x.fillStyle=dark; x.fillRect(-6,-10,12,5);                                                     // collar
+    x.fillStyle=rim; x.fillRect(-14,-10,28,3); x.fillRect(-14,13,28,3); }
+  else if(kind===1){ x.fillRect(-13,-16,26,10);                                                    // pants: waist + legs
+    x.fillRect(-13,-6,10,30); x.fillRect(3,-6,10,30);
+    x.fillStyle=rim; x.fillRect(-13,-16,26,3); x.fillRect(-13,21,10,3); x.fillRect(3,21,10,3);
+    x.fillStyle=dark; x.fillRect(-2,-6,4,12); }
+  else { x.fillRect(-11,-19,22,38);                                                                // towel
+    x.fillStyle=dark; x.fillRect(-11,-8,22,4); x.fillRect(-11,4,22,4);
+    x.fillStyle=rim; x.fillRect(-11,-19,22,3); x.fillRect(-11,16,22,3); }
+  // cloth waviness: nibble the corners
+  x.fillStyle="rgba(0,0,0,0)"; return c; }
+const GARM_HOT=[mkGarment(0,true),mkGarment(1,true),mkGarment(2,true)];
+const GARM_BG =[mkGarment(0,false),mkGarment(1,false),mkGarment(2,false)];
 
 /* ===== State ===== */
 let mode="ready";                          // ready | play | dead | win
@@ -107,12 +127,14 @@ let spawnCd=1.2, patCd=0;
 /* collectibles (research-grounded: guaranteed trail on a fixed cadence → predictable economy;
    trails over singles; never co-located with heat; magnet = the classic) */
 let buttons=0, runBtns=0, shieldUp=false, magnetT=0, graceT=0, coinPopT=0, coinPopV=0;
-let trailCd=3.0, orbCd=8.0, orbSeq=0;      // guaranteed button trail ~4.5s · buff orb ~11s (SHIELD first)
+let trailCd=3.0, orbCd=8.0, orbSeq=0;      // guaranteed button trail ~4.5s · buff orb ~8s (SHIELD first)
+let hp=HP_MAX, stage=1, patchCd=12;        // health carries ACROSS stages; patches only spawn when hurt
 /* steering direction: SCREEN (default — right key moves the sock right when it's at the bottom;
    angle DECREASES) vs WHEEL (right = clockwise drum rotation — intuitive for some). 🔷 Mike. */
 let ctrlWheel=false;
 try{ const d=JSON.parse(localStorage.getItem("flipline.drum.proto")); if(d){ best=d.best|0; buttons=d.buttons|0; ctrlWheel=!!d.ctrlWheel; } }catch(e){}
-function bank(){ buttons+=runBtns; if(dist>best)best=dist; saveLS(); }
+let lastHaul=0;
+function bank(){ lastHaul=runBtns; buttons+=runBtns; runBtns=0; if(dist>best)best=dist; saveLS(); }
 function saveLS(){ try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,buttons:buttons,ctrlWheel:ctrlWheel})); }catch(e){} }
 const CN=16, col=[]; for(let i=0;i<CN;i++) col.push({on:false,ang:0,z:0,kind:0,val:1});
 function colAlloc(){ for(const c of col) if(!c.on) return c; return null; }
@@ -126,10 +148,12 @@ const PN=60, par=[]; for(let i=0;i<PN;i++) par.push({life:0,x:0,y:0,vx:0,vy:0,c:
 function emit(x,y,vx,vy,life,c){ const p=par[ph]; ph=(ph+1)%PN; p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.c=c; }
 
 function angDiff(x,y){ let d=(x-y)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
-function reset(){ a=Math.PI/2; steer=0; cling=0; leapT=0; zspd=ZSPD0; dist=0; spawnCd=1.4; patCd=0;
+function zBase(){ return ZSPD0*(1+0.08*(stage-1)); }   // each stage tumbles faster
+function reset(){ a=Math.PI/2; steer=0; cling=0; leapT=0; zspd=zBase(); dist=0; spawnCd=1.4; patCd=0;
   for(const o of obs)o.on=false; for(const c of col)c.on=false; shake=0; flash=0;
-  runBtns=0; shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; }
-function start(){ Snd.ensure(); reset(); mode="play"; }
+  shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; patchCd=12; }
+function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
+function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
 
 /* ===== Spawning — arc primitives; every pattern leaves a ≥0.7rad reachable gap (AV covers π in ~1s) ===== */
 function alloc(){ for(const o of obs) if(!o.on) return o; return null; }
@@ -153,19 +177,22 @@ addEventListener("keydown",e=>{
 addEventListener("keyup",e=>{ keys[e.key]=false; });
 const touches={};   // id -> {x, t0, moved}
 const R_CTRL={x:VW/2-92,y:216,w:184,h:22};   // ready-screen controls toggle
+const R_MEND={x:VW/2-80,y:168,w:160,h:24};   // stage-screen mend purchase
+function inRect(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
+function tryMend(){ if(hp<HP_MAX && buttons>=MEND_COST){ buttons-=MEND_COST; hp++; saveLS(); Snd.orb(); } }
 addEventListener("pointerdown",e=>{ e.preventDefault(); Snd.ensure();
   if(mode!=="play"){
-    if(mode==="ready"){ const p=vpos(e);
-      if(p.x>=R_CTRL.x&&p.x<=R_CTRL.x+R_CTRL.w&&p.y>=R_CTRL.y&&p.y<=R_CTRL.y+R_CTRL.h){
-        ctrlWheel=!ctrlWheel; saveLS(); return; } }
+    const p=vpos(e);
+    if(mode==="ready" && inRect(p,R_CTRL)){ ctrlWheel=!ctrlWheel; saveLS(); return; }
+    if(mode==="stage" && inRect(p,R_MEND)){ tryMend(); return; }
     advance(); return; }
   touches[e.pointerId]={x:e.clientX,t0:performance.now(),moved:false}; },{passive:false});
 addEventListener("pointerup",e=>{ const tc=touches[e.pointerId]; delete touches[e.pointerId];
   if(mode==="play" && tc && performance.now()-tc.t0<170 && !tc.moved) tryLeap(); });
 addEventListener("pointercancel",e=>{ delete touches[e.pointerId]; });
 addEventListener("pointermove",e=>{ const tc=touches[e.pointerId]; if(tc && Math.abs(e.clientX-tc.x)>14) tc.moved=true; });
-function advance(){ if(mode==="ready"||mode==="dead") start(); else if(mode==="win"){ mode="ready"; } }
+function advance(){ if(mode==="ready"||mode==="dead") start(); else if(mode==="stage") startStage(); else if(mode==="win"){ mode="ready"; } }
 function tryLeap(){ if(cling>=1 && leapT<=0){ cling=0; leapT=LEAP_T; Snd.leap(); } }
 
 /* ===== Update ===== */
@@ -194,8 +221,8 @@ function update(dt){
   // progress + ramp
   const spd=zspd/ZSPD0;
   dist+=MPS*spd*dt*0.55;
-  zspd=Math.min(ZSPDMX,ZSPD0+dist*0.0007);
-  if(dist>=LEVEL_LEN){ mode="win"; bank(); Snd.win(); return; }
+  zspd=Math.min(ZSPDMX*(1+0.05*(stage-1)), zBase()+dist*0.0007);
+  if(dist>=LEVEL_LEN){ mode="stage"; bank(); Snd.win(); return; }   // stage cleared → mend shop → next drum, faster
 
   // spawn (hold off in the last stretch so the vortex approach is clean)
   spawnCd-=dt; if(spawnCd<=0 && dist<LEVEL_LEN-40){ spawnPattern(); spawnCd=0.9+Math.random()*0.5-Math.min(0.35,dist*0.0009); }
@@ -210,6 +237,9 @@ function update(dt){
   orbCd-=dt; if(orbCd<=0 && dist<LEVEL_LEN-30){ orbCd=8;
     let oa=Math.random()*TAU, tries=6; while(tries-->0 && !colClear(oa,Z0)) oa=Math.random()*TAU;
     if(tries>0) placeCol(oa, Z0, 1+(orbSeq++%3), 0); }                       // SHIELD → MAGNET → BOLT, cycling
+  patchCd-=dt; if(patchCd<=0 && hp<HP_MAX && dist<LEVEL_LEN-30){ patchCd=12; // health PATCH — only offered when hurt
+    let pa2=Math.random()*TAU, tries=6; while(tries-->0 && !colClear(pa2,Z0)) pa2=Math.random()*TAU;
+    if(tries>0) placeCol(pa2, Z0, 4, 0); }
 
   // buffs tick
   if(magnetT>0){ magnetT-=dt; if(magnetT<0)magnetT=0; }
@@ -230,6 +260,7 @@ function update(dt){
       else { Snd.orb();
         if(c.kind===1) shieldUp=true;                                        // SHIELD — absorb one hit
         else if(c.kind===2) magnetT=7;                                       // MAGNET — buttons glide in
+        else if(c.kind===4){ if(hp<HP_MAX) hp++; }                           // PATCH — mend one hit of damage
         else { cling=1; Snd.charge(); } } }                                  // STATIC BOLT — leap instantly ready
   }
 
@@ -243,9 +274,13 @@ function update(dt){
         if(shieldUp){ shieldUp=false; graceT=0.8; o.on=false; shake=6; Snd.shieldPop();   // SHIELD absorbs the hit + brief grace
           for(let i=0;i<12;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#ffd45a");
           continue; }
-        mode="dead"; deaths++; bank(); shake=10; flash=0.5; Snd.die();
-        for(let i=0;i<18;i++) emit(px,py,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.5,"#ff6478");
-        return; } }
+        hp--; graceT=1.0; shake=8; flash=0.35; Snd.shieldPop();                            // take damage — the sock frays
+        for(let i=0;i<10;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#efe9db");  // loose threads fly
+        if(hp<=0){ mode="dead"; deaths++; bank(); shake=12; flash=0.5; Snd.die();          // 3rd hit — DISINTEGRATE into pieces
+          for(let i=0;i<26;i++) emit(px,py,(Math.random()-0.5)*300,(Math.random()-0.5)*300,0.5+Math.random()*0.4,"#efe9db");
+          for(let i=0;i<10;i++) emit(px,py,(Math.random()-0.5)*220,(Math.random()-0.5)*220,0.5,"#ff6478");
+          return; }
+        continue; } }
   }
 }
 
@@ -280,20 +315,36 @@ function draw(){
     for(let s2=0;s2<3;s2++){ ctx.beginPath();
       ctx.arc(CX,CY,6+s2*7+prog*10, -t*2.4+s2*2.1, -t*2.4+s2*2.1+2.4); ctx.stroke(); } }
 
-  // obstacles far→near (painter's order): simple insertion sort on cached index array (tiny N)
+  // neutral clothes tumbling mid-drum (life + depth; never red, never collide)
+  { const bz=0.34, br2=RIM*Math.pow(bz,PERSP); ctx.imageSmoothingEnabled=true;
+    for(let k=0;k<3;k++){ const an=drumRot*1.3+k*TAU/3+1.1, gs=13+k*3;
+      const gx=CX+Math.cos(an)*br2, gy=CY+Math.sin(an)*br2;
+      ctx.globalAlpha=0.5; ctx.save(); ctx.translate(gx,gy); ctx.rotate(an+t*0.7+k);
+      ctx.drawImage(GARM_BG[k%3],-gs/2,-gs/2,gs,gs); ctx.restore(); ctx.globalAlpha=1; }
+    ctx.imageSmoothingEnabled=false; }
+
+  // obstacles far→near (painter's order) — HOT LAUNDRY: bright cloth band + garment shapes riding it,
+  // deliberately more saturated than the muted drum so danger owns the eye
   for(let i=1;i<OBN;i++){ let j=i; const v=zOrder[i];
     while(j>0 && obs[zOrder[j-1]].z>obs[v].z){ zOrder[j]=zOrder[j-1]; j--; } zOrder[j]=v; }
+  ctx.imageSmoothingEnabled=true;
   for(let i=0;i<OBN;i++){ const o=obs[zOrder[i]]; if(!o.on) continue;
-    const zz=Math.min(1,o.z), r=RIM*Math.pow(zz,PERSP), th=3+10*zz*zz, fade=o.z>1?Math.max(0,1-(o.z-1)/0.16):1;
+    const zz=Math.min(1,o.z), r=RIM*Math.pow(zz,PERSP), th=4+13*zz*zz, fade=o.z>1?Math.max(0,1-(o.z-1)/0.16):1;
     const near=o.z>0.8?(o.z-0.8)/0.2:0;
-    ctx.globalAlpha=(0.25+0.75*zz)*fade;
-    if(near>0){ ctx.strokeStyle="rgba(255,84,104,0.30)"; ctx.lineWidth=th+7;      // heat haze as it reaches the rim
+    ctx.globalAlpha=(0.35+0.65*zz)*fade;
+    if(near>0){ ctx.strokeStyle="rgba(255,84,104,0.38)"; ctx.lineWidth=th+8;      // heat haze at the rim
       ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); }
-    ctx.strokeStyle="#b82034"; ctx.lineWidth=th;
+    ctx.strokeStyle="#e8344f"; ctx.lineWidth=th;                                   // cloth band — bright
     ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke();
-    ctx.strokeStyle="#ff7184"; ctx.lineWidth=Math.max(1.5,th*0.3);                 // hot inner lip
-    ctx.beginPath(); ctx.arc(CX,CY,Math.max(0.5,r-th*0.28),o.ang-o.hw,o.ang+o.hw); ctx.stroke();   // clamp: deep-drum r is tiny; a negative radius THROWS and kills the rAF loop
+    ctx.strokeStyle="#ff8a9a"; ctx.lineWidth=Math.max(1.5,th*0.3);                 // white-hot inner lip
+    ctx.beginPath(); ctx.arc(CX,CY,Math.max(0.5,r-th*0.28),o.ang-o.hw,o.ang+o.hw); ctx.stroke();
+    if(zz>0.28){ const gs=8+30*zz*zz, n=Math.max(1,Math.min(3,(o.hw*2/0.55)|0));   // burning garments riding the band
+      for(let k2=0;k2<n;k2++){ const ga=o.ang-o.hw+ (o.hw*2)*(n===1?0.5:(k2+0.5)/n);
+        const gx=CX+Math.cos(ga)*r, gy=CY+Math.sin(ga)*r;
+        ctx.save(); ctx.translate(gx,gy); ctx.rotate(ga+Math.PI/2+Math.sin(t*3+k2*2)*0.15);
+        ctx.drawImage(GARM_HOT[(zOrder[i]+k2)%3],-gs/2,-gs/2,gs,gs); ctx.restore(); } }
     ctx.globalAlpha=1; }
+  ctx.imageSmoothingEnabled=false;
 
   // collectibles — buttons (gold, 4 thread holes) + buff orbs, scaling with depth; drawn over the drum
   for(const c of col){ if(!c.on) continue;
@@ -307,14 +358,18 @@ function draw(){
         ctx.fillRect(px-h2-0.6,py-h2-0.6,1.2,1.2); ctx.fillRect(px+h2-0.6,py-h2-0.6,1.2,1.2);
         ctx.fillRect(px-h2-0.6,py+h2-0.6,1.2,1.2); ctx.fillRect(px+h2-0.6,py+h2-0.6,1.2,1.2); }
     } else { const os=(6+12*zz)*(1+0.12*Math.sin(t*6));
-      ctx.drawImage(ORBSPR[c.kind],px-os,py-os,os*2,os*2);
-      ctx.fillStyle=c.kind===1?"#ffd45a":c.kind===2?"#5adcff":"#e6f7ff";
-      ctx.beginPath(); ctx.arc(px,py,2+2*zz,0,TAU); ctx.fill();
-      if(c.kind===3&&zz>0.5) txt("⚡",px,py+3,8+6*zz,"#e6f7ff",700); }
+      ctx.drawImage(c.kind===4?MEND:ORBSPR[c.kind],px-os,py-os,os*2,os*2);
+      if(c.kind===4){                                                               // health PATCH — mint square w/ stitches
+        const ps=2.5+4*zz; ctx.fillStyle="#9bf0d0"; ctx.fillRect(px-ps,py-ps,ps*2,ps*2);
+        ctx.strokeStyle="rgba(20,30,26,0.7)"; ctx.lineWidth=1; ctx.setLineDash([2,2]);
+        ctx.strokeRect(px-ps+1,py-ps+1,ps*2-2,ps*2-2); ctx.setLineDash([]); }
+      else { ctx.fillStyle=c.kind===1?"#ffd45a":c.kind===2?"#5adcff":"#e6f7ff";
+        ctx.beginPath(); ctx.arc(px,py,2+2*zz,0,TAU); ctx.fill();
+        if(c.kind===3&&zz>0.5) txt("⚡",px,py+3,8+6*zz,"#e6f7ff",700); } }
     ctx.globalAlpha=1; }
 
-  // the sock on the rim (or leaping toward the camera)
-  { const lift=leapT>0?Math.sin((1-leapT/LEAP_T)*Math.PI):0;
+  // the sock on the rim (or leaping toward the camera) — hidden once it has disintegrated
+  if(mode!=="dead"){ const lift=leapT>0?Math.sin((1-leapT/LEAP_T)*Math.PI):0;
     const pr=RIM*(0.93-0.0*lift), px=CX+Math.cos(a)*pr, py=CY+Math.sin(a)*pr, sc2=1+lift*0.55;
     if(lift>0){ ctx.globalAlpha=0.25*(1-lift); ctx.fillStyle="#000";               // shadow stays on the rim
       ctx.beginPath(); ctx.ellipse(px,py,9,4,a+Math.PI/2,0,TAU); ctx.fill(); ctx.globalAlpha=1; }
@@ -323,11 +378,22 @@ function draw(){
       ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(px,py-lift*16,14+2*Math.sin(t*9),0,TAU); ctx.stroke(); }
     if(magnetT>0){ ctx.strokeStyle="rgba(90,220,255,"+(0.1+0.12*Math.sin(t*4))+")";               // magnet field arc along the rim
       ctx.lineWidth=3; ctx.beginPath(); ctx.arc(CX,CY,RIM*0.93,a-1.3,a+1.3); ctx.stroke(); }
+    const gflk=graceT>0 && (t*14|0)%2===0;   // damage-grace flicker
     ctx.save(); ctx.translate(px,py-lift*16); ctx.rotate(a-Math.PI/2); ctx.scale(sc2,sc2);
+    if(gflk) ctx.globalAlpha=0.35;
     ctx.imageSmoothingEnabled=true; ctx.drawImage(SOCK,-11,-11,22,22); ctx.imageSmoothingEnabled=false;
+    const dmg=HP_MAX-hp;                     // the sock LOOKS more damaged with every hit
+    if(dmg>=1){ ctx.fillStyle="#171210";     // frayed notches + a scorch
+      ctx.fillRect(6.5,3,3,2.4); ctx.fillRect(-9.5,-8,2.4,3);
+      ctx.fillStyle="rgba(90,40,20,0.55)"; ctx.fillRect(2,4,4,3); }
+    if(dmg>=2){ ctx.fillStyle="#171210";     // threadbare holes + hanging thread
+      ctx.fillRect(-2,2,3,3); ctx.fillRect(-7.5,4.5,2.6,2.6); ctx.fillRect(3,-4,2.2,2.2);
+      ctx.fillStyle="#cfc9bd"; ctx.fillRect(8,6,1,4.5); ctx.fillRect(-10,1,1,3.5); }
     ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-3.4,-2.2,1.9,0,TAU); ctx.arc(0.2,-2.2,1.9,0,TAU); ctx.fill();
     ctx.fillStyle="#14100c"; ctx.fillRect(-3.4,-2.8,1.3,1.3); ctx.fillRect(0.2,-2.8,1.3,1.3);
-    ctx.fillRect(-2.6,0.6,2.8,1); ctx.restore();
+    if(dmg>=2){ ctx.fillRect(-4,1,4,1.2); }  // worried stitch-mouth when one hit from unravelling
+    else ctx.fillRect(-2.6,0.6,2.8,1);
+    ctx.globalAlpha=1; ctx.restore();
     // static-cling sparks crawl on the sock while charged / charging
     if(cling>0.25 && leapT<=0 && Math.random()<cling*0.5){
       emit(px+(Math.random()-0.5)*12,py+(Math.random()-0.5)*12,(Math.random()-0.5)*30,(Math.random()-0.5)*30,0.18,"#bff0ff"); } }
@@ -346,6 +412,11 @@ function draw(){
       txt("+"+coinPopV+" ●",34,47-(0.8-coinPopT)*10,9,"#ffe08a",700); ctx.globalAlpha=1; }
     if(magnetT>0) txt("MAGNET "+Math.ceil(magnetT),34,VH-10,8,"#5adcff",700);
     if(shieldUp) txt("SHIELD",VW-38,VH-10,8,"#ffd45a",700);
+    for(let k=0;k<HP_MAX;k++){ const on=k<hp;                                  // condition pips: little stitched patches, not hearts
+      ctx.fillStyle=on?"#9bf0d0":"rgba(255,255,255,0.12)"; ctx.fillRect(VW-58+k*16,10,10,10);
+      if(on){ ctx.strokeStyle="rgba(20,30,26,0.6)"; ctx.lineWidth=1; ctx.setLineDash([2,2]);
+        ctx.strokeRect(VW-57+k*16,11,8,8); ctx.setLineDash([]); } }
+    txt("STAGE "+stage,VW-40,33,9,"#c9b0ff",700);
     // static meter
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(CX-70,VH-18,140,8);
     ctx.fillStyle=cling>=1?"#bff0ff":"#5b8fa8"; ctx.fillRect(CX-70,VH-18,140*cling,8);
@@ -365,15 +436,22 @@ function draw(){
     txt("CONTROLS: "+(ctrlWheel?"WHEEL (→ spins drum)":"SCREEN (→ moves right)"),CX,R_CTRL.y+15,9,"#9bf0d0",700);
   } else if(mode==="dead"){
     ctx.fillStyle="rgba(10,8,6,0.45)"; ctx.fillRect(0,0,VW,VH);
-    txt("SINGED!",CX,110,26,"#ff5468",800);
-    txt((dist|0)+"m toward the vortex   ·   +● "+runBtns+"  (● "+buttons+")",CX,134,11,"#e8dcc8",600);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble again",CX,166,12,"#9bf0d0",700); ctx.globalAlpha=1;
-  } else if(mode==="win"){
+    txt("UNRAVELLED",CX,106,26,"#ff5468",800);
+    txt("stage "+stage+"   ·   "+(dist|0)+"m toward the vortex   ·   +● "+lastHaul+"  (● "+buttons+")",CX,130,11,"#e8dcc8",600);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble again",CX,164,12,"#9bf0d0",700); ctx.globalAlpha=1;
+  } else if(mode==="stage"){
     ctx.fillStyle="rgba(20,12,30,0.55)"; ctx.fillRect(0,0,VW,VH);
-    txt("THE LOST SOCK VORTEX",CX,104,20,"#c9b0ff",800);
-    txt("you made it out of the dryer   ·   +● "+runBtns+"  (● "+buttons+")",CX,128,11,"#e8dcc8",600);
-    txt("…the journey home begins  (→ Level 2: UNDER THE FLOOR)",CX,148,10,"#aeb8cc",600);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to go again",CX,180,12,"#9bf0d0",700); ctx.globalAlpha=1;
+    txt("STAGE "+stage+" CLEAR — THE VORTEX PULLS YOU DEEPER",CX,92,15,"#c9b0ff",800);
+    txt("+● "+lastHaul+"   (● "+buttons+")",CX,114,11,"#ffcf5c",700);
+    // condition + mend shop between stages
+    for(let k=0;k<HP_MAX;k++){ const on=k<hp;
+      ctx.fillStyle=on?"#9bf0d0":"rgba(255,255,255,0.12)"; ctx.fillRect(CX-26+k*18,126,12,12); }
+    if(hp<HP_MAX){ const can=buttons>=MEND_COST;
+      ctx.fillStyle=can?"rgba(155,240,208,0.16)":"rgba(255,255,255,0.05)";
+      ctx.fillRect(R_MEND.x,R_MEND.y,R_MEND.w,R_MEND.h);
+      txt("MEND +1   ● "+MEND_COST,CX,R_MEND.y+16,11,can?"#9bf0d0":"#6f7a92",700); }
+    else txt("fully mended",CX,R_MEND.y+16,10,"#6f7a92",600);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap → STAGE "+(stage+1)+" (faster)",CX,212,12,"#9bf0d0",700); ctx.globalAlpha=1;
   }
 }
 

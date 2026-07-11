@@ -49,8 +49,26 @@ co-located with hazards; magnet = the classic):**
 bottom of the drum (Mike caught it). Default is now **SCREEN** (right = sock moves right at the
 bottom); ready-screen toggle "CONTROLS: SCREEN/WHEEL" for players who think in drum-rotation
 terms; choice persisted in the proto save. Both directions + persistence verified.
-**NEXT: Mike feel-tests collect loop. Then promote into main build as campaign Level 1
-(Batch C): needs drum bot-sim harness, main-save button integration, per-land drum variants.**
+**✅ 2026-07-11 (later still) — HEALTH + STAGES + CLOTH BARRIERS (🔷 Mike):**
+- **3-hit condition system (not hearts):** hp 3 → each hit frays the sock visibly (dmg 1:
+  notches + scorch; dmg 2: threadbare holes + hanging threads + worried stitch-mouth), 1s
+  grace flicker; 3rd hit = DISINTEGRATE into cloth-scrap + thread particles (sock hidden),
+  death screen "UNRAVELLED". HUD = 3 stitched-patch pips (mint), not hearts.
+- **Health economy:** PATCH pickup (mint square w/ stitch border, MEND glow) spawns every
+  ~12s ONLY while hurt; heals +1. **Stages:** vortex reach = STAGE CLEAR (not run end) —
+  hp + buttons carry over, each stage +8% base tumble speed; between-stage screen = haul,
+  condition pips, **MEND +1 for ● 25** buy button. Death → back to stage 1. Buttons now have
+  a real in-proto sink.
+- **Barriers ARE clothes now:** baked garment sprites (t-shirt/pants/towel) in hot red w/
+  bright rims riding the arc bands (1–3 per arc, wobbling), bands brightened to #e8344f +
+  white-hot lip — deliberately more saturated than the muted drum. Plus 3 muted background
+  garments tumbling mid-drum (never red, no collision) for life/depth.
+- Verified in preview: dmg-state visuals, disintegration death, stage-clear → mend (25
+  buttons, hp+1) → stage 2 faster w/ hp carried, patch spawns only when hurt, laundry+stage
+  screenshots (`_shots/hp_*.png`). node --check clean.
+**NEXT: Mike feel-tests (damage feel, mend pricing, stage ramp, laundry readability). Then
+promote into main build as campaign Level 1 (Batch C): drum bot-sim harness, main-save
+button integration, per-land drum variants.**
 Test steps: D-a boot to ready screen · D-b steer both ways around the full rim · D-c slide to
 fill STATIC then tap/space — leap clears an arc at the rim · D-d die on purpose (SINGED! →
 tap retries) · D-e reach 400m — vortex win screen · D-f touch: hold halves steers, quick tap
