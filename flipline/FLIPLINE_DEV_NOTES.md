@@ -69,9 +69,22 @@ terms; choice persisted in the proto save. Both directions + persistence verifie
 - Verified in preview: dmg-state visuals, disintegration death, stage-clear → mend (25
   buttons, hp+1) → stage 2 faster w/ hp carried, patch spawns only when hurt, laundry+stage
   screenshots (`_shots/hp_*.png`). node --check clean.
-**NEXT: Mike feel-tests (damage feel, mend pricing, stage ramp, laundry readability). Then
-promote into main build as campaign Level 1 (Batch C): drum bot-sim harness, main-save
-button integration, per-land drum variants.**
+**✅ 2026-07-11 — GAPS + STATIC RIDE (🔷 Mike: "remove red lines, dodge between cloths,
+ride the center"):**
+- Barriers are now INDIVIDUAL garments (GHW=0.24 rad each, hitbox 0.8× visual) with real
+  threadable gaps — connecting wire deleted. Patterns: solo / pair (0.5rad gap) / wall-of-3 /
+  ring-of-5 (~0.78rad gaps) / spiral triplet.
+- **Critical fairness fix found by test:** garments ride the tumbling drum (+0.22rad/s) but
+  the sock didn't → a gap you parked in drifted onto you. Static cling means the drum CARRIES
+  the sock — player angle now drifts with DRUMSPIN too, so relative positions are stable.
+  Threading test: park-in-gap survives ✓, direct hit registers ✓.
+- **STATIC RIDE replaces the leap:** full charge → tap = ride the centre current ~1.6s
+  (untouchable, +25% speed, crackling tether visual, sock orbits small at the vortex).
+  Balance: ~3-5s of real sliding to charge vs ~1.6s safety + ~0.4s distance gained — costs
+  more than it saves; no charging and NO rim loot pickup while riding; 0.5s grace on landing.
+**NEXT: Mike feel-tests (gap threading feel, ride pacing, damage/mend). Then promote into
+main build as campaign Level 1 (Batch C): drum bot-sim harness, main-save integration,
+per-land drum variants.**
 Test steps: D-a boot to ready screen · D-b steer both ways around the full rim · D-c slide to
 fill STATIC then tap/space — leap clears an arc at the rim · D-d die on purpose (SINGED! →
 tap retries) · D-e reach 400m — vortex win screen · D-f touch: hold halves steers, quick tap
