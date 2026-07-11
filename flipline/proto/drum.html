@@ -106,8 +106,20 @@ const ORBSPR=[null,glowSprite(64,255,212,90),glowSprite(64,90,220,255),glowSprit
 const MEND=glowSprite(64,155,240,208);                                                                // health patch glow (mint — never red)
 /* garment sprites — the barriers ARE clothes (big, outlined, unmistakable), plus muted bg ones.
    Bold silhouettes w/ dark outline + white-hot edges so they read as laundry at any size. */
-function mkGarment(kind,hot){ const W=72,c=mkCanvas(W,W),x=c.getContext("2d"); x.translate(W/2,W/2);
-  const body=hot?"#ff4a63":"#4a4038", rim=hot?"#ffd0d6":"#5c5248", dark=hot?"#7d0f1f":"#2c2620", fold=hot?"#c21f38":"#3a332c";
+/* hot palettes — all unmistakably "burning danger", varied hues; muted palettes for the safe bg clothes */
+const PAL_HOT=[
+  {body:"#ff4a63",rim:"#ffd0d6",dark:"#7d0f1f",fold:"#c21f38"},   // crimson
+  {body:"#ff7a3c",rim:"#ffe0c2",dark:"#8a2c08",fold:"#d4531f"},   // ember orange
+  {body:"#ff4a8c",rim:"#ffd0e4",dark:"#7d0f3f",fold:"#c21f5e"},   // hot pink
+  {body:"#f23030",rim:"#ffd6c8",dark:"#761010",fold:"#bf1d1d"}    // scarlet
+];
+const PAL_BG=[
+  {body:"#3c4a66",rim:"#4e5c78",dark:"#242e42",fold:"#2f3a52"},   // denim
+  {body:"#4d5240",rim:"#5f6450",dark:"#30342a",fold:"#3d4234"},   // olive
+  {body:"#4a4038",rim:"#5c5248",dark:"#2c2620",fold:"#3a332c"}    // grey-brown
+];
+function mkGarment(kind,pal){ const W=72,c=mkCanvas(W,W),x=c.getContext("2d"); x.translate(W/2,W/2);
+  const body=pal.body, rim=pal.rim, dark=pal.dark, fold=pal.fold;
   function outline(fn){ x.save(); x.strokeStyle=dark; x.lineWidth=5; x.lineJoin="round"; fn(true); x.restore(); fn(false); }
   if(kind===0){ outline(o=>{ x.beginPath();                                   // T-SHIRT
       x.moveTo(-13,-26); x.lineTo(13,-26);                                    // shoulders
@@ -130,8 +142,8 @@ function mkGarment(kind,hot){ const W=72,c=mkCanvas(W,W),x=c.getContext("2d"); x
     x.fillStyle=fold; x.fillRect(-14,-12,28,4); x.fillRect(-15,4,28,4);       // stripes
     x.fillStyle=rim; x.fillRect(-16,21,28,3); x.fillRect(-15,-28,30,3); }     // hot edges
   return c; }
-const GARM_HOT=[mkGarment(0,true),mkGarment(1,true),mkGarment(2,true)];
-const GARM_BG =[mkGarment(0,false),mkGarment(1,false),mkGarment(2,false)];
+const GARM_HOT=[]; for(let k=0;k<3;k++) for(let p=0;p<PAL_HOT.length;p++) GARM_HOT.push(mkGarment(k,PAL_HOT[p]));   // kind*4+palette
+const GARM_BG =[]; for(let k=0;k<3;k++) GARM_BG.push(mkGarment(k,PAL_BG[k]));
 
 /* ===== State ===== */
 let mode="ready";                          // ready | play | dead | win
@@ -173,7 +185,8 @@ function startStage(){ stage++; reset(); mode="play"; }                         
    Fairness: intra-cluster gaps ≥0.5rad edge-to-edge (player ±0.16 threads with margin);
    rings of 5 leave ~0.78rad gaps; AV covers π in ~1s. ===== */
 function alloc(){ for(const o of obs) if(!o.on) return o; return null; }
-function garment(ang,dz){ const o=alloc(); if(!o)return; o.on=true; o.ang=ang; o.hw=GHW; o.z=Z0+(dz||0); o.kind=0; o.gi=(Math.random()*3)|0; }
+function garment(ang,dz){ const o=alloc(); if(!o)return; o.on=true; o.ang=ang; o.hw=GHW; o.z=Z0+(dz||0); o.kind=0;
+  o.gi=((Math.random()*3)|0)*PAL_HOT.length+((Math.random()*PAL_HOT.length)|0); }   // random garment kind × hot hue
 function spawnPattern(){
   const r=Math.random(), pa=Math.random()*TAU, D=2*GHW+0.5;   // D = centre spacing leaving a 0.5rad threadable gap
   if(dist<60 || r<0.3){ garment(pa); }                                             // solo — dodge around
