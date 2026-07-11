@@ -47,7 +47,7 @@ const HITLO=0.94, HITHI=1.04;          // z window where an obstacle is "at the 
 const PHW=0.16;                        // player's angular half-width for collision (generous vs the drawn sock)
 const CLING_RATE=0.5;                  // static charge per second WHILE STEERING (slide = friction = static)
 const LEAP_T=0.6;                      // airborne seconds per leap
-const LEVEL_LEN=400;                   // metres to THE LOST SOCK VORTEX
+const LEVEL_LEN=600;                   // metres to THE LOST SOCK VORTEX (~35s run — 400 played out in ~20s, too thin for the orb cycle)
 const MPS=30;                          // metres per second base (scales with speed ramp)
 const DRUMSPIN=0.22;                   // the drum itself slowly tumbles (rad/s) — sells the dryer
 
@@ -67,7 +67,10 @@ const Snd={ctx:null,g:null,
     o.connect(g); g.connect(this.g); o.start(t); o.stop(t+dur+0.03); },
   leap(){ this.b(240,620,0.22,"triangle",0.14); }, land(){ this.b(200,120,0.1,"triangle",0.1); },
   die(){ this.b(220,40,0.4,"sawtooth",0.18); }, charge(){ this.b(880,1320,0.08,"triangle",0.07); },
-  win(){ this.b(440,660,0.4,"triangle",0.12); this.b(660,990,0.5,"triangle",0.1); }
+  win(){ this.b(440,660,0.4,"triangle",0.12); this.b(660,990,0.5,"triangle",0.1); },
+  coin(){ this.b(980+Math.random()*220,1500,0.06,"triangle",0.09); },
+  orb(){ this.b(520,780,0.18,"triangle",0.11); this.b(780,1170,0.22,"triangle",0.09); },
+  shieldPop(){ this.b(300,90,0.22,"sawtooth",0.14); }
 };
 
 /* ===== Sock sprite (trimmed from the main game) ===== */
@@ -94,12 +97,26 @@ function glowSprite(sz,r,g,b){ const c=mkCanvas(sz,sz),x=c.getContext("2d");
   gr.addColorStop(0,"rgba("+r+","+g+","+b+",1)"); gr.addColorStop(0.5,"rgba("+r+","+g+","+b+",0.55)");
   gr.addColorStop(1,"rgba("+r+","+g+","+b+",0)"); x.fillStyle=gr; x.fillRect(0,0,sz,sz); return c; }
 const VORTEX=glowSprite(160,190,150,255), WARM=glowSprite(128,255,190,110);
+const ORBSPR=[null,glowSprite(64,255,212,90),glowSprite(64,90,220,255),glowSprite(64,191,240,255)];   // SHIELD gold · MAGNET cyan · BOLT static-blue (main game's buff colour language)
 
 /* ===== State ===== */
 let mode="ready";                          // ready | play | dead | win
 let a=Math.PI/2, steer=0, cling=0, leapT=0, drumRot=0;
 let zspd=ZSPD0, dist=0, best=0, t=0, shake=0, flash=0, deaths=0;
 let spawnCd=1.2, patCd=0;
+/* collectibles (research-grounded: guaranteed trail on a fixed cadence → predictable economy;
+   trails over singles; never co-located with heat; magnet = the classic) */
+let buttons=0, runBtns=0, shieldUp=false, magnetT=0, graceT=0, coinPopT=0, coinPopV=0;
+let trailCd=3.0, orbCd=8.0, orbSeq=0;      // guaranteed button trail ~4.5s · buff orb ~11s (SHIELD first)
+try{ const d=JSON.parse(localStorage.getItem("flipline.drum.proto")); if(d){ best=d.best|0; buttons=d.buttons|0; } }catch(e){}
+function bank(){ buttons+=runBtns; if(dist>best)best=dist;
+  try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,buttons:buttons})); }catch(e){} }
+const CN=16, col=[]; for(let i=0;i<CN;i++) col.push({on:false,ang:0,z:0,kind:0,val:1});
+function colAlloc(){ for(const c of col) if(!c.on) return c; return null; }
+// angular clearance vs heat arcs that will arrive at the rim around the same time
+function colClear(ang,z){ for(const o of obs){ if(!o.on) continue;
+    if(Math.abs(o.z-z)<0.3 && Math.abs(angDiff(ang,o.ang))<o.hw+0.4) return false; } return true; }
+function placeCol(ang,z,kind,val){ const c=colAlloc(); if(!c)return; c.on=true; c.ang=ang; c.z=z; c.kind=kind; c.val=val||1; }
 const OBN=14, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,ang:0,hw:0,z:0,kind:0});
 const zOrder=new Array(OBN); for(let i=0;i<OBN;i++) zOrder[i]=i;
 const PN=60, par=[]; for(let i=0;i<PN;i++) par.push({life:0,x:0,y:0,vx:0,vy:0,c:"#ffcf5c"}); let ph=0;
@@ -107,7 +124,8 @@ function emit(x,y,vx,vy,life,c){ const p=par[ph]; ph=(ph+1)%PN; p.x=x;p.y=y;p.vx
 
 function angDiff(x,y){ let d=(x-y)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
 function reset(){ a=Math.PI/2; steer=0; cling=0; leapT=0; zspd=ZSPD0; dist=0; spawnCd=1.4; patCd=0;
-  for(const o of obs)o.on=false; shake=0; flash=0; }
+  for(const o of obs)o.on=false; for(const c of col)c.on=false; shake=0; flash=0;
+  runBtns=0; shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; }
 function start(){ Snd.ensure(); reset(); mode="play"; }
 
 /* ===== Spawning — arc primitives; every pattern leaves a ≥0.7rad reachable gap (AV covers π in ~1s) ===== */
@@ -168,19 +186,55 @@ function update(dt){
   const spd=zspd/ZSPD0;
   dist+=MPS*spd*dt*0.55;
   zspd=Math.min(ZSPDMX,ZSPD0+dist*0.0007);
-  if(dist>=LEVEL_LEN){ mode="win"; if(dist>best)best=dist; Snd.win(); return; }
+  if(dist>=LEVEL_LEN){ mode="win"; bank(); Snd.win(); return; }
 
   // spawn (hold off in the last stretch so the vortex approach is clean)
   spawnCd-=dt; if(spawnCd<=0 && dist<LEVEL_LEN-40){ spawnPattern(); spawnCd=0.9+Math.random()*0.5-Math.min(0.35,dist*0.0009); }
+
+  // collectibles — guaranteed button trail on a fixed cadence (predictable economy), buff orb slower
+  trailCd-=dt; if(trailCd<=0 && dist<LEVEL_LEN-30){ trailCd=4.5;
+    let ta=Math.random()*TAU, tries=6; while(tries-->0 && !colClear(ta,Z0+0.1)) ta=Math.random()*TAU;
+    if(tries>0){ const sweep=(Math.random()<0.5?1:-1)*0.34;
+      for(let k=0;k<4;k++) placeCol(ta+k*sweep, Z0+k*0.055, 0, 1); }        // sweeping trail → rewards a slide (which charges STATIC)
+    if(Math.random()<0.4){                                                   // risk single: tucked beside a heat arc's edge, ×3
+      for(const o of obs){ if(o.on && o.z<0.4){ placeCol(o.ang+o.hw+0.32, o.z+0.02, 0, 3); break; } } } }
+  orbCd-=dt; if(orbCd<=0 && dist<LEVEL_LEN-30){ orbCd=8;
+    let oa=Math.random()*TAU, tries=6; while(tries-->0 && !colClear(oa,Z0)) oa=Math.random()*TAU;
+    if(tries>0) placeCol(oa, Z0, 1+(orbSeq++%3), 0); }                       // SHIELD → MAGNET → BOLT, cycling
+
+  // buffs tick
+  if(magnetT>0){ magnetT-=dt; if(magnetT<0)magnetT=0; }
+  if(graceT>0){ graceT-=dt; if(graceT<0)graceT=0; }
+  if(coinPopT>0){ coinPopT-=dt; if(coinPopT<=0){coinPopT=0;coinPopV=0;} }
+
+  // collectibles approach + collect at the rim (generous window; magnet pulls buttons in)
+  for(const c of col){ if(!c.on) continue;
+    c.z+=zspd*dt; c.ang+=DRUMSPIN*dt;
+    if(c.z>1.12){ c.on=false; continue; }
+    if(magnetT>0 && c.kind===0 && c.z>0.8){ const d2=angDiff(a,c.ang);
+      if(Math.abs(d2)<1.3) c.ang+=d2*Math.min(1,dt*7); }
+    if(c.z>0.9 && Math.abs(angDiff(a,c.ang))<0.26){
+      c.on=false;
+      if(c.kind===0){ runBtns+=c.val; coinPopV+=c.val; coinPopT=0.8; Snd.coin();
+        const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
+        for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*110,(Math.random()-0.5)*110,0.35,"#ffcf5c"); }
+      else { Snd.orb();
+        if(c.kind===1) shieldUp=true;                                        // SHIELD — absorb one hit
+        else if(c.kind===2) magnetT=7;                                       // MAGNET — buttons glide in
+        else { cling=1; Snd.charge(); } } }                                  // STATIC BOLT — leap instantly ready
+  }
 
   // obstacles approach the camera
   for(const o of obs){ if(!o.on) continue;
     o.z+=zspd*dt; o.ang+=DRUMSPIN*dt;                       // they ride the tumbling drum
     if(o.z>1.16){ o.on=false; continue; }
-    if(o.z>HITLO && o.z<HITHI && leapT<=0){
+    if(o.z>HITLO && o.z<HITHI && leapT<=0 && graceT<=0){
       if(Math.abs(angDiff(a,o.ang))<o.hw+PHW){              // clipped by the heat
-        mode="dead"; deaths++; if(dist>best)best=dist; shake=10; flash=0.5; Snd.die();
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
+        if(shieldUp){ shieldUp=false; graceT=0.8; o.on=false; shake=6; Snd.shieldPop();   // SHIELD absorbs the hit + brief grace
+          for(let i=0;i<12;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#ffd45a");
+          continue; }
+        mode="dead"; deaths++; bank(); shake=10; flash=0.5; Snd.die();
         for(let i=0;i<18;i++) emit(px,py,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.5,"#ff6478");
         return; } }
   }
@@ -232,12 +286,34 @@ function draw(){
     ctx.beginPath(); ctx.arc(CX,CY,Math.max(0.5,r-th*0.28),o.ang-o.hw,o.ang+o.hw); ctx.stroke();   // clamp: deep-drum r is tiny; a negative radius THROWS and kills the rAF loop
     ctx.globalAlpha=1; }
 
+  // collectibles — buttons (gold, 4 thread holes) + buff orbs, scaling with depth; drawn over the drum
+  for(const c of col){ if(!c.on) continue;
+    const zz=Math.min(1,c.z), r=RIM*Math.pow(zz,PERSP)*0.93;
+    const px=CX+Math.cos(c.ang)*r, py=CY+Math.sin(c.ang)*r;
+    ctx.globalAlpha=0.35+0.65*zz;
+    if(c.kind===0){ const br=(2+4.5*zz)*(c.val>1?1.25:1);
+      ctx.fillStyle="rgba(255,207,92,0.3)"; ctx.beginPath(); ctx.arc(px,py,br+2,0,TAU); ctx.fill();
+      ctx.fillStyle="#ffcf5c"; ctx.beginPath(); ctx.arc(px,py,br,0,TAU); ctx.fill();
+      if(zz>0.5){ ctx.fillStyle="rgba(120,80,20,0.9)"; const h2=br*0.34;
+        ctx.fillRect(px-h2-0.6,py-h2-0.6,1.2,1.2); ctx.fillRect(px+h2-0.6,py-h2-0.6,1.2,1.2);
+        ctx.fillRect(px-h2-0.6,py+h2-0.6,1.2,1.2); ctx.fillRect(px+h2-0.6,py+h2-0.6,1.2,1.2); }
+    } else { const os=(6+12*zz)*(1+0.12*Math.sin(t*6));
+      ctx.drawImage(ORBSPR[c.kind],px-os,py-os,os*2,os*2);
+      ctx.fillStyle=c.kind===1?"#ffd45a":c.kind===2?"#5adcff":"#e6f7ff";
+      ctx.beginPath(); ctx.arc(px,py,2+2*zz,0,TAU); ctx.fill();
+      if(c.kind===3&&zz>0.5) txt("⚡",px,py+3,8+6*zz,"#e6f7ff",700); }
+    ctx.globalAlpha=1; }
+
   // the sock on the rim (or leaping toward the camera)
   { const lift=leapT>0?Math.sin((1-leapT/LEAP_T)*Math.PI):0;
     const pr=RIM*(0.93-0.0*lift), px=CX+Math.cos(a)*pr, py=CY+Math.sin(a)*pr, sc2=1+lift*0.55;
     if(lift>0){ ctx.globalAlpha=0.25*(1-lift); ctx.fillStyle="#000";               // shadow stays on the rim
       ctx.beginPath(); ctx.ellipse(px,py,9,4,a+Math.PI/2,0,TAU); ctx.fill(); ctx.globalAlpha=1; }
     ctx.globalAlpha=0.5; ctx.drawImage(WARM,px-20*sc2,py-20*sc2,40*sc2,40*sc2); ctx.globalAlpha=1;
+    if(shieldUp||graceT>0){ ctx.strokeStyle="rgba(255,212,90,"+(shieldUp?0.55:0.3*graceT)+")";   // gold shield ring
+      ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(px,py-lift*16,14+2*Math.sin(t*9),0,TAU); ctx.stroke(); }
+    if(magnetT>0){ ctx.strokeStyle="rgba(90,220,255,"+(0.1+0.12*Math.sin(t*4))+")";               // magnet field arc along the rim
+      ctx.lineWidth=3; ctx.beginPath(); ctx.arc(CX,CY,RIM*0.93,a-1.3,a+1.3); ctx.stroke(); }
     ctx.save(); ctx.translate(px,py-lift*16); ctx.rotate(a-Math.PI/2); ctx.scale(sc2,sc2);
     ctx.imageSmoothingEnabled=true; ctx.drawImage(SOCK,-11,-11,22,22); ctx.imageSmoothingEnabled=false;
     ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-3.4,-2.2,1.9,0,TAU); ctx.arc(0.2,-2.2,1.9,0,TAU); ctx.fill();
@@ -256,6 +332,11 @@ function draw(){
     ctx.fillStyle="#c9b0ff"; ctx.fillRect(90,8,300*prog,10);
     txt("THE LOST SOCK VORTEX",CX,28,9,"#c9b0ff",700);
     txt((dist|0)+"m",60,17,10,"#e8dcc8",700);
+    txt("● "+(mode==="play"?buttons+runBtns:buttons),34,33,coinPopT>0?12:10,coinPopT>0?"#ffe9a8":"#ffcf5c",700);   // bank() folds runBtns in on death/win
+    if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.6);
+      txt("+"+coinPopV+" ●",34,47-(0.8-coinPopT)*10,9,"#ffe08a",700); ctx.globalAlpha=1; }
+    if(magnetT>0) txt("MAGNET "+Math.ceil(magnetT),34,VH-10,8,"#5adcff",700);
+    if(shieldUp) txt("SHIELD",VW-38,VH-10,8,"#ffd45a",700);
     // static meter
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(CX-70,VH-18,140,8);
     ctx.fillStyle=cling>=1?"#bff0ff":"#5b8fa8"; ctx.fillRect(CX-70,VH-18,140*cling,8);
@@ -274,12 +355,12 @@ function draw(){
   } else if(mode==="dead"){
     ctx.fillStyle="rgba(10,8,6,0.45)"; ctx.fillRect(0,0,VW,VH);
     txt("SINGED!",CX,110,26,"#ff5468",800);
-    txt((dist|0)+"m toward the vortex",CX,134,11,"#e8dcc8",600);
+    txt((dist|0)+"m toward the vortex   ·   +● "+runBtns+"  (● "+buttons+")",CX,134,11,"#e8dcc8",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble again",CX,166,12,"#9bf0d0",700); ctx.globalAlpha=1;
   } else if(mode==="win"){
     ctx.fillStyle="rgba(20,12,30,0.55)"; ctx.fillRect(0,0,VW,VH);
     txt("THE LOST SOCK VORTEX",CX,104,20,"#c9b0ff",800);
-    txt("you made it out of the dryer",CX,128,11,"#e8dcc8",600);
+    txt("you made it out of the dryer   ·   +● "+runBtns+"  (● "+buttons+")",CX,128,11,"#e8dcc8",600);
     txt("…the journey home begins  (→ Level 2: UNDER THE FLOOR)",CX,148,10,"#aeb8cc",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to go again",CX,180,12,"#9bf0d0",700); ctx.globalAlpha=1;
   }

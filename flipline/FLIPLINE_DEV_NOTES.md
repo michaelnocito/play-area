@@ -26,8 +26,27 @@ Built `proto/drum.html` (self-contained, does NOT touch the live build):
   steering, charging, leap, death/retry all exercised. Crude bot dies 90–320m (it only reacts
   0.3 rad out — humans read whole rings ahead); PROPER drum bot-sim harness required before
   this is promoted into the main build.
-**NEXT: Mike feel-tests the prototype. If fun → Batch C Level 1 = drum (campaign restructure
-in ROADMAP §5); if not → tune AV/ZSPD/patterns or park.**
+**✅ 2026-07-11 (later): direction APPROVED by Mike ("this is great, and the new direction") +
+collectibles added (research-first: guaranteed-cadence trails > scattered singles; never
+co-located with hazards; magnet = the classic):**
+- **BUTTONS = currency** (matches the main game): guaranteed 4-button sweeping trail every
+  4.5s (sweep rewards a slide → which charges STATIC — one loop), placed via `colClear()`
+  angular-clearance check vs co-arriving heat arcs; occasional ×3 risk single tucked beside an
+  arc's edge. Banked to `localStorage flipline.drum.proto` on death AND win (main-save
+  integration when promoted).
+- **BUFF ORBS** every 8s (5s first), cycling SHIELD → MAGNET → BOLT in the main game's colour
+  language: SHIELD (gold, absorbs one hit + 0.8s grace, ring visual), MAGNET (cyan, 7s,
+  buttons within ±1.3 rad glide in, rim field arc), STATIC BOLT (drum-specific: leap meter
+  instantly full).
+- HUD: ● counter + "+N ●" pop top-left, MAGNET timer / SHIELD labels; SINGED!/vortex screens
+  show the run's haul + banked total.
+- LEVEL_LEN 400→600m (~35s — 400 played in ~20s, too thin for the orb cycle); orb cadence
+  11→8s. Freeze-on-start bug fixed earlier (`d717410`: negative inner-lip arc radius threw and
+  killed the rAF loop).
+- Verified: bot session across 20+ runs — buttons accumulate + persist, all 3 orb kinds spawn,
+  shield absorb + grace works, magnet pull works, win at 600m (`_shots/drum_buttons/magnet/win.png`).
+**NEXT: Mike feel-tests collect loop. Then promote into main build as campaign Level 1
+(Batch C): needs drum bot-sim harness, main-save button integration, per-land drum variants.**
 Test steps: D-a boot to ready screen · D-b steer both ways around the full rim · D-c slide to
 fill STATIC then tap/space — leap clears an arc at the rim · D-d die on purpose (SINGED! →
 tap retries) · D-e reach 400m — vortex win screen · D-f touch: hold halves steers, quick tap
