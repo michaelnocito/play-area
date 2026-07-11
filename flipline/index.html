@@ -126,7 +126,8 @@ const Music = {
     this.timer=setInterval(()=>this.sched(),25); this.applyMute(); },
   applyMute(){ if(!this.gain||!Snd.ctx) return; const tgt=(this.on&&!Snd.muted&&!Snd.platformMuted)?(this.flow?0.22:0.16):0.0001; this.gain.gain.setTargetAtTime(tgt,Snd.ctx.currentTime,0.1); },  // swell in Flow State
   sched(){ const c=Snd.ctx; if(!c) return; const sp16=(60/this.BPM)/4;
-    const sp=(typeof mode!=="undefined"&&mode==="play")?(speed-SPEED0)/(SPEEDMX-SPEED0):0;   // tension: bass filter opens as you speed up
+    let sp=(typeof mode!=="undefined"&&mode==="play")?(speed-SPEED0)/(SPEEDMX-SPEED0):0;   // tension: bass filter opens as you speed up
+    if(typeof surgeT!=="undefined"&&surgeT>0&&mode==="play") sp=1;                          // TUMBLE surge throws the filter wide open
     this.bassLP.frequency.setTargetAtTime(this.flow?1150:380+Math.max(0,Math.min(1,sp))*560,c.currentTime,0.15);   // Flow State opens it wide
     while(this.next < c.currentTime+0.14){ this.note(this.step,this.next); this.next+=sp16; this.step=(this.step+1)%32; } },
   note(s,t){ if(Snd.muted||Snd.adMuted||Snd.platformMuted) return;        // skip node creation when silenced (step still advances → stays in time)
@@ -189,7 +190,7 @@ const FLIPKICK = 240;         // instant velocity on flip (crisp snap off the su
 const MAXVY  = 1300;          // terminal vertical speed
 const SPEED0 = 170;           // starting scroll speed px/s
 const SPEEDMX= 360;           // max scroll speed px/s
-const RAMP   = 0.15;          // ⚠️ speed gained per meter — DROPPED from 0.35 (Mike: "really drop the speed increase" for the calmer two-line journey; overrides the old locked-feel value)
+const RAMP   = 0.30;          // speed gained per metre — RESTORED from 0.15 (🔷 Mike 2026-07-11: the 0.15 drop was for the cut two-line design; downline-only at 0.15 meant most players never reached top speed → bland). Top speed now lands ~630m.
 const GAP0   = 200;           // starting world spacing between obstacles
 const GAPMIN = 120;           // tightest spacing
 const HMIN   = 66, HMAX=118;  // obstacle jut height range
@@ -228,20 +229,23 @@ const ENEMY_COIN=2;                     // coins for a clean stomp
 const SEG_SEQ=[0];   // v1 CrazyGames ship: downline-only. Upline (glide/platforms) parked as a post-launch content update — see FLIPLINE_DEV_NOTES.md
 
 /* ===== Collectible tunables (coins + earned power-orbs) ===== */
-const COL_FROM=60;            // metres before any loot appears (gentle early game)
-const LURE_GAP_MIN=30, LURE_GAP_RND=24;        // metres between lures (cadence breathes 30–54m)
+const COL_FROM=20;            // metres before any loot appears (was 60 — the first half-minute was empty; B2 pacing)
+const LURE_GAP_MIN=18, LURE_GAP_RND=16;        // metres between lures (was 30–54 — buttons are the between-flip verb; B2 pacing)
 const STEPX=24, DIP_STEPX=60, SCAT_STEPX=90;   // horizontal spacing within a lure
 const COIN_VAL=1, COIN_VAL_RISK=3;             // base vs danger-lane risk-premium payout
 const COIN_R=14, ORB_R=22;                     // GENEROUS grab radii (>> the ~8/11px visuals)
-const WEAVE_MAX=175;                           // TUNNEL only: below this distance coins appear ONLY hugging a pipe's wall in the
-                                               // open gap just past it (tempts a quick weave up/down into the empty space + back);
-                                               // at/above 175m speed is too high to weave safely → revert to the normal lures
+const WEAVE_MAX=80;                            // TUNNEL only: below this distance coins appear ONLY hugging a pipe's wall in the
+                                               // open gap just past it (weave-tempt). Was 175 — that left 60–175m weave-only and
+                                               // sparse; normal lures now start at 80m (B2 pacing)
 const WEAVE_COIN_DX=44;                         // how far into the trailing opening the weave coin sits (clearLootNear prunes unsafe ones)
 const MAG_R=150;                               // MAGNET buff pull radius — coins within this glide to the player
 /* Warp tubes — optional HIGH-SKILL forward skip (teal/friendly, never red, never kills; miss = no penalty) */
 const WARP_FROM=120, WARP_GAP=100, WARP_M=28;  // first ~120m then ~every 100m; +28m skip (leaderboard-safe)
 const WARP_HITX=PS, WARP_HITY=18;              // TIGHT catch window — must flip THROUGH the ring; harder to time than a dodge
 const ORB_FROM=150, ORB_GAP=170;              // orbs unlock at the old gate distance, now EARNED
+/* ===== TUMBLE surges (B2) — micro drama beats: a telegraphed dense burst, then a real breather.
+   Spacing NEVER dips below GAPMIN (the fairness lock) — the sim re-run is the proof. */
+const SURGE_FROM=90, SURGE_GAP=110, SURGE_DUR=4, SURGE_RELIEF=3;
 const KEEPX=78, KEEPY=24;                      // keep-out from any red edge — large enough that even the LATEST-grabbed dip coin is escapable from a max-height same-surface jut at top speed (~37ms margin)
 const ORB_DUR=4;                               // orb buff seconds (was GATE_DUR)
 
@@ -254,7 +258,7 @@ const OBPANEL="rgba(0,0,0,0.20)";       // internal tech-panel separator line
 /* ===== Precomputed art + lighting (built once at boot, then only blitted) =====
    Long Way Home is told wordlessly with light: a player-centred spotlight that breathes,
    a warm home-beacon on the horizon, and zones re-themed as lands. */
-let RIDGES=null, RIDGEBUF=null, RIDGECTX=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
+let RIDGES=null, BGDECO=null, WALLTEX=null, RIDGEBUF=null, RIDGECTX=null, ridgeOff=0, LIGHTSPR=null, LIGHTGOLD=null, DARK=null, DARKCTX=null, ORBSPR=[null,null,null];
 let SOCKMASK=null, SOCKGOLD=null, SOCKPAT=[null,null,null,null,null,null,null], SOCKBUF=null, SOCKBCTX=null;
 const SOCKW=128;   // sock sprite sheet size; the silhouette spans ~2.67× its logical radius on it
 function mkCanvas(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
@@ -338,6 +342,40 @@ function buildArt(){
         g.fillRect(x2,BOTY-bh,bw,bh); g.fillRect(x2+4,BOTY-bh-8,bw-9,8); }
     }
     RIDGES[L]=c; }
+  // per-land backdrop SET-PIECE — the theme made explicit (baked in that land's accent colour so
+  // no per-frame tint pass is needed; blitted faint w/ slow parallax). One iconic object per land.
+  BGDECO=[null,null,null,null];
+  for(let L=0;L<4;L++){ const c=mkCanvas(VW,VH), g=c.getContext("2d"), A=ACCENTS[L];
+    g.strokeStyle=g.fillStyle="rgb("+A[0]+","+A[1]+","+A[2]+")";
+    if(L===0){        // THE DRYER — drum porthole rings + lifter vanes + perforation field
+      g.lineWidth=7; g.beginPath(); g.arc(VW*0.62,VH*0.5,130,0,6.2832); g.stroke();
+      g.lineWidth=3; g.beginPath(); g.arc(VW*0.62,VH*0.5,112,0,6.2832); g.stroke();
+      for(let x=30;x<VW;x+=150) g.fillRect(x,TOPY+18,12,VH-WALL*2-36);
+      for(let y=TOPY+30;y<BOTY-24;y+=26) for(let x=10;x<VW;x+=34) g.fillRect(x+((y/26|0)%2?8:0),y,3,3);
+    } else if(L===1){ // UNDER THE FLOOR — pipe run w/ joints + corner cobweb
+      g.fillRect(0,64,VW,5); for(let x=40;x<VW;x+=120) g.fillRect(x,60,10,13);
+      g.lineWidth=2; for(let r=26;r<=78;r+=26){ g.beginPath(); g.arc(0,TOPY,r,0,Math.PI/2); g.stroke(); }
+      g.beginPath(); g.moveTo(0,TOPY); g.lineTo(66,TOPY+40); g.moveTo(0,TOPY); g.lineTo(30,TOPY+72); g.stroke();
+    } else if(L===2){ // THE GARDEN WALL — sagging clothesline w/ pinned socks + shirts (the pair is out there)
+      g.lineWidth=3; g.beginPath(); g.moveTo(0,52); g.quadraticCurveTo(VW*0.25,74,VW*0.5,58); g.quadraticCurveTo(VW*0.75,78,VW,54); g.stroke();
+      for(let k=0;k<5;k++){ const x=40+k*96, y=60+Math.sin(k*1.7)*9;
+        g.fillRect(x,y,4,7);
+        if(k%2===0){ g.fillRect(x-4,y+7,12,18); g.fillRect(x-4,y+22,18,8); }   // a hung sock
+        else g.fillRect(x-8,y+7,20,16); }                                       // a shirt
+    } else {          // THE ATTIC — moonbeam shaft + hanging bulb
+      g.globalAlpha=0.5; g.beginPath(); g.moveTo(VW*0.66,TOPY); g.lineTo(VW*0.86,TOPY); g.lineTo(VW*0.56,BOTY); g.lineTo(VW*0.36,BOTY); g.closePath(); g.fill(); g.globalAlpha=1;
+      g.fillRect(VW*0.22,TOPY,2,34); g.beginPath(); g.arc(VW*0.22+1,TOPY+40,7,0,6.2832); g.fill();
+    }
+    BGDECO[L]=c; }
+  // per-land WALL texture — dark-on-transparent strips punched over the top/bottom bands (no tint needed)
+  WALLTEX=[null,null,null,null];
+  for(let L=0;L<4;L++){ const c=mkCanvas(256,WALL), g=c.getContext("2d");
+    g.fillStyle=g.strokeStyle="rgba(0,0,0,0.30)";
+    if(L===0){ for(let y=5;y<WALL-3;y+=8) for(let x=8;x<256;x+=22){ g.beginPath(); g.arc(x+((y/8|0)%2?5:0),y,1.8,0,6.2832); g.fill(); } }   // perforated drum wall
+    else if(L===1){ for(let x=0;x<256;x+=56){ g.fillRect(x,0,2,WALL); g.fillRect(x+28,WALL/2-1,3,3); } g.fillRect(0,WALL/2,256,1); }        // floorboards + nails
+    else if(L===2){ for(let y=2;y<WALL;y+=7){ g.fillRect(0,y,256,1); for(let x=((y/7|0)%2)*13;x<256;x+=26) g.fillRect(x,y-6,1,6); } }        // brick courses
+    else { g.lineWidth=1; g.beginPath(); for(let x=0;x<256+WALL;x+=18){ g.moveTo(x,0); g.lineTo(x-WALL,WALL); } g.stroke(); }               // beam grain hatch
+    WALLTEX[L]=c; }
   RIDGEBUF=mkCanvas(VW,VH); RIDGECTX=RIDGEBUF.getContext("2d");
   // sock sprites: white mask (tinted live for Chroma/glows), baked pattern socks, warm pair-sock beacon
   SOCKBUF=mkCanvas(SOCKW,SOCKW); SOCKBCTX=SOCKBUF.getContext("2d");
@@ -392,11 +430,14 @@ const TRN=20, trail=[]; for(let i=0;i<TRN;i++) trail.push({x:0,y:0,on:false});
 let trHead=0;
 function trailPush(x,y){ const p=trail[trHead]; p.x=x; p.y=y; p.on=true; trHead=(trHead+1)%TRN; }
 
-/* ===== Dynamic zone palette (evolving "worlds", cheap) — danger stays red for fairness ===== */
-const ZONELEN=55;   // metres per palette zone — short so new players see the world evolve fast
-// Zones as lands (Feature 3): the journey trends cool/lonely -> warm/golden (homeward) each cycle.
-const ZONES  =[[10,14,28],[20,16,40],[12,26,36],[34,22,16],[34,28,14]]; // night -> dusk -> cold dawn -> amber -> gold-home
-const ACCENTS=[[120,160,255],[170,150,255],[120,225,210],[255,180,110],[255,212,120]]; // cool blue -> violet -> teal -> amber -> gold
+/* ===== THE JOURNEY HOME — 4 named lands, locked to the sock lore (🔷 Mike 2026-07-11) =====
+   The run STARTS inside the dryer, escapes under the floor, crosses the garden wall, climbs to
+   the attic — cycling until the pair is reached (campaign makes them discrete in Batch C).
+   Palette index === land index === ridge/deco/wall-texture index. Danger stays red on all. */
+const ZONELEN=55;   // metres per land — short so new players see the world evolve fast
+const LANDNAME=["THE DRYER","UNDER THE FLOOR","THE GARDEN WALL","THE ATTIC"];
+const ZONES  =[[30,20,16],[22,17,12],[10,16,30],[22,17,34]];             // hot drum metal · earthy dark · night garden · moonlit dust
+const ACCENTS=[[255,176,96],[224,164,84],[136,220,184],[186,168,255]];   // heat amber · lantern · moon-teal · moonlight violet
 // UPPER (above-ground) palette — a calm OUTDOOR sky, deliberately muted/mid-brightness so it's easy on the eyes
 // (replaces the harsh colour-invert). Danger reds are hardcoded → still pop against it.
 const UPPER_ZONES=[[58,92,128],[84,118,150],[110,134,158],[92,116,150]];   // dawn-blue -> daytime -> haze -> dusk sky (soft)
@@ -529,6 +570,8 @@ let earlyOrb=true;   // free onboarding SHIELD dropped in the opening metres so 
 let bPts=0, ptsB=0, orbsN=0;                       // Batch B: banked event points · button points · orbs grabbed
 let popT=0, popTxt="", popCol="#ffe08a";           // in-run point popup (+250 NEW LAND etc.)
 let tallyStart=0, tallyLines=0, tallyDone=true, newBestFlag=false, tD=0, tB=0, tO=0, tL=0, tTot=0;   // end-of-run tally count-up
+let surgeT=0, reliefT=0, nextSurge=SURGE_FROM;             // TUMBLE surge beats: dense burst → real breather
+let landBannerT=0, landBannerIdx=0;                        // named-land banner (THE DRYER …)
 
 /* ===== TEST MODE: platform spacing measurement ===== */
 let testMode=false, testStart=0, testGaps=[150,175,200,225,250,275,300];   // gaps to test (px)
@@ -565,6 +608,7 @@ function reset(){
   Music.flow=false; Music.applyMute();
   nextLure=COL_FROM; lastObsSide=0; orbArmed=false; lastOrbDist=-999; lureSeq=0; coinPopT=0; coinPopV=0; earlyOrb=true;
   bPts=0; ptsB=0; orbsN=0; popT=0; tallyDone=true; newBestFlag=false;
+  surgeT=0; reliefT=0; nextSurge=SURGE_FROM; landBannerT=0; landBannerIdx=0;
 }
 function start(){ Snd.ensure();
   let gift=false; { const d=new Date().toDateString(); if(Store.getItem("flipline.day")!==d){ Store.setItem("flipline.day",d); gift=true; } }  // daily: first run of the day = all 3 free
@@ -573,6 +617,7 @@ function start(){ Snd.ensure();
   if(startAll||gift){ BT[0]=BT[1]=BT[2]=START_BUFF; }  // rewarded ad OR daily gift → start with ALL 3
   else if(pickBuff>=0){ BT[pickBuff]=START_BUFF; }     // everyday free pick-1
   startAll=false; mode="play"; Ads.gameplayStart();
+  landBannerT=1.8; landBannerIdx=0;                      // the run opens INSIDE the dryer — say so
 }
 function flip(){ gdir=-gdir; vy=gdir*FLIPKICK; sq=0.6; Snd.flip(gdir<0); }   // gdir<0 → rising to the ceiling = "up" whoosh
 function skyJump(){   // UPLINE glide: 1st tap (grounded) launches a floaty glide; 2nd tap (airborne) cancels it → drop to land precisely
@@ -676,11 +721,12 @@ function cl01(x){ return x<0?0:x>1?1:x; }     // clamp to 0..1 (smooth onset ram
 function rndSide(){ return Math.random()<0.5?0:1; }
 function pickFormation(){            // only called when no formation is active
   fmStep=0;
-  if(dist<100){ fmId=1; fmLen=1; return; }                  // gentle early game: solos only
+  if(dist<50){ fmId=1; fmLen=1; return; }                   // gentle early game: solos only (was 100m — B2 pacing)
+  if(reliefT>0){ fmId=1; fmLen=1; return; }                 // post-surge relief: solos only, real breathing room
   if(hardCount>=3){ fmId=7; fmLen=1; hardCount=0; return; } // forced breather after a hard streak
-  // master difficulty 0→1 over 100→420m. Everything below scales smoothly off it / off ramped onsets,
+  // master difficulty 0→1 over 60→360m. Everything below scales smoothly off it / off ramped onsets,
   // so formations FADE IN gradually instead of switching on at a hard distance (kills the "jumpy steps").
-  const D=cl01((dist-100)/320), r=Math.random();
+  const D=cl01((dist-60)/300), r=Math.random();
   const fFeat=0.06+0.18*D;                                  // "feature" share ramps 6%→24% (was a flat 18% cliff)
   if(r>fFeat){                                              // non-feature beat: solo vs double-flip (double grows with D)
     if(Math.random()<0.24+0.18*D){ fmId=2; fmLen=2; }      // double-flip 24%→42%
@@ -690,10 +736,10 @@ function pickFormation(){            // only called when no formation is active
   // feature slot: weighted pick where each pattern's weight ramps in from its onset over a window
   // (e.g. staircase is near-0 at 185m, common by ~275m) → a smooth ramp, never a step.
   const wDbl=0.6,                                           // gentle always-on feature so early features stay easy
-    wZig  =cl01((dist-120)/70),                             // zig-zag    phases in 120→190
-    wStair=cl01((dist-185)/90),                             // staircase  185→275
-    wPinch=cl01((dist-245)/100),                            // pinch      245→345
-    wGaunt=cl01((dist-330)/130);                            // gauntlet   330→460
+    wZig  =cl01((dist-80)/60),                              // zig-zag    phases in 80→140  (B2: everything ~40% sooner)
+    wStair=cl01((dist-140)/80),                             // staircase  140→220
+    wPinch=cl01((dist-200)/90),                             // pinch      200→290
+    wGaunt=cl01((dist-280)/120);                            // gauntlet   280→400
   let s=Math.random()*(wDbl+wZig+wStair+wPinch+wGaunt);
   if((s-=wGaunt)<0){ fmId=6; fmLen=6; fmSide=rndSide(); }            // gauntlet
   else if((s-=wPinch)<0){ fmId=5; fmLen=2; }                         // offset pinch
@@ -772,7 +818,7 @@ function spawnLure(){
   if(orbArmed){ if(spawnOrb()){ orbArmed=false; lastOrbDist=dist; } return; }   // rare earned jackpot
   const pick=Math.random();
   if(pick<0.45) spawnSwoop();       // arc that spans a flip (everyday lure)
-  else if(pick<0.72){ if(dist>=110) spawnDip(); else spawnSwoop(); }   // dips (risk) only after 110m — gentle early game
+  else if(pick<0.72){ if(dist>=70) spawnDip(); else spawnSwoop(); }   // dips (risk) after 70m (was 110 — B2 pacing)
   else spawnScatter();              // singles on opposite surfaces (collecting both needs a flip)
 }
 function spawnSwoop(){              // 5 coins bowing from one surface to the other → rewards a flip
@@ -811,6 +857,7 @@ function update(dt){
   if(landT>0){ landT-=dt; if(landT<0)landT=0; }
   if(coinPopT>0){ coinPopT-=dt; if(coinPopT<0){coinPopT=0;coinPopV=0;} }
   if(popT>0){ popT-=dt; if(popT<0)popT=0; }
+  if(landBannerT>0){ landBannerT-=dt; if(landBannerT<0)landBannerT=0; }
   if(warpFx>0){ warpFx-=dt; if(warpFx<0)warpFx=0; }
   if(xfade>0){ xfade-=dt; if(xfade<0)xfade=0; }   // mode-switch portal sweep
   if(acclimT>0){ acclimT-=dt; if(acclimT<0)acclimT=0; }   // post-transition speed ease-in
@@ -830,8 +877,16 @@ function update(dt){
 
   // difficulty ramp (baseline curve LOCKED — buffs never touch it)
   speed=Math.min(SPEEDMX, SPEED0+dist*RAMP);
-  const spacing=segType===1 ? Math.max(PLAT_GAPMIN, PLAT_GAP0-dist*0.1)
+  // TUMBLE surge beats — telegraphed dense burst, then a genuine breather (difficulty as drama)
+  if(surgeT>0){ surgeT-=dt; if(surgeT<=0){ surgeT=0; reliefT=SURGE_RELIEF; } }
+  else if(reliefT>0){ reliefT-=dt; if(reliefT<0)reliefT=0; }
+  if(dist>=nextSurge && xfade<=0 && surgeT<=0 && reliefT<=0){
+    surgeT=SURGE_DUR; nextSurge=dist+SURGE_GAP+((Math.random()*50)|0);
+    shake=Math.max(shake,3); bgPulse=Math.max(bgPulse,0.5); Snd.warp(); }
+  let spacing=segType===1 ? Math.max(PLAT_GAPMIN, PLAT_GAP0-dist*0.1)
               : Math.max(GAPMIN, GAP0-dist*0.35);
+  if(surgeT>0) spacing=Math.max(GAPMIN,spacing*0.72);      // surge: denser — never below the GAPMIN fairness floor
+  else if(reliefT>0) spacing*=1.45;                        // relief: open air, catch your breath
   const speedMul = acclimT>0 ? 1-SPEED_DROP*(acclimT/ACCLIM_DUR) : 1;   // 0.75 right after a transition → eases back to 1
   const dx=speed*speedMul*dt;
   worldX += dx * (BT[2]>0 ? 2 : 1); dist=worldX/40|0;
@@ -840,7 +895,8 @@ function update(dt){
   // X3 lore: crossing into a new land (every ZONELEN) — fire a wordless "new land" sweep, bloom the light, step the beacon closer
   { const zNow=(dist/ZONELEN)|0;
     if(zNow>lastZone){ lastZone=zNow; zonesRun++; zoneSweep=1; bgPulse=Math.max(bgPulse,0.55); beaconPulse=Math.max(beaconPulse,0.9);
-      bPts+=PTS_LAND; popT=1.2; popTxt="+"+PTS_LAND+"  NEW LAND"; popCol="#9bf0d0"; } }   // land-crossed bonus, taught in play
+      bPts+=PTS_LAND; popT=1.2; popTxt="+"+PTS_LAND; popCol="#9bf0d0";
+      landBannerT=1.8; landBannerIdx=zNow%4; } }   // land-crossed bonus + the new room announces itself by name
 
   // Mode B: cross a SEG_LEN boundary → switch flip<->sky. Non-lethal: clear the field, settle to the floor,
   // run the colour-invert portal sweep. gdir reset to 1 so flip resumes clean; sky's down-gravity just lands you.
@@ -938,8 +994,8 @@ function update(dt){
 
   // collectible lures — distance-driven (drop into gaps), biased to entice a flip; orbs earned ≈ old gate cadence
   if(dist>=COL_FROM && dist>=nextLure && xfade<=0){
-    if(segType===0 && dist>=WEAVE_MAX) spawnLure();   // downline: below 175m coins come ONLY from weave-coins (at pipe spawn); upline coins ride the platforms
-    nextLure=dist+LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0); }
+    if(segType===0 && dist>=WEAVE_MAX) spawnLure();   // downline: below WEAVE_MAX coins come ONLY from weave-coins (at pipe spawn); upline coins ride the platforms
+    nextLure=dist+(surgeT>0?10:LURE_GAP_MIN+(Math.random()*LURE_GAP_RND|0)); }   // surges shower buttons
   if(dist>=ORB_FROM && dist>=lastOrbDist+ORB_GAP && BT[0]<=0&&BT[1]<=0&&BT[2]<=0 && !orbArmed) orbArmed=true;
 
   // emotional light (Feature 1): target radius blooms on hope (bgPulse), constricts on fear
@@ -1012,13 +1068,20 @@ function draw(){
 
   const bgFill="rgb("+(bg[0]+pb)+","+(bg[1]+pb)+","+(bg[2]+pb)+")";  // built once; reused for corner bevels (no per-obstacle alloc)
   ctx.fillStyle=bgFill; ctx.fillRect(-12,-12,VW+24,VH+24);
+  const landIdx=((dist/ZONELEN)|0)%4;   // which room of the house-world we're in (palette/ridge/deco/walls all keyed to it)
+
+  // land SET-PIECE backdrop (porthole / pipes / clothesline / moonbeam) — faint, slow parallax, wrap-blitted
+  { const dec=BGDECO[landIdx], dx0=-(((worldX*0.18)%VW)|0);
+    ctx.globalAlpha=0.16; ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(dec,dx0,0); ctx.drawImage(dec,dx0+VW,0);
+    ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false; }
 
   // mid-parallax ridge band — tint the silhouette MASK to THIS land (cool->warm) on a cached buffer, then wrap-blit.
   // Alloc-free: 1 clear + 1 fill + 1 mask punch on RIDGEBUF, then two smoothed blits. Stays faint so danger pops.
   { const rg=RIDGECTX;
     rg.globalCompositeOperation="source-over"; rg.clearRect(0,0,VW,VH);
     rg.fillStyle="rgb("+((28+ac[0]*0.15)|0)+","+((34+ac[1]*0.15)|0)+","+((44+ac[2]*0.15)|0)+")"; rg.fillRect(0,0,VW,VH);
-    rg.globalCompositeOperation="destination-in"; rg.drawImage(RIDGES[((dist/ZONELEN)|0)%4],0,0);   // house-world room per land
+    rg.globalCompositeOperation="destination-in"; rg.drawImage(RIDGES[landIdx],0,0);   // house-world room per land
     rg.globalCompositeOperation="source-over"; }
   ridgeOff=(worldX*0.30)%VW; { const rx=-(ridgeOff|0); ctx.imageSmoothingEnabled=true; ctx.globalAlpha=0.20;
     ctx.drawImage(RIDGEBUF,rx,0); ctx.drawImage(RIDGEBUF,rx+VW,0); ctx.globalAlpha=1; ctx.imageSmoothingEnabled=false; }
@@ -1046,8 +1109,10 @@ function draw(){
   ctx.fillStyle="rgba("+ac[0]+","+ac[1]+","+ac[2]+",0.018)";
   for(let y=WALL+8;y<VH-WALL;y+=14) ctx.fillRect(0,y,VW,1);
 
-  // walls
+  // walls — land-textured (drum perforations / floorboards / bricks / beam grain), scrolling with the world
   ctx.fillStyle=wallCss; ctx.fillRect(0,0,VW,WALL); ctx.fillRect(0,VH-WALL,VW,WALL);
+  { const wt=WALLTEX[landIdx], wo=(worldX%256)|0;
+    for(let x=-wo;x<VW;x+=256){ ctx.drawImage(wt,x,0); ctx.drawImage(wt,x,VH-WALL); } }
   ctx.fillStyle="#262f45"; ctx.fillRect(0,WALL-2,VW,2); ctx.fillRect(0,VH-WALL,VW,2);
 
   // UPLINE platforms — friendly light ledges (never red); soft glow + lit top surface + underside shadow
@@ -1209,8 +1274,12 @@ function draw(){
     txt(""+score(),VW/2,WALL-6,13,"#e8ecf1",800);                            // run points, top-centre
     txt(dist+"m",VW/2+72,WALL-6,10,"#8b95a8",600);                           // metres, secondary
     txt("● "+((dist/14|0)+runCoinBonus),42,WALL-6,coinPopT>0?14:12,coinPopT>0?"#ffe9a8":"#ffcf5c",700);
-    if(popT>0){ ctx.globalAlpha=Math.min(1,popT*1.5);                        // event-point popup (+250 NEW LAND …)
+    if(popT>0){ ctx.globalAlpha=Math.min(1,popT*1.5);                        // event-point popup (+250 …)
       txt(popTxt,VW/2,64-(1.2-popT)*16,13,popCol,800); ctx.globalAlpha=1; }
+    if(landBannerT>0){ ctx.globalAlpha=Math.min(1,landBannerT*1.2);          // the room announces itself by name
+      txt(LANDNAME[landBannerIdx],VW/2,92,17,accCss,800); ctx.globalAlpha=1; }
+    if(surgeT>SURGE_DUR-1){ ctx.globalAlpha=0.15+(surgeT-(SURGE_DUR-1))*0.85; // surge telegraph
+      txt("TUMBLE!",VW/2,116,15,"#ffcf5c",800); ctx.globalAlpha=1; }
     // pause chip — small corner affordance so phone-call recovery + intentional pause is always available
     ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(R_PAUSE.x,R_PAUSE.y,R_PAUSE.w,R_PAUSE.h);
     ctx.fillStyle="rgba(232,236,241,0.65)"; ctx.fillRect(R_PAUSE.x+12,R_PAUSE.y+10,4,16); ctx.fillRect(R_PAUSE.x+20,R_PAUSE.y+10,4,16);
@@ -1254,6 +1323,7 @@ function draw(){
     // Batch B tally — line items count up one by one (retention beat); tap skips straight to done
     const p=t-tallyStart;
     txt("CRASHED",VW/2,54,24,"#ff5468",800);
+    txt("in "+LANDNAME[landIdx],VW/2,67,9,"#8b95a8",600);   // death has an identity (which room felled you)
     const TL=[["DISTANCE   "+dist+"m",tD],["BUTTONS",tB],["ORBS   ×"+orbsN,tO],["LANDS   ×"+zonesRun,tL]];
     const lx=VW/2-88, rx=VW/2+88;
     for(let k=0;k<4;k++){ const lp=tallyDone?1:(p-(k+1)*0.45)/0.35; if(lp<=0) continue;

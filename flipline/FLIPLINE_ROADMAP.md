@@ -142,6 +142,21 @@ itch/GameJolt) ✓. Rewarded-ad double moves to tally screen in Batch B (no poli
 **BATCH A — Sock identity (the rejection lever): ✅ DONE 2026-07-10** (see §3/§4 above). Sim
 re-run at HEAD confirms hitbox-identical fairness. Mike playtests feel/look next.
 **BATCH B — Score & tally: ✅ DONE 2026-07-11** (see §6 above).
+**BATCH B2 — Pacing & theme lock: ✅ DONE 2026-07-11** (🔷 Mike playtest call: "huge gaps in
+action, feels bland" + "background must be representative of the sock theme"). Landed:
+- **Theme LOCKED: THE JOURNEY HOME.** 4 named lands cycling — THE DRYER (run starts inside the
+  drum) → UNDER THE FLOOR → THE GARDEN WALL → THE ATTIC — chasing the pair-sock beacon. Palette,
+  ridge, backdrop set-piece (porthole+lifters / pipes+cobweb / clothesline w/ hung laundry /
+  moonbeam+bulb) and wall texture (drum perforations / floorboards / bricks / beam grain) all
+  keyed to one land index. Land-name banner on entry + on every crossing; death identity on the
+  tally ("in THE ATTIC").
+- **Pacing:** RAMP 0.15→0.30 (🔷 restore approved — top speed ~630m, avg players reach the fast
+  band); loot from 20m; normal lures from 80m (was 175); lure cadence 18–34m (was 30–54);
+  solos-only cut 100→50m; formation onsets ~40% sooner; dips from 70m.
+- **TUMBLE surges:** every ~110–160m past 90m — 4s telegraphed dense burst ("TUMBLE!", spacing
+  ×0.72 clamped at GAPMIN, button shower, music filter wide open, shake) → 3s relief (spacing
+  ×1.45, solos only). Difficulty is drama now, not a treadmill.
+- Sim re-run at the new tuning — see FLIPLINE_DEV_NOTES.md for numbers.
 **BATCH C — Campaign:** discrete lands + saves + level-complete ads + wardrobe milestones;
 upline only if the redesign proves fun (not a blocker).
 **BATCH D — Ship wave:** onboarding beat, text diet, prompts/AZERTY, name final call 🔷, store

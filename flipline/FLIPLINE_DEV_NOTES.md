@@ -4,6 +4,32 @@
 **HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
 **Read first:** this file + **`FLIPLINE_ROADMAP.md`** (the dev-owned backlog — CrazyGames-grade rework, 🧦 ODD SOCK identity pivot 2026-07-02) + memory `project_flipline_state.md` (full per-feature + submission history). Also `FLIPLINE_HANDOFF.md`, `FLIPLINE_lore_bible.md` (⚠️ pre-sock lore — superseded by ROADMAP's Odd Sock section), `FLIPLINE_store_copy.md` (⚠️ rewrite gated on final name, Batch D).
 
+## ✅ BATCH B2 — Pacing & THEME LOCK (2026-07-11) — DONE, Mike playtests next
+Mike's playtest call: "huge gaps in action, feels bland" + "background must represent the sock
+theme." Root cause found: RAMP 0.15 was tuned for the CUT two-line design → top speed needed
+1,267m, past the average player's whole run. Landed in master `index.html`:
+- **🔷 THEME LOCKED — THE JOURNEY HOME:** run starts INSIDE THE DRYER, escapes UNDER THE FLOOR,
+  crosses THE GARDEN WALL, climbs to THE ATTIC (cycles; Batch C makes lands discrete). One land
+  index drives palette + ridge + backdrop set-piece + wall texture: drum porthole/lifters +
+  perforated walls · pipes/cobweb + floorboards · clothesline w/ hung laundry + bricks ·
+  moonbeam/bulb + beam hatch. `LANDNAME` banner at run start + each crossing; tally says
+  "in THE <LAND>" (death identity). Set-pieces baked pre-colored in each land's accent
+  (BGDECO[4], no per-frame tint); wall strips dark-on-transparent (WALLTEX[4]); ZONES/ACCENTS
+  now 4 per-land palettes aligned to the same index (old 5-entry cool→warm cycle replaced).
+- **Pacing (B2):** RAMP 0.15→0.30 (🔷 Mike approved restore; top speed ~630m); COL_FROM 60→20;
+  WEAVE_MAX 175→80; lure gap 30–54→18–34m; solos-only 100→50m; formation difficulty window
+  100–420→60–360m w/ all onsets ~40% sooner; dip lures 110→70m.
+- **TUMBLE surges:** SURGE_FROM 90, every 110–160m: 4s burst (spacing ×0.72 **clamped ≥GAPMIN**,
+  lures every 10m, "TUMBLE!" banner, shake, music bass filter forced open) → 3s relief
+  (spacing ×1.45, pickFormation forced solo). Spacing floor = the fairness lock, unchanged.
+- **Sim re-run (1,500 runs):** earlyDeath 0% all tiers, clean separation, medians
+  250/321/475/702/872m — shorter runs by design (avg player now EXPERIENCES the fast band;
+  ~2min sessions, portal-typical). Reaction budget math unchanged (GAPMIN/SPEEDMX locked).
+- Verified in preview: all 4 land backdrops + wall textures + banners + surge shot
+  (`_shots/b2_*.png`), node --check clean.
+**NEXT: Mike playtests feel (pace + theme), then Batch C — discrete lands campaign designed
+AROUND the journey-home theme (each land = a crafted room ending "SOCK SAFE").**
+
 ## ✅ BATCH B — Score & tally (2026-07-11) — DONE
 Every action now has visible value; the tally is the retention beat. In master `index.html`:
 - **Values:** `PTS_M=10/m · PTS_BTN=25×val · PTS_ORB=150 · PTS_LAND=250`; `score()=dist*10+bPts`
