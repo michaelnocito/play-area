@@ -83,6 +83,16 @@ Procedural SFX in-key (PENT), directional flip, techno bed, ad ducking, mute + C
 
 ## 5. Content depth & goals — ❌ "NEEDS CONTENT" → Batch C
 
+**🔷 CAMPAIGN RESTRUCTURE (Mike 2026-07-11): Level 1 = INSIDE THE DRYER (drum dodger).**
+New core mechanic prototyped in `proto/drum.html`: 3rd-person view INTO the drum cylinder;
+the sock rides the rim and steers around the circumference to dodge red heat arcs coming out
+of THE LOST SOCK VORTEX (the level goal); STATIC CLING charges while sliding and spends on a
+leap (brief invulnerable hop). The drum itself tumbles. Research-grounded (Tunnel Rush is a
+CrazyGames staple; Tempest/Super Hexagon readability rules: every pattern leaves a gap
+reachable at max steer speed). The EXISTING flip-runner becomes Levels 2+ (UNDER THE FLOOR →
+GARDEN WALL → ATTIC). ⏳ Feel-gate: Mike playtests the prototype before it's promoted into
+the main build; needs its own bot-sim fairness harness when promoted.
+
 **Now:** one endless mode, palette-only variety. **Standard:** "clear goals the player can reach."
 
 - [ ] **Discrete lands campaign** (design already CG-verified in dev notes): each land = a crafted

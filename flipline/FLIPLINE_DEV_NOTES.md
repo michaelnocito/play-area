@@ -4,6 +4,35 @@
 **HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
 **Read first:** this file + **`FLIPLINE_ROADMAP.md`** (the dev-owned backlog — CrazyGames-grade rework, 🧦 ODD SOCK identity pivot 2026-07-02) + memory `project_flipline_state.md` (full per-feature + submission history). Also `FLIPLINE_HANDOFF.md`, `FLIPLINE_lore_bible.md` (⚠️ pre-sock lore — superseded by ROADMAP's Odd Sock section), `FLIPLINE_store_copy.md` (⚠️ rewrite gated on final name, Batch D).
 
+## 🧪 DRUM PROTOTYPE — "INSIDE THE DRYER" Level 1 (2026-07-11) — ⏳ FEEL-GATE, Mike playtests
+🔷 Mike's call: the dryer should BE a cylinder — 3rd-person, looking into the drum, dodging
+around the circumference; static cling = leap power; the built flip-runner becomes a LATER
+level; run starts in the dryer heading to the LOST SOCK VORTEX.
+Built `proto/drum.html` (self-contained, does NOT touch the live build):
+- Camera looks into the drum: rim at RIM=112px, obstacles born at the vortex (z=0.06) and
+  approach the camera (r = RIM·z^1.8); red heat ARCS (solo / offset double / ring-with-gap /
+  spiral triplet). Drum itself tumbles at 0.22 rad/s (obstacles + wall texture ride it).
+- Controls: ←→/AD steer (3.0 rad/s — full π sweep ~1.05s, the fairness anchor; every ring gap
+  ≥0.55 rad), SPACE/tap = LEAP when STATIC is full. Touch: hold left/right half steers; quick
+  tap (<170ms, no drag) leaps.
+- STATIC CLING: charges at 0.5/s WHILE STEERING (slide on fabric = friction = static — charge
+  by playing), full bar = one 0.6s invulnerable leap w/ shadow + landing puff + spark crawl.
+- Goal: 400m to THE LOST SOCK VORTEX (progress bar top HUD); vortex glow grows w/ progress;
+  win screen teases "Level 2: UNDER THE FLOOR". Death = SINGED! instant retry.
+- Research first (per practice): Tunnel Rush-style 360° tube dodgers are CrazyGames staples;
+  Tempest (rim-rider archetype) + Super Hexagon (readability: rotation helps you see gaps
+  coming; patterns must be escapable at max steer speed) ground the fairness rules.
+- Verified: node --check clean, booted, bot-driven runs + screenshots (`_shots/drum_*.png`) —
+  steering, charging, leap, death/retry all exercised. Crude bot dies 90–320m (it only reacts
+  0.3 rad out — humans read whole rings ahead); PROPER drum bot-sim harness required before
+  this is promoted into the main build.
+**NEXT: Mike feel-tests the prototype. If fun → Batch C Level 1 = drum (campaign restructure
+in ROADMAP §5); if not → tune AV/ZSPD/patterns or park.**
+Test steps: D-a boot to ready screen · D-b steer both ways around the full rim · D-c slide to
+fill STATIC then tap/space — leap clears an arc at the rim · D-d die on purpose (SINGED! →
+tap retries) · D-e reach 400m — vortex win screen · D-f touch: hold halves steers, quick tap
+leaps (on phone).
+
 ## ✅ BATCH B2 — Pacing & THEME LOCK (2026-07-11) — DONE, Mike playtests next
 Mike's playtest call: "huge gaps in action, feels bland" + "background must represent the sock
 theme." Root cause found: RAMP 0.15 was tuned for the CUT two-line design → top speed needed
