@@ -229,7 +229,7 @@ function draw(){
     ctx.strokeStyle="#b82034"; ctx.lineWidth=th;
     ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke();
     ctx.strokeStyle="#ff7184"; ctx.lineWidth=Math.max(1.5,th*0.3);                 // hot inner lip
-    ctx.beginPath(); ctx.arc(CX,CY,r-th*0.28,o.ang-o.hw,o.ang+o.hw); ctx.stroke();
+    ctx.beginPath(); ctx.arc(CX,CY,Math.max(0.5,r-th*0.28),o.ang-o.hw,o.ang+o.hw); ctx.stroke();   // clamp: deep-drum r is tiny; a negative radius THROWS and kills the rAF loop
     ctx.globalAlpha=1; }
 
   // the sock on the rim (or leaping toward the camera)
