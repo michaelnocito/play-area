@@ -45,6 +45,10 @@ co-located with hazards; magnet = the classic):**
   killed the rAF loop).
 - Verified: bot session across 20+ runs — buttons accumulate + persist, all 3 orb kinds spawn,
   shield absorb + grace works, magnet pull works, win at 600m (`_shots/drum_buttons/magnet/win.png`).
+**✅ Controls fix (`15f4f04`):** steering was angle-based, so "right" moved the sock LEFT at the
+bottom of the drum (Mike caught it). Default is now **SCREEN** (right = sock moves right at the
+bottom); ready-screen toggle "CONTROLS: SCREEN/WHEEL" for players who think in drum-rotation
+terms; choice persisted in the proto save. Both directions + persistence verified.
 **NEXT: Mike feel-tests collect loop. Then promote into main build as campaign Level 1
 (Batch C): needs drum bot-sim harness, main-save button integration, per-land drum variants.**
 Test steps: D-a boot to ready screen · D-b steer both ways around the full rim · D-c slide to
