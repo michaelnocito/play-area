@@ -1,4 +1,15 @@
-# FLIPLINE — Dev Handoff / Resume Point
+# FLIPLINE → ODD SOCK — Dev Handoff / Resume Point
+
+## ⚡ RESUME HERE (2026-07-11): DRUM BUILD-OUT
+🔷 DRUM-ONLY ARC LOCKED — `proto/drum.html` IS the CrazyGames submission; the flip-runner
+`index.html` (Batches A/B/B2) is a post-launch content update, never mixed into the review.
+**Build order (one large chunk per session): GQ-A feel & feedback → GQ-B sound & drama →
+C1 compliance → C2 stages+ending+drum-sim → C3 score/meta/shop port → C4 ship wave.**
+Full specs per chunk: FLIPLINE_ROADMAP.md (🧺 DRUM PLAN section, GQ-1..8 gap analysis).
+Proto state: catch&fling + static ride + garment gaps + 3-hit health + stages/MEND all
+working and feel-approved. NEXT = GQ-A (steering ease/lean, hit-stop, catch combos w/
+pitch ladder, camera punches, graze reward — graze is SAFE in drum geometry, unlike the
+flip-runner's dead skim mechanic).
 
 **Repo:** `github.com/michaelnocito/play-area` (PUBLIC monorepo, branch `main`) — Flipline lives in the `flipline/` subfolder · **Local:** `C:\Users\Mike\Projects\GAMES\play-area\flipline`
 **HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
