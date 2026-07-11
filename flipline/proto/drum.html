@@ -100,22 +100,32 @@ function glowSprite(sz,r,g,b){ const c=mkCanvas(sz,sz),x=c.getContext("2d");
 const VORTEX=glowSprite(160,190,150,255), WARM=glowSprite(128,255,190,110);
 const ORBSPR=[null,glowSprite(64,255,212,90),glowSprite(64,90,220,255),glowSprite(64,191,240,255)];   // SHIELD gold · MAGNET cyan · BOLT static-blue (main game's buff colour language)
 const MEND=glowSprite(64,155,240,208);                                                                // health patch glow (mint — never red)
-/* garment sprites — the barriers ARE clothes now (hot red laundry), plus muted ones tumbling in the bg */
-function mkGarment(kind,hot){ const W=64,c=mkCanvas(W,W),x=c.getContext("2d"); x.translate(W/2,W/2);
-  const body=hot?"#e8344f":"#4a4038", rim=hot?"#ff8a9a":"#5c5248", dark=hot?"#8f1425":"#332c26";
-  x.fillStyle=body;
-  if(kind===0){ x.fillRect(-14,-10,28,26); x.fillRect(-24,-10,10,12); x.fillRect(14,-10,10,12);   // t-shirt: torso + sleeves
-    x.fillStyle=dark; x.fillRect(-6,-10,12,5);                                                     // collar
-    x.fillStyle=rim; x.fillRect(-14,-10,28,3); x.fillRect(-14,13,28,3); }
-  else if(kind===1){ x.fillRect(-13,-16,26,10);                                                    // pants: waist + legs
-    x.fillRect(-13,-6,10,30); x.fillRect(3,-6,10,30);
-    x.fillStyle=rim; x.fillRect(-13,-16,26,3); x.fillRect(-13,21,10,3); x.fillRect(3,21,10,3);
-    x.fillStyle=dark; x.fillRect(-2,-6,4,12); }
-  else { x.fillRect(-11,-19,22,38);                                                                // towel
-    x.fillStyle=dark; x.fillRect(-11,-8,22,4); x.fillRect(-11,4,22,4);
-    x.fillStyle=rim; x.fillRect(-11,-19,22,3); x.fillRect(-11,16,22,3); }
-  // cloth waviness: nibble the corners
-  x.fillStyle="rgba(0,0,0,0)"; return c; }
+/* garment sprites — the barriers ARE clothes (big, outlined, unmistakable), plus muted bg ones.
+   Bold silhouettes w/ dark outline + white-hot edges so they read as laundry at any size. */
+function mkGarment(kind,hot){ const W=72,c=mkCanvas(W,W),x=c.getContext("2d"); x.translate(W/2,W/2);
+  const body=hot?"#ff4a63":"#4a4038", rim=hot?"#ffd0d6":"#5c5248", dark=hot?"#7d0f1f":"#2c2620", fold=hot?"#c21f38":"#3a332c";
+  function outline(fn){ x.save(); x.strokeStyle=dark; x.lineWidth=5; x.lineJoin="round"; fn(true); x.restore(); fn(false); }
+  if(kind===0){ outline(o=>{ x.beginPath();                                   // T-SHIRT
+      x.moveTo(-13,-26); x.lineTo(13,-26);                                    // shoulders
+      x.lineTo(30,-14); x.lineTo(22,0); x.lineTo(13,-6); x.lineTo(13,28);     // right sleeve + side
+      x.lineTo(-13,28); x.lineTo(-13,-6); x.lineTo(-22,0); x.lineTo(-30,-14); // left side + sleeve
+      x.closePath(); if(o){x.stroke();return;} x.fillStyle=body; x.fill(); });
+    x.fillStyle=dark; x.beginPath(); x.arc(0,-26,8,0,Math.PI); x.fill();      // collar
+    x.fillStyle=fold; x.fillRect(-13,8,26,3); x.fillRect(-13,18,26,3);        // folds
+    x.fillStyle=rim; x.fillRect(-13,25,26,3); }                               // hot hem
+  else if(kind===1){ outline(o=>{ x.beginPath();                              // PANTS
+      x.moveTo(-16,-28); x.lineTo(16,-28); x.lineTo(16,-12);                  // waistband
+      x.lineTo(14,30); x.lineTo(3,30); x.lineTo(0,-2); x.lineTo(-3,30); x.lineTo(-14,30); x.lineTo(-16,-12);
+      x.closePath(); if(o){x.stroke();return;} x.fillStyle=body; x.fill(); });
+    x.fillStyle=dark; x.fillRect(-16,-28,32,5);                               // waistband
+    x.fillStyle=fold; x.fillRect(-11,0,5,24); x.fillRect(6,0,5,24);           // leg creases
+    x.fillStyle=rim; x.fillRect(-14,27,11,3); x.fillRect(3,27,11,3); }        // hot cuffs
+  else { outline(o=>{ x.beginPath();                                          // TOWEL (waving)
+      x.moveTo(-15,-28); x.lineTo(15,-24); x.lineTo(13,28); x.lineTo(-17,24);
+      x.closePath(); if(o){x.stroke();return;} x.fillStyle=body; x.fill(); });
+    x.fillStyle=fold; x.fillRect(-14,-12,28,4); x.fillRect(-15,4,28,4);       // stripes
+    x.fillStyle=rim; x.fillRect(-16,21,28,3); x.fillRect(-15,-28,30,3); }     // hot edges
+  return c; }
 const GARM_HOT=[mkGarment(0,true),mkGarment(1,true),mkGarment(2,true)];
 const GARM_BG =[mkGarment(0,false),mkGarment(1,false),mkGarment(2,false)];
 
@@ -334,15 +344,14 @@ function draw(){
     ctx.globalAlpha=(0.35+0.65*zz)*fade;
     if(near>0){ ctx.strokeStyle="rgba(255,84,104,0.38)"; ctx.lineWidth=th+8;      // heat haze at the rim
       ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); }
-    ctx.strokeStyle="#e8344f"; ctx.lineWidth=th;                                   // cloth band — bright
+    ctx.strokeStyle="#e8344f"; ctx.lineWidth=Math.max(1.5,th*0.45);                // thin hot wire the laundry hangs on
     ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke();
-    ctx.strokeStyle="#ff8a9a"; ctx.lineWidth=Math.max(1.5,th*0.3);                 // white-hot inner lip
-    ctx.beginPath(); ctx.arc(CX,CY,Math.max(0.5,r-th*0.28),o.ang-o.hw,o.ang+o.hw); ctx.stroke();
-    if(zz>0.28){ const gs=8+30*zz*zz, n=Math.max(1,Math.min(3,(o.hw*2/0.55)|0));   // burning garments riding the band
+    { const gs=Math.max(10,th*3.6+6*zz);                                           // the GARMENTS are the barrier now — big + outlined
+      const arcLen=2*o.hw*Math.max(1,r), n=Math.max(1,Math.min(5,Math.round(arcLen/(gs*0.72))));
       for(let k2=0;k2<n;k2++){ const ga=o.ang-o.hw+ (o.hw*2)*(n===1?0.5:(k2+0.5)/n);
         const gx=CX+Math.cos(ga)*r, gy=CY+Math.sin(ga)*r;
-        ctx.save(); ctx.translate(gx,gy); ctx.rotate(ga+Math.PI/2+Math.sin(t*3+k2*2)*0.15);
-        ctx.drawImage(GARM_HOT[(zOrder[i]+k2)%3],-gs/2,-gs/2,gs,gs); ctx.restore(); } }
+        ctx.save(); ctx.translate(gx,gy); ctx.rotate(ga+Math.PI/2+Math.sin(t*3+k2*2.1)*0.12);
+        ctx.drawImage(GARM_HOT[(zOrder[i]*2+k2)%3],-gs/2,-gs/2,gs,gs); ctx.restore(); } }
     ctx.globalAlpha=1; }
   ctx.imageSmoothingEnabled=false;
 

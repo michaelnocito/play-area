@@ -59,10 +59,13 @@ terms; choice persisted in the proto save. Both directions + persistence verifie
   hp + buttons carry over, each stage +8% base tumble speed; between-stage screen = haul,
   condition pips, **MEND +1 for ● 25** buy button. Death → back to stage 1. Buttons now have
   a real in-proto sink.
-- **Barriers ARE clothes now:** baked garment sprites (t-shirt/pants/towel) in hot red w/
-  bright rims riding the arc bands (1–3 per arc, wobbling), bands brightened to #e8344f +
-  white-hot lip — deliberately more saturated than the muted drum. Plus 3 muted background
-  garments tumbling mid-drum (never red, no collision) for life/depth.
+- **Barriers ARE clothes now** (v2 after Mike's "not seeing the barriers as cloths"): first
+  pass stamped tiny same-red garments ON a thick band → read as texture. Rework: garments
+  ARE the barrier — bold outlined silhouettes (t-shirt w/ collar+sleeves, pants w/ waistband
+  +creases, waving towel w/ stripes; dark #7d0f1f outline, bright #ff4a63 body, white-hot
+  hems), sized ~3.6× band thickness, 1–5 filling the arc by arc-length; band reduced to a
+  thin hot wire behind them. Plus 3 muted background garments tumbling mid-drum (never red,
+  no collision) for life/depth.
 - Verified in preview: dmg-state visuals, disintegration death, stage-clear → mend (25
   buttons, hp+1) → stage 2 faster w/ hp carried, patch spawns only when hurt, laundry+stage
   screenshots (`_shots/hp_*.png`). node --check clean.
