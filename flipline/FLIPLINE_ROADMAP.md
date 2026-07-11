@@ -177,9 +177,12 @@ CG's "frequently maintained" guideline; never mixed into the first review.
 sucked in first — pair visible spiralling in the vortex mid-run, ready/stage screens carry
 the hook. The reunion stays the ending (C2).
 
+**❌ CATCH & FLING CUT (🔷 Mike 2026-07-11):** collecting coins + powerups is enough —
+cool garments, catch, fling, and the catch-combo removed; tap = static ride only.
+
 ### Build order (locked): ✅ GQ-A feel & feedback DONE 2026-07-11 (GQ-1,2,4-graze — steering
-ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, catch-combo w/ pentatonic
-ladder, graze reward, story lock; see dev notes) → GQ-B sound & drama
+ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, graze reward, story lock;
+see dev notes) → GQ-B sound & drama
 (GQ-3,4-surges,7) → C1 compliance (pause/auto-pause, music-mute persisted, AZERTY, CG SDK
 adapter w/ rewarded mend + stage-break interstitials, DEV:BEGIN/END menu, shared ODD SOCK
 save, real-device mobile pass) → C2 content depth (4-5 authored stages w/ GQ-5/6 reads,

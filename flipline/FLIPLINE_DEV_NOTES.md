@@ -6,8 +6,11 @@
 **Build order (one large chunk per session): GQ-A feel & feedback → GQ-B sound & drama →
 C1 compliance → C2 stages+ending+drum-sim → C3 score/meta/shop port → C4 ship wave.**
 Full specs per chunk: FLIPLINE_ROADMAP.md (🧺 DRUM PLAN section, GQ-1..8 gap analysis).
-Proto state: catch&fling + static ride + garment gaps + 3-hit health + stages/MEND all
-working and feel-approved. ✅ GQ-A DONE (2026-07-11, see below). NEXT = GQ-B (procedural
+Proto state: static ride + garment gaps + 3-hit health + stages/MEND all working and
+feel-approved. ❌ CATCH & FLING CUT (🔷 Mike 2026-07-11: "we don't need to catch cloths,
+enough to be collecting coins and powerups") — cool garments, tap-priority catch, fling,
+and the catch-COMBO all removed; tap = ride only; loop = buttons + orbs + graze.
+✅ GQ-A DONE (2026-07-11, see below). NEXT = GQ-B (procedural
 music bed re-voiced dryer-dark w/ vortex-proximity intensity, surge/relief waves ported
 from TUMBLE, vortex suck-in slow-mo + confetti + stage/NEW BEST stingers).
 
@@ -15,12 +18,11 @@ from TUMBLE, vortex suck-in slow-mo + confetti + stage/NEW BEST stingers).
 - **Steering ease (GQ-1):** `steerV` chases input over ~80ms (`STEER_EASE`), sock leans
   (rotate −lastMove·0.28 — local +x = decreasing angle) + stretches (1+|sv|·0.14 tangential)
   into travel; direction-reversal at speed kicks a dust puff (0.25s cooldown).
-- **Hit-stop (GQ-2):** frame() freezes update 60ms on catch/shield-pop, 80ms on damage
-  (`HITSTOP_CATCH/DMG`) — draw still runs. Camera micro-zoom punch `zoomP` (×1.035, decays
-  5/s) on catch/shield/damage, centred on the drum.
-- **Catch COMBO (GQ-2):** consecutive catches increment `combo` (3s window); each catch
-  plays a rising A-minor pentatonic note (`Snd.combo`, PENT ladder ×2); HUD "CATCH ×N"
-  grows with the count. Breaks on damage OR a catchable escaping past the rim (z>1.16).
+- **Hit-stop (GQ-2):** frame() freezes update 60ms on shield-pop, 80ms on damage
+  (`HITSTOP_SHIELD/DMG`) — draw still runs. Camera micro-zoom punch `zoomP` (×1.035,
+  decays 5/s) on shield/damage, centred on the drum.
+- ~~Catch COMBO~~ — removed with the CATCH & FLING cut (see above). PENT ladder const
+  kept in Snd for GQ-B music; a graze-streak combo is a candidate if GQ-B wants one.
 - **GRAZE (GQ-4):** hot garment at the rim, pass within 0.10rad beyond the hitbox edge →
   once per garment (`o.grz`): +0.08 static, ember sparks, tick sound (full-charge sound if
   it tops the meter). One angular subtraction — safe in drum geometry (never reattempt the
@@ -33,10 +35,10 @@ from TUMBLE, vortex suck-in slow-mo + confetti + stage/NEW BEST stingers).
   reversal dust, graze +0.08 exactly once w/ no hp loss, hit → hitStop 0.08/zoom/combo
   reset, catch → combo 1 + hitStop 0.06, escaped catchable resets combo, draw clean.
 Test steps: GA-a steer taps feel eased, sock leans/stretches, quick reversal kicks dust ·
-GA-b catch 2+ cool garments in a row — freeze-frame + zoom pop + rising notes + "CATCH ×N" ·
-GA-c skim just past a hot garment at the rim — orange sparks + static meter bumps, no damage ·
-GA-d take a hit — brief freeze + zoom + red flash, combo counter gone · GA-e ready screen
-reads the pair-chase hook; watch the vortex — the little warm pair sock spirals inside it.
+GA-b skim just past a hot garment at the rim — orange sparks + static meter bumps, no damage ·
+GA-c take a hit — brief freeze-frame + zoom punch + red flash · GA-d ready screen reads the
+pair-chase hook; watch the vortex — the little warm pair sock spirals inside it · GA-e no
+icy garments appear; tap only rides the current when STATIC is full.
 
 **Repo:** `github.com/michaelnocito/play-area` (PUBLIC monorepo, branch `main`) — Flipline lives in the `flipline/` subfolder · **Local:** `C:\Users\Mike\Projects\GAMES\play-area\flipline`
 **HEAD at handoff:** `0c70ed3` (2026-07-02) · **Deliverable:** one file `index.html` per platform (vanilla JS + Canvas, no build, no deps, 480×270 logical space). Master `index.html` = CrazyGames build; per-platform derivatives under `builds/` (see `builds/README.md`).
