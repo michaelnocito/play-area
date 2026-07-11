@@ -173,7 +173,13 @@ CG's "frequently maintained" guideline; never mixed into the first review.
 - **GQ-8 First-60s teach beats:** one-time slow-time on first cool garment + first full static
   (visual glyph, no text) — CG onboarding guideline.
 
-### Build order (locked): GQ-A feel & feedback (GQ-1,2,4-graze) → GQ-B sound & drama
+**🔷 STORY LOCK (2026-07-11):** the sock dives into the vortex CHASING ITS PAIR, which got
+sucked in first — pair visible spiralling in the vortex mid-run, ready/stage screens carry
+the hook. The reunion stays the ending (C2).
+
+### Build order (locked): ✅ GQ-A feel & feedback DONE 2026-07-11 (GQ-1,2,4-graze — steering
+ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, catch-combo w/ pentatonic
+ladder, graze reward, story lock; see dev notes) → GQ-B sound & drama
 (GQ-3,4-surges,7) → C1 compliance (pause/auto-pause, music-mute persisted, AZERTY, CG SDK
 adapter w/ rewarded mend + stage-break interstitials, DEV:BEGIN/END menu, shared ODD SOCK
 save, real-device mobile pass) → C2 content depth (4-5 authored stages w/ GQ-5/6 reads,

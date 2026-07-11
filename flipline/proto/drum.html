@@ -51,6 +51,10 @@ const GHW=0.24;                        // one garment's angular half-width; hitb
    Balance: needs ~3-5s of real sliding to charge, grants ~1.6s safety + ~0.4s of distance —
    costs more time to earn than it saves, so it's a tool, not a win button. No charging mid-ride. */
 const RIDE_T=1.6, RIDE_BOOST=1.25;
+/* GQ-A feel constants — steering ease (~80ms), graze reward, hit-stop, zoom punch */
+const STEER_EASE=0.08;                 // seconds to reach full steer speed (and to stop)
+const GRAZE_ARC=0.10, GRAZE_CLING=0.08;// pass within 0.1rad beyond the hitbox of hot laundry at the rim → static sliver
+const HITSTOP_CATCH=0.06, HITSTOP_DMG=0.08;
 /* CATCH & FLING — some laundry tumbles in COOL (icy, harmless). Tap as it reaches the rim to
    snatch it and fling it into the vortex: +5 buttons +0.25 static (rubbing cloth = charge).
    The risk is POSITIONING: cool pieces land amid hot patterns — chasing the catch drags you
@@ -62,6 +66,7 @@ const MPS=30;                          // metres per second base (scales with sp
 const DRUMSPIN=0.22;                   // the drum itself slowly tumbles (rad/s) — sells the dryer
 
 /* ===== Audio (tiny) ===== */
+const PENT=[220,261.63,293.66,329.63,392,440,523.25,587.33];   // A-minor pentatonic (same ladder as the main game's Snd)
 const Snd={ctx:null,g:null,
   ensure(){ if(this.ctx)return; try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)();
     this.g=this.ctx.createGain(); this.g.gain.value=0.8; this.g.connect(this.ctx.destination);
@@ -80,7 +85,10 @@ const Snd={ctx:null,g:null,
   win(){ this.b(440,660,0.4,"triangle",0.12); this.b(660,990,0.5,"triangle",0.1); },
   coin(){ this.b(980+Math.random()*220,1500,0.06,"triangle",0.09); },
   orb(){ this.b(520,780,0.18,"triangle",0.11); this.b(780,1170,0.22,"triangle",0.09); },
-  shieldPop(){ this.b(300,90,0.22,"sawtooth",0.14); }
+  shieldPop(){ this.b(300,90,0.22,"sawtooth",0.14); },
+  combo(n){ const f=PENT[Math.min(n-1,PENT.length-1)]*2;                    // rising pentatonic ladder per consecutive catch
+    this.b(f,f*1.26,0.14,"triangle",0.12); },
+  graze(){ this.b(1500,2100,0.05,"triangle",0.055); }
 };
 
 /* ===== Sock sprite (trimmed from the main game) ===== */
@@ -156,6 +164,9 @@ const COOLGLOW=glowSprite(64,190,235,255);
 /* ===== State ===== */
 let mode="ready";                          // ready | play | dead | win
 let a=Math.PI/2, steer=0, cling=0, rideT=0, drumRot=0;
+let steerV=0, lastMove=0, revCd=0;         // eased steer velocity + reversal-dust bookkeeping (GQ-1)
+let hitStop=0, zoomP=0;                    // frame-freeze + camera micro-zoom punch (GQ-2)
+let combo=0, comboT=0;                     // consecutive-catch counter (GQ-2)
 let zspd=ZSPD0, dist=0, best=0, t=0, shake=0, flash=0, deaths=0;
 let spawnCd=1.2, patCd=0;
 /* collectibles (research-grounded: guaranteed trail on a fixed cadence → predictable economy;
@@ -176,7 +187,7 @@ function colAlloc(){ for(const c of col) if(!c.on) return c; return null; }
 function colClear(ang,z){ for(const o of obs){ if(!o.on) continue;
     if(Math.abs(o.z-z)<0.3 && Math.abs(angDiff(ang,o.ang))<o.hw+0.4) return false; } return true; }
 function placeCol(ang,z,kind,val){ const c=colAlloc(); if(!c)return; c.on=true; c.ang=ang; c.z=z; c.kind=kind; c.val=val||1; }
-const OBN=14, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,ang:0,hw:0,z:0,kind:0,gi:0});
+const OBN=14, obs=[]; for(let i=0;i<OBN;i++) obs.push({on:false,ang:0,hw:0,z:0,kind:0,gi:0,grz:false});
 const zOrder=new Array(OBN); for(let i=0;i<OBN;i++) zOrder[i]=i;
 const PN=60, par=[]; for(let i=0;i<PN;i++) par.push({life:0,x:0,y:0,vx:0,vy:0,c:"#ffcf5c"}); let ph=0;
 function emit(x,y,vx,vy,life,c){ const p=par[ph]; ph=(ph+1)%PN; p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.c=c; }
@@ -185,7 +196,8 @@ function angDiff(x,y){ let d=(x-y)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TA
 function zBase(){ return ZSPD0*(1+0.08*(stage-1)); }   // each stage tumbles faster
 function reset(){ a=Math.PI/2; steer=0; cling=0; rideT=0; zspd=zBase(); dist=0; spawnCd=1.4; patCd=0;
   for(const o of obs)o.on=false; for(const c of col)c.on=false; shake=0; flash=0;
-  shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; patchCd=12; flingT=0; }
+  shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; patchCd=12; flingT=0;
+  steerV=0; lastMove=0; revCd=0; hitStop=0; zoomP=0; combo=0; comboT=0; }
 function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
 function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
 
@@ -193,7 +205,7 @@ function startStage(){ stage++; reset(); mode="play"; }                         
    Fairness: intra-cluster gaps ≥0.5rad edge-to-edge (player ±0.16 threads with margin);
    rings of 5 leave ~0.78rad gaps; AV covers π in ~1s. ===== */
 function alloc(){ for(const o of obs) if(!o.on) return o; return null; }
-function garment(ang,dz){ const o=alloc(); if(!o)return; o.on=true; o.ang=ang; o.hw=GHW; o.z=Z0+(dz||0); o.kind=0;
+function garment(ang,dz){ const o=alloc(); if(!o)return; o.on=true; o.ang=ang; o.hw=GHW; o.z=Z0+(dz||0); o.kind=0; o.grz=false;
   o.gi=((Math.random()*3)|0)*PAL_HOT.length+((Math.random()*PAL_HOT.length)|0); }   // random garment kind × hot hue
 function spawnPattern(){
   const r=Math.random(), pa=Math.random()*TAU, D=2*GHW+0.5;   // D = centre spacing leaving a 0.5rad threadable gap
@@ -204,7 +216,7 @@ function spawnPattern(){
   else { for(let k=0;k<3;k++) garment(pa+k*1.5,k*0.10); }                          // spiral triplet
   if(Math.random()<0.35){ let ca=Math.random()*TAU, tries=6;                       // ~1 in 3 waves carries a COOL catchable
     while(tries-->0 && !colClear(ca,Z0+0.06)) ca=Math.random()*TAU;
-    if(tries>0){ const o=alloc(); if(o){ o.on=true; o.ang=ca; o.hw=GHW; o.z=Z0+0.06; o.kind=1; o.gi=(Math.random()*3)|0; } } }
+    if(tries>0){ const o=alloc(); if(o){ o.on=true; o.ang=ca; o.hw=GHW; o.z=Z0+0.06; o.kind=1; o.gi=(Math.random()*3)|0; o.grz=false; } } }
 }
 
 /* ===== Input ===== */
@@ -239,7 +251,8 @@ function tryCatch(){ if(rideT>0) return false;
   for(const o of obs){ if(!o.on||o.kind!==1) continue;
     if(o.z>CATCH_LO && o.z<CATCH_HI && Math.abs(angDiff(a,o.ang))<CATCH_ARC){
       o.on=false; flingT=0.55; flingAng=o.ang; flingZ=Math.min(1,o.z); flingGi=o.gi;
-      Snd.orb(); return true; } }
+      combo++; comboT=3.0; hitStop=HITSTOP_CATCH; zoomP=1;                 // GQ-2: freeze-frame + zoom punch + rising combo note
+      Snd.orb(); Snd.combo(combo); return true; } }
   return false; }
 function tryTap(){ if(tryCatch()) return; tryLeap(); }   // a landing cool garment takes tap priority over the ride
 
@@ -257,7 +270,15 @@ function update(dt){
   if(keys["ArrowRight"]||keys["d"]||keys["D"]) steer+=1;
   for(const id in touches){ const tc=touches[id]; if(performance.now()-tc.t0>140||tc.moved) steer+=(tc.x<innerWidth/2?-1:1); }
   if(steer<-1)steer=-1; if(steer>1)steer=1;
-  a+=steer*AV*dt*(ctrlWheel?1:-1); a=((a%TAU)+TAU)%TAU;   // SCREEN mode: right = sock moves right at the bottom
+  // GQ-1: ~80ms ease-in/out — steerV chases the input; reversal at speed kicks dust
+  if(revCd>0) revCd-=dt;
+  if(steer!==0 && steerV*steer<0 && Math.abs(steerV)>0.4 && revCd<=0){ revCd=0.25;
+    const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
+    for(let i=0;i<5;i++) emit(px,py,(Math.random()-0.5)*90,(Math.random()-0.5)*90,0.25,"#c8b89a"); }
+  steerV+=(steer-steerV)*Math.min(1,dt/STEER_EASE);
+  if(Math.abs(steerV)<0.02 && steer===0) steerV=0;
+  a+=steerV*AV*dt*(ctrlWheel?1:-1); a=((a%TAU)+TAU)%TAU;   // SCREEN mode: right = sock moves right at the bottom
+  lastMove=steerV*(ctrlWheel?1:-1);
   if(rideT<=0) a+=DRUMSPIN*dt;   // static cling: the drum CARRIES the sock — gaps stay where you put yourself (fair)
 
   // static cling charges while sliding on the drum (never while riding the current)
@@ -300,6 +321,8 @@ function update(dt){
   if(magnetT>0){ magnetT-=dt; if(magnetT<0)magnetT=0; }
   if(graceT>0){ graceT-=dt; if(graceT<0)graceT=0; }
   if(coinPopT>0){ coinPopT-=dt; if(coinPopT<=0){coinPopT=0;coinPopV=0;} }
+  if(comboT>0){ comboT-=dt; if(comboT<=0){ comboT=0; combo=0; } }          // combo fades if you stop catching
+  if(zoomP>0){ zoomP-=dt*5; if(zoomP<0)zoomP=0; }
 
   // collectibles approach + collect at the rim (generous window; magnet pulls buttons in)
   for(const c of col){ if(!c.on) continue;
@@ -322,15 +345,21 @@ function update(dt){
   // obstacles approach the camera
   for(const o of obs){ if(!o.on) continue;
     o.z+=zspd*dt; o.ang+=DRUMSPIN*dt;                       // they ride the tumbling drum
-    if(o.z>1.16){ o.on=false; continue; }
+    if(o.z>1.16){ o.on=false; if(o.kind===1) combo=0; continue; }   // a catchable slipping past breaks the combo
     if(o.kind===1) continue;                                // COOL laundry never harms — catch it or let it tumble past
     if(o.z>HITLO && o.z<HITHI && rideT<=0 && graceT<=0){
-      if(Math.abs(angDiff(a,o.ang))<o.hw*0.8+PHW){          // clipped by hot cloth (hitbox tighter than the visual — fair)
+      const dA=Math.abs(angDiff(a,o.ang));
+      if(dA>=o.hw*0.8+PHW && dA<o.hw*0.8+PHW+GRAZE_ARC && !o.grz){  // GQ-4: GRAZE — skimming hot laundry pays a static sliver
+        o.grz=true; const was=cling; cling=Math.min(1,cling+GRAZE_CLING);
+        if(was<1&&cling>=1) Snd.charge(); else Snd.graze();
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
-        if(shieldUp){ shieldUp=false; graceT=0.8; o.on=false; shake=6; Snd.shieldPop();   // SHIELD absorbs the hit + brief grace
+        for(let i=0;i<5;i++) emit(px,py,(Math.random()-0.5)*120,(Math.random()-0.5)*120,0.22,"#ffb056"); }
+      if(dA<o.hw*0.8+PHW){          // clipped by hot cloth (hitbox tighter than the visual — fair)
+        const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
+        if(shieldUp){ shieldUp=false; graceT=0.8; o.on=false; shake=6; hitStop=HITSTOP_CATCH; zoomP=1; Snd.shieldPop();   // SHIELD absorbs the hit + brief grace
           for(let i=0;i<12;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#ffd45a");
           continue; }
-        hp--; graceT=1.0; shake=8; flash=0.35; Snd.shieldPop();                            // take damage — the sock frays
+        hp--; graceT=1.0; shake=8; flash=0.35; hitStop=HITSTOP_DMG; zoomP=1; combo=0; comboT=0; Snd.shieldPop();  // take damage — the sock frays (GQ-2: hit-stop + zoom punch, combo breaks)
         for(let i=0;i<10;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#efe9db");  // loose threads fly
         if(hp<=0){ mode="dead"; deaths++; bank(); shake=12; flash=0.5; Snd.die();          // 3rd hit — DISINTEGRATE into pieces
           for(let i=0;i<26;i++) emit(px,py,(Math.random()-0.5)*300,(Math.random()-0.5)*300,0.5+Math.random()*0.4,"#efe9db");
@@ -345,6 +374,8 @@ function txt(s,x,y,size,col,w){ ctx.fillStyle=col; ctx.textAlign="center"; ctx.f
 function draw(){
   let ox=0,oy=0; if(shake>0){ ox=(Math.random()-.5)*shake; oy=(Math.random()-.5)*shake; }
   ctx.save(); ctx.translate(ox,oy);
+  if(zoomP>0){ const zf=1+0.035*zoomP;                     // GQ-2: camera micro-zoom punch, centred on the drum
+    ctx.translate(CX,CY); ctx.scale(zf,zf); ctx.translate(-CX,-CY); }
   ctx.fillStyle="#171210"; ctx.fillRect(-12,-12,VW+24,VH+24);
 
   const prog=Math.min(1,dist/LEVEL_LEN);
@@ -370,6 +401,15 @@ function draw(){
     ctx.strokeStyle="rgba(210,180,255,"+(0.35+prog*0.4)+")"; ctx.lineWidth=2;
     for(let s2=0;s2<3;s2++){ ctx.beginPath();
       ctx.arc(CX,CY,6+s2*7+prog*10, -t*2.4+s2*2.1, -t*2.4+s2*2.1+2.4); ctx.stroke(); } }
+  // YOUR PAIR — glimpsed spiralling in the vortex ahead (the whole reason for the chase);
+  // grows as you close the distance, always slightly out of reach
+  { const pa2=-t*1.7, prr=9+prog*7, ps2=5+prog*6;
+    const ppx=CX+Math.cos(pa2)*prr, ppy=CY+Math.sin(pa2)*prr;
+    ctx.globalAlpha=0.5+0.25*Math.sin(t*3);
+    ctx.drawImage(WARM,ppx-ps2,ppy-ps2,ps2*2,ps2*2);
+    ctx.imageSmoothingEnabled=true; ctx.save(); ctx.translate(ppx,ppy); ctx.rotate(pa2+t*2.2);
+    ctx.drawImage(SOCK,-ps2/2,-ps2/2,ps2,ps2); ctx.restore(); ctx.imageSmoothingEnabled=false;
+    ctx.globalAlpha=1; }
 
   // neutral clothes tumbling mid-drum (life + depth; never red, never collide)
   { const bz=0.34, br2=RIM*Math.pow(bz,PERSP); ctx.imageSmoothingEnabled=true;
@@ -447,6 +487,8 @@ function draw(){
       ctx.lineWidth=3; ctx.beginPath(); ctx.arc(CX,CY,RIM*0.93,a-1.3,a+1.3); ctx.stroke(); }
     const gflk=graceT>0 && (t*14|0)%2===0;   // damage-grace flicker
     ctx.save(); ctx.translate(px,py); ctx.rotate(a-Math.PI/2+(rk>0?t*5*rk:0)); ctx.scale(sc2,sc2);
+    if(rk<=0){ const sv=Math.abs(steerV);                  // GQ-1: lean + stretch into travel (local +x = decreasing angle)
+      ctx.rotate(-lastMove*0.28); ctx.scale(1+sv*0.14,1-sv*0.09); }
     if(gflk) ctx.globalAlpha=0.35;
     ctx.imageSmoothingEnabled=true; ctx.drawImage(SOCK,-11,-11,22,22); ctx.imageSmoothingEnabled=false;
     const dmg=HP_MAX-hp;                     // the sock LOOKS more damaged with every hit
@@ -477,6 +519,8 @@ function draw(){
     txt("● "+(mode==="play"?buttons+runBtns:buttons),34,33,coinPopT>0?12:10,coinPopT>0?"#ffe9a8":"#ffcf5c",700);   // bank() folds runBtns in on death/win
     if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.6);
       txt("+"+coinPopV+" ●",34,47-(0.8-coinPopT)*10,9,"#ffe08a",700); ctx.globalAlpha=1; }
+    if(combo>=2&&comboT>0){ ctx.globalAlpha=Math.min(1,comboT*1.5);          // GQ-2: consecutive-catch combo
+      txt("CATCH ×"+combo,CX,44,11+Math.min(6,combo),"#bfe6ff",800); ctx.globalAlpha=1; }
     if(magnetT>0) txt("MAGNET "+Math.ceil(magnetT),34,VH-10,8,"#5adcff",700);
     if(shieldUp) txt("SHIELD",VW-38,VH-10,8,"#ffd45a",700);
     for(let k=0;k<HP_MAX;k++){ const on=k<hp;                                  // condition pips: little stitched patches, not hearts
@@ -494,8 +538,9 @@ function draw(){
 
   if(mode==="ready"){
     ctx.fillStyle="rgba(10,8,6,0.55)"; ctx.fillRect(0,0,VW,VH);
-    txt("INSIDE THE DRYER",CX,96,26,"#ffcf5c",800);
-    txt("ride the rim — dodge the heat — reach the vortex",CX,120,11,"#e8dcc8",600);
+    txt("INSIDE THE DRYER",CX,92,26,"#ffcf5c",800);
+    txt("your PAIR just got sucked into THE LOST SOCK VORTEX — catch up before it's gone",CX,112,10,"#ffd9a8",600);
+    txt("ride the rim — dodge the hot laundry — chase your pair",CX,126,10,"#e8dcc8",600);
     txt("← → steer   ·   slide to charge STATIC   ·   tap/space to RIDE the current",CX,140,10,"#aeb8cc",600);
     txt("tap an ICY garment as it lands — CATCH & FLING it into the vortex",CX,154,10,"#7fb6d9",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble",CX,176,13,"#9bf0d0",700); ctx.globalAlpha=1;
@@ -509,7 +554,7 @@ function draw(){
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble again",CX,164,12,"#9bf0d0",700); ctx.globalAlpha=1;
   } else if(mode==="stage"){
     ctx.fillStyle="rgba(20,12,30,0.55)"; ctx.fillRect(0,0,VW,VH);
-    txt("STAGE "+stage+" CLEAR — THE VORTEX PULLS YOU DEEPER",CX,92,15,"#c9b0ff",800);
+    txt("STAGE "+stage+" CLEAR — YOUR PAIR IS STILL AHEAD",CX,92,15,"#c9b0ff",800);
     txt("+● "+lastHaul+"   (● "+buttons+")",CX,114,11,"#ffcf5c",700);
     // condition + mend shop between stages
     for(let k=0;k<HP_MAX;k++){ const on=k<hp;
@@ -525,7 +570,9 @@ function draw(){
 
 let lastT=0;
 function frame(now){ if(!lastT)lastT=now; let dt=(now-lastT)/1000; lastT=now;
-  if(dt>0.033)dt=0.033; update(dt); draw(); requestAnimationFrame(frame); }
+  if(dt>0.033)dt=0.033;
+  if(hitStop>0){ hitStop-=dt; draw(); requestAnimationFrame(frame); return; }   // GQ-2: 60-90ms freeze-frame on catch/damage
+  update(dt); draw(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 </script>
 </body>
