@@ -185,9 +185,13 @@ research-ranked experiments, one feel-gate each — ✅ E1 CHASE meter (risk = s
 your pair, who races you on the progress bar; Downwell coupling) + ✅ E2 loot-in-danger
 (colClear removed for currency; pennies thread gaps, quarters beside hot hems; Mario-coin
 rule) + ✅ currency → diegetic LOOSE CHANGE ¢ (pennies/quarters, tumble spin, clink).
-⏳ E3 static ride → fast risk lane w/ forced dismount · ⏳ E4 telegraphed drum-jam pressure
-events (folds into GQ-B surges). Escape hatch: if E1+E2 fail the feel-gate, revisit the
-core verb (SPIN-THE-DRUM inversion) before spending GQ-B/C2.
+✅ E3 STATIC LEAP (2026-07-12, 🔷 Mike's "across the diameter" idea via Tempest 2000's
+Jump): ride → chord-leap to the opposite rim, vortex flyby +CHASE, 0.25s landing grace ·
+✅ B1 HIT=TOSSED (🔷 Mike's "bump" idea via Sonic ring-scatter): knockback + tumble +
+up-to-4¢ knocked loose, recoverable 2.2s · ❌ player z-movement into the cylinder REJECTED
+(breaks one-hit-plane fairness; genre-wide precedent) · ⏳ B2/E4 telegraphed drum-jam
+lurch (folds into GQ-B surges). Escape hatch: if the reworked loop still fails the
+feel-gate, revisit the core verb (SPIN-THE-DRUM inversion) before spending GQ-B/C2.
 
 ### Build order (locked): ✅ GQ-A feel & feedback DONE 2026-07-11 (GQ-1,2,4-graze — steering
 ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, graze reward, story lock;

@@ -12,10 +12,38 @@ enough to be collecting coins and powerups") — cool garments, tap-priority cat
 and the catch-COMBO all removed; tap = ride only; loop = buttons + orbs + graze.
 ✅ GQ-A DONE (2026-07-11, see below). ✅ ENGAGEMENT REWORK E1+E2 DONE (2026-07-12, see
 below — CHASE meter + loot-in-danger + loose-change currency, after Mike: "novelty wears
-off, mechanics aren't keeping me engaged"). NEXT = Mike feel-gates E1+E2 (keep/tune/kill),
-then E3 (static ride → risk lane) / E4 (drum-jam pressure events) or GQ-B (procedural
+off, mechanics aren't keeping me engaged"). ✅ E3+B1 DONE (2026-07-12, 🔷 Mike's ideas,
+research-shaped: STATIC LEAP across the diameter + HIT=TOSSED w/ change scatter — see
+below). Player z-movement into the cylinder REJECTED (breaks the one-hit-plane fairness
+model; Tempest/Tunnel Rush/Super Hexagon all lock the plane). NEXT = Mike feel-gates
+E1+E2+E3+B1 together, then B2/E4 drum-jam lurch (merge into GQ-B surges) or GQ-B proper (procedural
 music bed re-voiced dryer-dark w/ vortex-proximity intensity, surge/relief waves ported
 from TUMBLE, vortex suck-in slow-mo + confetti + stage/NEW BEST stingers).
+
+## ✅ E3 STATIC LEAP + B1 HIT=TOSSED (2026-07-12) — 🔷 Mike's two ideas, research-shaped
+Mike asked: forward movement (across the diameter or into the cylinder)? bump mechanics
+for a tossed-around-the-dryer feel? Research: Tempest 2000's Jump (costed, temporary rim
+detach) validates the diameter cross; Sonic's ring-scatter (knockback + recoverable loss)
+is the proven toss model; player z-movement has no precedent in the genre and breaks the
+single-hit-plane fairness rule — rejected, forward FEEL goes to camera work later.
+- **E3 STATIC LEAP (replaces the centre ride):** full static + tap → leap the straight
+  CHORD across the drum to the opposite rim point (`LEAP_T` 0.9s, ease-in-out, `leapA0`
+  + midpoint angle flip). Untouchable in transit, `LEAP_BOOST` 1.35×, +0.2 CHASE at the
+  vortex flyby (zoom punch + purple burst) — but landing grace is only 0.25s: you read
+  the far side before you jump. No charging / rim loot mid-leap (same rideT guards).
+- **B1 HIT = TOSSED (Sonic model):** damage now flings the sock along the rim away from
+  the hit (`tossAV` ±3.2 rad/s easing out over 0.55s, steering at 35% grip, hop off the
+  rim + head-over-heel tumble) and knocks loose up to 4 pennies (`scatterChange`) that
+  bounce on the rim for 2.2s (0.35s no-grab so they visibly fly out; flash when about to
+  slip away) — grab them back to undo the loss. Damage also cuts CHASE −0.3.
+- Verified: node --check; harness — leap flips angle exactly π across, +0.19 chase,
+  landing grace on; hit → toss direction away from garment, 4¢ scattered (10→6),
+  recovery regains, expiry cleans up; 30s sim w/ periodic leaps stable.
+Test steps: T-a fill STATIC, tap — sock rockets straight across the drum past the vortex,
+zoom pop mid-flight, lands opposite side · T-b leap into laundry waiting on the far side —
+you CAN get clipped right after landing (that's the read) · T-c take a hit — sock is flung
+sideways tumbling, pennies burst out and bounce · T-d chase the dropped pennies — grabbing
+them back restores the ¢ · T-e let them flash out — they're gone for good.
 
 ## ✅ ENGAGEMENT REWORK — E1 CHASE + E2 LOOT-IN-DANGER + CHANGE CURRENCY (2026-07-12)
 🔷 Mike: "the initial novelty wears off quickly and the play mechanics just aren't keeping
