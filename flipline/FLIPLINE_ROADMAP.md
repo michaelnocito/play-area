@@ -180,6 +180,15 @@ the hook. The reunion stays the ending (C2).
 **❌ CATCH & FLING CUT (🔷 Mike 2026-07-11):** collecting coins + powerups is enough —
 cool garments, catch, fling, and the catch-combo removed; tap = static ride only.
 
+**🔥 ENGAGEMENT REWORK (🔷 Mike 2026-07-12: "novelty wears off, mechanics not engaging"):**
+research-ranked experiments, one feel-gate each — ✅ E1 CHASE meter (risk = speed = catching
+your pair, who races you on the progress bar; Downwell coupling) + ✅ E2 loot-in-danger
+(colClear removed for currency; pennies thread gaps, quarters beside hot hems; Mario-coin
+rule) + ✅ currency → diegetic LOOSE CHANGE ¢ (pennies/quarters, tumble spin, clink).
+⏳ E3 static ride → fast risk lane w/ forced dismount · ⏳ E4 telegraphed drum-jam pressure
+events (folds into GQ-B surges). Escape hatch: if E1+E2 fail the feel-gate, revisit the
+core verb (SPIN-THE-DRUM inversion) before spending GQ-B/C2.
+
 ### Build order (locked): ✅ GQ-A feel & feedback DONE 2026-07-11 (GQ-1,2,4-graze — steering
 ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, graze reward, story lock;
 see dev notes) → GQ-B sound & drama

@@ -10,9 +10,46 @@ Proto state: static ride + garment gaps + 3-hit health + stages/MEND all working
 feel-approved. ❌ CATCH & FLING CUT (🔷 Mike 2026-07-11: "we don't need to catch cloths,
 enough to be collecting coins and powerups") — cool garments, tap-priority catch, fling,
 and the catch-COMBO all removed; tap = ride only; loop = buttons + orbs + graze.
-✅ GQ-A DONE (2026-07-11, see below). NEXT = GQ-B (procedural
+✅ GQ-A DONE (2026-07-11, see below). ✅ ENGAGEMENT REWORK E1+E2 DONE (2026-07-12, see
+below — CHASE meter + loot-in-danger + loose-change currency, after Mike: "novelty wears
+off, mechanics aren't keeping me engaged"). NEXT = Mike feel-gates E1+E2 (keep/tune/kill),
+then E3 (static ride → risk lane) / E4 (drum-jam pressure events) or GQ-B (procedural
 music bed re-voiced dryer-dark w/ vortex-proximity intensity, surge/relief waves ported
 from TUMBLE, vortex suck-in slow-mo + confetti + stage/NEW BEST stingers).
+
+## ✅ ENGAGEMENT REWORK — E1 CHASE + E2 LOOT-IN-DANGER + CHANGE CURRENCY (2026-07-12)
+🔷 Mike: "the initial novelty wears off quickly and the play mechanics just aren't keeping
+me engaged" + "floating static coins don't go with flying in the dryer… research how to
+make the currencies unique." Research-backed diagnosis (Downwell/Super Hexagon/Tunnel Rush
++ Mario-vs-Sonic collectible placement): every system was single-purpose, colClear() made
+loot risk-free (Sonic "pity offering" problem), and pacing ignored how you played.
+Four ranked experiments defined — one feel-gate each: E1 CHASE meter · E2 loot-in-danger ·
+E3 static ride → fast risk lane w/ forced dismount · E4 telegraphed drum-jam pressure
+events. E1+E2 built; E3/E4 parked pending Mike's verdict. If E1+E2 don't land, revisit the
+core verb (parked SPIN-THE-DRUM inversion) before GQ-B/C2 spend.
+- **E1 THE CHASE (Downwell "gem high" move):** grazes (+0.25), pennies (+0.06), quarters
+  (+0.16) fill `chase` (decays 0.05/s when safe). CHASE = +50% progress speed (`CHASE_SPD`)
+  AND +25% approach speed (`CHASE_Z` — opt-in intensity, obstacles+coins share `zeff`).
+  The PAIR races you on the progress bar (PAIR_MPS 18 vs safe pace ~16.5, +8%/stage,
+  PAIR_HEAD 30m head start): beat it to the vortex → "YOU'RE GAINING ON YOUR PAIR!" +¢10
+  (`GAIN_BONUS`), lose → "YOUR PAIR SLIPPED DEEPER…". Hot play = literally catching up;
+  story is now mechanical, not cosmetic. HUD: thin hot CHASE bar under progress + PAIR tick.
+- **E2 LOOT IN THE DANGER (Mario-coin rule):** colClear() placement removed for currency —
+  pennies (1¢) run through a pattern's threadable gap, QUARTERS (3¢) sit just past a hot
+  hem (GHW+0.14, inside graze range) — every pattern is now a take-the-risk decision.
+  Orbs/patches keep safe placement (utility shouldn't gamble).
+- **CURRENCY = LOOSE CHANGE ¢** (diegetic — what dryers actually eat): copper pennies /
+  milled-edge silver quarters, fake-3D end-over-end tumble (width-collapse spin), metallic
+  clink SFX, ¢ glyph everywhere, save field buttons→change (old banks migrate). Buff-orb
+  diegetic re-theme (dryer sheet shield etc.) = GQ-B candidate.
+- Verified: node --check; harness — save migration (42¢), graze→chase 0.25, quarter pays
+  3¢+0.16 chase, full-chase speed ratio 1.50×, pair race + gain bonus fires, patterns
+  spawn 12 coins/6 waves, 30s sim stable, draw clean.
+Test steps: E-a HUD shows ¢ + tumbling copper/silver coins woven THROUGH the laundry (none
+floating safely in the open) · E-b grab a quarter beside a hot hem — clink + CHASE bar
+jumps + world speeds up · E-c play pure-safe — CHASE drains, PAIR tick pulls ahead, stage
+screen says it slipped deeper · E-d play hot (grazes+change) — beat the PAIR tick, stage
+screen "GAINING" +¢10 · E-e old save's button bank shows up as ¢.
 
 ## ✅ GQ-A — FEEL & FEEDBACK (2026-07-11) — DONE, in proto/drum.html
 - **Steering ease (GQ-1):** `steerV` chases input over ~80ms (`STEER_EASE`), sock leans

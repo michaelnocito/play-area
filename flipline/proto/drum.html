@@ -56,8 +56,17 @@ const STEER_EASE=0.08;                 // seconds to reach full steer speed (and
 const GRAZE_ARC=0.10, GRAZE_CLING=0.08;// pass within 0.1rad beyond the hitbox of hot laundry at the rim → static sliver
 const HITSTOP_SHIELD=0.06, HITSTOP_DMG=0.08;
 const LEVEL_LEN=600;                   // metres to THE LOST SOCK VORTEX (~35s run — 400 played out in ~20s, too thin for the orb cycle)
-const HP_MAX=3, MEND_COST=25;          // 3 hits → the sock unravels; buttons buy a mend between stages (🔷 Mike)
+const HP_MAX=3, MEND_COST=25;          // 3 hits → the sock unravels; loose change buys a mend between stages (🔷 Mike)
 const MPS=30;                          // metres per second base (scales with speed ramp)
+/* THE CHASE (research: Downwell's combo/"gem high" — risky play must be the fast play):
+   grazes + change grabbed near heat fill CHASE; CHASE = speed toward your pair, decays when
+   you play safe. The pair races you on the progress bar at PAIR_MPS — pure-safe play loses
+   ground, hot play catches up. */
+const CHASE_DECAY=0.05, CHASE_GRAZE=0.25, CHASE_COIN=0.06, CHASE_QTR=0.16;
+const CHASE_SPD=0.5;                   // dist multiplier at full chase (+50%)
+const CHASE_Z=0.25;                    // approach-speed multiplier at full chase (+25% intensity — opt-in difficulty)
+const PAIR_MPS=18, PAIR_HEAD=30;       // the pair's pace + head start each stage
+const GAIN_BONUS=10;                   // ¢ bonus for beating your pair to the vortex
 const DRUMSPIN=0.22;                   // the drum itself slowly tumbles (rad/s) — sells the dryer
 
 /* ===== Audio (tiny) ===== */
@@ -78,7 +87,8 @@ const Snd={ctx:null,g:null,
   leap(){ this.b(240,620,0.22,"triangle",0.14); }, land(){ this.b(200,120,0.1,"triangle",0.1); },
   die(){ this.b(220,40,0.4,"sawtooth",0.18); }, charge(){ this.b(880,1320,0.08,"triangle",0.07); },
   win(){ this.b(440,660,0.4,"triangle",0.12); this.b(660,990,0.5,"triangle",0.1); },
-  coin(){ this.b(980+Math.random()*220,1500,0.06,"triangle",0.09); },
+  coin(){ const f=2000+Math.random()*400;                     // metallic CLINK — loose change, not a sparkle
+    this.b(f,f*0.92,0.035,"square",0.05); this.b(f*1.35,f*1.25,0.05,"triangle",0.07); },
   orb(){ this.b(520,780,0.18,"triangle",0.11); this.b(780,1170,0.22,"triangle",0.09); },
   shieldPop(){ this.b(300,90,0.22,"sawtooth",0.14); },
   graze(){ this.b(1500,2100,0.05,"triangle",0.055); }
@@ -160,16 +170,17 @@ let zspd=ZSPD0, dist=0, best=0, t=0, shake=0, flash=0, deaths=0;
 let spawnCd=1.2, patCd=0;
 /* collectibles (research-grounded: guaranteed trail on a fixed cadence → predictable economy;
    trails over singles; never co-located with heat; magnet = the classic) */
-let buttons=0, runBtns=0, shieldUp=false, magnetT=0, graceT=0, coinPopT=0, coinPopV=0;
-let trailCd=3.0, orbCd=8.0, orbSeq=0;      // guaranteed button trail ~4.5s · buff orb ~8s (SHIELD first)
+let buttons=0, runBtns=0, shieldUp=false, magnetT=0, graceT=0, coinPopT=0, coinPopV=0;   // "buttons" var = ¢ loose change now (kept name to avoid churn)
+let orbCd=8.0, orbSeq=0;                   // buff orb ~8s (SHIELD first); change now spawns WITH the laundry patterns
+let chase=0, pairDist=0, gained=false;     // THE CHASE — risk meter + the pair racing you to the vortex
 let hp=HP_MAX, stage=1, patchCd=12;        // health carries ACROSS stages; patches only spawn when hurt
 /* steering direction: SCREEN (default — right key moves the sock right when it's at the bottom;
    angle DECREASES) vs WHEEL (right = clockwise drum rotation — intuitive for some). 🔷 Mike. */
 let ctrlWheel=false;
-try{ const d=JSON.parse(localStorage.getItem("flipline.drum.proto")); if(d){ best=d.best|0; buttons=d.buttons|0; ctrlWheel=!!d.ctrlWheel; } }catch(e){}
+try{ const d=JSON.parse(localStorage.getItem("flipline.drum.proto")); if(d){ best=d.best|0; buttons=(d.change!=null?d.change:d.buttons)|0; ctrlWheel=!!d.ctrlWheel; } }catch(e){}   // old "buttons" banks migrate to change
 let lastHaul=0;
 function bank(){ lastHaul=runBtns; buttons+=runBtns; runBtns=0; if(dist>best)best=dist; saveLS(); }
-function saveLS(){ try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,buttons:buttons,ctrlWheel:ctrlWheel})); }catch(e){} }
+function saveLS(){ try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,change:buttons,ctrlWheel:ctrlWheel})); }catch(e){} }
 const CN=16, col=[]; for(let i=0;i<CN;i++) col.push({on:false,ang:0,z:0,kind:0,val:1});
 function colAlloc(){ for(const c of col) if(!c.on) return c; return null; }
 // angular clearance vs heat arcs that will arrive at the rim around the same time
@@ -185,8 +196,9 @@ function angDiff(x,y){ let d=(x-y)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TA
 function zBase(){ return ZSPD0*(1+0.08*(stage-1)); }   // each stage tumbles faster
 function reset(){ a=Math.PI/2; steer=0; cling=0; rideT=0; zspd=zBase(); dist=0; spawnCd=1.4; patCd=0;
   for(const o of obs)o.on=false; for(const c of col)c.on=false; shake=0; flash=0;
-  shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; trailCd=2.2; orbCd=5.0; orbSeq=0; patchCd=12;
-  steerV=0; lastMove=0; revCd=0; hitStop=0; zoomP=0; }
+  shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; orbCd=5.0; orbSeq=0; patchCd=12;
+  steerV=0; lastMove=0; revCd=0; hitStop=0; zoomP=0;
+  chase=0; pairDist=PAIR_HEAD; gained=false; }
 function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
 function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
 
@@ -196,13 +208,24 @@ function startStage(){ stage++; reset(); mode="play"; }                         
 function alloc(){ for(const o of obs) if(!o.on) return o; return null; }
 function garment(ang,dz){ const o=alloc(); if(!o)return; o.on=true; o.ang=ang; o.hw=GHW; o.z=Z0+(dz||0); o.kind=0; o.grz=false;
   o.gi=((Math.random()*3)|0)*PAL_HOT.length+((Math.random()*PAL_HOT.length)|0); }   // random garment kind × hot hue
+/* LOOT LIVES IN THE DANGER now (Mario-coin rule: currency = reward for going out of your way;
+   the old colClear() placement made change decorative — safe loot is dead loot).
+   Pennies (1¢) thread the pattern's gaps; a QUARTER (3¢) sits tucked right beside a garment. */
+function pennies(gapAng,z){ for(let k=0;k<3;k++) placeCol(gapAng, (z||Z0)+0.05+k*0.055, 0, 1); }   // a run of change through the gap
+function quarter(edgeAng,z){ placeCol(edgeAng, (z||Z0)+0.06, 0, 3); }               // tucked beside the hot hem — worth the lean
 function spawnPattern(){
   const r=Math.random(), pa=Math.random()*TAU, D=2*GHW+0.5;   // D = centre spacing leaving a 0.5rad threadable gap
-  if(dist<60 || r<0.3){ garment(pa); }                                             // solo — dodge around
-  else if(r<0.55){ garment(pa-D/2); garment(pa+D/2); }                             // pair — thread the gap or go around
-  else if(r<0.75){ garment(pa-D); garment(pa); garment(pa+D); }                    // wall of 3 — two seams + the long way
-  else if(r<0.9){ const n=5; for(let k=0;k<n;k++) garment(pa+k*TAU/n); }           // ring of 5 — five ~0.78rad gaps
-  else { for(let k=0;k<3;k++) garment(pa+k*1.5,k*0.10); }                          // spiral triplet
+  const side=Math.random()<0.5?1:-1, EDGE=GHW+0.14;           // quarter offset: just past the hem, inside graze range
+  if(dist<60 || r<0.3){ garment(pa);                                               // solo — dodge around
+    if(Math.random()<0.6) quarter(pa+side*EDGE); }
+  else if(r<0.55){ garment(pa-D/2); garment(pa+D/2);                               // pair — thread the gap or go around
+    pennies(pa); }
+  else if(r<0.75){ garment(pa-D); garment(pa); garment(pa+D);                      // wall of 3 — two seams + the long way
+    pennies(pa+side*D/2); if(Math.random()<0.5) quarter(pa-side*(D+EDGE)); }
+  else if(r<0.9){ const n=5; for(let k=0;k<n;k++) garment(pa+k*TAU/n);             // ring of 5 — five ~0.78rad gaps
+    const g=(Math.random()*n)|0; pennies(pa+(g+0.5)*TAU/n); }
+  else { for(let k=0;k<3;k++) garment(pa+k*1.5,k*0.10);                            // spiral triplet
+    quarter(pa+1.5+side*EDGE,0.10); }
 }
 
 /* ===== Input ===== */
@@ -266,22 +289,23 @@ function update(dt){
     const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
     for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*70,(Math.random()-0.5)*70,0.3,"#bff0ff"); } }
 
-  // progress + ramp (riding the current = slight speed boost)
-  const spd=zspd/ZSPD0*(rideT>0?RIDE_BOOST:1);
+  // THE CHASE — risk fills it, safe play bleeds it; it IS your speed toward the pair
+  if(chase>0){ chase-=CHASE_DECAY*dt; if(chase<0)chase=0; }
+  pairDist+=PAIR_MPS*(1+0.08*(stage-1))*dt;                          // the pair tumbles ahead at its own pace
+
+  // progress + ramp (riding the current = slight speed boost; CHASE = up to +50% pace)
+  const spd=zspd/ZSPD0*(rideT>0?RIDE_BOOST:1)*(1+chase*CHASE_SPD);
   dist+=MPS*spd*dt*0.55;
   zspd=Math.min(ZSPDMX*(1+0.05*(stage-1)), zBase()+dist*0.0007);
-  if(dist>=LEVEL_LEN){ mode="stage"; bank(); Snd.win(); return; }   // stage cleared → mend shop → next drum, faster
+  const zeff=zspd*(1+chase*CHASE_Z);                                 // hot play also runs hotter — opt-in intensity
+  if(dist>=LEVEL_LEN){ gained=pairDist<LEVEL_LEN;                    // beat your pair to the vortex?
+    if(gained) runBtns+=GAIN_BONUS;
+    mode="stage"; bank(); Snd.win(); return; }                       // stage cleared → mend shop → next drum, faster
 
   // spawn (hold off in the last stretch so the vortex approach is clean)
   spawnCd-=dt; if(spawnCd<=0 && dist<LEVEL_LEN-40){ spawnPattern(); spawnCd=0.9+Math.random()*0.5-Math.min(0.35,dist*0.0009); }
 
-  // collectibles — guaranteed button trail on a fixed cadence (predictable economy), buff orb slower
-  trailCd-=dt; if(trailCd<=0 && dist<LEVEL_LEN-30){ trailCd=4.5;
-    let ta=Math.random()*TAU, tries=6; while(tries-->0 && !colClear(ta,Z0+0.1)) ta=Math.random()*TAU;
-    if(tries>0){ const sweep=(Math.random()<0.5?1:-1)*0.34;
-      for(let k=0;k<4;k++) placeCol(ta+k*sweep, Z0+k*0.055, 0, 1); }        // sweeping trail → rewards a slide (which charges STATIC)
-    if(Math.random()<0.4){                                                   // risk single: tucked beside a heat arc's edge, ×3
-      for(const o of obs){ if(o.on && o.z<0.4){ placeCol(o.ang+o.hw+0.32, o.z+0.02, 0, 3); break; } } } }
+  // buff orbs / patches keep the safe placement — utility shouldn't gamble; CHANGE spawns with the laundry now
   orbCd-=dt; if(orbCd<=0 && dist<LEVEL_LEN-30){ orbCd=8;
     let oa=Math.random()*TAU, tries=6; while(tries-->0 && !colClear(oa,Z0)) oa=Math.random()*TAU;
     if(tries>0) placeCol(oa, Z0, 1+(orbSeq++%3), 0); }                       // SHIELD → MAGNET → BOLT, cycling
@@ -297,15 +321,16 @@ function update(dt){
 
   // collectibles approach + collect at the rim (generous window; magnet pulls buttons in)
   for(const c of col){ if(!c.on) continue;
-    c.z+=zspd*dt; c.ang+=DRUMSPIN*dt;
+    c.z+=zeff*dt; c.ang+=DRUMSPIN*dt;
     if(c.z>1.12){ c.on=false; continue; }
     if(magnetT>0 && c.kind===0 && c.z>0.8){ const d2=angDiff(a,c.ang);
       if(Math.abs(d2)<1.3) c.ang+=d2*Math.min(1,dt*7); }
     if(c.z>0.9 && rideT<=0 && Math.abs(angDiff(a,c.ang))<0.26){   // can't grab rim loot while riding the centre
       c.on=false;
       if(c.kind===0){ runBtns+=c.val; coinPopV+=c.val; coinPopT=0.8; Snd.coin();
+        chase=Math.min(1,chase+(c.val>1?CHASE_QTR:CHASE_COIN));            // change grabbed in the laundry feeds THE CHASE
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
-        for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*110,(Math.random()-0.5)*110,0.35,"#ffcf5c"); }
+        for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*110,(Math.random()-0.5)*110,0.35,c.val>1?"#dfe6ee":"#e0995c"); }
       else { Snd.orb();
         if(c.kind===1) shieldUp=true;                                        // SHIELD — absorb one hit
         else if(c.kind===2) magnetT=7;                                       // MAGNET — buttons glide in
@@ -315,12 +340,13 @@ function update(dt){
 
   // obstacles approach the camera
   for(const o of obs){ if(!o.on) continue;
-    o.z+=zspd*dt; o.ang+=DRUMSPIN*dt;                       // they ride the tumbling drum
+    o.z+=zeff*dt; o.ang+=DRUMSPIN*dt;                       // they ride the tumbling drum
     if(o.z>1.16){ o.on=false; continue; }
     if(o.z>HITLO && o.z<HITHI && rideT<=0 && graceT<=0){
       const dA=Math.abs(angDiff(a,o.ang));
-      if(dA>=o.hw*0.8+PHW && dA<o.hw*0.8+PHW+GRAZE_ARC && !o.grz){  // GQ-4: GRAZE — skimming hot laundry pays a static sliver
-        o.grz=true; const was=cling; cling=Math.min(1,cling+GRAZE_CLING);
+      if(dA>=o.hw*0.8+PHW && dA<o.hw*0.8+PHW+GRAZE_ARC && !o.grz){  // GQ-4: GRAZE — skimming hot laundry pays static + CHASE
+        o.grz=true; chase=Math.min(1,chase+CHASE_GRAZE);
+        const was=cling; cling=Math.min(1,cling+GRAZE_CLING);
         if(was<1&&cling>=1) Snd.charge(); else Snd.graze();
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
         for(let i=0;i<5;i++) emit(px,py,(Math.random()-0.5)*120,(Math.random()-0.5)*120,0.22,"#ffb056"); }
@@ -411,12 +437,16 @@ function draw(){
     const zz=Math.min(1,c.z), r=RIM*Math.pow(zz,PERSP)*0.93;
     const px=CX+Math.cos(c.ang)*r, py=CY+Math.sin(c.ang)*r;
     ctx.globalAlpha=0.35+0.65*zz;
-    if(c.kind===0){ const br=(2+4.5*zz)*(c.val>1?1.25:1);
-      ctx.fillStyle="rgba(255,207,92,0.3)"; ctx.beginPath(); ctx.arc(px,py,br+2,0,TAU); ctx.fill();
-      ctx.fillStyle="#ffcf5c"; ctx.beginPath(); ctx.arc(px,py,br,0,TAU); ctx.fill();
-      if(zz>0.5){ ctx.fillStyle="rgba(120,80,20,0.9)"; const h2=br*0.34;
-        ctx.fillRect(px-h2-0.6,py-h2-0.6,1.2,1.2); ctx.fillRect(px+h2-0.6,py-h2-0.6,1.2,1.2);
-        ctx.fillRect(px-h2-0.6,py+h2-0.6,1.2,1.2); ctx.fillRect(px+h2-0.6,py+h2-0.6,1.2,1.2); }
+    if(c.kind===0){ const q=c.val>1, br=(2+4.5*zz)*(q?1.3:1);
+      // LOOSE CHANGE — pennies (copper) & quarters (silver), tumbling end-over-end like real dryer change
+      const tum=Math.abs(Math.sin(t*5+c.ang*7));            // fake 3D coin spin: width collapses and returns
+      ctx.fillStyle=q?"rgba(223,230,238,0.3)":"rgba(224,153,92,0.28)";
+      ctx.beginPath(); ctx.arc(px,py,br+2,0,TAU); ctx.fill();
+      ctx.save(); ctx.translate(px,py); ctx.rotate(c.ang+t*1.5); ctx.scale(Math.max(0.18,tum),1);
+      ctx.fillStyle=q?"#dfe6ee":"#e0995c"; ctx.beginPath(); ctx.arc(0,0,br,0,TAU); ctx.fill();
+      ctx.strokeStyle=q?"#8f9aa8":"#9c6234"; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(0,0,br-0.8,0,TAU); ctx.stroke();
+      if(q&&zz>0.45){ ctx.setLineDash([1,1.5]); ctx.beginPath(); ctx.arc(0,0,br,0,TAU); ctx.stroke(); ctx.setLineDash([]); }  // milled quarter edge
+      ctx.restore();
     } else { const os=(6+12*zz)*(1+0.12*Math.sin(t*6));
       ctx.drawImage(c.kind===4?MEND:ORBSPR[c.kind],px-os,py-os,os*2,os*2);
       if(c.kind===4){                                                               // health PATCH — mint square w/ stitches
@@ -469,11 +499,19 @@ function draw(){
   if(mode==="play"||mode==="dead"||mode==="win"){
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(90,8,300,10);
     ctx.fillStyle="#c9b0ff"; ctx.fillRect(90,8,300*prog,10);
+    // your pair on the same bar — the race you're actually running
+    { const pp=Math.min(1,pairDist/LEVEL_LEN), pmx=90+300*pp;
+      ctx.fillStyle="#ffcf9a"; ctx.fillRect(pmx-1,6,2,14);
+      txt("PAIR",pmx,4,7,"#ffcf9a",700); }
     txt("THE LOST SOCK VORTEX",CX,28,9,"#c9b0ff",700);
+    // CHASE meter — thin hot bar under the progress bar; this is your speed
+    ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.fillRect(90,20,300,4);
+    ctx.fillStyle=chase>0.66?"#ff9a3c":"#c76f35"; ctx.fillRect(90,20,300*chase,4);
+    if(chase>0.05) txt("CHASE",406,26,7,"#ff9a3c",700);
     txt((dist|0)+"m",60,17,10,"#e8dcc8",700);
-    txt("● "+(mode==="play"?buttons+runBtns:buttons),34,33,coinPopT>0?12:10,coinPopT>0?"#ffe9a8":"#ffcf5c",700);   // bank() folds runBtns in on death/win
+    txt("¢ "+(mode==="play"?buttons+runBtns:buttons),34,33,coinPopT>0?12:10,coinPopT>0?"#ffe9a8":"#e0995c",700);   // bank() folds runBtns in on death/win
     if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.6);
-      txt("+"+coinPopV+" ●",34,47-(0.8-coinPopT)*10,9,"#ffe08a",700); ctx.globalAlpha=1; }
+      txt("+"+coinPopV+" ¢",34,47-(0.8-coinPopT)*10,9,"#ffe08a",700); ctx.globalAlpha=1; }
     if(magnetT>0) txt("MAGNET "+Math.ceil(magnetT),34,VH-10,8,"#5adcff",700);
     if(shieldUp) txt("SHIELD",VW-38,VH-10,8,"#ffd45a",700);
     for(let k=0;k<HP_MAX;k++){ const on=k<hp;                                  // condition pips: little stitched patches, not hearts
@@ -494,27 +532,30 @@ function draw(){
     txt("INSIDE THE DRYER",CX,92,26,"#ffcf5c",800);
     txt("your PAIR just got sucked into THE LOST SOCK VORTEX — catch up before it's gone",CX,112,10,"#ffd9a8",600);
     txt("ride the rim — dodge the hot laundry — chase your pair",CX,126,10,"#e8dcc8",600);
-    txt("← → steer   ·   slide to charge STATIC   ·   tap/space to RIDE the current",CX,144,10,"#aeb8cc",600);
+    txt("← → steer   ·   slide to charge STATIC   ·   tap/space to RIDE the current",CX,140,10,"#aeb8cc",600);
+    txt("graze the heat + snatch loose change to fill THE CHASE — speed to catch your pair",CX,154,10,"#ff9a3c",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble",CX,176,13,"#9bf0d0",700); ctx.globalAlpha=1;
-    if(best>0) txt("best "+(best|0)+"m   ·   ● "+buttons,CX,200,10,"#aeb8cc",600);
+    if(best>0) txt("best "+(best|0)+"m   ·   ¢ "+buttons,CX,200,10,"#aeb8cc",600);
     ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_CTRL.x,R_CTRL.y,R_CTRL.w,R_CTRL.h);
     txt("CONTROLS: "+(ctrlWheel?"WHEEL (→ spins drum)":"SCREEN (→ moves right)"),CX,R_CTRL.y+15,9,"#9bf0d0",700);
   } else if(mode==="dead"){
     ctx.fillStyle="rgba(10,8,6,0.45)"; ctx.fillRect(0,0,VW,VH);
     txt("UNRAVELLED",CX,106,26,"#ff5468",800);
-    txt("stage "+stage+"   ·   "+(dist|0)+"m toward the vortex   ·   +● "+lastHaul+"  (● "+buttons+")",CX,130,11,"#e8dcc8",600);
+    txt("stage "+stage+"   ·   "+(dist|0)+"m toward the vortex   ·   +¢ "+lastHaul+"  (¢ "+buttons+")",CX,130,11,"#e8dcc8",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble again",CX,164,12,"#9bf0d0",700); ctx.globalAlpha=1;
   } else if(mode==="stage"){
     ctx.fillStyle="rgba(20,12,30,0.55)"; ctx.fillRect(0,0,VW,VH);
-    txt("STAGE "+stage+" CLEAR — YOUR PAIR IS STILL AHEAD",CX,92,15,"#c9b0ff",800);
-    txt("+● "+lastHaul+"   (● "+buttons+")",CX,114,11,"#ffcf5c",700);
+    if(gained){ txt("STAGE "+stage+" CLEAR — YOU'RE GAINING ON YOUR PAIR!",CX,92,15,"#ffcf9a",800);
+      txt("beat your pair to the vortex  +¢ "+GAIN_BONUS,CX,108,9,"#ff9a3c",700); }
+    else txt("STAGE "+stage+" CLEAR — YOUR PAIR SLIPPED DEEPER…",CX,92,15,"#c9b0ff",800);
+    txt("+¢ "+lastHaul+"   (¢ "+buttons+")",CX,120,11,"#e0995c",700);
     // condition + mend shop between stages
     for(let k=0;k<HP_MAX;k++){ const on=k<hp;
       ctx.fillStyle=on?"#9bf0d0":"rgba(255,255,255,0.12)"; ctx.fillRect(CX-26+k*18,126,12,12); }
     if(hp<HP_MAX){ const can=buttons>=MEND_COST;
       ctx.fillStyle=can?"rgba(155,240,208,0.16)":"rgba(255,255,255,0.05)";
       ctx.fillRect(R_MEND.x,R_MEND.y,R_MEND.w,R_MEND.h);
-      txt("MEND +1   ● "+MEND_COST,CX,R_MEND.y+16,11,can?"#9bf0d0":"#6f7a92",700); }
+      txt("MEND +1   ¢ "+MEND_COST,CX,R_MEND.y+16,11,can?"#9bf0d0":"#6f7a92",700); }
     else txt("fully mended",CX,R_MEND.y+16,10,"#6f7a92",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap → STAGE "+(stage+1)+" (faster)",CX,212,12,"#9bf0d0",700); ctx.globalAlpha=1;
   }
