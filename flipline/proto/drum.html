@@ -47,14 +47,10 @@ const HITLO=0.94, HITHI=1.04;          // z window where an obstacle is "at the 
 const PHW=0.16;                        // player's angular half-width for collision (generous vs the drawn sock)
 const CLING_RATE=0.5;                  // static charge per second WHILE STEERING (slide = friction = static)
 const GHW=0.24;                        // one garment's angular half-width; hitbox = 0.8× (visual ⊇ hitbox, fair)
-/* STATIC LEAP (E3, Tempest 2000's jump made ours) — full charge spends on a leap ACROSS the
-   drum: straight chord through the centre (right past the vortex + your pair) to the OPPOSITE
-   rim point. Untouchable in transit, faster, feeds CHASE — but you land into whatever laundry
-   waits on the far side (tiny grace only), so it's a read, not a panic button. */
-const LEAP_T=0.9, LEAP_BOOST=1.35, LEAP_GRACE=0.25, LEAP_CHASE=0.2;
-/* B1 — HIT = TOSSED (Sonic ring model): damage flings the sock along the rim + knocks loose
-   change out of it; scattered coins bounce on the rim and are re-grabbable for ~2s. */
-const TOSS_T=0.55, TOSS_AV=3.2, SCATTER_N=4, SCAT_LIFE=2.2;
+/* STATIC RIDE — full charge spends on riding the centre current: ~1.6s untouchable + 25% faster.
+   Balance: needs ~3-5s of real sliding to charge, grants ~1.6s safety + ~0.4s of distance —
+   costs more time to earn than it saves, so it's a tool, not a win button. No charging mid-ride. */
+const RIDE_T=1.6, RIDE_BOOST=1.25;
 /* GQ-A feel constants — steering ease (~80ms), graze reward, hit-stop, zoom punch */
 const STEER_EASE=0.08;                 // seconds to reach full steer speed (and to stop)
 const GRAZE_ARC=0.10, GRAZE_CLING=0.08;// pass within 0.1rad beyond the hitbox of hot laundry at the rim → static sliver
@@ -177,9 +173,6 @@ let spawnCd=1.2, patCd=0;
 let buttons=0, runBtns=0, shieldUp=false, magnetT=0, graceT=0, coinPopT=0, coinPopV=0;   // "buttons" var = ¢ loose change now (kept name to avoid churn)
 let orbCd=8.0, orbSeq=0;                   // buff orb ~8s (SHIELD first); change now spawns WITH the laundry patterns
 let chase=0, pairDist=0, gained=false;     // THE CHASE — risk meter + the pair racing you to the vortex
-let leapA0=0, leapFlip=false;              // E3 — chord-leap launch angle + midpoint flip latch
-let tossT=0, tossAV=0;                     // B1 — tossed-by-the-hit knockback
-const SCN=6, scat=[]; for(let i=0;i<SCN;i++) scat.push({on:false,ang:0,av:0,life:0});   // knocked-loose change on the rim
 let hp=HP_MAX, stage=1, patchCd=12;        // health carries ACROSS stages; patches only spawn when hurt
 /* steering direction: SCREEN (default — right key moves the sock right when it's at the bottom;
    angle DECREASES) vs WHEEL (right = clockwise drum rotation — intuitive for some). 🔷 Mike. */
@@ -205,8 +198,7 @@ function reset(){ a=Math.PI/2; steer=0; cling=0; rideT=0; zspd=zBase(); dist=0; 
   for(const o of obs)o.on=false; for(const c of col)c.on=false; shake=0; flash=0;
   shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; orbCd=5.0; orbSeq=0; patchCd=12;
   steerV=0; lastMove=0; revCd=0; hitStop=0; zoomP=0;
-  chase=0; pairDist=PAIR_HEAD; gained=false;
-  leapA0=0; leapFlip=false; tossT=0; tossAV=0; for(const s of scat)s.on=false; }
+  chase=0; pairDist=PAIR_HEAD; gained=false; }
 function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
 function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
 
@@ -262,12 +254,8 @@ addEventListener("pointerup",e=>{ const tc=touches[e.pointerId]; delete touches[
 addEventListener("pointercancel",e=>{ delete touches[e.pointerId]; });
 addEventListener("pointermove",e=>{ const tc=touches[e.pointerId]; if(tc && Math.abs(e.clientX-tc.x)>14) tc.moved=true; });
 function advance(){ if(mode==="ready"||mode==="dead") start(); else if(mode==="stage") startStage(); else if(mode==="win"){ mode="ready"; } }
-function tryLeap(){ if(cling>=1 && rideT<=0){ cling=0; rideT=LEAP_T; leapA0=a; leapFlip=false; Snd.leap(); } }   // spend static → leap the chord to the far rim
+function tryLeap(){ if(cling>=1 && rideT<=0){ cling=0; rideT=RIDE_T; Snd.leap(); } }   // spend static → ride the centre current
 function tryTap(){ tryLeap(); }
-function scatterChange(n){ let dropped=0;                         // B1: the hit knocks change loose — recoverable for a beat
-  for(const s of scat){ if(dropped>=n || runBtns<=0) break; if(s.on) continue;
-    s.on=true; s.ang=a+(Math.random()-0.5)*0.35; s.av=(Math.random()-0.5)*3.4; s.life=SCAT_LIFE;
-    runBtns--; dropped++; } }
 
 /* ===== Update ===== */
 function update(dt){
@@ -290,28 +278,23 @@ function update(dt){
     for(let i=0;i<5;i++) emit(px,py,(Math.random()-0.5)*90,(Math.random()-0.5)*90,0.25,"#c8b89a"); }
   steerV+=(steer-steerV)*Math.min(1,dt/STEER_EASE);
   if(Math.abs(steerV)<0.02 && steer===0) steerV=0;
-  a+=steerV*AV*dt*(ctrlWheel?1:-1)*(tossT>0?0.35:1); a=((a%TAU)+TAU)%TAU;   // SCREEN mode: right = sock moves right at the bottom; tossed = weak grip
+  a+=steerV*AV*dt*(ctrlWheel?1:-1); a=((a%TAU)+TAU)%TAU;   // SCREEN mode: right = sock moves right at the bottom
   lastMove=steerV*(ctrlWheel?1:-1);
-  if(tossT>0){ a+=tossAV*dt*(tossT/TOSS_T); tossT-=dt; if(tossT<0)tossT=0; }   // B1: the hit's shove, easing out
   if(rideT<=0) a+=DRUMSPIN*dt;   // static cling: the drum CARRIES the sock — gaps stay where you put yourself (fair)
 
   // static cling charges while sliding on the drum (never while riding the current)
   if(steer!==0 && rideT<=0 && cling<1){ const was=cling; cling=Math.min(1,cling+CLING_RATE*dt);
     if(was<1&&cling>=1) Snd.charge(); }
-  if(rideT>0){ rideT-=dt;
-    if(!leapFlip && rideT<LEAP_T/2){ leapFlip=true; a=((leapA0+Math.PI)%TAU+TAU)%TAU;   // midpoint: fly past the vortex + your pair
-      zoomP=1; chase=Math.min(1,chase+LEAP_CHASE);
-      for(let i=0;i<8;i++) emit(CX+(Math.random()-0.5)*16,CY+(Math.random()-0.5)*16,(Math.random()-0.5)*140,(Math.random()-0.5)*140,0.3,"#c9b0ff"); }
-    if(rideT<=0){ rideT=0; graceT=Math.max(graceT,LEAP_GRACE); Snd.land();               // land on the FAR rim — small grace, read your exit
-      const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
-      for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*70,(Math.random()-0.5)*70,0.3,"#bff0ff"); } }
+  if(rideT>0){ rideT-=dt; if(rideT<=0){ rideT=0; graceT=Math.max(graceT,0.5); Snd.land();   // drop back to the rim w/ landing grace
+    const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
+    for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*70,(Math.random()-0.5)*70,0.3,"#bff0ff"); } }
 
   // THE CHASE — risk fills it, safe play bleeds it; it IS your speed toward the pair
   if(chase>0){ chase-=CHASE_DECAY*dt; if(chase<0)chase=0; }
   pairDist+=PAIR_MPS*(1+0.08*(stage-1))*dt;                          // the pair tumbles ahead at its own pace
 
   // progress + ramp (riding the current = slight speed boost; CHASE = up to +50% pace)
-  const spd=zspd/ZSPD0*(rideT>0?LEAP_BOOST:1)*(1+chase*CHASE_SPD);
+  const spd=zspd/ZSPD0*(rideT>0?RIDE_BOOST:1)*(1+chase*CHASE_SPD);
   dist+=MPS*spd*dt*0.55;
   zspd=Math.min(ZSPDMX*(1+0.05*(stage-1)), zBase()+dist*0.0007);
   const zeff=zspd*(1+chase*CHASE_Z);                                 // hot play also runs hotter — opt-in intensity
@@ -355,13 +338,6 @@ function update(dt){
         else { cling=1; Snd.charge(); } } }                                  // STATIC BOLT — leap instantly ready
   }
 
-  // knocked-loose change bounces on the rim — grab it back before it slips into the laundry
-  for(const s of scat){ if(!s.on) continue;
-    s.life-=dt; s.ang+=(s.av+DRUMSPIN)*dt; s.av*=Math.pow(0.25,dt);
-    if(s.life<=0){ s.on=false; continue; }
-    if(s.life<SCAT_LIFE-0.35 && rideT<=0 && Math.abs(angDiff(a,s.ang))<0.3){   // brief no-grab so it visibly flies out first
-      s.on=false; runBtns++; coinPopV++; coinPopT=0.8; Snd.coin(); } }
-
   // obstacles approach the camera
   for(const o of obs){ if(!o.on) continue;
     o.z+=zeff*dt; o.ang+=DRUMSPIN*dt;                       // they ride the tumbling drum
@@ -380,8 +356,6 @@ function update(dt){
           for(let i=0;i<12;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#ffd45a");
           continue; }
         hp--; graceT=1.0; shake=8; flash=0.35; hitStop=HITSTOP_DMG; zoomP=1; Snd.shieldPop();  // take damage — the sock frays (GQ-2: hit-stop + zoom punch)
-        tossT=TOSS_T; tossAV=(angDiff(a,o.ang)>=0?1:-1)*TOSS_AV;                               // B1: TOSSED away from the hit, change knocked loose
-        scatterChange(Math.min(SCATTER_N,runBtns)); chase=Math.max(0,chase-0.3);
         for(let i=0;i<10;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#efe9db");  // loose threads fly
         if(hp<=0){ mode="dead"; deaths++; bank(); shake=12; flash=0.5; Snd.die();          // 3rd hit — DISINTEGRATE into pieces
           for(let i=0;i<26;i++) emit(px,py,(Math.random()-0.5)*300,(Math.random()-0.5)*300,0.5+Math.random()*0.4,"#efe9db");
@@ -484,26 +458,13 @@ function draw(){
         if(c.kind===3&&zz>0.5) txt("⚡",px,py+3,8+6*zz,"#e6f7ff",700); } }
     ctx.globalAlpha=1; }
 
-  // knocked-loose change bouncing on the rim (B1) — flashes as its recover window runs out
-  for(const s of scat){ if(!s.on) continue;
-    const sr=RIM*0.93-Math.abs(Math.sin(s.life*7))*6;
-    const sx=CX+Math.cos(s.ang)*sr, sy=CY+Math.sin(s.ang)*sr;
-    ctx.globalAlpha=s.life<0.6?(0.3+0.7*Math.abs(Math.sin(s.life*14))):1;
-    ctx.save(); ctx.translate(sx,sy); ctx.rotate(s.life*6); ctx.scale(Math.max(0.2,Math.abs(Math.sin(s.life*9))),1);
-    ctx.fillStyle="#e0995c"; ctx.beginPath(); ctx.arc(0,0,3.2,0,TAU); ctx.fill();
-    ctx.strokeStyle="#9c6234"; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(0,0,2.4,0,TAU); ctx.stroke();
-    ctx.restore(); ctx.globalAlpha=1; }
-
-  // the sock on the rim (or mid-leap across the drum) — hidden once it has disintegrated
+  // the sock on the rim (or riding the centre current) — hidden once it has disintegrated
   if(mode!=="dead"){
-    let px,py,sc2=1,rk=0;
-    if(rideT>0){ rk=1;                                              // E3: leap the CHORD — straight across the diameter
-      const k=1-rideT/LEAP_T, ke=k<0.5?2*k*k:1-2*(1-k)*(1-k);
-      const R0=RIM*0.93, x0=CX+Math.cos(leapA0)*R0, y0=CY+Math.sin(leapA0)*R0;
-      px=x0+2*(CX-x0)*ke; py=y0+2*(CY-y0)*ke; sc2=1-0.35*Math.sin(Math.PI*k);
-      if(Math.random()<0.7) emit(px+(Math.random()-0.5)*8,py+(Math.random()-0.5)*8,(Math.random()-0.5)*60,(Math.random()-0.5)*60,0.22,"#bff0ff"); }
-    else { const hop=tossT>0?Math.sin(Math.PI*(1-tossT/TOSS_T))*9:0;   // B1: tossed = kicked off the rim for a beat
-      const pr=RIM*0.93-hop; px=CX+Math.cos(a)*pr; py=CY+Math.sin(a)*pr; }
+    const rk=rideT>0?Math.min(1,(RIDE_T-rideT)*4,rideT*4):0;        // ease in/out of the current
+    const pr=RIM*0.93*(1-rk)+26*rk, px=CX+Math.cos(a)*pr, py=CY+Math.sin(a)*pr, sc2=1-0.3*rk;
+    if(rk>0){ ctx.strokeStyle="rgba(191,240,255,"+(0.35*rk)+")"; ctx.lineWidth=2;  // static tether crackles back to the rim
+      ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(CX+Math.cos(a)*RIM*0.93,CY+Math.sin(a)*RIM*0.93); ctx.stroke();
+      if(Math.random()<0.6) emit(px+(Math.random()-0.5)*10,py+(Math.random()-0.5)*10,(Math.random()-0.5)*60,(Math.random()-0.5)*60,0.2,"#bff0ff"); }
     ctx.globalAlpha=0.5; ctx.drawImage(WARM,px-20*sc2,py-20*sc2,40*sc2,40*sc2); ctx.globalAlpha=1;
     if(shieldUp||graceT>0){ ctx.strokeStyle="rgba(255,212,90,"+(shieldUp?0.55:0.3*graceT)+")";   // gold shield ring
       ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(px,py,14+2*Math.sin(t*9),0,TAU); ctx.stroke(); }
@@ -512,8 +473,7 @@ function draw(){
     const gflk=graceT>0 && (t*14|0)%2===0;   // damage-grace flicker
     ctx.save(); ctx.translate(px,py); ctx.rotate(a-Math.PI/2+(rk>0?t*5*rk:0)); ctx.scale(sc2,sc2);
     if(rk<=0){ const sv=Math.abs(steerV);                  // GQ-1: lean + stretch into travel (local +x = decreasing angle)
-      ctx.rotate(-lastMove*0.28); ctx.scale(1+sv*0.14,1-sv*0.09);
-      if(tossT>0) ctx.rotate((TOSS_T-tossT)*9*(tossAV>=0?1:-1)); }   // B1: tumbling head-over-heel while tossed
+      ctx.rotate(-lastMove*0.28); ctx.scale(1+sv*0.14,1-sv*0.09); }
     if(gflk) ctx.globalAlpha=0.35;
     ctx.imageSmoothingEnabled=true; ctx.drawImage(SOCK,-11,-11,22,22); ctx.imageSmoothingEnabled=false;
     const dmg=HP_MAX-hp;                     // the sock LOOKS more damaged with every hit
@@ -562,7 +522,7 @@ function draw(){
     // static meter
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(CX-70,VH-18,140,8);
     ctx.fillStyle=cling>=1?"#bff0ff":"#5b8fa8"; ctx.fillRect(CX-70,VH-18,140*cling,8);
-    txt(cling>=1?"⚡ STATIC READY — tap to LEAP THE DRUM":"slide to build STATIC",CX,VH-24,8,cling>=1?"#bff0ff":"#8b95a8",700);
+    txt(cling>=1?"⚡ STATIC READY — tap to RIDE THE CURRENT":"slide to build STATIC",CX,VH-24,8,cling>=1?"#bff0ff":"#8b95a8",700);
   }
   ctx.restore();
   if(flash>0){ ctx.fillStyle="#ff5468"; ctx.globalAlpha=flash; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
@@ -572,7 +532,7 @@ function draw(){
     txt("INSIDE THE DRYER",CX,92,26,"#ffcf5c",800);
     txt("your PAIR just got sucked into THE LOST SOCK VORTEX — catch up before it's gone",CX,112,10,"#ffd9a8",600);
     txt("ride the rim — dodge the hot laundry — chase your pair",CX,126,10,"#e8dcc8",600);
-    txt("← → steer   ·   slide to charge STATIC   ·   tap/space to LEAP across the drum",CX,140,10,"#aeb8cc",600);
+    txt("← → steer   ·   slide to charge STATIC   ·   tap/space to RIDE the current",CX,140,10,"#aeb8cc",600);
     txt("graze the heat + snatch loose change to fill THE CHASE — speed to catch your pair",CX,154,10,"#ff9a3c",600);
     ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble",CX,176,13,"#9bf0d0",700); ctx.globalAlpha=1;
     if(best>0) txt("best "+(best|0)+"m   ·   ¢ "+buttons,CX,200,10,"#aeb8cc",600);
