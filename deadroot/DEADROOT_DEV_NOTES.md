@@ -1322,6 +1322,23 @@ pulses); L3 routes split ~evenly and all waypoints reachable; 1500-tick all-enem
 with boss bar + both evolutions clean; parse OK; console clean; screenshots eyeballed
 (boss bar top, palette clear, reskinned raid + purple Queen render).
 
+## Triage 2026-07-13 — L1 too easy (research + 3 options for Mike)
+Inbox note (2026-07-13): "first level is too easy... only used default zombies, randomly
+placed in a line from queen to entrance. mobs never got close, plenty of biomass to spare."
+Root causes: (a) L1 budget generous vs wave power, (b) one approach path means ANY line
+intercepts, (c) nothing on L1 punishes zombie-only spam. Research: TD design guides say the
+degenerate-strategy fix is trade-offs (no single perfect placement), multi-route maps, and
+the teach-then-test pattern (introduce safely, then a wave that fails if the tool is unused);
+first level should end as a near-miss, not a stroll. **Status: roadmap — Mike picks from
+3 options (delivered in chat 2026-07-13), then it becomes the next DR-# task:**
+1. **Near-miss tuning (numbers only, S).** Cut L1 grant ~120→90 and/or +25-30% wave
+   HP/count so the honest zombie-line clear ends ~25-40% hive HP with <15◈ spare.
+2. **Second approach on L1 (layout, M).** Wave 3+ splits to a flank route (reuse DR-#046
+   route-split code) so a single line leaks; teaches "cover approaches" before L3 demands it.
+3. **Teach-then-test wave 4 (design, M).** Waves 1-3 stay gentle; wave 4 spikes with a
+   threat the plain line can't handle (armored knight front or stealth thief slip) that
+   GRABBER rot/slow or SPIKES placement answers — pre-wave intel banner telegraphs it.
+
 ## Triage 2026-07-09 — Mike's L1→L3 playtest (7 inbox + 2 fresh fails)
 All decisions written to Supabase (inbox statuses + claude fields; the tracker's
 PT-B2 merge fix now keeps them from being re-lost). Batches:
