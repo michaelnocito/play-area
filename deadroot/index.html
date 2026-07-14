@@ -168,8 +168,8 @@ const WAVES = [ // DR-#036: raid parties composed by role (intv unused — the b
   // DR-#037 standard ramp: waves 1-2 = plain grunts (learnable), then ONE new role per wave
   [["scav",4,0]],
   [["scav",6,0]],
-  [["scav",8,0],["sweeper",2,0]],            // stealth unlocks here (waves 1-2 arrive revealed)
-  [["troop",2,0],["scav",5,0]],              // tank intro
+  [["scav",9,0],["sweeper",2,0]],            // stealth unlocks here (waves 1-2 arrive revealed); DR-#049 +1 scav
+  [["troop",2,0],["scav",6,0]],              // tank intro; DR-#049 +1 scav
   [["troop",2,0],["cleric",1,0],["sweeper",2,0]], // healer intro
   [["scav",6,0],["incin",2,0],["cleric",1,0]],    // dps intro
   [["troop",4,0],["incin",4,0],["cleric",2,0],["sweeper",3,0]],
@@ -918,6 +918,11 @@ const LEVELS = [
   { name:"THE BURROW GATE", lore:"hold the gate — the Queen gathers strength to open the way",
     queen:{c:21,r:8}, exit:{c:25,r:8}, waves:[0,1,2,3],
     splits:[ [[8,2]], [[8,15]] ], // DR-#038/#046: each raider picks a ROUTE around the Great Root
+    // DR-#049 teach-then-test: at the level's 3rd wave the raiders tunnel two flank gaps
+    // through the east partition (rows 1-2 and 15-16) — a single line of zombies on the
+    // center row no longer intercepts everything; routes send ~half the raid through them.
+    breach:{ atWave:2, tiles:[[17,1],[17,2],[17,15],[17,16]],
+             routes:[ [[8,2],[18,1]], [[8,15],[18,16]] ] },
     walls:[
       [8,5,8,12],                 // the Great Root: go around top/bottom
       [17,1,17,7], [17,10,17,16], // east partition (gap rows 8-9 into the deep chamber)
@@ -945,13 +950,16 @@ const LEVELS = [
     ] }
 ];
 let levelIdx = 0, levelTransT = 0; // levelTransT>0 = the Queen is opening the doorway
+let breached = []; // DR-#049: wall tiles the raid has tunneled open this level (runtime — LEVELS stays pristine)
 function curLevel(){ return LEVELS[Math.min(levelIdx, LEVELS.length-1)]; }
 function onFloor(c,r){
+  if(breached.some(t=>t[0]===c&&t[1]===r)) return true; // DR-#049: tunneled gaps are floor now
   const L = curLevel();
   return !EDGE_WALLS.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3]) &&
          !L.walls.some(R=>c>=R[0]&&c<=R[2]&&r>=R[1]&&r<=R[3]);
 }
-function raidSplits(){ return curLevel().splits; }
+// DR-#049: once breached, flank routes join the split pool so the raid actually uses the gaps
+function raidSplits(){ const L=curLevel(); return breached.length && L.breach ? L.splits.concat(L.breach.routes) : L.splits; }
 /* DR-#039/#042 ROOTQUEEN: she occupies 2x2 (4 tiles) and is the boss of each level from the
    raiders' side. DR-#042: she AUTO-settles at each level's deep spot (Mike: "queen is auto
    placed now in this spot") — the player's job is to build the dungeon around her and keep
@@ -974,7 +982,7 @@ function buildDungeon(){
 /* ===== Game flow ===== */
 function newRun(){
   meta = metaVals();
-  biomass = meta.bio; hiveMax = meta.hp;
+  biomass = Math.max(60, meta.bio - 30); hiveMax = meta.hp; // DR-#049 near-miss: L1 grant trimmed (L2+ grants in startLevel unchanged)
   waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0; levelIdx = 0; // DR-#042
   run = newRunMods(); boonChoice = null; banner = null; bannerQ = []; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
   gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
@@ -1010,6 +1018,7 @@ function startLevel(){
   levelTransT = 0;
   enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
   stains=[]; rings=[]; doors=[]; traps=[]; souls=[]; exitPulseT=0; // DR-#046
+  breached = []; // DR-#049: walls heal between levels/runs
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   hedgePaid = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
@@ -1042,6 +1051,17 @@ function beginDoorway(){
 function queueWave(){
   if(endless){ run.endlessHpMult = 1+endlessN*0.15; run.endlessSpdMult = 1+endlessN*0.05; }
   const def = endless ? endlessWave(endlessN) : WAVES[waveIdx];
+  // DR-#049 teach-then-test: at the level's breach wave the raiders tunnel flank gaps through
+  // the root walls — a plain center line no longer covers every approach (Mike 2026-07-13:
+  // L1 beaten by a random zombie line with biomass to spare).
+  const br = curLevel().breach;
+  if(br && !endless && !breached.length && waveIdx >= curLevel().waves[br.atWave]){
+    for(const [bc,brr] of br.tiles){ rock[brr][bc]=false; blocked[brr][bc]=false;
+      const [bx,by]=tileToXY(bc,brr); bigBurst(bx+CFG.tile/2,by+CFG.tile/2,"#8a6a4a",14); }
+    breached = br.tiles;
+    rebuildFlow(); shakeIt(5); SFX.boom();
+    showInfo("THEY TUNNEL THROUGH THE ROOTS","new flank gaps in the walls — one line won't hold them");
+  }
   spawnQ = [];
   // DR-#035: the whole raiding party releases AT ONCE — a fast pour (0.1s apart), not a trickle
   let t = 0.3;

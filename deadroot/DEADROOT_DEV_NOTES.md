@@ -1322,6 +1322,21 @@ pulses); L3 routes split ~evenly and all waypoints reachable; 1500-tick all-enem
 with boss bar + both evolutions clean; parse OK; console clean; screenshots eyeballed
 (boss bar top, palette clear, reskinned raid + purple Queen render).
 
+## DR-#049 — L1 flank breach + near-miss grant (2026-07-13, Mike picked 2+1)
+From the triage below. Mike: "i agree go" on option 2 (second approach) + option 1 (numbers).
+- **Breach (teach-then-test flank):** at L1's 3rd wave the raiders tunnel two flank gaps
+  through the east partition (col 17, rows 1-2 and 15-16). `LEVELS[0].breach = {atWave, tiles,
+  routes}`; runtime `breached[]` (reset each startLevel so LEVELS stays pristine); `onFloor()`
+  treats breached tiles as floor; `raidSplits()` appends the two flank routes once open, so
+  ~half the raid swings through the gaps. Opens in `queueWave` with bursts + shake + paused
+  modal "THEY TUNNEL THROUGH THE ROOTS — one line won't hold them".
+- **Near-miss numbers:** L1 grant `meta.bio - 30` (90 at tier 0, floor 60); L2+ grants
+  untouched (DR-#047). Waves 3-4 each +1 scav.
+- Verified headless (deadroot-alt:4226): grant 90; no breach waves 1-2 (2 routes); wave 3
+  opens all 4 tiles (floor/unblocked, flow reaches both gaps), 4 routes, 16/40 spawned
+  raiders carry flank waypoints; L2 transition heals the walls; parse OK; console clean.
+- **Mike retest:** does the zombie-line-only L1 now leak at wave 3 and end as a near-miss?
+
 ## Triage 2026-07-13 — L1 too easy (research + 3 options for Mike)
 Inbox note (2026-07-13): "first level is too easy... only used default zombies, randomly
 placed in a line from queen to entrance. mobs never got close, plenty of biomass to spare."
