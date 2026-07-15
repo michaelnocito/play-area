@@ -131,7 +131,7 @@ const CFG = {
     { id:"rot",   label:"PRESERVATION",      fx:"+3s corpse rot time",cost:25, max:4 },
     { id:"dmg",   label:"ACIDIC EFFICIENCY", fx:"+10% tower damage",  cost:40, max:5 },
     { id:"rate",  label:"HIVE MIND SYNC",    fx:"+8% fire rate",      cost:40, max:5 }
-    // DR-#049: the three "UNLOCK: OVERGROWTH/FUNGAL BLOOM/PHEROMONE" active-unlock meta rows
+    // DR-#050: the three "UNLOCK: OVERGROWTH/FUNGAL BLOOM/PHEROMONE" active-unlock meta rows
     // were removed with the bottom-left Hive Mind active buttons (Mike: "remove the global buffs").
     // Only the persistent STAT upgrades above (hp/bio/decay/rot/dmg/rate) remain on the end screen.
   ],
@@ -512,7 +512,7 @@ const END_QUIPS_LOSE = ["they brought bleach. this time it worked.","death is ju
 function newRunMods(){
   return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
     grabR:0, grabSlow:0, hedgeDisc:0, // DR-#026 C7: grabber radius / slow-strength / hedge discount boons
-    enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[] }; // DR-#049: dropped in-run `abil` actives
+    enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[] }; // DR-#050: dropped in-run `abil` actives
 }
 function offerBoons(){
   // prefer boons not yet seen this run so long sessions (deep endless) feel fresher;
@@ -980,7 +980,7 @@ function newRun(){
   meta = metaVals();
   biomass = Math.max(60, meta.bio - 30); hiveMax = meta.hp; // DR-#049 near-miss: L1 grant trimmed (L2+ grants in startLevel unchanged)
   waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0; levelIdx = 0; // DR-#042
-  run = newRunMods(); boonChoice = null; banner = null; bannerQ = []; reabsorbCD = 0; // DR-#049: no active-buff timers to reset
+  run = newRunMods(); boonChoice = null; banner = null; bannerQ = []; reabsorbCD = 0; // DR-#050: no active-buff timers to reset
   gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
@@ -1304,7 +1304,7 @@ function update(){
         if(e.aggro && e.aggroT>0){ dx=e.aggro.x-e.x; dy=e.aggro.y-e.y; }
         else{
         // DR-#038: head for the chosen side of the Great Root first, then follow the flow.
-        // DR-#050: raiders now ROUTE to each waypoint around obstacles using the existing BFS
+        // DR-#051: raiders now ROUTE to each waypoint around obstacles using the existing BFS
         // (pathStep, the same grid pather sweepers use) instead of walking a straight line into
         // a root wall. This lets a flank route actually complete the circuit around every blocker
         // to the Queen, keeping the split/flank behaviour. The BFS is only recomputed when the
@@ -1331,7 +1331,7 @@ function update(){
         const m=Math.hypot(dx,dy)||1;
         const ox=e.x, oy=e.y;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
-        // DR-#050: safety net kept from DR-#042. Raiders now BFS-route to waypoints (above), so
+        // DR-#051: safety net kept from DR-#042. Raiders now BFS-route to waypoints (above), so
         // a search point behind a wall no longer pins them; but if a waypoint tile is truly
         // unreachable (pathStep returns null) or a raider wedges on a corpse pile, no progress
         // for ~0.8s still drops the whole route so it falls back to the flow field to the Queen.
@@ -1431,12 +1431,12 @@ function update(){
     const def = CFG.towers[t.type];
     // Feast level scaling: each devoured corpse makes the zombie hit harder + faster
     const lvl = t.level||1;
-    let rate = def.rate * meta.rate * (1+(lvl-1)*0.10); // DR-#049: pheromone fire-rate buff removed
+    let rate = def.rate * meta.rate * (1+(lvl-1)*0.10); // DR-#050: pheromone fire-rate buff removed
     let dmgMult = 1 + (lvl-1)*0.25;
     for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq((n.tier===1?2.4:CFG.towers.node.range)*CFG.tile)){ rate*=1.5; if(n.tier===1) dmgMult*=1.25; break; } }
     t.cd -= DT*rate;
     if(t.cd<=0){
-      // find target in range (hidden thieves untargetable) — DR-#049: pheromone sweeper-priority removed
+      // find target in range (hidden thieves untargetable) — DR-#050: pheromone sweeper-priority removed
       let tgt=null, bd=Infinity;
       // DR-#036 TAUNT: a knight inside his taunt radius pulls the zombie's attention — it MUST hit
       // the nearest tank. Zombies beyond the taunt radius still target freely (counterplay: long-
@@ -1664,7 +1664,7 @@ function onTap(x,y){
   if(mode==="prep" && firstMutateDone && levelTransT<=0 && x>W/2-145 && x<W/2+145 && y>TOP+8 && y<TOP+74){
     SFX.ui(); queueWave(); return;
   }
-  // DR-#049: removed the bottom-left Hive Mind active-buff buttons (hit-testing gone with them)
+  // DR-#050: removed the bottom-left Hive Mind active-buff buttons (hit-testing gone with them)
   // DR-#023: with a build brush active, a tap in the field places a hedge or a unit (brush stays on)
   if(buildMode && y>TOP){
     const [c,r]=xyToTile(x,y);
@@ -1929,7 +1929,7 @@ function drawTowerIcon(type, px, py, s, tier){
   drawTowerArt(type, tier||0, 2.5, true, 0);
   ctx.restore();
 }
-// DR-#049: abilBtns() removed — the bottom-left Hive Mind active buttons no longer exist.
+// DR-#050: abilBtns() removed — the bottom-left Hive Mind active buttons no longer exist.
 function boonCards(){
   const n = boonChoice ? boonChoice.length : 2;
   const w=360,h=192,gap=30; // DR-#037 fit; DR-#046 desktop size pass
@@ -1948,7 +1948,7 @@ function wrapLines(text, maxW){
   if(cur) lines.push(cur);
   return lines;
 }
-// DR-#049: activateAbility() removed with the bottom-left Hive Mind active buttons.
+// DR-#050: activateAbility() removed with the bottom-left Hive Mind active buttons.
 function handleEndScreen(x,y){
   // meta buttons laid out by drawEnd(); recompute same layout
   const {bx,bw,rowH,by} = endLayout();
@@ -2008,7 +2008,7 @@ window.addEventListener("keydown", ev=>{
   const k = ev.key.toLowerCase();
   if(k==="m"){ muted=!muted; save.muted=muted; persist(); }
   if(k==="p" && (mode==="play"||mode==="prep")){ paused=!paused; if(paused) CG.gameplayStop(); else CG.gameplayStart(); }
-  // desktop-first: number keys pick a boon (DR-#049: no longer fire Hive Mind actives)
+  // desktop-first: number keys pick a boon (DR-#050: no longer fire Hive Mind actives)
   const digit = parseInt(ev.key,10);
   if(digit>=1 && digit<=4){
     const i = digit-1;
@@ -3219,7 +3219,7 @@ function drawWavePreview(cx,cy){
     x += spacing;
   }
 }
-// DR-#049: drawAbilities() removed — no more bottom-left Hive Mind active buttons.
+// DR-#050: drawAbilities() removed — no more bottom-left Hive Mind active buttons.
 function drawSpeedBtn(){
   const on = gameSpeed===2;
   ctx.fillStyle = on ? "rgba(45,35,20,0.9)" : "rgba(20,24,26,0.9)";

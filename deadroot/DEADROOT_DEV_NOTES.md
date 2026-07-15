@@ -1374,7 +1374,7 @@ PT-B2 merge fix now keeps them from being re-lost). Batches:
   hedge look (hedges removed DR-#034), onboarding + spitter-spam/maze-variety
   (DR-#041/#042/#043) — all re-marked fixed → Mike's retest queue.
 
-## DR-#049 — Remove bottom-left global-buff buttons (2026-07-15)
+## DR-#050 — Remove bottom-left global-buff buttons (2026-07-15)
 Mike playtest: "remove the global buffs on the bottom left." Those buttons were the
 DR-#002 "Hive Mind actives" — OVERGROW / BLOOM / PHEROMONE, three run-time global-buff
 buttons at the HUD bottom-left (75s cooldown each), unlocked by three "UNLOCK: …" rows in
@@ -1393,10 +1393,10 @@ the Mycelial Network meta list. Ripped the whole active-buff system out:
   kept) are untouched.
 Verified: inline script parses clean via `new Function` (node extract); grep shows zero
 remaining refs to abilBtns/activateAbility/drawAbilities/overgrowthT/pherT/run.abil/abilityCD
-outside the DR-#049 comment stubs. Browser preview not feasible this session (file:// nav
+outside the DR-#050 comment stubs. Browser preview not feasible this session (file:// nav
 blocked + per-action approval ungranted) — relied on parse + code trace.
 
-## DR-#050 — Raiders flow-route around obstacles (fix the flank circuit) (2026-07-15)
+## DR-#051 — Raiders flow-route around obstacles (fix the flank circuit) (2026-07-15)
 Mike playtest: "mob flank it's not working — mobs fail to complete the circuit around all
 obstacles." Cause: the flank/split routes (`raidSplits()` → per-raider waypoint lists) were
 walked STRAIGHT-LINE (the known DR-#042 limitation). A waypoint behind a root wall pinned the
