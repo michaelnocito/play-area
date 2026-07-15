@@ -1373,3 +1373,46 @@ PT-B2 merge fix now keeps them from being re-lost). Batches:
 - Stale-fail cleanup: grabber one-shot/looks/attacks (fixed DR-#043b/#045),
   hedge look (hedges removed DR-#034), onboarding + spitter-spam/maze-variety
   (DR-#041/#042/#043) — all re-marked fixed → Mike's retest queue.
+
+## DR-#049 — Remove bottom-left global-buff buttons (2026-07-15)
+Mike playtest: "remove the global buffs on the bottom left." Those buttons were the
+DR-#002 "Hive Mind actives" — OVERGROW / BLOOM / PHEROMONE, three run-time global-buff
+buttons at the HUD bottom-left (75s cooldown each), unlocked by three "UNLOCK: …" rows in
+the Mycelial Network meta list. Ripped the whole active-buff system out:
+- HUD: deleted `drawAbilities()` + its call, and `abilBtns()` (button rects).
+- Input: removed the bottom-left hit-testing in `onTap`, and the number-key path that fired
+  an active when no boon was up (digits still pick boons).
+- Logic: deleted `activateAbility()`, the `overgrowthT`/`pherT` effect timers + their update
+  ticks, the overgrowth "humans near-stopped" speed mult, the pheromone tower fire-rate buff
+  and sweeper-priority targeting, and the per-ability cooldown tick.
+- State: dropped `run.abil` from `newRunMods()` and the `overgrowthT`/`pherT` resets in
+  `newRun()`; removed `CFG.abilityCD`.
+- Meta: removed the three `UNLOCK: OVERGROWTH/FUNGAL BLOOM/PHEROMONE` rows from `CFG.meta`
+  (they only existed to unlock these buttons — leaving them would spend DNA on dead unlocks).
+  The persistent STAT upgrades (hp/bio/decay/rot/dmg/rate — the "different system" Mike wanted
+  kept) are untouched.
+Verified: inline script parses clean via `new Function` (node extract); grep shows zero
+remaining refs to abilBtns/activateAbility/drawAbilities/overgrowthT/pherT/run.abil/abilityCD
+outside the DR-#049 comment stubs. Browser preview not feasible this session (file:// nav
+blocked + per-action approval ungranted) — relied on parse + code trace.
+
+## DR-#050 — Raiders flow-route around obstacles (fix the flank circuit) (2026-07-15)
+Mike playtest: "mob flank it's not working — mobs fail to complete the circuit around all
+obstacles." Cause: the flank/split routes (`raidSplits()` → per-raider waypoint lists) were
+walked STRAIGHT-LINE (the known DR-#042 limitation). A waypoint behind a root wall pinned the
+raider against it; after ~0.8s the stuck-net abandoned the whole route and dropped the raider
+onto the flow field, so the flank never completed the circuit around the Great Root / throne
+ring to the Queen.
+Fix (reuses existing pathing, no parallel system): in the walk state's waypoint block,
+raiders now BFS-route to each waypoint tile via the existing `pathStep(fc,fr,tc,tr)` (the same
+grid pather sweepers use) and step toward the returned next tile, so they navigate around
+`blocked` root/hedge tiles instead of into them. Doors stay walkable-for-pathing (hacked on
+contact), matching the flow field. Perf: the BFS is cached per raider and only recomputed when
+the raider crosses into a new tile or the target tile moves (`e.wpKey`), so dozens of raiders
+stay cheap at 60fps. The DR-#042 stuck-net is kept as a fallback for a genuinely unreachable
+waypoint (pathStep → null) or a corpse-pile wedge. Once the last route waypoint is reached the
+flow field carries them the rest of the way, so both flank branches now complete to the Queen.
+Verified: inline script parses clean via `new Function` (node). Logic trace on L1 (Great Root
+top/bottom split) and L3 (three routes around the two-mouth throne ring): pathStep routes each
+waypoint around the walls; arrival + route-advance + flow-field handoff preserved. Browser
+playtest deferred to Mike (preview not feasible this session).

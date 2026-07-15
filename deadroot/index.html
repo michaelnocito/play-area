@@ -130,13 +130,11 @@ const CFG = {
     { id:"decay", label:"ROOT ABSORPTION",   fx:"+6 decay payout",    cost:25, max:5 },
     { id:"rot",   label:"PRESERVATION",      fx:"+3s corpse rot time",cost:25, max:4 },
     { id:"dmg",   label:"ACIDIC EFFICIENCY", fx:"+10% tower damage",  cost:40, max:5 },
-    { id:"rate",  label:"HIVE MIND SYNC",    fx:"+8% fire rate",      cost:40, max:5 },
-    // Hive Mind actives — unlocks, not stats: new verbs the player didn't have
-    { id:"overgrowth", label:"UNLOCK: OVERGROWTH",  fx:"active: roots erupt, all humans near-stopped 4s", cost:60,  max:1 },
-    { id:"bloom",      label:"UNLOCK: FUNGAL BLOOM",fx:"active: every corpse decays instantly for full payout", cost:80, max:1 },
-    { id:"pheromone",  label:"UNLOCK: PHEROMONE",   fx:"active: 6s — towers hunt Sweepers first, +40% fire rate", cost:100, max:1 }
+    { id:"rate",  label:"HIVE MIND SYNC",    fx:"+8% fire rate",      cost:40, max:5 }
+    // DR-#049: the three "UNLOCK: OVERGROWTH/FUNGAL BLOOM/PHEROMONE" active-unlock meta rows
+    // were removed with the bottom-left Hive Mind active buttons (Mike: "remove the global buffs").
+    // Only the persistent STAT upgrades above (hp/bio/decay/rot/dmg/rate) remain on the end screen.
   ],
-  abilityCD: 75,
   tier2: { // one evolution per corpse tower — new behavior, not just stats
     spitter:  { cost:80,  name:"GEYSER",    tell:"shots splash" },
     rootmass: { cost:90,  name:"STRANGLER", tell:"snare crushes" },
@@ -336,7 +334,6 @@ let run = null;
 let boonChoice = null; // [boon, boon] while a pick is pending
 let banner = null;     // {txt, sub, t}
 let infoModal = null;  // DR-#043a: stage-boundary info = a PAUSED modal (playtest: banners overlapped the action) — game frozen until the player taps it away
-let overgrowthT = 0, pherT = 0;
 let reabsorbCD = 0;   // DR-#025 B2: Hive-wide reabsorption cooldown; blocks raising a new zombie while >0
 let gateOpenT = [0,0,0,0], prevGateN = 0; // DR-#029 C9: per-gate open-flash timers + how many gates were open last wave
 const GATE_DIR = ["EAST","WEST","NORTH","SOUTH"]; // CFG.gates order
@@ -515,8 +512,7 @@ const END_QUIPS_LOSE = ["they brought bleach. this time it worked.","death is ju
 function newRunMods(){
   return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
     grabR:0, grabSlow:0, hedgeDisc:0, // DR-#026 C7: grabber radius / slow-strength / hedge discount boons
-    enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[],
-    abil: ["overgrowth","bloom","pheromone"].filter(id=>tier(id)>0).map(id=>({id, cd:0})) };
+    enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[] }; // DR-#049: dropped in-run `abil` actives
 }
 function offerBoons(){
   // prefer boons not yet seen this run so long sessions (deep endless) feel fresher;
@@ -984,7 +980,7 @@ function newRun(){
   meta = metaVals();
   biomass = Math.max(60, meta.bio - 30); hiveMax = meta.hp; // DR-#049 near-miss: L1 grant trimmed (L2+ grants in startLevel unchanged)
   waveIdx = 0; endless = false; endlessN = 0; dnaEarned = 0; levelIdx = 0; // DR-#042
-  run = newRunMods(); boonChoice = null; banner = null; bannerQ = []; overgrowthT = 0; pherT = 0; reabsorbCD = 0;
+  run = newRunMods(); boonChoice = null; banner = null; bannerQ = []; reabsorbCD = 0; // DR-#049: no active-buff timers to reset
   gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
@@ -1155,11 +1151,8 @@ function update(){
   if(infoModal) return; // DR-#043a: stage-info modal freezes the whole sim until dismissed
   if(!banner && bannerQ.length) banner = bannerQ.shift(); // DR-#044: ticker plays the queue one at a time
   if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
-  if(overgrowthT>0) overgrowthT -= DT;
-  if(pherT>0) pherT -= DT;
   if(reabsorbCD>0) reabsorbCD -= DT; // DR-#025 B2
   for(let i=0;i<gateOpenT.length;i++) if(gateOpenT[i]>0) gateOpenT[i]-=DT; // DR-#029 C9
-  for(const a of run.abil) if(a.cd>0) a.cd -= DT;
   if(comboT>0){ comboT-=DT; if(comboT<=0) comboN=0; }
   if(mode==="play") waveT+=DT;
   peakBiomass = Math.max(peakBiomass, biomass);
@@ -1239,7 +1232,6 @@ function update(){
         if(Math.random()<0.05) addParticle({x:e.healTgt.x+(Math.random()-0.5)*12, y:e.healTgt.y-e.healTgt.r, vx:0, vy:-28, t:0.6, col:"#9be07f"});
       }
     }
-    if(overgrowthT>0) spd *= 0.15;
     if(e.type==="sweeper") spd *= (1-run.sweepSlow) * (e.panicT>0 ? 1.8 : 1);
 
     if(e.type==="sweeper"){
@@ -1311,8 +1303,25 @@ function update(){
         // DR-#041: a wounded raider HUNTS the zombie that hit it (party fights back like players)
         if(e.aggro && e.aggroT>0){ dx=e.aggro.x-e.x; dy=e.aggro.y-e.y; }
         else{
-        // DR-#038: head for the chosen side of the Great Root first, then follow the flow
-        if(e.wp){ dx=e.wp.x-e.x; dy=e.wp.y-e.y; if(dx*dx+dy*dy < sq(24)){ if(e.wp.search) e.searchT=0.6+Math.random()*0.7; e.wp=(e.wps&&e.wps.length)?e.wps.shift():null; } }
+        // DR-#038: head for the chosen side of the Great Root first, then follow the flow.
+        // DR-#050: raiders now ROUTE to each waypoint around obstacles using the existing BFS
+        // (pathStep, the same grid pather sweepers use) instead of walking a straight line into
+        // a root wall. This lets a flank route actually complete the circuit around every blocker
+        // to the Queen, keeping the split/flank behaviour. The BFS is only recomputed when the
+        // raider crosses into a new tile (or the target tile moves), so many raiders stay cheap.
+        if(e.wp){
+          if((e.wp.x-e.x)**2+(e.wp.y-e.y)**2 < sq(24)){ // arrived at this waypoint
+            if(e.wp.search) e.searchT=0.6+Math.random()*0.7;
+            e.wp=(e.wps&&e.wps.length)?e.wps.shift():null; e.wpStep=null; e.wpKey=null;
+          }
+          if(e.wp){
+            const [wc,wr]=xyToTile(e.wp.x,e.wp.y);
+            const key = ec+","+er+"|"+wc+","+wr;
+            if(e.wpKey!==key){ e.wpKey=key; e.wpStep = (ec===wc&&er===wr) ? null : pathStep(ec,er,wc,wr); }
+            if(e.wpStep){ const [nx,ny]=tileToXY(ec+e.wpStep[0],er+e.wpStep[1]); dx=nx-e.x; dy=ny-e.y; } // step toward waypoint, around walls
+            else { dx=e.wp.x-e.x; dy=e.wp.y-e.y; } // same/adjacent tile, or no route: home straight in
+          }
+        }
         if(!e.wp && dx===0 && dy===0){
         const f = inGrid(ec,er) ? flow[er][ec] : null;
         if(f){ const [nx,ny]=tileToXY(ec+f[0],er+f[1]); dx=nx-e.x; dy=ny-e.y; }
@@ -1322,12 +1331,13 @@ function update(){
         const m=Math.hypot(dx,dy)||1;
         const ox=e.x, oy=e.y;
         moveWithWalls(e, dx/m*spd*DT, dy/m*spd*DT); // DR-#021: slide along walls, no diagonal squeeze
-        // DR-#042: waypoints are straight-line (no pathfinding) — a search point behind a root
-        // wall would pin the raider against it forever. No progress for ~0.8s → forget the
-        // detour and fall back to the flow field.
+        // DR-#050: safety net kept from DR-#042. Raiders now BFS-route to waypoints (above), so
+        // a search point behind a wall no longer pins them; but if a waypoint tile is truly
+        // unreachable (pathStep returns null) or a raider wedges on a corpse pile, no progress
+        // for ~0.8s still drops the whole route so it falls back to the flow field to the Queen.
         if(e.wp){
           const moved=Math.hypot(e.x-ox,e.y-oy);
-          if(moved < spd*DT*0.25){ e.stuckT=(e.stuckT||0)+DT; if(e.stuckT>0.8){ e.wp=null; e.wps=[]; e.stuckT=0; } }
+          if(moved < spd*DT*0.25){ e.stuckT=(e.stuckT||0)+DT; if(e.stuckT>0.8){ e.wp=null; e.wps=[]; e.stuckT=0; e.wpStep=null; e.wpKey=null; } }
           else e.stuckT=0;
         }
         // DR-#037: the DR-#030 maze-rot DoT is REMOVED (playtest: it killed everything and was
@@ -1421,14 +1431,13 @@ function update(){
     const def = CFG.towers[t.type];
     // Feast level scaling: each devoured corpse makes the zombie hit harder + faster
     const lvl = t.level||1;
-    let rate = def.rate * meta.rate * (pherT>0?1.4:1) * (1+(lvl-1)*0.10);
+    let rate = def.rate * meta.rate * (1+(lvl-1)*0.10); // DR-#049: pheromone fire-rate buff removed
     let dmgMult = 1 + (lvl-1)*0.25;
     for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq((n.tier===1?2.4:CFG.towers.node.range)*CFG.tile)){ rate*=1.5; if(n.tier===1) dmgMult*=1.25; break; } }
     t.cd -= DT*rate;
     if(t.cd<=0){
-      // find target in range (pheromone: hunt sweepers first; hidden thieves untargetable)
+      // find target in range (hidden thieves untargetable) — DR-#049: pheromone sweeper-priority removed
       let tgt=null, bd=Infinity;
-      if(pherT>0){ for(const e of enemies){ if(e.type!=="sweeper"||e.hidden) continue; const d=dist2(t,e); if(d<sq(def.range*CFG.tile) && d<bd){ bd=d; tgt=e; } } }
       // DR-#036 TAUNT: a knight inside his taunt radius pulls the zombie's attention — it MUST hit
       // the nearest tank. Zombies beyond the taunt radius still target freely (counterplay: long-
       // range back-liners can snipe the clerics behind the tank).
@@ -1655,11 +1664,7 @@ function onTap(x,y){
   if(mode==="prep" && firstMutateDone && levelTransT<=0 && x>W/2-145 && x<W/2+145 && y>TOP+8 && y<TOP+74){
     SFX.ui(); queueWave(); return;
   }
-  // hive mind ability buttons (bottom-left) — padded to a real 44px min tap target
-  for(const b of abilBtns()){
-    const p=hitPad(b.w);
-    if(x>=b.x-p&&x<=b.x+b.w+p&&y>=b.y-p&&y<=b.y+b.h+p){ activateAbility(b.a); return; }
-  }
+  // DR-#049: removed the bottom-left Hive Mind active-buff buttons (hit-testing gone with them)
   // DR-#023: with a build brush active, a tap in the field places a hedge or a unit (brush stays on)
   if(buildMode && y>TOP){
     const [c,r]=xyToTile(x,y);
@@ -1924,10 +1929,7 @@ function drawTowerIcon(type, px, py, s, tier){
   drawTowerArt(type, tier||0, 2.5, true, 0);
   ctx.restore();
 }
-function abilBtns(){
-  if(!run) return [];
-  return run.abil.map((a,i)=>({a, x:10+i*76, y:H-78, w:68, h:68}));
-}
+// DR-#049: abilBtns() removed — the bottom-left Hive Mind active buttons no longer exist.
 function boonCards(){
   const n = boonChoice ? boonChoice.length : 2;
   const w=360,h=192,gap=30; // DR-#037 fit; DR-#046 desktop size pass
@@ -1946,30 +1948,7 @@ function wrapLines(text, maxW){
   if(cur) lines.push(cur);
   return lines;
 }
-function activateAbility(a){
-  if(a.cd>0 || (mode!=="play" && mode!=="prep")){ SFX.deny(); return; }
-  a.cd = CFG.abilityCD;
-  if(a.id==="overgrowth"){
-    overgrowthT = 4; SFX.squelch(); shakeIt(4);
-    showBanner("OVERGROWTH","roots erupt — the raid is near-stopped"); // DR-#044: ticker, not center-screen
-    for(const e of enemies) burst(e.x,e.y,"#8a6a3f",5);
-  } else if(a.id==="bloom"){
-    showBanner("FUNGAL BLOOM","every corpse decays for full payout"); SFX.decay(); // DR-#044
-    for(let i=corpses.length-1;i>=0;i--){
-      const k = corpses[i];
-      const pay = meta.decay * k.stack;
-      biomass += pay;
-      const [x,y]=tileToXY(k.c,k.r);
-      popup(x,y,"+"+pay,"#8fd9a8"); burst(x,y,"#8fd9a8",8);
-      corpses.splice(i,1);
-      if(!k.trampled) unblock(k.c,k.r);
-    }
-    menu = null;
-  } else if(a.id==="pheromone"){
-    pherT = 6; SFX.sweep();
-    showBanner("PHEROMONE BURST","towers hunt sweepers — +40% fire rate"); // DR-#044
-  }
-}
+// DR-#049: activateAbility() removed with the bottom-left Hive Mind active buttons.
 function handleEndScreen(x,y){
   // meta buttons laid out by drawEnd(); recompute same layout
   const {bx,bw,rowH,by} = endLayout();
@@ -2029,15 +2008,11 @@ window.addEventListener("keydown", ev=>{
   const k = ev.key.toLowerCase();
   if(k==="m"){ muted=!muted; save.muted=muted; persist(); }
   if(k==="p" && (mode==="play"||mode==="prep")){ paused=!paused; if(paused) CG.gameplayStop(); else CG.gameplayStart(); }
-  // desktop-first: number keys pick a boon, or fire a Hive Mind active when no boon is up
+  // desktop-first: number keys pick a boon (DR-#049: no longer fire Hive Mind actives)
   const digit = parseInt(ev.key,10);
   if(digit>=1 && digit<=4){
     const i = digit-1;
-    if(boonChoice && boonChoice[i]){
-      pickBoon(i);
-    } else if(!boonChoice) {
-      const b = abilBtns()[i]; if(b) activateAbility(b.a);
-    }
+    if(boonChoice && boonChoice[i]) pickBoon(i);
   }
   // DR-#043a: Enter/Space clears the stage-info modal
   if((k==="enter"||k===" ") && infoModal){ ev.preventDefault(); infoModal=null; SFX.ui(); return; }
@@ -2922,7 +2897,6 @@ function draw(){
   ctx.globalAlpha=1;
 
   drawHUD();
-  drawAbilities();
   drawSpeedBtn();
   drawPalette();     // DR-#023 build palette
   drawBossBar();
@@ -3245,29 +3219,7 @@ function drawWavePreview(cx,cy){
     x += spacing;
   }
 }
-function drawAbilities(){
-  const glyphs = { overgrowth:"Ψ", bloom:"✦", pheromone:"◎" };
-  const names = { overgrowth:"OVERGROW", bloom:"BLOOM", pheromone:"PHEROMONE" };
-  const btns = abilBtns();
-  for(let i=0;i<btns.length;i++){
-    const b = btns[i];
-    const ready = b.a.cd<=0;
-    ctx.fillStyle = ready ? "rgba(30,45,30,0.9)" : "rgba(20,24,26,0.9)";
-    ctx.fillRect(b.x,b.y,b.w,b.h);
-    ctx.strokeStyle = ready ? "#8fd9a8" : "#444"; ctx.strokeRect(b.x,b.y,b.w,b.h);
-    ctx.textAlign="center";
-    ctx.fillStyle = ready ? "#c9f0a8" : "#555"; ctx.font="34px monospace"; // DR-#046 size pass
-    ctx.fillText(glyphs[b.a.id], b.x+b.w/2, b.y+36);
-    ctx.font="bold 11px monospace"; ctx.fillStyle = ready ? "#8fd9a8" : "#555";
-    ctx.fillText(names[b.a.id], b.x+b.w/2, b.y+56);
-    if(!IS_TOUCH){ ctx.fillStyle="#5a6470"; ctx.font="9px monospace"; ctx.textAlign="left"; ctx.fillText(""+(i+1), b.x+4, b.y+12); ctx.textAlign="center"; }
-    if(!ready){
-      ctx.strokeStyle="#e3d34e"; ctx.lineWidth=4;
-      ctx.beginPath(); ctx.arc(b.x+b.w/2,b.y+b.h/2,28,-Math.PI/2,-Math.PI/2+6.283*(1-b.a.cd/CFG.abilityCD)); ctx.stroke();
-      ctx.lineWidth=1;
-    }
-  }
-}
+// DR-#049: drawAbilities() removed — no more bottom-left Hive Mind active buttons.
 function drawSpeedBtn(){
   const on = gameSpeed===2;
   ctx.fillStyle = on ? "rgba(45,35,20,0.9)" : "rgba(20,24,26,0.9)";
