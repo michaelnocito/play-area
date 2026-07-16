@@ -66,15 +66,15 @@ One quality bar, one submission wave. Status as of JF-#037 (2026-07-04).
       forward); Mike playtest should sanity-check feel/difficulty before QA.
 
 ## Left (in order)
-- [ ] **JF-#048 — Title screen legibility** (playtest 2026-07-16, checklist 1.1 FAIL):
+- [x] **JF-#048 — Title screen legibility** (playtest 2026-07-16, checklist 1.1 FAIL):
       title art overlaps the text, and the animated game running behind the title is
       visually distracting. Fix: dim/blur the background sim under the menu, restack the
       title/text so nothing collides.
-- [ ] **JF-#049 — Dev tuning panel + difficulty** (playtest 2026-07-16, checklist 4.2 FAIL):
+- [x] **JF-#049 — Dev tuning panel + difficulty** (playtest 2026-07-16, checklist 4.2 FAIL):
       "way too easy." Add in-game dev controls like Deadroot's so we can tweak mob and
       player strength, HP, speed, and anything else live, then use them to retune baseline
       difficulty.
-- [ ] **JF-#050 — Combat feel pass** (playtest 2026-07-16, checklist 4.1 + gut-rating 2/5):
+- [x] **JF-#050 — Combat feel pass** (playtest 2026-07-16, checklist 4.1 + gut-rating 2/5):
       (a) holding the attack button beats everything except boss and ranged — punish or
       cap mashing so reads matter; (b) enemy attacks still don't follow through past the
       player when dodged — the swing should carry through the space you left; (c) dodging

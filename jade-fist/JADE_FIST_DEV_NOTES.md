@@ -759,3 +759,54 @@ persists 80f+, release stands up, lazy crouch whiffs a high swing with zero rewa
 crouch pays + perfect-reads, stale crouch lets a high spear sail over free. Bot suite ?bot=4 =
 15/16 (50% pincer on 8 total hits — variance) re-run ?bot=3 = 10/12, 0% pincer, 0%
 unreactable both, zero console errors.
+
+## JF-#048 — TITLE SCREEN LEGIBILITY (2026-07-16)
+Playtest 2026-07-16 (checklist 1.1 FAIL): "title screen is overlapping with text, and
+it's visually distracting to see the game behind as the animation of title and text."
+- **Static title**: bounce + rotate cut. Title font now auto-fits the gap between the
+  250px corner panels (measureText shrink loop, floor 38px) so it can never collide
+  with TRIALS/WARDROBE (left) or OMEN/BEST (right); outline width scales with size.
+- **Deeper dim**: menu backdrop 0.82 → 0.90 so the district art no longer reads as
+  the game running behind the menu.
+- **Framed demo**: the JF-#018 onboarding counter-demo now sits in its own panel card
+  (600×122, clipped) so it reads as an inset "how to play" strip, not gameplay leaking
+  through. Thrown-demo body clips at the card edge instead of sailing across the menu.
+VALIDATION: syntax OK; screenshot confirms title clear of both panel columns, framed
+demo, solid backdrop; no console errors.
+
+## JF-#049 — DEV TUNING PANEL + BASELINE DIFFICULTY BUMP (2026-07-16)
+Playtest 2026-07-16 (checklist 4.2 FAIL): "way too easy — add dev controls like we did
+for Deadroot so we can tweak mob and character strength, hp, speed."
+- **?dev=1 live panel** (DOM sliders over the canvas, QA-only, unreachable in normal
+  play): enemy speed ×0.4-2.2, telegraph time ×0.4-2.2 (windup floor lowered 20→14 for
+  tuning headroom), enemy hp −2..+4, player hearts −2..+6, difficulty −4..+8 (+0.5
+  steps). Speed/telegraph/hp apply to new spawns; hearts + difficulty at next run.
+  Reset link restores neutral. TUNE object is neutral by default so ordinary play and
+  the bot suite are untouched unless sliders move.
+- **Baseline bump**: dBase +1 in every district (2/4/6/8/10, was 1/3/5/7/9 from
+  JF-#028's first bump). Fine-tuning from here happens with the panel in hand.
+VALIDATION: panel renders + knobs write TUNE (hp +2 spawn check: 3→5); bot suite
+?bot=3 on the NEW difficulty = 11/12 wins, 0% unreactable, 0.75 hits/run (33% pincer
+of 9 hits — small sample), zero console errors.
+
+## JF-#050 — COMBAT FEEL: anti-mash, follow-through, mid-attack reads (2026-07-16)
+Playtest 2026-07-16 (checklist 4.1 FAIL + gut rating 2/5 "just too clunky"):
+- **Anti-mash**: keydown handler ignores OS auto-repeat (`e.repeat` guard, first
+  line) — holding the attack key no longer machine-guns strikes; one press = one
+  strike. Held-▼ crouch unaffected (duckHeld sets once, keyup stands). Whiff/armored
+  poke cooldowns unchanged, so deliberate rhythm play feels identical.
+- **Follow-through**: a dodged swing now carries the attacker's body THROUGH and past
+  the space you left — `e.thruV = dirP*6` set on every avoided resolve (high/low/mid/
+  grab), applied during E_STRIKE/E_RECOVER with 0.88 decay (~45px total slide). The
+  JF-#045 swipe streak also extends past the player (+26 → +64) so the whiff visibly
+  commits instead of pulling its punch.
+- **Mid-attack read**: the RED mid strike gets the same aimed-telegraph language as
+  high/low (JF-#045): dashed threat line from the cocked fist to your TORSO, a
+  tightening target ring, and the answer written at the threatened spot — early
+  windup = "AWAY!" (back-step, the safe read), final third = "COUNTER!" (the greedy
+  read, matching perfTh's solid-red NOW window). Boss excluded (his phases are the
+  read). This kills the "bare red flash" asymmetry that made mids hard to predict.
+VALIDATION: syntax OK; unit checks — thruV ±6 in the correct carry direction for
+ducked-high and back-stepped-mid; repeat-guard confirmed first-line; bot suite on new
+difficulty 11/12 / 0% unreactable (bot presses discretely, unaffected by the repeat
+guard); zero console errors. Mike to judge feel; tune with the JF-#049 panel.

@@ -346,6 +346,40 @@ if (BOT){ save.dist = 4; save.intro = 1; persist = () => {}; }
 // state in a corner readout so Mike can verify on the CG preview environment
 // without opening devtools.
 const DEBUG = BOTQ.has('debug');
+// JF-#049: ?dev=1 — Deadroot-style live tuning panel. DOM sliders over the
+// canvas so numbers can be retuned mid-run without code edits. Neutral by
+// default; QA-only (never reachable from normal play, CG-safe).
+const DEVMODE = BOTQ.has('dev');
+const TUNE = { spd: 1, wind: 1, hpD: 0, heartsD: 0, diffD: 0 };
+if (DEVMODE) addEventListener('DOMContentLoaded', () => {
+  const KNOBS = [
+    ['spd',     'enemy speed ×',          0.4, 2.2, 0.05],
+    ['wind',    'telegraph time ×',       0.4, 2.2, 0.05],
+    ['hpD',     'enemy hp +',             -2,  4,   1],
+    ['heartsD', 'player hearts +',        -2,  6,   1],
+    ['diffD',   'difficulty +',           -4,  8,   0.5]
+  ];
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;right:8px;top:8px;z-index:99;background:rgba(10,13,18,0.92);' +
+    'border:1px solid #2a3242;border-radius:10px;padding:10px 12px;font:12px monospace;color:#c8bfa8;width:212px';
+  wrap.innerHTML = '<b style="color:#7ce8a8">DEV TUNING</b>' +
+    '<span id="devReset" style="float:right;cursor:pointer;color:#e8c76a">reset</span>' +
+    KNOBS.map(([k, lab]) =>
+      `<label style="display:block;margin-top:7px">${lab} <span id="devV_${k}" style="color:#e8dcc0">${TUNE[k]}</span><br>` +
+      `<input id="dev_${k}" type="range" style="width:100%"></label>`).join('') +
+    '<div style="margin-top:6px;color:#8a94a6">speed / telegraph / hp apply to new spawns · hearts &amp; difficulty at next run</div>';
+  document.body.appendChild(wrap);
+  KNOBS.forEach(([k, _lab, mn, mx, st]) => {
+    const el = document.getElementById('dev_' + k);
+    el.min = mn; el.max = mx; el.step = st; el.value = TUNE[k];
+    el.oninput = () => { TUNE[k] = +el.value; document.getElementById('devV_' + k).textContent = el.value; };
+  });
+  document.getElementById('devReset').onclick = () => KNOBS.forEach(([k]) => {
+    TUNE[k] = (k === 'spd' || k === 'wind') ? 1 : 0;
+    const el = document.getElementById('dev_' + k);
+    el.value = TUNE[k]; document.getElementById('devV_' + k).textContent = TUNE[k];
+  });
+});
 function botThink(){
   // JF-#028: survival first — dodge an incoming spear before anything else
   if (P.jumpT <= 0 && P.duckT <= 0){
@@ -537,24 +571,26 @@ let won = false;                      // district boss felled this run
 // JF-#009: districts are levels — each with its own fight, palette, and boss.
 // Beat a district's master to unlock the next.
 const DISTRICTS = [
+  // JF-#049: second bump (+1 dBase everywhere) — 2026-07-16 playtest still read
+  // "way too easy"; fine-tune from here with the ?dev=1 panel.
   // JF-#028: difficulty bump — Mike's playtest read the campaign as too easy.
   // Raised district bases + boss HP; harder pressure also comes from spearman
   // throws (dodge axis) and earlier pincers, not just faster telegraphs.
   { name: 'COURTYARD', line: 'Where the jade was taken.', boss: 'THE IRON MASTER',
-    dBase: 1, quirk: '', bossHp: 3,
+    dBase: 2, quirk: '', bossHp: 3,
     sky: ['#0b1020','#131a26','#0e1218'], ground: '#1a1f26', lant: [240,150,90], pag: 4 },
   { name: 'MARKET', line: 'They crowd like locusts.', boss: 'THE BUTCHER',
-    dBase: 3, quirk: 'crowd', bossHp: 4,
+    dBase: 4, quirk: 'crowd', bossHp: 4,
     sky: ['#180f0c','#2a1a10','#170f0a'], ground: '#241a12', lant: [250,190,90], pag: 6 },
   { name: 'TEMPLE', line: 'Every hand is guarded.', boss: 'THE ABBOT',
-    dBase: 5, quirk: 'guard', bossHp: 5,
+    dBase: 6, quirk: 'guard', bossHp: 5,
     sky: ['#0c1410','#14231a','#0c1410'], ground: '#16211a', lant: [140,230,160], pag: 3 },
   { name: 'ROOFTOP', line: 'The thief waits above.', boss: 'THE JADE THIEF',
-    dBase: 7, quirk: 'spear', bossHp: 5,
+    dBase: 8, quirk: 'spear', bossHp: 5,
     sky: ['#141020','#221a33','#120e1c'], ground: '#1d1826', lant: [190,150,240], pag: 5 },
   // JF-#012: LEGEND — the endless retelling, unlocked by reclaiming the jade
   { name: 'LEGEND', line: 'The tale retold, without end.', boss: 'THE IRON MASTER',
-    dBase: 9, quirk: '', bossHp: 6, legend: true,
+    dBase: 10, quirk: '', bossHp: 6, legend: true,
     sky: ['#100c18','#1c1426','#0e0a14'], ground: '#1c1620', lant: [232,199,106], pag: 5 }
 ];
 let sel = 0;                          // selected district (menu)
@@ -729,8 +765,8 @@ function spawnEnemy(forceSide){
   if (difficulty > spearDiff && r < spearTh) type = T_SPEAR;
   else if (difficulty > bruteDiff && r < bruteTh) type = T_BRUTE;
   else if (difficulty > 1 && r < fastTh) type = T_FAST;
-  const base = 1.1 + Math.random() * 0.5 + difficulty * 0.12;
-  const wind = Math.max(20, 46 - difficulty * 2.4);   // telegraph shrinks as waves rise (JF-#006: tighter late)
+  const base = (1.1 + Math.random() * 0.5 + difficulty * 0.12) * TUNE.spd;          // JF-#049: dev knob
+  const wind = Math.max(14, (46 - difficulty * 2.4) * TUNE.wind);   // telegraph shrinks as waves rise (JF-#006; JF-#049 knob, floor lowered for tuning headroom)
   enemies.push({
     x: W/2 + side * (W/2 + 40 + Math.random() * 70), side: -side,   // walks toward center
     st: E_WALK, stT: 0, type,
@@ -750,10 +786,10 @@ function spawnEnemy(forceSide){
     willThrow: type === T_SPEAR, projHigh: Math.random() < 0.5,
     // JF-#039: DUEL toughness — far fewer bodies, so every foe is a real
     // back-and-forth: 2-4 good reads to fell, more as waves climb.
-    hp: type === T_BRUTE ? 2
+    hp: Math.max(1, TUNE.hpD + (type === T_BRUTE ? 2      // JF-#049: dev knob delta
       : type === T_FAST  ? (2 + (difficulty > 7 ? 1 : 0))
       : type === T_SPEAR ? (3 + (difficulty > 9 ? 1 : 0))
-      : (3 + (difficulty > 6 ? 1 : 0))   // T_NORM
+      : (3 + (difficulty > 6 ? 1 : 0))))   // T_NORM
   });
   const ne = enemies[enemies.length - 1];
   ne.hpMax = ne.hp;                           // JF-#039: pips + wounded-pressure scale off this
@@ -1308,6 +1344,10 @@ function resolveEnemyHit(e){
   else if (atk === 'grab') avoided = airborne || ducked;     // dodge only
   else                     avoided = P.backT > 0;            // mid: press away
   if (avoided){                                    // ---- clean dodge ----
+    // JF-#050: FOLLOW-THROUGH — a dodged swing carries the attacker's body
+    // through and past the space you left (Mike: "mob attacks still don't
+    // follow through past you if you dodge"). Decaying drift, ~45px total.
+    e.thruV = (Math.sign(P.x - e.x) || 1) * 6;
     if (atk === 'grab'){ e.recoverLong = true; e.st = E_STRIKE; }   // whiffed grab = long punish window
     // JF-#047: duckAge counts frames in the crouch (held ducks never expire, so
     // DUCK_DUR - duckT stopped measuring age). FRESH (≤20f) = a read: pays points,
@@ -1471,6 +1511,10 @@ function buyUp(i){
 }
 addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
+  // JF-#050: ignore OS key auto-repeat — holding the attack key no longer
+  // machine-guns strikes (Mike: "user can just hold down the attack button").
+  // One press = one strike; held ▼ crouch is unaffected (duckHeld + keyup).
+  if (e.repeat) return;
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
   if (e.code === 'KeyP'){ state === S_PAUSE ? resumeGame() : pauseGame(); return; }   // JF-#014
   if (e.code === 'KeyO' && state === S_MENU){ omenOn = !omenOn; Snd.tick(); return; }
@@ -1614,7 +1658,7 @@ function beginRun(){
     save.streak = save.day === yest.toDateString() ? save.streak + 1 : 1;
     save.day = today; persist();
   }
-  hearts = Math.max(1, 3 + save.up.body + omen.heart); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false; finisherCue = false;
+  hearts = Math.max(1, 3 + save.up.body + omen.heart + TUNE.heartsD); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false; finisherCue = false;   // JF-#049 knob
   if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
   enemies.length = 0; popups.length = 0; parts.length = 0; darts.length = 0;
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
@@ -1751,7 +1795,7 @@ function update(){
   // JF-#008: wave machine — difficulty comes from wave number, not a treadmill
   waveT += dt;
   if (waveT >= 5400) award('endure');
-  difficulty = Math.min(13, dBase + (wave - 1) * 1.3 + Math.min(beltOf(save.kills), 6) * 0.3);   // JF-#028: steeper
+  difficulty = Math.max(0, Math.min(15, dBase + TUNE.diffD + (wave - 1) * 1.3 + Math.min(beltOf(save.kills), 6) * 0.3));   // JF-#028: steeper; JF-#049 knob
   if (wavePhase === 1){                                // rest beat between waves
     if (scrollOffer) return;                           // JF-#025: world waits on the choice
     restT -= dt;
@@ -1913,6 +1957,8 @@ function update(){
           e.st = E_WALK; e.stT = 0; e.recoverLong = false;
         }
         break;
+      // (JF-#050 follow-through drift applied below the switch — E_STRIKE and
+      // E_RECOVER both carry it so the whiff slides through the player's spot)
       case E_STAGGER:
         e.x += e.vx * dt; e.vx *= run.grease ? 0.95 : 0.86;   // JF-#032: GREASE = long comic slide
         // a shoved body stumbles whoever it slides into
@@ -1992,6 +2038,12 @@ function update(){
         if (e.y > 470) e.dead = true;
         break;
     }
+    // JF-#050: follow-through — the committed swing's momentum slides the
+    // attacker through and past the dodged spot, decaying over ~14 frames.
+    if (e.thruV && (e.st === E_STRIKE || e.st === E_RECOVER)){
+      e.x += e.thruV * dt; e.thruV *= 0.88;
+      if (Math.abs(e.thruV) < 0.4) e.thruV = 0;
+    } else if (e.thruV && e.st !== E_STRIKE && e.st !== E_RECOVER) e.thruV = 0;
   }
   enemies = enemies.filter(e => !e.dead && e.x > -120 && e.x < W + 120);
 }
@@ -2459,6 +2511,31 @@ function draw(){
       eyes = 'angry';
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
       cx.beginPath(); cx.arc(e.x, e.y - 55, ((late ? 50 : 40) + Math.sin(e.stT*0.5)*5) * size, 0, 7); cx.fill();
+      // JF-#050: the mid strike gets the SAME aimed-read language as high/low
+      // (Mike: dodging mid attacks "visually bland and hard to predict") — a
+      // dashed threat line from the cocked fist to your torso, a tightening
+      // target ring, and the answer written at the threatened spot: early =
+      // AWAY! (back-step), final third = COUNTER! (the greedy read).
+      if (e.type !== T_BOSS){
+        const ty = GROUND_Y - 48;                                    // torso line
+        const dirP = Math.sign(P.x - e.x) || 1;
+        const prog = Math.min(1, e.stT / e.windup);
+        const fx = e.x + dirP * 14, fy = e.y - 60 * size;
+        cx.strokeStyle = '#ff4a4a'; cx.globalAlpha = 0.35 + prog * 0.45; cx.lineWidth = 2.5;
+        cx.setLineDash([7, 7]); cx.lineDashOffset = -e.stT * 2;
+        cx.beginPath(); cx.moveTo(fx, fy); cx.lineTo(P.x, ty); cx.stroke();
+        cx.setLineDash([]);
+        const rr = 16 - prog * 5;
+        cx.lineWidth = 3; cx.globalAlpha = 0.45 + 0.5 * (0.5 + 0.4 * Math.sin(e.stT * 0.5));
+        cx.beginPath(); cx.arc(P.x, ty, rr, 0, 7); cx.stroke();
+        cx.globalAlpha = 1;
+        cx.save(); cx.translate(P.x, ty - rr - 10);
+        cx.font = 'bold 21px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
+        const mcap = late ? 'COUNTER!' : 'AWAY!';
+        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(mcap, 0, 0);
+        cx.fillStyle = late ? '#ff4a4a' : '#e85a5a'; cx.fillText(mcap, 0, 0);
+        cx.restore();
+      }
     } else if (e.st === E_FEINT){
       // feint tell: PALE flash, no red, no audio — only real telegraphs go red
       col = Math.sin(e.stT * 0.8) > 0 ? '#c8a8a0' : '#b8c8d8';
@@ -2473,10 +2550,12 @@ function draw(){
         const dirP = Math.sign(P.x - e.x) || 1;
         const [tcol] = atkTell(e.atk);
         const sw = Math.max(0, 1 - e.stT / 10);
+        // JF-#050: streak carries PAST the player (was +26 — stopped at the body,
+        // which read as the swing pulling its punch when dodged)
         cx.strokeStyle = tcol; cx.globalAlpha = 0.75 * sw; cx.lineWidth = 7; cx.lineCap = 'round';
-        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 26, ty); cx.stroke();
+        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 64, ty); cx.stroke();
         cx.globalAlpha = 0.3 * sw; cx.lineWidth = 14;
-        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 26, ty); cx.stroke();
+        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 64, ty); cx.stroke();
         cx.globalAlpha = 1; cx.lineWidth = 1;
       }
     }
@@ -2686,7 +2765,7 @@ function draw(){
       cx.fillRect(W/2 - bw/2, 80, bw, 4);
     }
     // hearts
-    const maxH = Math.max(1, 3 + save.up.body + omen.heart + (run.ox ? 1 : 0));   // JF-#025
+    const maxH = Math.max(1, 3 + save.up.body + omen.heart + TUNE.heartsD + (run.ox ? 1 : 0));   // JF-#025; JF-#049 knob
     cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
     cx.fillText('♥ '.repeat(Math.max(0, hearts)) + '♡ '.repeat(Math.max(0, maxH - hearts)), 20, 40);
     if (windAvail){ cx.fillStyle = '#7ce8a8'; cx.font = '15px Georgia'; cx.fillText('second wind ready', 20, 62); }
@@ -2736,7 +2815,9 @@ function draw(){
     if (!scrollOffer) drawControlPad();   // JF-#040: on-screen controls
   } else if (state === S_MENU){
     // JF-#035: darker vignette (was flat 0.55 alpha, too see-through vs CG legibility bar)
-    cx.fillStyle = 'rgba(6,8,11,0.82)'; cx.fillRect(0, 0, W, H);
+    // JF-#048: deepened again (0.82 → 0.90) — playtest: the district art moving
+    // behind the menu read as "the game running behind the title", distracting.
+    cx.fillStyle = 'rgba(6,8,11,0.90)'; cx.fillRect(0, 0, W, H);
     const vg = cx.createRadialGradient(W/2, H*0.42, H*0.15, W/2, H*0.42, H*0.75);
     vg.addColorStop(0, 'rgba(6,8,11,0)'); vg.addColorStop(1, 'rgba(4,5,7,0.55)');
     cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
@@ -2749,18 +2830,31 @@ function draw(){
       cx.arcTo(x2, py + ph, x2, py, r); cx.arcTo(x2, py, x2 + pw, py, r); cx.closePath();
       cx.fill(); cx.stroke(); cx.restore();
     };
-    // JF-#027: chunky outlined comic title with a lil bounce
+    // JF-#027: chunky outlined comic title.
+    // JF-#048: title now STATIC (bounce + rotate cut — playtest called the
+    // animated title/text distracting) and sized to FIT between the corner
+    // panels (250px columns each side) so it never overlaps them.
     cx.textAlign = 'center';
     cx.save();
-    cx.translate(W/2, 196 + Math.sin(t * 0.05) * 4); cx.rotate(-0.03);
-    cx.font = 'bold 66px ' + COMIC; cx.lineJoin = 'round';
-    cx.strokeStyle = OUT; cx.lineWidth = 12; cx.strokeText('JADE FIST', 0, 0);
+    cx.translate(W/2, 196);
+    let tfs = 66;
+    cx.font = 'bold ' + tfs + 'px ' + COMIC;
+    const titleMaxW = W - 2 * 288;   // corner panels (250) + margins, both sides
+    while (tfs > 38 && cx.measureText('JADE FIST').width > titleMaxW){
+      tfs -= 2; cx.font = 'bold ' + tfs + 'px ' + COMIC;
+    }
+    cx.lineJoin = 'round';
+    cx.strokeStyle = OUT; cx.lineWidth = Math.max(8, tfs * 0.18); cx.strokeText('JADE FIST', 0, 0);
     cx.fillStyle = '#7ce8a8'; cx.fillText('JADE FIST', 0, 0);
     cx.restore();
     // JF-#018: visual onboarding — a looping counter demo instead of two text lines
     // (CG: teach visually, minimal text). 240-frame script: approach → red flash →
     // counter throw → reset. Captions change per phase.
     {
+      // JF-#048: the demo now sits in its own framed card so it reads as an
+      // inset "how to play" strip, not the game leaking through the menu.
+      panel(W/2 - 300, 218, 600, 122, 'left');
+      cx.save(); cx.beginPath(); cx.rect(W/2 - 300, 218, 600, 122); cx.clip();
       const dT = t % 240, gy = 312;
       let ex2 = 0, ecol = '#8a94a6', erot = 0, ppunch = 0, cap, capCol = '#e8dcc0';
       if (dT < 80){                                   // approach from the right
@@ -2783,7 +2877,8 @@ function draw(){
       if (ex2 > -200 && ex2 < W + 200)
         fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
       cx.fillStyle = capCol; cx.font = '19px Georgia'; cx.textAlign = 'center';
-      cx.fillText(cap, W/2, 236);
+      cx.fillText(cap, W/2, 240);
+      cx.restore();   // JF-#048: end demo-card clip
     }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
     cx.fillText(TOUCH ? 'tap toward = strike · tap away = evade · swipe ↑ jump ↓ duck' : '◀▶ strike / evade away · HOLD ▼ crouch · ▲ jump · strike while down/up = low/high attack', W/2, 332);
