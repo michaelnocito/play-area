@@ -192,6 +192,28 @@ telegraphed drum-jam pressure events (folds into GQ-B surges; world moves, NOT t
 Escape hatch: if E1+E2 fail the feel-gate, revisit the core verb (SPIN-THE-DRUM inversion)
 before spending GQ-B/C2.
 
+### 🧭 PURPOSE & RETURN plan (research pass 2026-07-16 — Canabalt/Temple Run/Tiny Wings/
+### Alto/Journey/Hades/Jetpack Joyride/Crossy Road/Spelunky Daily/Race The Sun postmortems
+### + CrazyGames launch-metrics docs + near-miss/streak behavioral research; cites in session):
+Ranked, feeds C2 (story/ending) + C3 (meta) — Mike decides scope before build:
+- **P1 Reunion = a real staged ENDING, then "laundry day happens again."** 8-12 named
+  stages reading as one journey sentence → reunion payoff scene → separated again, endless/
+  remix unlocks. Alto/Hades pattern: finite arc for meaning, loop for retention; an ending
+  ~30-60min of attempts deep directly serves CG's 10+min avg-playtime bar. (High/medium)
+- **P2 Near-reunion teases + expressive sock.** Pair drifts past mid-run in stages 3/6/9,
+  pulled away at the last moment; sock face reacts (reach/slump/retry determination).
+  Near-miss effect (Clark 2009, Neuron): almost-wins drive retries harder than wins.
+  Canabalt iceberg rule: 2s cold-open image (pair torn apart), zero exposition ever. (High/low)
+- **P3 Jetpack Joyride 3-slot missions** feeding a named-rank ladder (~60-mission list,
+  always 3 visible, drip-fed). Best-evidenced runner retention system; pure localStorage. (High-ROI/medium)
+- **P4 DAILY TUMBLE: date-seeded remix stage + streak (NO leaderboard).** Seed=date hash;
+  day-5+ escalating collectible (Word Hunt loss-aversion); Race The Sun postmortem says skip
+  server leaderboards. CG docs explicitly recommend daily incentives. (Medium/low)
+- **P5 LINT LOCKER collection:** run-earned lint → ~20 pattern unlocks + 6-8 one-line pair
+  vignettes at cumulative milestones (Hades failure-is-progress in miniature) — every failed
+  run still yields. (Medium/medium)
+If cut to three: P1+P2+P3.
+
 ### Build order (locked): ✅ GQ-A feel & feedback DONE 2026-07-11 (GQ-1,2,4-graze — steering
 ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, graze reward, story lock;
 see dev notes) → GQ-B sound & drama — ✅ CORE DONE 2026-07-16 as the DRUM ALIVE batch
