@@ -400,11 +400,23 @@ function botThink(){
       return;
     }
   }
+  // JF-#053: the counter must be EARNED — if unarmed, back-step the ripening
+  // mid swing (that fresh evade arms readyT), THEN counter the next windup.
+  if (readyT <= 0 && P.backT <= 0 && P.jumpT <= 0 && P.duckT <= 0){
+    for (const e of enemies){
+      if (e.st !== E_WINDUP || (e.atk && e.atk !== 'strike')) continue;
+      if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
+      if (e.stT < e.windup - 10) continue;                 // evade just before impact = fresh
+      press(Math.sign(P.x - e.x) || 1);                    // press AWAY = back-step
+      return;
+    }
+  }
   // counter next: the ripest RED windup that has been visible >= reaction frames
   let tgt = null, ripest = -1;
   for (const e of enemies){
     if (e.st !== E_WINDUP || e.stT < BOT.react) continue;
     if (e.atk && e.atk !== 'strike') continue;             // JF-#040: armored — handled above
+    if (readyT <= 0) continue;                             // JF-#053: unarmed = don't chip windups
     const range = Math.max(e.reach, PR) + 18;
     if (Math.abs(e.x - P.x) > range) continue;
     const r = e.stT / e.windup;
@@ -563,6 +575,12 @@ let kills = 0, counters = 0, bestCombo = 0;
 let hearts = 3, hurtFlash = 0;
 let popups = [], parts = [], enemies = [];
 let waveT = 0, spawnT = 60, difficulty = 0;
+// JF-#053: dodge→counter loop. A FRESH dodge arms a counter window (readyT);
+// striking a winding foe while armed = the full COUNTER (throw, bullet time,
+// flourish). Unarmed, the same press is a weak chip that does NOT interrupt
+// their swing — you trade unless you dodge first. One counter per dodge.
+let readyT = 0;
+const READY_DUR = 110;
 // JF-#008: wave machine — quota waves with rest beats; every 5th wave = boss
 const WAVES_PER_DISTRICT = 5;
 let wave = 1, wavePhase = 0, restT = 0, toSpawn = 0;   // phase 0=fight 1=rest
@@ -1081,6 +1099,26 @@ function strike(dir){
   // JF-#010: IRON CATCH — with the technique, an unlanded strike can still be
   // countered. JF-#040: only a plain strike is catchable; armored swings aren't.
   const ironCatch = e.st === E_STRIKE && !e.didHit && hasTech(1) && (!e.atk || e.atk === 'strike');
+  // JF-#053: the counter is EARNED — only armed by a fresh dodge (readyT) or an
+  // IRON CATCH read. Unarmed strike into a windup = weak chip: 1 hp, but it
+  // does NOT interrupt the swing — their attack still comes. Dodge first.
+  const armed = readyT > 0 || ironCatch;
+  if ((e.st === E_WINDUP || ironCatch) && !armed && e.type !== T_BOSS){   // ---- UNARMED CHIP ----
+    e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
+    P.punchT = 12; whiffT = 12;
+    Snd.block(); hitStop = 1;
+    burst(e.x, e.y - 46, '#9aa2b0', 5, 2);      // grey thud, no words (JF-#054)
+    if (e.hp <= 0){                              // chipping CAN fell — slow and joyless
+      e.st = E_DOWN; e.stT = 0; e.vx = dir * 3; e.vy = -4;
+      kills++; jadeRun++; score += 100;
+    }
+    return;
+  }
+  if ((e.st === E_WINDUP || ironCatch) && !armed && e.type === T_BOSS){   // boss shrugs chips
+    P.punchT = 12; whiffT = 12; Snd.block(); hitStop = 1;
+    burst(e.x, e.y - 46, '#9aa2b0', 5, 2);
+    return;
+  }
   if ((e.st === E_WINDUP || ironCatch) && e.type === T_BOSS && e.hp > 1){   // ---- BOSS PHASE ----
     // JF-#008: counters are the only damage; each one staggers him a phase
     e.hp--; e.st = E_STAGGER; e.stT = 0; e.vx = dir * 7;
@@ -1097,7 +1135,9 @@ function strike(dir){
     if (combo > bestCombo) bestCombo = combo;
     return;
   }
-  if (e.st === E_WINDUP || ironCatch){          // ---- COUNTER ----
+  if (e.st === E_WINDUP || ironCatch){          // ---- COUNTER (armed by a dodge, JF-#053) ----
+    readyT = 0;                                  // one counter per dodge
+    P.ctrFlashT = 16; P.ctrX = e.x; P.ctrY = e.y - 55;   // flourish: rings + speed lines
     // JF-#007: final-third ("NOW" bright flash) = PERFECT counter
     // JF-#010: an IRON CATCH always counts as perfect
     const perfect = ironCatch || e.stT / e.windup > perfTh();   // JF-#025: CRANE widens
@@ -1129,7 +1169,8 @@ function strike(dir){
       score += pts;
       popup(e.x, e.y - 90, (perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8');
       if (perfect) clash(e.x, e.y - 55);       // JF-#043: perfect = the freeze-frame moment
-      Snd.counter(); hitStop = 5; shake = perfect ? 8 : 6; slowMo = 18;
+      // JF-#053: every earned counter gets the full dodge-grade bullet time
+      Snd.counter(); hitStop = 6; shake = perfect ? 8 : 6; slowMo = Math.max(slowMo, 26);
       burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4);
       if (perfect && hasTech(2)){ perfChain++; } else if (!perfect) perfChain = 0;
       if (combo > bestCombo) bestCombo = combo;
@@ -1173,7 +1214,7 @@ function strike(dir){
       shake = Math.max(shake, 18); moonWake(220);
     }
     Snd.counter(); hitStop = Math.max(hitStop, empowered ? 7 : 5); shake = Math.max(shake, empowered ? (perfect ? 13 : 10) : 6);
-    slowMo = Math.max(slowMo, empowered ? 26 : 18);   // JF-#044: don't clobber the boss-finale slow-mo
+    slowMo = Math.max(slowMo, 26);   // JF-#053: throw counters get full bullet time (JF-#044: don't clobber boss finale)
     burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4);
     if (empowered){
       // ---- EMPOWERED THROW: the payoff — thrown body knocks down neighbors in its path ----
@@ -1335,7 +1376,10 @@ function strike(dir){
 // Arrows only: each attack has exactly ONE dodge — duck the high, jump the low,
 // back-step the mid (or counter it before it lands), jump-or-duck the grab.
 function resolveEnemyHit(e){
-  if (Math.abs(e.x - P.x) >= REACH + 14) return;   // drifted out of range — no hit
+  // JF-#053: range uses the ATTACKER's reach (was fixed REACH+14, so a boss or
+  // spearman swinging from his longer reach never resolved — the dodge neither
+  // paid nor armed the counter window)
+  if (Math.abs(e.x - P.x) >= Math.max(REACH, e.reach || 0) + 14) return;
   const atk = e.atk || 'strike';
   const airborne = P.jumpT > 0, ducked = P.duckT > 0;
   let avoided = false;
@@ -1363,6 +1407,7 @@ function resolveEnemyHit(e){
       popup(e.x, e.y - 108, 'PERFECT READ +160', '#e8c76a', true);
     }
     if (dodgeAge <= 20){                           // fresh read: full reward
+      readyT = READY_DUR;                          // JF-#053: dodge arms the counter
       score += 80; jadeRun++;
       combo++; comboT = CW;                        // JF-#043: defense feeds FLOW too
       if (combo > bestCombo) bestCombo = combo;
@@ -1660,6 +1705,7 @@ function beginRun(){
     save.day = today; persist();
   }
   hearts = Math.max(1, 3 + save.up.body + omen.heart + TUNE.heartsD); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false; finisherCue = false;   // JF-#049 knob
+  readyT = 0; P.ctrFlashT = 0;   // JF-#053
   if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
   enemies.length = 0; popups.length = 0; parts.length = 0; darts.length = 0;
   P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
@@ -1757,6 +1803,7 @@ function update(){
           combo++; comboT = CW;            // JF-#043: defense feeds FLOW
           if (combo > bestCombo) bestCombo = combo;
           d.hit = true; d.dead = true;
+          readyT = READY_DUR;              // JF-#053: spear dodge arms the counter too
           score += 150; jadeRun++; bumpTrial('dodge');
           slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
           popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
@@ -1792,6 +1839,8 @@ function update(){
   darts = darts.filter(d => !d.dead && d.x > -40 && d.x < W + 40 && d.life-- > 0);
 
   if (comboT > 0){ comboT -= dt; if (comboT <= 0) combo = 0; }
+  if (readyT > 0) readyT -= dt;            // JF-#053: counter window drains
+  if (P.ctrFlashT > 0) P.ctrFlashT -= dt;  // JF-#053: counter flourish timer
 
   // JF-#008: wave machine — difficulty comes from wave number, not a treadmill
   waveT += dt;
@@ -2697,6 +2746,30 @@ function draw(){
   }
   cx.globalAlpha = 1;
 
+  // JF-#053: counter flourish — expanding double ring + radial speed lines at
+  // the impact point, riding the bullet time. Pure motion, zero words.
+  if (P.ctrFlashT > 0){
+    const p = P.ctrFlashT / 16, r0 = (1 - p) * 90 + 18;
+    cx.strokeStyle = '#e8c76a'; cx.globalAlpha = p * 0.9; cx.lineWidth = 4;
+    cx.beginPath(); cx.arc(P.ctrX, P.ctrY, r0, 0, 7); cx.stroke();
+    cx.globalAlpha = p * 0.5; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(P.ctrX, P.ctrY, r0 * 0.62, 0, 7); cx.stroke();
+    for (let i = 0; i < 8; i++){
+      const a = i * Math.PI / 4 + 0.35;
+      cx.beginPath(); cx.moveTo(P.ctrX + Math.cos(a) * (r0 + 8), P.ctrY + Math.sin(a) * (r0 + 8));
+      cx.lineTo(P.ctrX + Math.cos(a) * (r0 + 26 + p * 14), P.ctrY + Math.sin(a) * (r0 + 26 + p * 14)); cx.stroke();
+    }
+    cx.globalAlpha = 1; cx.lineWidth = 1;
+  }
+  // JF-#053: while the counter window is armed, the player glows jade — the
+  // visual "NOW you may counter" cue (replaces any text prompt)
+  if (readyT > 0 && state === S_PLAY){
+    const g = 0.25 + 0.2 * Math.sin(t * 0.4) + 0.35 * (readyT / READY_DUR);
+    cx.strokeStyle = '#7ce8a8'; cx.globalAlpha = Math.min(0.8, g); cx.lineWidth = 3;
+    cx.beginPath(); cx.arc(P.x, P.y - 55, 46, 0, 7); cx.stroke();
+    cx.globalAlpha = 1; cx.lineWidth = 1;
+  }
+
   // popups — JF-#027: comic pop-in (springy scale), jaunty tilt, cel outline
   cx.textAlign = 'center';
   for (const p of popups){
@@ -2815,13 +2888,15 @@ function draw(){
     }
     if (!scrollOffer) drawControlPad();   // JF-#040: on-screen controls
   } else if (state === S_MENU){
-    // JF-#035: darker vignette (was flat 0.55 alpha, too see-through vs CG legibility bar)
-    // JF-#048: deepened again (0.82 → 0.90) — playtest: the district art moving
-    // behind the menu read as "the game running behind the title", distracting.
-    cx.fillStyle = 'rgba(6,8,11,0.90)'; cx.fillRect(0, 0, W, H);
-    const vg = cx.createRadialGradient(W/2, H*0.42, H*0.15, W/2, H*0.42, H*0.75);
-    vg.addColorStop(0, 'rgba(6,8,11,0)'); vg.addColorStop(1, 'rgba(4,5,7,0.55)');
-    cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
+    // JF-#052: FULLY OPAQUE menu backdrop — three dim passes (0.55→0.82→0.90)
+    // all still let the district art distract. The menu is now its own scene:
+    // a solid vertical gradient in the district's palette, nothing animating.
+    {
+      const sky = DISTRICTS[sel].sky;
+      const g = cx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#07090d'); g.addColorStop(0.5, sky[1]); g.addColorStop(1, '#07090d');
+      cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+    }
     // helper: solid rounded panel so corner text has real contrast, not floating on art
     const panel = (px, py, pw, ph, align) => {
       cx.save(); cx.fillStyle = 'rgba(14,17,22,0.72)'; cx.strokeStyle = 'rgba(255,255,255,0.08)'; cx.lineWidth = 1;
@@ -2884,15 +2959,17 @@ function draw(){
       cx.fillText(cap, W/2, cardY + 24);
       cx.restore();   // JF-#048: end demo-card clip
     }
+    // JF-#054: text purge — one short controls line (the rest is taught in-game
+    // per CG "teach visually"; the demo card above already shows the loop)
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap toward = strike · tap away = evade · swipe ↑ jump ↓ duck' : '◀▶ strike / evade away · HOLD ▼ crouch · ▲ jump · strike while down/up = low/high attack', W/2, 230);
+    cx.fillText(TOUCH ? 'tap toward · swipe ↑ jump · hold ↓ crouch' : '◀▶ strike · ▲ jump · hold ▼ crouch', W/2, 230);
     // JF-#009: district selector — the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';
     cx.fillText((save.dist > 0 ? '◀   ' : '') + MD.name + '  ' + (sel + 1) + '/' + DISTRICTS.length +
       (save.dist > 0 ? '   ▶' : ''), W/2, 264);
     cx.font = 'italic 16px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText(MD.line + '   ·   ' + (sel < save.dist ? 'CLEARED' : sel === 3 && save.dist === 3 ? 'the last district' : 'boss: ' + MD.boss), W/2, 286);
+    cx.fillText(sel < save.dist ? 'CLEARED' : 'boss: ' + MD.boss, W/2, 286);   // JF-#054: flavor line cut
     // JF-#035: real filled CTA button (was blinking bare text) — one obvious click-to-play target
     {
       const bw = 220, bh = 40, bx = W/2 - bw/2, by = 300, pulse = 0.85 + Math.sin(t * 0.12) * 0.15;
@@ -2903,15 +2980,12 @@ function draw(){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia'; cx.textAlign = 'center';
       cx.fillText(TOUCH ? 'TAP TO FIGHT' : 'SPACE TO FIGHT', W/2, by + 27);
     }
+    // JF-#054: belt + wallet merged to ONE line (was two lines listing training
+    // ratios and next-belt math — stat noise on a menu)
     const mb = beltOf(save.kills);
     cx.fillStyle = BELTS[mb].col === '#3a3f48' ? '#e8dcc0' : BELTS[mb].col;
     cx.font = 'bold 18px Georgia';
-    cx.fillText(BELTS[mb].name + ' BELT' + (save.streak > 1 ? '   ·   day ' + save.streak : ''), W/2, 366);
-    cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia';
-    const trained = UPS.reduce((n, u) => n + save.up[u.k], 0);
-    cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
-      (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
-      (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 388);
+    cx.fillText(BELTS[mb].name + ' BELT   ·   ◆ ' + save.jade + (best > 0 ? '   ·   BEST ' + best : ''), W/2, 374);
     // JF-#051: info panels — ONE aligned row along the bottom (was four
     // corner-pinned boxes that collided with the centered stack). Equal size,
     // equal band, text left-aligned inside each.
@@ -2922,9 +2996,7 @@ function draw(){
     const trialLines = remaining.length ? remaining : ['all done today'];
     panel(PX[0], PY, PW, PH, 'left');
     cx.textAlign = 'left'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
-    cx.fillText('TRIALS  ' + tdone + '/3', PX[0] + 10, PY + 20);
-    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText('+15◆ each', PX[0] + 130, PY + 20);
+    cx.fillText('TRIALS  ' + tdone + '/3', PX[0] + 10, PY + 20);   // JF-#054: '+15◆ each' cut
     cx.font = '12px Georgia'; cx.fillStyle = '#8a94a6';
     trialLines.forEach((line, i) => cx.fillText(line, PX[0] + 10, PY + 38 + i * 15));
     // — WARDROBE —
@@ -3029,37 +3101,66 @@ function draw(){
         cx.fillStyle = '#7ce8a8'; cx.font = 'bold 16px Georgia';
         cx.fillText('▼ you can afford your first training ▼', W/2, 394);
       }
-      const bw2 = 218, bh = 44, gap = 10;   // 2×2 upgrade grid
+      // JF-#055: BIG ICON TILES (was a text-dense 2×2 of names + descriptions —
+      // Mike/CG: too much text; the icon should say what it does). One row of
+      // four 100×96 tiles: drawn glyph + tier pips + cost. Number keys / taps
+      // unchanged.
+      const tw = 100, th = 96, gap = 14;
+      const row0 = W/2 - (4 * tw + 3 * gap) / 2;
+      const icon = (k, ix, iy, colr) => {   // hand-drawn vector glyphs, ~34px
+        cx.save(); cx.translate(ix, iy); cx.strokeStyle = colr; cx.fillStyle = colr; cx.lineWidth = 3; cx.lineJoin = cx.lineCap = 'round';
+        if (k === 'body'){            // heart
+          cx.beginPath(); cx.moveTo(0, 12);
+          cx.bezierCurveTo(-20, -6, -10, -20, 0, -8); cx.bezierCurveTo(10, -20, 20, -6, 0, 12);
+          cx.fill();
+        } else if (k === 'palm'){     // reach: open palm + motion arrow
+          cx.beginPath(); cx.arc(-8, 0, 9, 0, 7); cx.fill();                     // palm
+          cx.beginPath(); cx.moveTo(2, 0); cx.lineTo(20, 0); cx.stroke();        // arrow shaft
+          cx.beginPath(); cx.moveTo(14, -6); cx.lineTo(21, 0); cx.lineTo(14, 6); cx.stroke();
+        } else if (k === 'focus'){    // combo: two chain links
+          cx.beginPath(); cx.arc(-7, 0, 8, 0, 7); cx.stroke();
+          cx.beginPath(); cx.arc(7, 0, 8, 0, 7); cx.stroke();
+        } else {                      // second wind: rising phoenix arrow
+          cx.beginPath(); cx.moveTo(-10, 12); cx.quadraticCurveTo(-14, -4, 0, -12); cx.stroke();
+          cx.beginPath(); cx.moveTo(-6, -10); cx.lineTo(1, -13); cx.lineTo(-2, -5); cx.stroke();
+          cx.beginPath(); cx.moveTo(6, 12); cx.quadraticCurveTo(14, 2, 6, -8); cx.stroke();
+        }
+        cx.restore();
+      };
       for (let i = 0; i < UPS.length; i++){
         const u = UPS[i], tier = save.up[u.k], maxed = tier >= u.max;
         const cost = maxed ? 0 : u.cost(tier);
-        const bx = W/2 + (i % 2 === 0 ? -bw2 - gap/2 : gap/2), by = 398 + Math.floor(i / 2) * (bh + gap);
+        const bx = row0 + i * (tw + gap), by = 398;
         const can = !maxed && save.jade >= cost;
-        btnRects.push({ x: bx, y: by, w: bw2, h: bh, i });
+        btnRects.push({ x: bx, y: by, w: tw, h: th, i });
         cx.fillStyle = maxed ? 'rgba(124,232,168,0.10)' : can ? 'rgba(124,232,168,0.22)' : 'rgba(140,148,166,0.10)';
-        cx.fillRect(bx, by, bw2, bh);
+        cx.fillRect(bx, by, tw, th);
         const isPulse = i === pulseI && (t / 20 | 0) % 2 === 0;
         cx.strokeStyle = can ? (isPulse ? '#b8ffd8' : '#7ce8a8') : 'rgba(140,148,166,0.4)';
         cx.lineWidth = isPulse ? 3 : 1.5;
-        cx.strokeRect(bx, by, bw2, bh);
-        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
-        cx.fillText((i + 1) + '. ' + u.name + ' ' + '●'.repeat(tier) + '○'.repeat(u.max - tier), bx + 10, by + 18);
-        cx.font = '13px Georgia';
-        cx.fillText(u.desc + (maxed ? '  · MAX' : '  · ◆ ' + cost), bx + 10, by + 35);
+        cx.strokeRect(bx, by, tw, th);
+        const colr = can ? '#e8dcc0' : '#6a7482';
+        icon(u.k, bx + tw/2, by + 36, colr);
+        cx.textAlign = 'center'; cx.font = 'bold 12px Georgia'; cx.fillStyle = colr;
+        cx.fillText('●'.repeat(tier) + '○'.repeat(u.max - tier), bx + tw/2, by + 66);
+        cx.font = 'bold 14px Georgia';
+        cx.fillText(maxed ? 'MAX' : '◆ ' + cost, bx + tw/2, by + 86);
       }
       // JF-#016: rewarded DOUBLE JADE offer, right of the upgrade grid
       adRect = null;
       if (!rewardUsed && jadeRun > 0){
-        const ax = 724, ay = 398, aw = 216, ah = 44;
+        const ax = 724, ay = 398, aw = 216, ah = 96;   // JF-#055: matches icon-tile row height
         adRect = { x: ax, y: ay, w: aw, h: ah };
         const glow = (t / 22 | 0) % 2 === 0;
         cx.fillStyle = 'rgba(232,199,106,0.16)'; cx.fillRect(ax, ay, aw, ah);
         cx.strokeStyle = glow ? '#ffe9a8' : '#e8c76a'; cx.lineWidth = glow ? 3 : 1.5;
         cx.strokeRect(ax, ay, aw, ah);
-        cx.fillStyle = '#e8c76a'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
-        cx.fillText('▶ DOUBLE JADE  +' + jadeRun + '◆', ax + 10, ay + 18);
-        cx.font = '13px Georgia'; cx.fillStyle = '#c8bfa8';
-        cx.fillText(TOUCH ? 'watch an ad · tap here' : 'watch an ad · press R', ax + 10, ay + 35);
+        cx.fillStyle = '#e8c76a'; cx.font = 'bold 26px Georgia'; cx.textAlign = 'center';
+        cx.fillText('▶ ×2', ax + aw/2, ay + 40);   // JF-#055: icon-first, minimal words
+        cx.font = 'bold 15px Georgia';
+        cx.fillText('+' + jadeRun + '◆', ax + aw/2, ay + 64);
+        cx.font = '12px Georgia'; cx.fillStyle = '#c8bfa8';
+        cx.fillText(TOUCH ? 'ad · tap' : 'ad · press R', ax + aw/2, ay + 86);
       }
       cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia'; cx.textAlign = 'center';
       cx.fillText((newBest ? '' : 'BEST ' + best + '   ·   ') + (TOUCH ? 'tap the top half to rise again' : '1-4 to train  ·  arrows to rise again'), W/2, 522);

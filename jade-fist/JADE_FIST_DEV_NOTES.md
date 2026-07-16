@@ -836,3 +836,57 @@ with a centered stack whose bands weren't budgeted. Rebuilt from scratch:
 VALIDATION: syntax OK; screenshots at 784px and 640px widths confirm zero overlap in
 all demo phases (approach/red-flash/throw); omen tap hitbox verified against new rect;
 no console errors.
+
+## JF-#052 — OPAQUE MENU + JF-#054 TEXT PURGE (2026-07-16, round 3 on the title)
+Mike: "still a visual nightmare, spacing almost random, still transparent, image
+behind is distracting... so much text all over the place" (CG bar: teach visually).
+- **JF-#052**: menu backdrop is now FULLY OPAQUE — a solid vertical gradient in the
+  selected district's sky palette. Three dim passes (0.55/0.82/0.90) all failed;
+  no world art, nothing animating behind the menu anymore. Verified by pixel
+  sampling: alpha 255, gradient tones only.
+- **JF-#054 text purge (menu)**: controls line cut to '◀▶ strike · ▲ jump · hold ▼
+  crouch'; district flavor line cut (state/boss only); belt + wallet + best merged
+  to ONE line (was two with training ratios and next-belt math); TRIALS '+15◆ each'
+  cut. In-fight: unarmed chips give a grey burst with NO words; the armed-counter
+  cue is a jade glow ring around the player, not a text prompt.
+
+## JF-#053 — DODGE-GATED COUNTERS: the earned counter loop (2026-07-16)
+Mike: "counters should only be allowed after a dodge, otherwise it's a weak normal
+hit. counter attacks should have the slow-down bullet time of dodge and be much
+more animated." Core loop is now dodge → counter:
+- **readyT window (110f)**: armed by any FRESH dodge (duck/jump/back-step whiff via
+  resolveEnemyHit's avoided branch, or a fresh spear dodge). One counter per dodge
+  (consumed on use). IRON CATCH still counts as a read (arms by itself).
+- **Unarmed strike into a windup = weak chip**: 1 hp, but it does NOT interrupt the
+  swing — their attack still comes, so you trade unless you dodge. No combo, no
+  score popup (grey burst only). Chips can still fell (slow, joyless, no throw).
+  Boss shrugs chips entirely.
+- **Counter juice**: every earned counter gets dodge-grade bullet time (slowMo 26,
+  was 18) + a wordless flourish: expanding double ring + 8 radial speed lines at
+  the impact point riding the slow-mo; perfect counters keep the CLASH freeze.
+- **Armed cue**: jade glow ring pulses around the player while readyT is live —
+  the visual "NOW you may counter" (zero text).
+- **resolveEnemyHit range fix**: was fixed REACH+14, so a boss/spearman swinging
+  from HIS longer reach never resolved — dodges of those swings neither paid nor
+  armed. Now Math.max(REACH, e.reach)+14. (Found because the bot stalemated the
+  Courtyard boss at 107px for a million frames.)
+- **Bot taught the loop**: unarmed → back-step the ripening mid (arms), then
+  counter; never chips windups.
+VALIDATION: bot suite ?bot=3 = 10/12 wins, 0% unreactable, 1.17 hits/run. Pincer
+share 57% (8/14 hits) — up from ~33%: dodge-commitment windows are longer in the
+new loop, so second attackers connect more. WATCH ITEM for Mike's playtest; tune
+via ?dev=1 (speed/telegraph) if it feels unfair. Zero console errors; all new draw
+paths exercised headlessly.
+
+## JF-#055 — SHOP: BIG ICON TILES (2026-07-16)
+Mike: "powerups between levels should be big icons that indicate what they do, too
+much text in the game." The tally shop's 2×2 text buttons (name + desc + cost)
+are now ONE row of four 100×96 icon tiles: drawn vector glyphs — heart (IRON
+BODY), palm + arrow (JADE PALM reach), chain links (INNER FOCUS combo), rising
+phoenix arrow (SECOND WIND) — with tier pips + ◆ cost under each. Number keys and
+tap hitboxes unchanged; affordable-pulse kept. DOUBLE JADE ad tile matches the row
+height and is icon-first ('▶ ×2', '+N◆', 'ad · press R').
+VALIDATION: tally render exercised headlessly — 4 tile hitboxes + ad rect present,
+no errors. NOTE: preview-pane screenshots unavailable this session (backgrounded
+renderer pauses rAF) — layout verified by code + pixel sampling; Mike verifies look
+on the live URL per workflow.
