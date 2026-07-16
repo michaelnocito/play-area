@@ -890,3 +890,74 @@ VALIDATION: tally render exercised headlessly — 4 tile hitboxes + ad rect pres
 no errors. NOTE: preview-pane screenshots unavailable this session (backgrounded
 renderer pauses rAF) — layout verified by code + pixel sampling; Mike verifies look
 on the live URL per workflow.
+
+## JF-#056 — ENEMY TAUNTING REMOVED (2026-07-16)
+Mike: "stop the taunting it's confusing." WHY it was confusing (the real diagnosis):
+every quip used the SAME popup() renderer, font, and screen region as the mechanical
+telegraph captions (DUCK!/COUNTER!/GRAB!). So "small monk. big problem." arrived
+looking exactly like an instruction the player must act on — flavor competing with
+reads, mid-fight. Removed: MUTTERS + mutter() (approach one-liners), STARE_QUIPS +
+ELITE_QUIPS (stare-down trash talk), BOSS_FLAVOR .taunt (entry) + .jab (stagger),
+YELPS (felled foes), HYPE announcer (combo callouts). Kept: the stare-down BEAT
+itself (40f face-off + hero flourish + FIGHT!), the elite name card only (a real
+"who is this" moment; rank-and-file no longer announce themselves), boss name
+banner, SENDS (rare big-throw payoff), and all mechanical captions.
+Kept as no-op stubs (`yelp()`, `mutter()`, `hype()`) so the ~6 call sites stay put.
+BOSS_FLAVOR object retained — `cleaver: true` gates THE BUTCHER's throw attack.
+
+## JF-#057 — FACING BUG: every enemy was drawn mirrored (2026-07-16)
+Mike: "sometimes enemies face away and attack." Not sometimes — ALWAYS, since the
+draw call's inception. ROOT CAUSE: the sprite's facing came from `e.side`, which is
+assigned ONCE at spawn (`side: -side`, the walk direction from its spawn edge) and
+never reassigned anywhere in update(). Meanwhile every OTHER system reads live
+`Math.sign(P.x - e.x)` — the aim lines, the hit resolve, the swipe streak, thruV.
+So the swing tracked the player while the body pointed wherever it spawned.
+PROVEN by pixel-sampling a forced E_STRIKE frame: 0 ink toward the player, 280,661
+away. You only NOTICE it when they attack (the arm extends backwards), hence
+"sometimes."
+- Added `e.face`, initialized at spawn (both spawnEnemy + spawnBoss), updated every
+  frame toward the player during E_WALK/E_WINDUP/E_AIM/E_FEINT, and LOCKED from
+  E_STRIKE onward so a committed swing (and JF-#050's follow-through drift, which
+  deliberately carries the body past you) doesn't spin around mid-whiff.
+- Draw now uses `e.face` (was `-e.side`). `e.side` is movement-only bookkeeping.
+- Also fixed: E_WALK marched in the fixed spawn direction forever (`e.x += e.side *
+  speed`), so a foe could stroll straight past a moved player and off-screen. Now
+  walks toward the player's live position.
+VALIDATION: pixel test both sides — enemy right of player and enemy left of player
+BOTH punch toward him (278k/281k ink toward, 0 away). Crossover turns the body
+(face -1 → +1); commit-lock holds facing through a strike even if the player slips
+behind; pursuit closes distance and follows across.
+
+## JF-#058 — ATTACK HEIGHT LIVES IN THE POSE (2026-07-16)
+Mike: "it's still hard to tell high, low, middle." Diagnosis from the code: the
+windup pose WAS the strike pose with a shorter arm — `atkActive` collapsed E_WINDUP
+and E_STRIKE into one boolean and the only difference reaching fighter() was
+`punch > 0`. Mid ('strike') had NO pose identity at all: it fell into the same
+default branch as standing idle. So the animation carried no read and the overlays
+(auras, dashed aim lines, target rings, word captions) were compensating.
+- **New `phase` option** ('wind' | 'strike') passed from the enemy draw — the pose
+  branches now key off the actual state instead of inferring from arm length. Also
+  normalized `line`: the mid attack is internally `atk === 'strike'`, so it now maps
+  to `line: 'mid'` and gets real branches.
+- **Opposite silhouettes per line** (readable in one frame, no color needed):
+  · HIGH = RISE — back heel lifts, legs straighten, torsoDrop -8, elbow cocks ABOVE
+    the shoulder with the fist chambered behind the head (two-segment arm).
+  · LOW = DROP — deep crouch (existing duck legs) + the sweeping arm winds BACK
+    behind the hip first, so the sweep has somewhere to come from.
+  · MID = COIL — weight sinks onto the rear leg, front foot light, torsoDrop +6,
+    lead fist chambers at the WAIST (pulls away from you before it fires).
+  · GRAB = both arms reach out open-handed — wide, two-armed, nothing cocked.
+- **Overlay purge** (they existed to paper over identical poses, and they were the
+  "text all over the place"): removed the dashed threat lines (high/low AND mid),
+  the DUCK!/JUMP!/DODGE!/AWAY!/COUNTER! captions, and the ARMORED—DODGE!/DUCK IT!/
+  JUMP IT! poke popup (now a wordless clang + burst). KEPT: the colored aura and a
+  silent target ring at the threatened height (spatial, no words).
+VALIDATION (headless, single forced draws — no game loop, audio hard-stubbed first):
+silhouette metrics vs idle (height 100, overhead ink 24, lead-fist reach 28):
+  HIGH  height 121, overhead ink 387  → tallest + ink above the head
+  LOW   height  70, ankle ink 825     → shortest + ink at the ankles
+  MID   fist reach 15 back to 35 (coil) → 88 on the strike (coil→explode contrast)
+  GRAB  back-arm ink 65 vs idle 184, front 218 → both arms forward
+Player draw unaffected (never passes `phase`, so no new branch can fire on it).
+NOTE: pending web research on how Punch-Out/Guilty Gear/Sekiro et al. handle this
+in character design — reconcile these poses against it and cite in the next pass.

@@ -1061,7 +1061,8 @@ function strike(dir){
   // swings and grabs are ARMORED during their windup — the answer is a dodge,
   // not a punch. Poking one costs you a beat and teaches the rule in place.
   if (e.st === E_WINDUP && e.atk && e.atk !== 'strike'){
-    popup(e.x, e.y - 100, e.atk === 'grab' ? 'ARMORED — DODGE!' : e.atk === 'high' ? 'DUCK IT!' : 'JUMP IT!', '#a8b4c8');
+    // JF-#058: wordless — the armored clang + the bounce say "that won't work"
+    burst(e.x, e.y - 56, '#a8b4c8', 6, 2);
     Snd.block(); hitStop = 2; whiffT = 10;
     return;
   }
@@ -2092,6 +2093,15 @@ function fighter(x, y, face, opts){
   // splay), air = tucked knees (feet up) — instead of a uniform squash that only
   // read as "short". torsoDrop shifts the whole upper body so the crouch is obvious.
   const pose = o.pose || '';
+  // JF-#058: the POSE carries the attack line now, not just the overlays. `phase`
+  // splits windup from strike explicitly (before, windup was just "the strike pose
+  // with a shorter arm" — punch>0 was the only difference, which is why heights
+  // never read). Windup silhouettes are deliberately opposite shapes:
+  //   HIGH = rise tall, elbow cocked ABOVE the shoulder
+  //   LOW  = drop low, body sinks, arm loads at ankle height
+  //   MID  = coil back, fist chambered at the waist, weight on the back leg
+  const line = o.line || '', phase = o.phase || '';
+  const winding = phase === 'wind', striking = phase === 'strike';
   cx.lineJoin = 'round'; cx.lineCap = 'round';
   const legStroke = segs => {
     cx.strokeStyle = OUT; cx.lineWidth = 9; cx.beginPath(); segs(); cx.stroke();
@@ -2109,6 +2119,19 @@ function fighter(x, y, face, opts){
                       cx.moveTo(4, -30);  cx.lineTo(14, -22);  cx.lineTo(6, -15); });
     foot(-6, -13); foot(7, -15);
     torsoDrop = -3;
+  } else if ((winding || striking) && line === 'high'){
+    // JF-#058: HIGH = RISE. Back heel lifts, legs straighten, the whole body
+    // grows taller — the opposite silhouette to the low sweep's drop.
+    legStroke(() => { cx.moveTo(0, -32); cx.lineTo(-13, -1); cx.moveTo(0, -32); cx.lineTo(15, -9); });
+    foot(-14, 1); foot(17, -10);        // front heel off the ground
+    torsoDrop = -8;
+  } else if (winding && line === 'mid'){
+    // JF-#058: MID = COIL. Weight sinks back onto the rear leg, front foot light —
+    // the body loads like a spring, so the straight punch reads before it fires.
+    legStroke(() => { cx.moveTo(0, -30); cx.lineTo(-19, -9); cx.lineTo(-22, 0);
+                      cx.moveTo(0, -30); cx.lineTo(16, -2); });
+    foot(-23, 1); foot(17, -1);
+    torsoDrop = 6;
   } else {                              // planted stance
     legStroke(() => { cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); });
     foot(-16, 1); foot(18, -2);
@@ -2199,18 +2222,41 @@ function fighter(x, y, face, opts){
   if (run.tiny) ext *= 0.5;             // JF-#032: TINY-FISTS — itty-bitty arms
   if (pose === 'duck'){                 // arms tuck in tight to the crouch
     arm(-8, -58, -15, -46);
-    // JF-#041: a crouched LOW attack sweeps at ankle height — the leg-line read
-    arm(8, -58, 8 + ext * (o.line === 'low' ? 1.15 : 0.8),
-        o.line === 'low' ? -34 - (punch > 0 ? 0 : 6) : -52 - (punch > 0 ? 2 : -4));
+    if (o.line === 'low' && winding){
+      // JF-#058: LOW windup — the sweeping arm WINDS BACK behind the hip first,
+      // so the sweep has somewhere to come from (and reads as "something is
+      // loading down there" rather than "arm already out").
+      arm(8, -58, -10, -32);
+    } else {
+      // JF-#041: a crouched LOW attack sweeps at ankle height — the leg-line read
+      arm(8, -58, 8 + ext * (o.line === 'low' ? 1.15 : 0.8),
+          o.line === 'low' ? -34 - (punch > 0 ? 0 : 6) : -52 - (punch > 0 ? 2 : -4));
+    }
   } else if (pose === 'air'){           // trailing + leading (flying-kick read)
     arm(-8, -64, -20, -58);
     arm(8, -64, 8 + ext, -66 - (punch > 0 ? 6 : 0));
+  } else if (o.line === 'grab' && winding){
+    // JF-#058: GRAB windup — BOTH arms reach out open-handed. Unmistakable
+    // silhouette: wide, two-armed, nothing cocked back.
+    arm(-6, -62, 14, -56);
+    arm(6, -64, 22, -62);
   } else if (o.line === 'high'){
-    // JF-#041: HIGH-line attack — the lead arm cocks up then swings at HEAD
-    // height, so a duck visibly slips UNDER it. Windup = raised; strike = out high.
-    // JF-#045: strike arm reaches 1.35× so the fist visually crosses to the head.
+    // JF-#041/#045: HIGH-line attack — swings at HEAD height so a duck slips under.
     arm(-7, -62, -18, -50);
-    arm(5, -66, 5 + (punch > 0 ? ext * 1.35 : 6), punch > 0 ? -84 : -96);
+    if (winding){
+      // JF-#058: elbow cocks ABOVE the shoulder, fist back over the head — the
+      // classic overhead tell, readable in one frame from the silhouette alone.
+      arm(5, -66, 12, -94);             // upper arm: shoulder → elbow up high
+      arm(12, -94, -4, -106);           // forearm: fist chambered behind the head
+    } else {
+      arm(5, -66, 5 + ext * 1.35, -84); // strike: lashes out at head height
+    }
+  } else if (o.line === 'mid' && winding){
+    // JF-#058: MID windup — fist CHAMBERS at the waist and the shoulder twists
+    // back. The lead arm pulls AWAY from you before it fires, which is the tell
+    // the red flash alone never gave.
+    arm(-7, -62, -16, -52);
+    arm(7, -60, -8, -44);
   } else {
     arm(-7, -62, -18, -50);
     arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7));
@@ -2488,46 +2534,25 @@ function draw(){
     if (e.st === E_WINDUP && e.atk && e.atk !== 'strike'){
       // JF-#040: armored swing telegraph — amber DUCK / cyan JUMP / purple DODGE.
       // Never red: red is reserved for the counter/block window.
-      const [tcol, tcap] = atkTell(e.atk);
+      const [tcol] = atkTell(e.atk);   // JF-#058: caption text no longer drawn
       eyes = 'angry'; col = tcol;
       const prog = Math.min(1, e.stT / e.windup), pulse = 0.5 + 0.4 * Math.sin(e.stT * 0.5);
       cx.fillStyle = tcol; cx.globalAlpha = (0.18 + prog * 0.28) * (0.7 + 0.3 * pulse);
       cx.beginPath(); cx.arc(e.x, e.y - 55, (38 + prog * 16) * size, 0, 7); cx.fill();
       cx.globalAlpha = 1;
+      // JF-#058: the POSE is the telegraph now (rise for high, drop for low, both
+      // arms out for grab). What's left is a SILENT target ring at the threatened
+      // height — no dashed line, no words. Removed: the aim line + DUCK!/JUMP!/
+      // DODGE! captions (they were compensating for windup poses that all looked
+      // the same, and they were exactly the "text all over the place" problem).
       if (e.atk === 'high' || e.atk === 'low'){
-        // JF-#045: the swing is AIMED — a dashed threat line runs from the cocked
-        // fist to the exact body part it will hit (standing HEAD height for high,
-        // ankles for low), with a target ring pulsing on it. Duck and the line
-        // visibly passes over your head; stand there and that's where it lands.
-        // Same language as the spearman's aim line (JF-#028), so it's pre-taught.
-        const high = e.atk === 'high';
-        const ty = high ? GROUND_Y - 84 : GROUND_Y - 12;                // head / ankles
-        const dirP = Math.sign(P.x - e.x) || 1;
-        const fx = e.x + dirP * 14, fy = e.y - (high ? 96 : 20) * size; // from the fist
-        cx.strokeStyle = tcol; cx.globalAlpha = 0.4 + prog * 0.45; cx.lineWidth = 2.5;
-        cx.setLineDash([7, 7]); cx.lineDashOffset = -e.stT * 2;
-        cx.beginPath(); cx.moveTo(fx, fy); cx.lineTo(P.x, ty); cx.stroke();
-        cx.setLineDash([]);
-        // target ring locked on the head (or shins) — tightens as the swing ripens
-        const rr = (high ? 19 : 13) - prog * 5;
-        cx.lineWidth = 3; cx.globalAlpha = 0.5 + 0.5 * pulse;
+        const ty = e.atk === 'high' ? GROUND_Y - 84 : GROUND_Y - 12;   // head / ankles
+        const rr = (e.atk === 'high' ? 19 : 13) - prog * 5;            // tightens as it ripens
+        cx.strokeStyle = tcol; cx.lineWidth = 3; cx.globalAlpha = 0.5 + 0.5 * pulse;
         cx.beginPath(); cx.arc(P.x, ty, rr, 0, 7); cx.stroke();
         cx.beginPath(); cx.moveTo(P.x - rr - 5, ty); cx.lineTo(P.x - rr + 2, ty);
         cx.moveTo(P.x + rr - 2, ty); cx.lineTo(P.x + rr + 5, ty); cx.stroke();
         cx.globalAlpha = 1;
-        // the answer, written AT the threatened body part
-        cx.save(); cx.translate(P.x, ty - rr - 10);
-        cx.font = 'bold 21px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(tcap, 0, 0);
-        cx.fillStyle = tcol; cx.fillText(tcap, 0, 0);
-        cx.restore();
-      } else {
-        // grab keeps its caption above the foe (it targets all of you)
-        cx.save(); cx.translate(e.x, e.y - 118 - (size - 1) * 40); cx.scale(0.92, 0.92);
-        cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(tcap, 0, 0);
-        cx.fillStyle = tcol; cx.fillText(tcap, 0, 0);
-        cx.restore();
       }
     } else if (e.st === E_WINDUP){
       const late = e.stT / e.windup > perfTh();   // final third: solid bright = NOW (JF-#025: CRANE widens)
@@ -2536,30 +2561,17 @@ function draw(){
       eyes = 'angry';
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
       cx.beginPath(); cx.arc(e.x, e.y - 55, ((late ? 50 : 40) + Math.sin(e.stT*0.5)*5) * size, 0, 7); cx.fill();
-      // JF-#050: the mid strike gets the SAME aimed-read language as high/low
-      // (Mike: dodging mid attacks "visually bland and hard to predict") — a
-      // dashed threat line from the cocked fist to your torso, a tightening
-      // target ring, and the answer written at the threatened spot: early =
-      // AWAY! (back-step), final third = COUNTER! (the greedy read).
+      // JF-#058: mid keeps a silent torso ring — the COIL pose (weight back, fist
+      // chambered at the waist) is the real tell now. Dashed line + AWAY!/COUNTER!
+      // captions removed.
       if (e.type !== T_BOSS){
         const ty = GROUND_Y - 48;                                    // torso line
-        const dirP = Math.sign(P.x - e.x) || 1;
         const prog = Math.min(1, e.stT / e.windup);
-        const fx = e.x + dirP * 14, fy = e.y - 60 * size;
-        cx.strokeStyle = '#ff4a4a'; cx.globalAlpha = 0.35 + prog * 0.45; cx.lineWidth = 2.5;
-        cx.setLineDash([7, 7]); cx.lineDashOffset = -e.stT * 2;
-        cx.beginPath(); cx.moveTo(fx, fy); cx.lineTo(P.x, ty); cx.stroke();
-        cx.setLineDash([]);
         const rr = 16 - prog * 5;
-        cx.lineWidth = 3; cx.globalAlpha = 0.45 + 0.5 * (0.5 + 0.4 * Math.sin(e.stT * 0.5));
+        cx.strokeStyle = '#ff4a4a'; cx.lineWidth = 3;
+        cx.globalAlpha = 0.45 + 0.5 * (0.5 + 0.4 * Math.sin(e.stT * 0.5));
         cx.beginPath(); cx.arc(P.x, ty, rr, 0, 7); cx.stroke();
         cx.globalAlpha = 1;
-        cx.save(); cx.translate(P.x, ty - rr - 10);
-        cx.font = 'bold 21px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-        const mcap = late ? 'COUNTER!' : 'AWAY!';
-        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(mcap, 0, 0);
-        cx.fillStyle = late ? '#ff4a4a' : '#e85a5a'; cx.fillText(mcap, 0, 0);
-        cx.restore();
       }
     } else if (e.st === E_FEINT){
       // feint tell: PALE flash, no red, no audio — only real telegraphs go red
@@ -2641,7 +2653,11 @@ function draw(){
     fighter(e.x, e.y - evY, e.face || -e.side, {   // JF-#057: live facing (was -e.side, stale from spawn)
       col, punch, rot, size, eyes, squash,
       pose: epose,
-      line: atkActive ? e.atk : null,
+      // ('strike' is the internal name for the mid line — normalize so the pose reads)
+      line: atkActive ? ((!e.atk || e.atk === 'strike') ? 'mid' : e.atk) : null,
+      // JF-#058: explicit windup/strike phase — the pose branches key off this
+      // instead of inferring "am I striking?" from arm length (punch > 0)
+      phase: e.st === E_WINDUP ? 'wind' : e.st === E_STRIKE ? 'strike' : '',
       sash: e.elite ? '#e8c76a' : e.type === T_BOSS ? '#a02828' : e.type === T_BRUTE ? '#3a3050' : e.type === T_SPEAR ? '#2a6a48' : '#a04848',   // JF-#043: elites wear gold
       spear: e.type === T_SPEAR,
       guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER),
