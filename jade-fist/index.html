@@ -327,7 +327,7 @@ function styleBuy(){
   save.jade -= c; save.cos.own[styleSel] = 1; save.cos.wear = styleSel; persist();
   Snd.best();
 }
-let styleRect = null, styleBuyRect = null;   // menu hitboxes (rebuilt each draw)
+let styleRect = null, styleBuyRect = null, omenRect = null;   // menu hitboxes (rebuilt each draw; JF-#051 adds omen)
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
 // JF-#022: bot fairness suite — open index.html?bot=3 (&react=12) and a bot with
 // a fixed human reaction time (frames, 12 ≈ 200ms) plays N runs in each of the
@@ -1553,7 +1553,8 @@ cv.addEventListener('pointerdown', e => {
   // JF-#011/#036: omen toggle hitbox (top-right offer card) — matches the
   // JF-#035 panel bounds (y 76-136); the old y<148 spilled into the Hall of
   // Legends panel just below it, wrongly toggling Omen on a tap there.
-  if (state === S_MENU && x > W - 266 && y > 76 && y < 136){ omenOn = !omenOn; Snd.tick(); return; }
+  if (state === S_MENU && omenRect && x >= omenRect.x && x <= omenRect.x + omenRect.w &&
+      y >= omenRect.y && y <= omenRect.y + omenRect.h){ omenOn = !omenOn; Snd.tick(); return; }   // JF-#051: row-panel hitbox
   // JF-#023: wardrobe hitboxes — tap the block to browse, tap BUY to purchase
   if (state === S_MENU && styleBuyRect && x >= styleBuyRect.x && x <= styleBuyRect.x + styleBuyRect.w &&
       y >= styleBuyRect.y && y <= styleBuyRect.y + styleBuyRect.h){ styleBuy(); return; }
@@ -2830,17 +2831,18 @@ function draw(){
       cx.arcTo(x2, py + ph, x2, py, r); cx.arcTo(x2, py, x2 + pw, py, r); cx.closePath();
       cx.fill(); cx.stroke(); cx.restore();
     };
-    // JF-#027: chunky outlined comic title.
-    // JF-#048: title now STATIC (bounce + rotate cut — playtest called the
-    // animated title/text distracting) and sized to FIT between the corner
-    // panels (250px columns each side) so it never overlaps them.
+    // JF-#051: MENU LAYOUT REBUILD — one centered column, top to bottom:
+    // title → framed demo → controls → district → CTA → belt/stats, with the
+    // four info panels (TRIALS/WARDROBE/OMEN/BEST) in ONE aligned row along the
+    // bottom. Kills the corner-pinned boxes that kept colliding with the
+    // centered stack (playtest ×3: "title screen still looks like a jumbled
+    // mess"). Nothing is edge-pinned anymore; every element has its own band.
     cx.textAlign = 'center';
     cx.save();
-    cx.translate(W/2, 196);
-    let tfs = 66;
+    cx.translate(W/2, 64);
+    let tfs = 54;   // JF-#048: static, fitted; JF-#051: smaller, top band of its own
     cx.font = 'bold ' + tfs + 'px ' + COMIC;
-    const titleMaxW = W - 2 * 288;   // corner panels (250) + margins, both sides
-    while (tfs > 38 && cx.measureText('JADE FIST').width > titleMaxW){
+    while (tfs > 38 && cx.measureText('JADE FIST').width > W - 80){
       tfs -= 2; cx.font = 'bold ' + tfs + 'px ' + COMIC;
     }
     cx.lineJoin = 'round';
@@ -2851,11 +2853,13 @@ function draw(){
     // (CG: teach visually, minimal text). 240-frame script: approach → red flash →
     // counter throw → reset. Captions change per phase.
     {
-      // JF-#048: the demo now sits in its own framed card so it reads as an
-      // inset "how to play" strip, not the game leaking through the menu.
-      panel(W/2 - 300, 218, 600, 122, 'left');
-      cx.save(); cx.beginPath(); cx.rect(W/2 - 300, 218, 600, 122); cx.clip();
-      const dT = t % 240, gy = 312;
+      // JF-#048: the demo sits in its own framed card so it reads as an inset
+      // "how to play" strip. JF-#051: card moved into the column band under the
+      // title; thrown body's rise is capped so it can't climb into the caption.
+      const cardY = 88;
+      panel(W/2 - 300, cardY, 600, 118, 'left');
+      cx.save(); cx.beginPath(); cx.rect(W/2 - 300, cardY, 600, 118); cx.clip();
+      const dT = t % 240, gy = cardY + 96;
       let ex2 = 0, ecol = '#8a94a6', erot = 0, ppunch = 0, cap, capCol = '#e8dcc0';
       if (dT < 80){                                   // approach from the right
         ex2 = W/2 + 220 - dT * 1.6;
@@ -2875,23 +2879,23 @@ function draw(){
       } else { ex2 = -999; cap = 'they come at you — strike toward them'; }
       fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72, acc: wornAcc() });   // JF-#023/#033
       if (ex2 > -200 && ex2 < W + 200)
-        fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
+        fighter(ex2, gy - Math.min(erot ? erot * 30 : 0, 36), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });   // JF-#051: rise cap
       cx.fillStyle = capCol; cx.font = '19px Georgia'; cx.textAlign = 'center';
-      cx.fillText(cap, W/2, 240);
+      cx.fillText(cap, W/2, cardY + 24);
       cx.restore();   // JF-#048: end demo-card clip
     }
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap toward = strike · tap away = evade · swipe ↑ jump ↓ duck' : '◀▶ strike / evade away · HOLD ▼ crouch · ▲ jump · strike while down/up = low/high attack', W/2, 332);
+    cx.fillText(TOUCH ? 'tap toward = strike · tap away = evade · swipe ↑ jump ↓ duck' : '◀▶ strike / evade away · HOLD ▼ crouch · ▲ jump · strike while down/up = low/high attack', W/2, 230);
     // JF-#009: district selector — the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';
     cx.fillText((save.dist > 0 ? '◀   ' : '') + MD.name + '  ' + (sel + 1) + '/' + DISTRICTS.length +
-      (save.dist > 0 ? '   ▶' : ''), W/2, 378);
+      (save.dist > 0 ? '   ▶' : ''), W/2, 264);
     cx.font = 'italic 16px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText(MD.line + '   ·   ' + (sel < save.dist ? 'CLEARED' : sel === 3 && save.dist === 3 ? 'the last district' : 'boss: ' + MD.boss), W/2, 400);
+    cx.fillText(MD.line + '   ·   ' + (sel < save.dist ? 'CLEARED' : sel === 3 && save.dist === 3 ? 'the last district' : 'boss: ' + MD.boss), W/2, 286);
     // JF-#035: real filled CTA button (was blinking bare text) — one obvious click-to-play target
     {
-      const bw = 220, bh = 40, bx = W/2 - bw/2, by = 408, pulse = 0.85 + Math.sin(t * 0.12) * 0.15;
+      const bw = 220, bh = 40, bx = W/2 - bw/2, by = 300, pulse = 0.85 + Math.sin(t * 0.12) * 0.15;
       cx.fillStyle = `rgba(124,232,168,${0.22 * pulse})`; cx.strokeStyle = '#7ce8a8'; cx.lineWidth = 2;
       cx.beginPath(); cx.moveTo(bx + 8, by); cx.arcTo(bx + bw, by, bx + bw, by + bh, 8);
       cx.arcTo(bx + bw, by + bh, bx, by + bh, 8); cx.arcTo(bx, by + bh, bx, by, 8); cx.arcTo(bx, by, bx + bw, by, 8);
@@ -2902,69 +2906,66 @@ function draw(){
     const mb = beltOf(save.kills);
     cx.fillStyle = BELTS[mb].col === '#3a3f48' ? '#e8dcc0' : BELTS[mb].col;
     cx.font = 'bold 18px Georgia';
-    cx.fillText(BELTS[mb].name + ' BELT' + (save.streak > 1 ? '   ·   day ' + save.streak : ''), W/2, 458);
+    cx.fillText(BELTS[mb].name + ' BELT' + (save.streak > 1 ? '   ·   day ' + save.streak : ''), W/2, 366);
     cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia';
     const trained = UPS.reduce((n, u) => n + save.up[u.k], 0);
     cx.fillText((best > 0 ? 'BEST ' + best + '   ·   ' : '') + '◆ ' + save.jade +
       (trained ? '   ·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
-      (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 482);
-    // JF-#035/#036: today's trials (left) and the omen offer (right), panels behind
-    // them, one muted info color (gold reserved for CTA/highlights). JF-#036 restores
-    // which trials are still open (condensing to a bare count lost "what to do now").
+      (mb < BELTS.length - 1 ? '   ·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 388);
+    // JF-#051: info panels — ONE aligned row along the bottom (was four
+    // corner-pinned boxes that collided with the centered stack). Equal size,
+    // equal band, text left-aligned inside each.
+    const PX = [18, 251, 484, 717], PW = 225, PY = 408, PH = 92;
+    // — TRIALS —
     const trio = todayTrio(), tdone = trio.filter((ti, i) => save.tdone[i]).length;
     const remaining = trio.filter((ti, i) => !save.tdone[i]).map(ti => TRIALS[ti].name);
-    // JF-#037: one trial name per line instead of ' · '-joined on one line —
-    // measured 354px of text landing in a 250px-wide panel (confirmed via
-    // measureText), spilling ~115px past the right edge into the CTA area.
     const trialLines = remaining.length ? remaining : ['all done today'];
-    const trialsH = 34 + trialLines.length * 15;
-    panel(16, 76, 250, trialsH, 'left');
+    panel(PX[0], PY, PW, PH, 'left');
     cx.textAlign = 'left'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
-    cx.fillText('TRIALS  ' + tdone + '/3', 26, 96);
-    cx.font = '14px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText('+15◆ each', 150, 96);
+    cx.fillText('TRIALS  ' + tdone + '/3', PX[0] + 10, PY + 20);
+    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
+    cx.fillText('+15◆ each', PX[0] + 130, PY + 20);
     cx.font = '12px Georgia'; cx.fillStyle = '#8a94a6';
-    trialLines.forEach((line, i) => cx.fillText(line, 26, 113 + i * 15));
-    // JF-#023/#036/#037: wardrobe (left, under the trials) — pushed down to
-    // clear the trials panel (now variable-height since #037's per-line fix)
+    trialLines.forEach((line, i) => cx.fillText(line, PX[0] + 10, PY + 38 + i * 15));
+    // — WARDROBE —
     {
       const S = STYLES[styleSel], owned = !!save.cos.own[styleSel];
-      const wY = 76 + trialsH + 10;
-      styleRect = { x: 16, y: wY, w: 250, h: owned ? 40 : 78 };
-      panel(styleRect.x, styleRect.y, styleRect.w, styleRect.h, 'left');
-      cx.textAlign = 'left'; cx.font = 'bold 13px Georgia'; cx.fillStyle = '#c8bfa8';
-      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 26, wY + 18);
+      styleRect = { x: PX[1], y: PY, w: PW, h: PH };
+      panel(PX[1], PY, PW, PH, 'left');
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
+      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), PX[1] + 10, PY + 20);
       cx.fillStyle = S.col; cx.font = 'bold 13px Georgia';
-      cx.fillText(S.name + (save.cos.wear === styleSel ? ' — worn' : owned ? ' — owned' : ''), 26, wY + 36);
+      cx.fillText(S.name + (save.cos.wear === styleSel ? ' — worn' : owned ? ' — owned' : ''), PX[1] + 10, PY + 40);
       styleBuyRect = null;
       if (!owned){
         const can = save.jade >= S.cost;
-        styleBuyRect = { x: 26, y: wY + 48, w: 150, h: 26 };
+        styleBuyRect = { x: PX[1] + 10, y: PY + 52, w: 150, h: 26 };
         cx.fillStyle = can ? 'rgba(124,232,168,0.28)' : 'rgba(140,148,166,0.14)';
         cx.fillRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
         cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
         cx.strokeRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
         cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 14px Georgia';
-        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, 34, wY + 66);
+        cx.fillText((TOUCH ? 'BUY' : 'B — buy') + '  ◆ ' + S.cost, PX[1] + 18, PY + 70);
       }
     }
+    // — OMEN —
     const OM = todayOmen();
-    panel(W - 16, 76, 250, 60, 'right');
-    cx.textAlign = 'right'; cx.font = 'bold 14px Georgia';
+    omenRect = { x: PX[2], y: PY, w: PW, h: PH };
+    panel(PX[2], PY, PW, PH, 'left');
+    cx.font = 'bold 14px Georgia';
     cx.fillStyle = omenOn ? '#c8a8e8' : '#c8bfa8';
-    cx.fillText("OMEN  " + (omenOn ? '— ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 26, 96);
-    cx.font = '14px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText(OM.b + '  /  ' + OM.c, W - 26, 118);
-    // JF-#026: Hall of Legends — condensed to just #1 (right, under the omen)
+    cx.fillText('OMEN  ' + (omenOn ? '— ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), PX[2] + 10, PY + 20);
+    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
+    cx.fillText(OM.b, PX[2] + 10, PY + 40);
+    cx.fillText(OM.c, PX[2] + 10, PY + 58);
+    // — BEST (Hall of Legends #1) —
     {
       const H = save.hall[sel];
-      if (H && H.length){
-        panel(W - 16, 144, 250, 34, 'right');
-        cx.textAlign = 'right'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
-        cx.fillText('BEST — ' + DISTRICTS[sel].name, W - 26, 162);
-        cx.font = 'bold 14px Georgia'; cx.fillStyle = '#e8c76a';
-        cx.fillText('#1  ' + H[0].s + '  · wave ' + H[0].w, W - 26, 178);
-      }
+      panel(PX[3], PY, PW, PH, 'left');
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
+      cx.fillText('BEST — ' + DISTRICTS[sel].name, PX[3] + 10, PY + 20);
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = H && H.length ? '#e8c76a' : '#8a94a6';
+      cx.fillText(H && H.length ? '#1  ' + H[0].s + '  · wave ' + H[0].w : 'no legend yet', PX[3] + 10, PY + 40);
     }
     cx.textAlign = 'center';
   } else if (state === S_DEAD){

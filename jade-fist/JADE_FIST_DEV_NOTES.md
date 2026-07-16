@@ -810,3 +810,29 @@ VALIDATION: syntax OK; unit checks — thruV ±6 in the correct carry direction 
 ducked-high and back-stepped-mid; repeat-guard confirmed first-line; bot suite on new
 difficulty 11/12 / 0% unreactable (bot presses discretely, unaffected by the repeat
 guard); zero console errors. Mike to judge feel; tune with the JF-#049 panel.
+
+## JF-#051 — MENU LAYOUT REBUILD: single column + bottom info row (2026-07-16)
+Mike (third strike on this screen): "title screen still looks like a jumbled mess,
+overlapping text, actually look at it." JF-#048's patch (fit title between corner
+panels) treated the symptom; the disease was the LAYOUT: four corner-pinned boxes
+(TRIALS/WARDROBE stacked left, OMEN/BEST stacked right, variable heights) colliding
+with a centered stack whose bands weren't budgeted. Rebuilt from scratch:
+- **One centered column, fixed bands**: title y64 (54px fitted, own band) → framed
+  demo card y88-206 → controls y230 → district y264/286 → CTA y300 → belt y366 /
+  stats y388.
+- **Info panels = ONE aligned bottom row** y408-500: TRIALS · WARDROBE · OMEN · BEST,
+  equal 225×92 panels at x 18/251/484/717. Nothing is pinned to a screen edge or
+  stacked at a variable height anymore — no element can collide with another.
+- BEST panel always renders ("no legend yet" empty state) so the row never gaps.
+- **Hitboxes**: styleRect = wardrobe panel; NEW omenRect global replaces the old
+  hardcoded top-right tap zone (pointer handler updated); buy button rect moved with
+  its panel. Keyboard C/B/O unchanged.
+- Demo card: thrown body's rise capped (min(erot*30, 36)) so it can't climb into the
+  caption line; caption pinned to cardY+24.
+- Investigated the "right side cut off" in Mike's screenshot: the canvas letterboxes
+  (scale = min(ww/W, wh/H), never crops) and DOM shows no horizontal overflow — the
+  cut was the screenshot/window edge, not the game. The rebuild still removes all
+  edge-pinning, so even a shaved edge can't clip content.
+VALIDATION: syntax OK; screenshots at 784px and 640px widths confirm zero overlap in
+all demo phases (approach/red-flash/throw); omen tap hitbox verified against new rect;
+no console errors.
