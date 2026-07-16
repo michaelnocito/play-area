@@ -970,7 +970,8 @@ function beginWave(n){
     const bz = enemies[enemies.length - 1];
     bz.flavor = BOSS_FLAVOR[D.boss]; bz.throwCd = 220;   // JF-#034: personality + cleaver cadence
     banner(D.boss, '#e86a6a', 140);   // JF-#056: entry taunt removed — the name banner is the beat
-    P.flourishT = 40;   // JF-#044: the hero limbers up as the master arrives
+    // JF-#060: boss-entry flourish removed too — same "no taunt animation before
+    // the battle" rule as the stare-down. The banner announces him; the fight starts.
     Snd.windup(60);
   } else {
     toSpawn = Math.min(3, 1 + Math.floor(wave / 2));   // JF-#039: DUELS — 1-3 tough foes per wave, not a crowd
@@ -1926,28 +1927,12 @@ function update(){
     switch (e.st){
       case E_WALK: {
         const d = Math.abs(e.x - P.x);
-        // JF-#043: duel STARE-DOWN — a lone challenger stops at the edge of the
-        // fight and announces itself (name card) before engaging. Punch-Out framing.
-        if (e.staredown > 0){
-          e.staredown -= dt;
-          if (e.staredown <= 0){   // JF-#044: the face-off breaks
-            popup(W/2, 244, 'FIGHT!', '#e8c76a', true);
-            Snd.hit(4);
-          }
-          break;
-        }
-        if (!e.met && d < 280 && e.type !== T_BOSS){
-          e.met = true;
-          const live = enemies.reduce((n, o) => n + (o.st !== E_DOWN && o.st !== E_THROWN ? 1 : 0), 0);
-          if (live === 1){
-            e.staredown = 40;
-            // JF-#056: name card only for ELITES (a real "who is this" beat);
-            // rank-and-file no longer announce themselves. Quips gone.
-            if (e.elite) popup(e.x, e.y - 132, e.elite.name, '#e8c76a', true);
-            P.flourishT = 40;   // JF-#044: the hero answers with a movie flourish
-            break;
-          }
-        }
+        // JF-#060: STARE-DOWN REMOVED (Mike: "remove the taunt animations before
+        // we battle, they are just distracting"). The 40f face-off froze the foe
+        // at ~280px, fired an elite name card + the hero's flourish pose, then a
+        // FIGHT! popup — a pre-fight ceremony that stalled the loop every duel.
+        // Enemies now walk straight in and engage. Kept: the wave-clear victory
+        // flourish (that's a reward AFTER the fight, not a delay before it).
         // JF-#043: STANCE SWITCH — a guarded foe slides his bracer to a new line
         // every few seconds, so reading guards is ongoing, never solved once
         if (e.guard > 0){

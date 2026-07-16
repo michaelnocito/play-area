@@ -1045,3 +1045,23 @@ silently no-oping the NEXT `strike()` call. Always reset `state`, `whiffT`,
 probe. Also: on a `?bot=N` page the autonomous AI reacts to synthetic test
 darts/enemies in real time and will "solve" them before you can observe an
 undefended baseline — run baseline/negative checks on the plain URL instead.
+
+## JF-#060 — PRE-BATTLE TAUNT ANIMATIONS REMOVED (2026-07-16)
+Mike: "remove the taunt animations before we battle, they are just distracting."
+Two pre-fight ceremonies deleted:
+- **Duel STARE-DOWN** (JF-#043/#044): a lone challenger froze at ~280px for 40
+  frames (`e.staredown`, an early `break` out of E_WALK), fired the elite name
+  card + `P.flourishT = 40` hero pose, then a FIGHT! popup on expiry. Every duel
+  paid that toll before the loop could start. Enemies now walk straight in and
+  engage. `e.staredown`/`e.met` are fully gone (no orphan refs).
+- **Boss-entry flourish** (`P.flourishT = 40` in beginWave's boss branch): same
+  rule, same removal. The boss name banner is the entrance now.
+KEPT: the wave-clear victory flourish (JF-#044) — that fires AFTER a wave is
+cleared, so it's a reward beat, not a delay before a battle. Mike's ask was
+specifically "before we battle".
+VALIDATION (headless, audio hard-stubbed first, single forced update() probes):
+lone foe walks in with 0 frozen frames, no flourish, no FIGHT! popup, staredown
+property gone; boss spawns with entry flourish 0; non-boss wave-clear still sets
+flourishT 40 (test-harness note: calling onWaveClear() on a BOSS wave takes the
+boss branch which never had a flourish — check the non-boss branch or you'll
+misread it as a regression).
