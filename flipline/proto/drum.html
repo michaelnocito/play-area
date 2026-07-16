@@ -62,7 +62,8 @@ const MPS=30;                          // metres per second base (scales with sp
    grazes + change grabbed near heat fill CHASE; CHASE = speed toward your pair, decays when
    you play safe. The pair races you on the progress bar at PAIR_MPS — pure-safe play loses
    ground, hot play catches up. */
-const CHASE_DECAY=0.05, CHASE_GRAZE=0.25, CHASE_COIN=0.06, CHASE_QTR=0.16;
+const CHASE_DECAY=0.05, CHASE_GRAZE=0.25, CHASE_COIN=0.10, CHASE_QTR=0.16;
+const CHASE_GRACE=1.2;                 // seconds after any chase gain before decay bites — mid players get to TASTE hot
 const CHASE_SPD=0.5;                   // dist multiplier at full chase (+50%)
 const CHASE_Z=0.25;                    // approach-speed multiplier at full chase (+25% intensity — opt-in difficulty)
 const PAIR_MPS=18, PAIR_HEAD=30;       // the pair's pace + head start each stage
@@ -75,6 +76,7 @@ const DRUMSPIN=0.22;                   // the drum's base tumble (rad/s) — sel
    never the player) spike it for a beat of drama, then ease off. */
 const SPIN_CHASE=0.35, SPIN_STAGE=0.12;         // spin = DRUMSPIN*(1 + chase*0.35 + (stage-1)*0.12)
 const JAM_CD_MIN=11, JAM_CD_MAX=17;             // seconds between drum jams
+const JAM_CD_FIRST=6;                            // …but the FIRST jam of a stage lands early (playtest: short runs never saw one)
 const JAM_TELE=0.9, JAM_LEN=2.6, JAM_SPIN=3.0;  // grind telegraph → surge (×3 spin) → relief
 const JAM_RELIEF=2.0;                            // no new laundry right after a jam — breathe
 /* BEAT — the dryer thump is the game's metronome (Super Hexagon/Tunnel Rush rhythm-lock):
@@ -201,6 +203,7 @@ let spinNow=DRUMSPIN;                      // this frame's actual drum spin (cha
 let jamCd=13, jamTele=0, jamT=0, jamRelief=0;   // DRUM JAM surge state (E4)
 let beatT=BEAT, beatP=0, musStep=0, wantSpawn=false;  // dryer-thump metronome + spawn gate + music step
 let hotPopT=0;                             // "HOT ¢×2" flash when a doubled coin lands
+let chaseGrace=0;                          // decay holds off briefly after any chase gain
 let hp=HP_MAX, stage=1, patchCd=12;        // health carries ACROSS stages; patches only spawn when hurt
 /* steering direction: SCREEN (default — right key moves the sock right when it's at the bottom;
    angle DECREASES) vs WHEEL (right = clockwise drum rotation — intuitive for some). 🔷 Mike. */
@@ -227,8 +230,8 @@ function reset(){ a=Math.PI/2; steer=0; cling=0; rideT=0; zspd=zBase(); dist=0; 
   shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; orbCd=5.0; orbSeq=0; patchCd=12;
   steerV=0; lastMove=0; revCd=0; hitStop=0; zoomP=0;
   chase=0; pairDist=PAIR_HEAD; gained=false;
-  spinNow=DRUMSPIN; jamCd=JAM_CD_MIN+Math.random()*(JAM_CD_MAX-JAM_CD_MIN); jamTele=0; jamT=0; jamRelief=0;
-  beatT=BEAT; beatP=0; musStep=0; wantSpawn=false; hotPopT=0; }
+  spinNow=DRUMSPIN; jamCd=JAM_CD_FIRST+Math.random()*3; jamTele=0; jamT=0; jamRelief=0;   // first jam lands early
+  beatT=BEAT; beatP=0; musStep=0; wantSpawn=false; hotPopT=0; chaseGrace=0; }
 function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
 function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
 
@@ -304,10 +307,13 @@ function update(dt){
       if(jamTele<=0){ jamTele=0; jamT=JAM_LEN; shake=Math.max(shake,5); } }
     else if(jamT>0){ jamT-=dt; const k=Math.min(1,(JAM_LEN-jamT)*3,jamT*2);
       spin*=1+(JAM_SPIN-1)*k;                                          // eased surge in and out
-      if(jamT<=0){ jamT=0; jamRelief=JAM_RELIEF; } }
+      if(jamT<=0){ jamT=0; jamRelief=JAM_RELIEF;                       // the jam SHAKES CHANGE LOOSE — survive it, get paid
+        const sa=Math.random()*TAU;
+        for(let k2=0;k2<5;k2++) placeCol(sa+k2*TAU/5, Z0+0.04*k2, 0, 1);
+        Snd.coin(); } }
     else if(jamRelief>0){ jamRelief-=dt; if(jamRelief<0)jamRelief=0; }
     else { jamCd-=dt;
-      if(jamCd<=0 && dist>50 && dist<LEVEL_LEN-80){                    // never in the teach zone or the vortex approach
+      if(jamCd<=0 && dist>35 && dist<LEVEL_LEN-80){                    // never in the teach zone or the vortex approach
         jamCd=JAM_CD_MIN+Math.random()*(JAM_CD_MAX-JAM_CD_MIN); jamTele=JAM_TELE; Snd.grind(); } }
     spinNow=spin;
   } else spinNow=DRUMSPIN;
@@ -324,6 +330,8 @@ function update(dt){
         if(wantSpawn && dist<LEVEL_LEN-40 && jamRelief<=0){ wantSpawn=false; spawnPattern(); }
         if(musStep%4===0) Snd.b(110,110,0.32,"triangle",0.05+0.05*inten);            // bass root on the 1
         else if(inten>0.3 && musStep%8===6) Snd.b(164.81,164.81,0.3,"triangle",0.04+0.04*inten); // fifth answers
+        if(dist>LEVEL_LEN-60){ const pr2=(dist-(LEVEL_LEN-60))/60;                   // vortex riser — the ending is audible
+          Snd.b(220+330*pr2,260+390*pr2,0.2,"triangle",0.03+0.06*pr2); }
       } else {                                                         // OFF-BEAT — the hot layer opens with CHASE
         if(inten>0.15){ const n=PENT[(musStep>>1)%8];
           Snd.b(n,n,0.13,"triangle",0.02+0.08*inten); }
@@ -359,7 +367,8 @@ function update(dt){
     for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*70,(Math.random()-0.5)*70,0.3,"#bff0ff"); } }
 
   // THE CHASE — risk fills it, safe play bleeds it; it IS your speed toward the pair
-  if(chase>0){ chase-=CHASE_DECAY*dt; if(chase<0)chase=0; }
+  if(chaseGrace>0){ chaseGrace-=dt; if(chaseGrace<0)chaseGrace=0; }
+  else if(chase>0){ chase-=CHASE_DECAY*dt; if(chase<0)chase=0; }
   pairDist+=PAIR_MPS*(1+0.08*(stage-1))*dt;                          // the pair tumbles ahead at its own pace
 
   // progress + ramp (riding the current = slight speed boost; CHASE = up to +50% pace)
@@ -395,11 +404,11 @@ function update(dt){
     if(c.z>1.12){ c.on=false; continue; }
     if(magnetT>0 && c.kind===0 && c.z>0.8){ const d2=angDiff(a,c.ang);
       if(Math.abs(d2)<1.3) c.ang+=d2*Math.min(1,dt*7); }
-    if(c.z>0.9 && rideT<=0 && Math.abs(angDiff(a,c.ang))<0.26){   // can't grab rim loot while riding the centre
+    if(c.z>0.9 && rideT<=0 && Math.abs(angDiff(a,c.ang))<0.30){   // can't grab rim loot while riding the centre
       c.on=false;
       if(c.kind===0){ const hot=chase>HOTX, pay=c.val*(hot?2:1);           // HOT streak: risk pays DOUBLE, right now
         runBtns+=pay; coinPopV+=pay; coinPopT=0.8; if(hot)hotPopT=0.8; Snd.coin();
-        chase=Math.min(1,chase+(c.val>1?CHASE_QTR:CHASE_COIN));            // change grabbed in the laundry feeds THE CHASE
+        chase=Math.min(1,chase+(c.val>1?CHASE_QTR:CHASE_COIN)); chaseGrace=CHASE_GRACE;   // change grabbed in the laundry feeds THE CHASE
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
         for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*110,(Math.random()-0.5)*110,0.35,c.val>1?"#dfe6ee":"#e0995c"); }
       else { Snd.orb();
@@ -416,7 +425,7 @@ function update(dt){
     if(o.z>HITLO && o.z<HITHI && rideT<=0 && graceT<=0){
       const dA=Math.abs(angDiff(a,o.ang));
       if(dA>=o.hw*0.8+PHW && dA<o.hw*0.8+PHW+GRAZE_ARC && !o.grz){  // GQ-4: GRAZE — skimming hot laundry pays static + CHASE
-        o.grz=true; chase=Math.min(1,chase+CHASE_GRAZE);
+        o.grz=true; chase=Math.min(1,chase+CHASE_GRAZE); chaseGrace=CHASE_GRACE;
         const was=cling; cling=Math.min(1,cling+GRAZE_CLING);
         if(was<1&&cling>=1) Snd.charge(); else Snd.graze();
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
@@ -450,7 +459,8 @@ function draw(){
   for(let ring=5;ring>=1;ring--){ const z=ring/5.6, r=RIM*Math.pow(z,PERSP);
     ctx.strokeStyle="rgba(120,86,54,"+(0.10+z*0.22)+")"; ctx.lineWidth=1.5+z*2;
     ctx.beginPath(); ctx.arc(CX,CY,r,0,TAU); ctx.stroke();
-    ctx.fillStyle="rgba(255,190,110,"+(0.05+z*0.10)+")";
+    const sf=Math.min(1.8,spinNow/DRUMSPIN);                            // faster tumble = the wall visibly wakes up
+    ctx.fillStyle="rgba(255,190,110,"+((0.05+z*0.10)*(0.55+0.45*sf))+")";
     const n=10+ring*4;
     for(let k=0;k<n;k++){ const an=drumRot*(0.4+z)+k*TAU/n;
       ctx.fillRect(CX+Math.cos(an)*r-1,CY+Math.sin(an)*r-1,2,2); } }
@@ -499,7 +509,7 @@ function draw(){
     const gs=Math.max(9,2*o.hw*r*1.05), gx=CX+Math.cos(o.ang)*r, gy=CY+Math.sin(o.ang)*r;
     if(near>0){ ctx.strokeStyle="rgba(255,84,104,0.32)"; ctx.lineWidth=th+8;      // heat haze under the garment at the rim
       ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); }
-    ctx.save(); ctx.translate(gx,gy); ctx.rotate(o.ang+Math.PI/2+Math.sin(t*3+o.gi*2.1)*0.12);
+    ctx.save(); ctx.translate(gx,gy); ctx.rotate(o.ang+Math.PI/2+Math.sin(t*3+o.gi*2.1)*(0.12+0.06*beatP));   // laundry flaps ON the thump
     ctx.drawImage(GARM_HOT[o.gi],-gs/2,-gs/2,gs,gs); ctx.restore();
     ctx.globalAlpha=1; }
   ctx.imageSmoothingEnabled=false;
@@ -562,7 +572,11 @@ function draw(){
     ctx.globalAlpha=1; ctx.restore();
     // static-cling sparks crawl on the sock while charged / charging
     if(cling>0.25 && rideT<=0 && Math.random()<cling*0.5){
-      emit(px+(Math.random()-0.5)*12,py+(Math.random()-0.5)*12,(Math.random()-0.5)*30,(Math.random()-0.5)*30,0.18,"#bff0ff"); } }
+      emit(px+(Math.random()-0.5)*12,py+(Math.random()-0.5)*12,(Math.random()-0.5)*30,(Math.random()-0.5)*30,0.18,"#bff0ff"); }
+    // HOT streak — the sock runs hot: embers stream off it while the ¢×2 line is crossed
+    if(chase>HOTX && rideT<=0 && mode==="play"){
+      if(Math.random()<0.7) emit(px-lastMove*8+(Math.random()-0.5)*8,py+(Math.random()-0.5)*8,
+        -lastMove*60+(Math.random()-0.5)*40,(Math.random()-0.5)*40,0.3,Math.random()<0.5?"#ff9a3c":"#ffcf5c"); } }
 
   for(const p of par){ if(p.life>0){ ctx.globalAlpha=Math.min(1,p.life*2.4); ctx.fillStyle=p.c; ctx.fillRect(p.x,p.y,2,2); } }
   ctx.globalAlpha=1;
