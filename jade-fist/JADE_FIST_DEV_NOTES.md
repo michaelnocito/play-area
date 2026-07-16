@@ -961,3 +961,87 @@ silhouette metrics vs idle (height 100, overhead ink 24, lead-fist reach 28):
 Player draw unaffected (never passes `phase`, so no new branch can fire on it).
 NOTE: pending web research on how Punch-Out/Guilty Gear/Sekiro et al. handle this
 in character design — reconcile these poses against it and cite in the next pass.
+
+## JF-#059 — CONTROL SIMPLIFICATION: no jumping, height-matched blocks, 3-way projectiles (2026-07-16)
+Mike: "no jumping. up does a high attack that if done at the right time does a
+high block. towards enemy does a mid range attack or block depending on enemy
+attack. projectiles can be kicked (if low) back, if middle sidestepped and
+dodged, if high spin-caught and thrown back — all initiate bullet time."
+
+**Jump is gone.** `jump()` renamed `armRise()` — no more Y-arc, no more leaving
+the ground (`JUMP_DUR/JUMP_H` → `RISE_DUR`, `P.jumpT` → `P.riseT`). The player
+never leaves GROUND_Y again.
+
+**Height now maps 1:1 to input** (was cross-wired: duck answered high, jump
+answered low — genuinely backwards to reason about, part of why heights were
+"hard to tell"):
+- **HIGH → UP.** New `highAction()` = `armRise()` + an immediate strike forced
+  onto the high line (`strike(dir,'high')`, dir = nearest reachable foe, either
+  side). One press is both the attack and, if timed against a live HIGH windup,
+  the "block": `strike()` gained a `highBlock` carve-out (armed by rise, gated
+  to `forceLine==='high'` specifically) that reroutes a high windup into the
+  SAME counter economy mid attacks already use (damage, stagger/fell, CLASH,
+  bullet time) instead of the old harmless armored-chip bounce. A plain FORWARD
+  strike into a high windup still just bounces — only UP can turn it into a
+  block, by design (verified: forward-into-high stays hp 3 & E_WINDUP; UP-into-
+  high drops hp to 2 & staggers).
+- **LOW melee removed entirely.** Jump was low's only dodge; with no jump there
+  is no physically sensible grounded way to duck a sweep (crouching goes INTO a
+  low attack's height, not out of it). `chooseAtk` no longer picks 'low' for
+  T_FAST/T_NORM (freed probability folds into 'high'). Low threats are
+  projectile-only now.
+- **MID unchanged.** Back-step (kept — Mike didn't ask to remove it) or a
+  forward-block once armed, exactly as JF-#053 built it. His "towards enemy...
+  or block depending on enemy attack" describes this existing behavior, it
+  wasn't asking for a rebuild.
+- **GRAB is duck-only now** (was jump-or-duck; jump's half is gone).
+
+**Projectiles — three heights, three distinct answers, all reward bullet time
+on a fresh read:**
+- **HIGH → rise:** fresh (≤7f) = spin-catch, "CAUGHT!", returns to sender.
+- **LOW → duck:** fresh (≤7f) = "KICKED!", returns to sender (same reflect
+  mechanics as the catch, just the kick flavor Mike asked for).
+- **MID (new height) → back-step:** "SIDESTEPPED +150" — no reflect tier at
+  all, per his exact wording ("sidestepped and dodged", no return mentioned).
+  Added `pickProjLine()` (equal thirds) + `PROJ_COL` + `projY()`; `d.high`
+  boolean replaced across the whole dart system with `d.line`; spearman
+  `e.projHigh` → `e.projLine` (3-way); the boss cleaver throw also picks from
+  all three now.
+- Un-defended, any height still costs a heart normally (verified: hp 3→2 with
+  no defense active, BOT explicitly disabled for that check).
+
+**Overlay purge continues** (JF-#058's direction): the E_AIM spearman telegraph
+lost its DUCK!/JUMP! caption — the dashed line + pulsing dot at the telegraphed
+height is wordless now, matching the melee windup treatment. The boss's instant-
+spawn cleaver throw KEPT a one-word cue (HIGH!/MID!/LOW!) since it has no
+multi-frame wind-up pose to read at all — different case from the posed
+telegraphs, not a regression on the "less text" rule.
+
+**Bot AI rewritten for the new loop:** survival-dodges a closing projectile by
+height (duck/back-step/rise), answers a ripening HIGH windup with `highAction()`
+directly (one call both arms and lands the block), grab is duck-only, mid
+untouched. Sample run (8/12 completed under this session's tab-visibility
+throttling — see verification note below): 7 wins, 0% unreactable hits, 84
+counters landed confirming the bot is actively using rise-blocks and mid-
+counters, not just surviving passively.
+
+**Ordering bug caught during this build**: the counter block's `readyT=0;
+P.riseT=0` (clearing the arm so one dodge/rise = one counter) ran BEFORE the
+THROW AIMING code later in the same block that reads `P.riseT>0` to pick the
+SKY THROW arc — would have silently broken SKY THROW for every high-blocked
+finisher. Fixed by snapshotting `const wasRisen = P.riseT > 0` before clearing.
+
+VALIDATION: syntax OK. Headless: high dart catch/kick/mid-sidestep each
+independently confirmed (returned flag + reversed vx for catch/kick, no-return
+for mid); undefended dart still costs a heart; forward-strike bounces off a
+high windup while UP-strike blocks+staggers it; UP-strike still bounces off a
+grab even fully armed (no cheese). One test-harness trap worth recording for
+next time: this session's diagnostics were repeatedly derailed by (a) the tab
+auto-pausing (S_PAUSE) whenever the preview lost focus between tool calls,
+silently no-oping every `update()` call until caught by checking `state`
+explicitly, and (b) leftover `whiffT`/`hitStop` from a PRIOR synthetic test
+silently no-oping the NEXT `strike()` call. Always reset `state`, `whiffT`,
+`hitStop`, `slowMo`, `grapple` explicitly before each isolated strike()/update()
+probe. Also: on a `?bot=N` page the autonomous AI reacts to synthetic test
+darts/enemies in real time and will "solve" them before you can observe an
+undefended baseline — run baseline/negative checks on the plain URL instead.

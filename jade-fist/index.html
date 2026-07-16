@@ -381,28 +381,42 @@ if (DEVMODE) addEventListener('DOMContentLoaded', () => {
   });
 });
 function botThink(){
-  // JF-#028: survival first — dodge an incoming spear before anything else
-  if (P.jumpT <= 0 && P.duckT <= 0){
+  // JF-#059: survival first — answer an incoming projectile by its height.
+  // low -> duck (kick back), mid -> back-step (sidestep), high -> rise (catch).
+  if (P.riseT <= 0 && P.duckT <= 0 && P.backT <= 0){
     for (const d of darts){
       if (d.hit) continue;
       const closing = (d.x - P.x) * Math.sign(d.vx) < 0;   // heading toward us
-      if (closing && Math.abs(d.x - P.x) < 90){ d.high ? duck() : jump(); return; }
+      if (!closing || Math.abs(d.x - P.x) >= 90) continue;
+      if (d.line === 'low') duck();
+      else if (d.line === 'mid') press(Math.sign(P.x - d.x) || 1);   // step away from its line
+      else armRise();
+      return;
     }
   }
-  // JF-#040: dodge an armored melee swing (high/low/grab) just before it lands —
-  // block/counter don't answer these, only the right dodge does
-  if (P.jumpT <= 0 && P.duckT <= 0){
+  // JF-#059: a HIGH windup in reach and ripening — press UP. highAction() arms
+  // the rise AND immediately attempts the strike, so this one call both dodges
+  // and lands the new block+counter (replaces duck as high's answer).
+  if (P.riseT <= 0){
     for (const e of enemies){
-      if (e.st !== E_WINDUP || !e.atk || e.atk === 'strike') continue;
+      if (e.st !== E_WINDUP || e.atk !== 'high') continue;
       if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
       if (e.stT < e.windup - 12) continue;                 // react late so the dodge covers the hit
-      if (e.atk === 'high') duck(); else jump();           // low & grab → jump
-      return;
+      highAction(); return;
+    }
+  }
+  // JF-#059: GRAB is duck-only now (jump removed — no second option).
+  if (P.riseT <= 0 && P.duckT <= 0){
+    for (const e of enemies){
+      if (e.st !== E_WINDUP || e.atk !== 'grab') continue;
+      if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
+      if (e.stT < e.windup - 12) continue;
+      duck(); return;
     }
   }
   // JF-#053: the counter must be EARNED — if unarmed, back-step the ripening
   // mid swing (that fresh evade arms readyT), THEN counter the next windup.
-  if (readyT <= 0 && P.backT <= 0 && P.jumpT <= 0 && P.duckT <= 0){
+  if (readyT <= 0 && P.backT <= 0 && P.riseT <= 0 && P.duckT <= 0){
     for (const e of enemies){
       if (e.st !== E_WINDUP || (e.atk && e.atk !== 'strike')) continue;
       if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
@@ -645,7 +659,7 @@ const SCROLLS = [
 // guarded foes can adapt to it (Punch-Out Title Defense: they learn your habits).
 let lineUse = { mid: 0, low: 0, high: 0 };
 let guardTaught = false;              // "they guard X — vary your line" shown once per run
-function atkLineNow(){ return P.duckT > 0 ? 'low' : P.jumpT > 0 ? 'high' : 'mid'; }
+function atkLineNow(){ return P.duckT > 0 ? 'low' : P.riseT > 0 ? 'high' : 'mid'; }
 function pickGuardLine(){
   if (Math.random() < 0.3) return ['mid', 'low', 'high'][(Math.random() * 3) | 0];
   let best = 'mid';
@@ -699,7 +713,7 @@ let hallRank = 0;                     // JF-#026: rank earned by the last run (0
 let msg = null, msgT = 0;
 
 const GROUND_Y = 420;
-const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, jumpT: 0, duckT: 0,
+const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, riseT: 0, duckT: 0,
   backT: 0, backDir: 0,                     // JF-#042: back-step evade (mid attacks)
   flourishT: 0, duckAge: 0 };               // JF-#044 flourish · JF-#047 frames spent crouched
 // JF-#047: NES Kung Fu duck — DOWN is a HELD STANCE, not a timed window. Hold ▼
@@ -718,27 +732,48 @@ let duckHeld = false, padDuckActive = false;
 // staggered); let it expire and you get slammed. Bots keep the old instant path
 // so fairness stats stay comparable.
 let grapple = null;
-// JF-#028: vertical dodge axis. Jump = airborne (dodges LOW throws); duck = crouch
-// (dodges HIGH throws). Brief action windows, not held stances, so the fight stays
-// snappy and you commit to a read the same way a counter commits.
-const JUMP_DUR = 32, JUMP_H = 76, DUCK_DUR = 30;   // JF-#036: was 26 — bot suite showed duck (high-windup) eating most hits
-let darts = [];   // in-flight thrown spears: {x, vx, high, y0, life}
-function jump(){
+// JF-#059: NO JUMPING (Mike's call — the old jump was a leap purely to dodge
+// low attacks; those don't exist anymore, see chooseAtk). UP is now a GROUNDED
+// rise: a brief armed window (P.riseT, same duration/timing math the old jump
+// used) that answers HIGH threats and doubles as the high attack — see
+// highAction()/strike(). Duck still answers grab + kicks back low projectiles.
+const RISE_DUR = 32, DUCK_DUR = 30;   // JF-#036: was 26 — bot suite showed duck (high-windup) eating most hits
+let darts = [];   // in-flight thrown spears: {x, vx, line:'high'|'mid'|'low', y0, life}
+// JF-#059: MID projectiles are new — a third thrown height, sidestepped (back-
+// step) with no reflect, filling the gap left by removing melee low.
+function pickProjLine(){ const r = Math.random(); return r < 1/3 ? 'high' : r < 2/3 ? 'mid' : 'low'; }
+const PROJ_COL = { high: '#f0b24a', mid: '#ff8c42', low: '#5fd0e0' };
+function projY(line){ return line === 'high' ? P.y - 78 : line === 'low' ? P.y - 20 : P.y - 48; }
+function armRise(){                   // JF-#059: was jump() — grounded now, no Y arc
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;   // one dodge at a time
-  P.jumpT = JUMP_DUR; Snd.whoosh();
+  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;   // one dodge at a time
+  P.riseT = RISE_DUR; Snd.whoosh();
 }
 function duck(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
+  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
   P.duckT = DUCK_DUR; P.duckAge = 0; Snd.whoosh();   // JF-#047: fresh crouch
 }
-// JF-#042: BACK-STEP — the mid-line evade that completes the dodge triad:
-//   AMBER high  -> DUCK under it
-//   CYAN  low   -> JUMP over it
-//   RED   mid   -> press AWAY to lean out of it (or counter/block/parry it)
+// JF-#059: UP is dual-purpose — arms the rise-block window AND throws a high
+// attack at the nearest reachable foe (either side), same press. If nothing's
+// in reach it just whiffs like any other strike; if an enemy is genuinely
+// winding a HIGH attack, being armed turns the strike into a block (see
+// strike()'s highBlock). This is what "up does a high attack that if done at
+// the right time does a high block" means as one mechanic, not two.
+function highAction(){
+  armRise();
+  const target = nearestInReach(0);
+  const dir = target ? (Math.sign(target.x - P.x) || P.face) : P.face;
+  strike(dir, 'high');
+}
+// JF-#059: BACK-STEP — the mid-line evade, still kept alongside the new
+// forward-block (Mike didn't ask to remove it, and it costs nothing to keep
+// as a second valid answer to a mid attack):
+//   HIGH -> UP (rise-block, doubles as your own high attack)
+//   MID  -> press AWAY to lean out of it (or counter/block it head-on)
+//   GRAB -> DUCK
 // Pressing away from a foe mid-RED-windup is an evade, not a whiffed punch.
 // Pressing away at any other time still strikes that direction (two-sided
 // offense is untouched — the evade only claims the press when a mid threat
@@ -746,7 +781,7 @@ function duck(){
 const BACK_DUR = 20;
 function tryBackstep(dir){
   if (grapple) return false;   // JF-#044: pinned — presses go to the mash-out
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return false;
+  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0) return false;
   for (const e of enemies){
     if (e.st !== E_WINDUP && !(e.st === E_STRIKE && !e.didHit)) continue;
     if (e.atk && e.atk !== 'strike') continue;              // high/low/grab keep their own answers
@@ -802,7 +837,7 @@ function spawnEnemy(forceSide){
     vx: 0, vy: 0, y: 420, rot: 0,
     // JF-#028: a spearman hurls ONE spear from range before closing to melee.
     // high throw -> DUCK, low throw -> JUMP. After it throws, it fights normally.
-    willThrow: type === T_SPEAR, projHigh: Math.random() < 0.5,
+    willThrow: type === T_SPEAR, projLine: pickProjLine(),   // JF-#059: 3-way (was 2-way projHigh)
     // JF-#039: DUEL toughness — far fewer bodies, so every foe is a real
     // back-and-forth: 2-4 good reads to fell, more as waves climb.
     hp: Math.max(1, TUNE.hpD + (type === T_BRUTE ? 2      // JF-#049: dev knob delta
@@ -872,13 +907,13 @@ function chooseAtk(e){
   if (e.type === T_SPEAR) return 'strike';
   if (difficulty <= 2) return 'strike';           // early game teaches the counter first
   const r = Math.random();
-  if (e.type === T_FAST){                          // vipers: quick strikes + snap high/low
-    return r < 0.58 ? 'strike' : r < 0.79 ? 'high' : 'low';
-  }
-  // T_NORM at melee: the full mixup
+  // JF-#059: LOW melee removed — jump was its only dodge, and jump is gone.
+  // Low threats are projectile-only now (kicked back, see darts). Freed
+  // probability folds into 'high'.
+  if (e.type === T_FAST) return r < 0.58 ? 'strike' : 'high';   // vipers: quick strikes + snap high
+  // T_NORM at melee: strike / high / grab
   if (r < 0.48) return 'strike';
-  if (r < 0.66) return 'high';
-  if (r < 0.84) return 'low';
+  if (r < 0.75) return 'high';
   return difficulty > 4 ? 'grab' : 'strike';
 }
 // JF-#040: color + duck/jump/dodge caption for a non-red attack telegraph
@@ -1032,7 +1067,11 @@ let restGag = null;
 function hype(){}                   // JF-#056: announcer callouts removed (text noise mid-fight)
 
 // ----------------------------------------------------------------- verbs ----
-function strike(dir){
+// JF-#059: forceLine tags WHICH input threw this strike ('high' from
+// highAction()/UP; omitted for a normal FORWARD press). Only the high-tagged
+// strike can turn a HIGH windup into a block+counter — a plain forward strike
+// into a high windup still just bounces off (see the armored-chip check below).
+function strike(dir, forceLine){
   if (state !== S_PLAY) return;
   // JF-#044: grabbed = every strike press is a mash-out attempt
   if (grapple){
@@ -1052,15 +1091,21 @@ function strike(dir){
   if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
   P.flourishT = 0;                                      // JF-#044: fists cancel the pose
   P.face = dir; P.punchT = 12; P.punchSide = dir;
-  const atkLine = atkLineNow();   // JF-#041: mid, or low (ducking) / high (airborne)
+  const atkLine = forceLine || atkLineNow();   // JF-#059: UP forces 'high'
   lineUse[atkLine]++;
   const e = nearestInReach(dir);
   if (!e){ Snd.whoosh(); whiffT = run.monkey ? 7 : 14; return; }   // JF-#006 whiff recovery (JF-#025: MONKEY halves it)
 
-  // JF-#040: only a RED windup (a plain strike) can be countered. High/low
-  // swings and grabs are ARMORED during their windup — the answer is a dodge,
-  // not a punch. Poking one costs you a beat and teaches the rule in place.
-  if (e.st === E_WINDUP && e.atk && e.atk !== 'strike'){
+  // JF-#059: HIGH BLOCK — pressing UP (forceLine==='high') while armed (rise
+  // active) against a live HIGH windup answers it exactly like the mid counter
+  // below: damage + stagger/fell + bullet time, not just a bounce. Only the
+  // dedicated high input can do this — a forward strike into a high windup
+  // still just bounces (the armored-chip branch right after this).
+  const highBlock = e.st === E_WINDUP && e.atk === 'high' && forceLine === 'high' && P.riseT > 0;
+  // JF-#040: only a RED windup (a plain strike) — or now a rise-armed HIGH one
+  // — can be countered. Grab stays ARMORED during its windup: the answer is a
+  // dodge (duck), not a punch. Poking it costs you a beat and teaches the rule.
+  if (e.st === E_WINDUP && e.atk && e.atk !== 'strike' && !highBlock){
     // JF-#058: wordless — the armored clang + the bounce say "that won't work"
     burst(e.x, e.y - 56, '#a8b4c8', 6, 2);
     Snd.block(); hitStop = 2; whiffT = 10;
@@ -1069,10 +1114,10 @@ function strike(dir){
   // JF-#010: IRON CATCH — with the technique, an unlanded strike can still be
   // countered. JF-#040: only a plain strike is catchable; armored swings aren't.
   const ironCatch = e.st === E_STRIKE && !e.didHit && hasTech(1) && (!e.atk || e.atk === 'strike');
-  // JF-#053: the counter is EARNED — only armed by a fresh dodge (readyT) or an
-  // IRON CATCH read. Unarmed strike into a windup = weak chip: 1 hp, but it
-  // does NOT interrupt the swing — their attack still comes. Dodge first.
-  const armed = readyT > 0 || ironCatch;
+  // JF-#053: the counter is EARNED — only armed by a fresh dodge (readyT), an
+  // IRON CATCH read, or (JF-#059) a rise-armed high block. Unarmed strike into
+  // a windup = weak chip: 1 hp, but it does NOT interrupt the swing. Dodge first.
+  const armed = readyT > 0 || ironCatch || highBlock;
   if ((e.st === E_WINDUP || ironCatch) && !armed && e.type !== T_BOSS){   // ---- UNARMED CHIP ----
     e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
     P.punchT = 12; whiffT = 12;
@@ -1106,7 +1151,8 @@ function strike(dir){
     return;
   }
   if (e.st === E_WINDUP || ironCatch){          // ---- COUNTER (armed by a dodge, JF-#053) ----
-    readyT = 0;                                  // one counter per dodge
+    const wasRisen = P.riseT > 0;                // JF-#059: snapshot before clearing — THROW AIMING below still needs it
+    readyT = 0; P.riseT = 0;                     // one counter per dodge/rise
     P.ctrFlashT = 16; P.ctrX = e.x; P.ctrY = e.y - 55;   // flourish: rings + speed lines
     // JF-#007: final-third ("NOW" bright flash) = PERFECT counter
     // JF-#010: an IRON CATCH always counts as perfect
@@ -1158,10 +1204,10 @@ function strike(dir){
     e.vx = slip(dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1));   // JF-#025 TIGER, JF-#032 slip
     e.vy = perfect ? -8 : -7;
     // JF-#044: THROW AIMING — counter from a stance to shape the throw. Ducking
-    // = a LOW SKID that trips everyone at floor level; airborne = a HIGH ARC
-    // that sails long. Same stance keys, third use.
+    // = a LOW SKID that trips everyone at floor level; a risen high-block =
+    // a HIGH ARC that sails long (JF-#059: was airborne/jump).
     if (P.duckT > 0){ e.vy = -3.5; e.vx *= 1.4; popup(e.x, e.y - 122, 'LOW SKID', '#c8bfa8'); }
-    else if (P.jumpT > 0){ e.vy = -12; popup(e.x, e.y - 122, 'SKY THROW', '#c8bfa8'); }
+    else if (wasRisen){ e.vy = -12; popup(e.x, e.y - 122, 'SKY THROW', '#c8bfa8'); }
     // JF-#020: ~1 in 6 perfect EMPOWERED counters is a comedy send — twice the arc, wild spin
     if (empowered && perfect && e.type !== T_BOSS && Math.random() < 0.18){
       e.vx *= 1.7; e.vy = -11; e.bigSend = true;
@@ -1342,20 +1388,23 @@ function strike(dir){
   }
 }
 
-// JF-#040/#046: resolve a landing enemy blow against the player's defense.
-// Arrows only: each attack has exactly ONE dodge — duck the high, jump the low,
-// back-step the mid (or counter it before it lands), jump-or-duck the grab.
+// JF-#059: resolve a landing enemy blow against the player's defense.
+// SIMPLIFIED, height-matched inputs (Mike: "no jumping... up = high, forward =
+// mid" — see highAction()/strike() for the offense side of this same mapping):
+//   HIGH -> UP (armed rise, P.riseT)      MID -> back-step / forward-block
+//   GRAB -> DOWN (duck)                   LOW melee no longer exists — jump was
+// its only dodge, so low threats are projectile-only now (kicked back, below).
 function resolveEnemyHit(e){
   // JF-#053: range uses the ATTACKER's reach (was fixed REACH+14, so a boss or
   // spearman swinging from his longer reach never resolved — the dodge neither
   // paid nor armed the counter window)
   if (Math.abs(e.x - P.x) >= Math.max(REACH, e.reach || 0) + 14) return;
   const atk = e.atk || 'strike';
-  const airborne = P.jumpT > 0, ducked = P.duckT > 0;
+  const risen = P.riseT > 0, ducked = P.duckT > 0;
   let avoided = false;
-  if (atk === 'high')      avoided = ducked;                 // duck the high swing
-  else if (atk === 'low')  avoided = airborne;               // jump the low sweep
-  else if (atk === 'grab') avoided = airborne || ducked;     // dodge only
+  if (atk === 'high')      avoided = risen;                  // JF-#059: press UP (was duck)
+  else if (atk === 'low')  avoided = ducked;                 // shouldn't occur (chooseAtk no longer picks it); safety net
+  else if (atk === 'grab') avoided = ducked;                 // JF-#059: duck only (jump removed)
   else                     avoided = P.backT > 0;            // mid: press away
   if (avoided){                                    // ---- clean dodge ----
     // JF-#050: FOLLOW-THROUGH — a dodged swing carries the attacker's body
@@ -1366,8 +1415,10 @@ function resolveEnemyHit(e){
     // JF-#047: duckAge counts frames in the crouch (held ducks never expire, so
     // DUCK_DUR - duckT stopped measuring age). FRESH (≤20f) = a read: pays points,
     // FLOW, and bullet time. A lazy held crouch just makes them whiff — the NES
-    // paid you nothing for sitting down either.
-    const dodgeAge = ducked ? P.duckAge : airborne ? JUMP_DUR - P.jumpT
+    // paid you nothing for sitting down either. JF-#059: rise is a timed press
+    // like the old jump was, so RISE_DUR - P.riseT measures its age the same way.
+    const dodgeAge = atk === 'high' ? RISE_DUR - P.riseT
+                   : ducked ? P.duckAge
                    : P.backT > 0 ? BACK_DUR - P.backT : 99;
     // JF-#044: PERFECT READ — a dodge input within 8f of the blow landing leaves
     // the foe hanging in a LONG recover. The last-instant read, paid like one.
@@ -1548,9 +1599,9 @@ addEventListener('keydown', e => {
     sel = (sel + 1) % (save.dist + 1); Snd.tick(); return;
   }
   // JF-#046: block/heavy/taunt keys removed — the arrows carry the whole fight
-  // JF-#028: vertical dodge — up/W jump, down/S duck (KeyW/KeyS are physical
-  // positions, so they land on AZERTY's Z/S up-down keys too)
-  if (e.code === 'ArrowUp' || e.code === 'KeyW'){ Snd.unlock(); jump(); return; }
+  // JF-#059: NO JUMPING — up/W is now the high attack/block (KeyW/KeyS are
+  // physical positions, so they land on AZERTY's Z/S up-down keys too)
+  if (e.code === 'ArrowUp' || e.code === 'KeyW'){ Snd.unlock(); highAction(); return; }
   // JF-#047: NES crouch — holding ▼ keeps you down (duckHeld tops duckT up each frame)
   if (e.code === 'ArrowDown' || e.code === 'KeyS'){ Snd.unlock(); duckHeld = true; duck(); return; }
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.code === 'KeyQ') press(-1);
@@ -1595,7 +1646,7 @@ cv.addEventListener('pointerdown', e => {
         Snd.unlock();
         if (b.id === 'strikeL') press(-1);
         else if (b.id === 'strikeR') press(1);
-        else if (b.id === 'jump' || b.id === 'jump2') jump();
+        else if (b.id === 'jump' || b.id === 'jump2') highAction();   // JF-#059: pad button now throws/blocks high
         else if (b.id === 'duck' || b.id === 'duck2'){ padDuckActive = true; duck(); }   // JF-#047: hold to stay down
         return;
       }
@@ -1611,7 +1662,7 @@ cv.addEventListener('pointerup', padRelease);
 cv.addEventListener('pointercancel', padRelease);
 addEventListener('pointerup', padRelease);
 addEventListener('blur', padRelease);
-// JF-#028: a vertical drag during play is a dodge (swipe up = jump, down = duck).
+// JF-#028: a vertical drag during play is a dodge (swipe up = high, down = duck).
 // The tap already fired a strike on pointerdown so counters stay instant; if that
 // strike only hit air, the swipe refunds the whiff so a pure dodge costs nothing.
 let touchStartY = 0, touchSwiped = false;
@@ -1620,7 +1671,7 @@ cv.addEventListener('pointermove', e => {
   const dy = (e.clientY - touchStartY) / scale;
   if (Math.abs(dy) > 42){
     touchSwiped = true; whiffT = 0;            // refund the tap's whiff
-    if (dy < 0) jump(); else duck();
+    if (dy < 0) highAction(); else duck();     // JF-#059: swipe up = high attack/block
   }
 });
 
@@ -1678,7 +1729,7 @@ function beginRun(){
   readyT = 0; P.ctrFlashT = 0;   // JF-#053
   if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
   enemies.length = 0; popups.length = 0; parts.length = 0; darts.length = 0;
-  P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
+  P.riseT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028; JF-#059 rename
   lineUse = { mid: 0, low: 0, high: 0 }; guardTaught = false;   // JF-#041
   grapple = null; P.flourishT = 0; clashT = 0;   // JF-#044
   P.duckAge = 0; padDuckActive = false;          // JF-#047 (duckHeld follows the physical key)
@@ -1691,8 +1742,9 @@ function beginRun(){
   // JF-#012: veterans get the district's line instead of the controls lesson
   msg = save.kills > 50
     ? DISTRICTS[sel].name + ' — ' + DISTRICTS[sel].line
-    : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade · AMBER duck ▼ · CYAN jump ▲'
-             : 'RED: strike INTO it or press AWAY · AMBER: HOLD ▼ to duck under · CYAN: ▲ jump');
+    // JF-#059: no jumping — AMBER (high) answered by ▲, GRAB by ▼
+    : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade · AMBER ▲ · GRAB duck ▼'
+             : 'RED: strike INTO it or press AWAY · AMBER: press ▲ · GRAB: HOLD ▼');
   msgT = 300;
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS — DOUBLE JADE' +
     (save.streak > 1 ? '  ·  DAY ' + save.streak : ''), '#7ce8a8', true);
@@ -1741,52 +1793,60 @@ function update(){
       hurtPlayer();
     }
   }
-  // JF-#028: dodge timers + jump arc (world-time so it slows with hit-stop/slow-mo)
-  if (P.jumpT > 0){ P.jumpT -= dt; if (P.jumpT < 0) P.jumpT = 0; }
+  // JF-#059: dodge timers (world-time so it slows with hit-stop/slow-mo). Rise
+  // is grounded now — no arc, no jump() — so P.y just stays put.
+  if (P.riseT > 0){ P.riseT -= dt; if (P.riseT < 0) P.riseT = 0; }
   if (P.duckT > 0){ P.duckT -= dt; if (P.duckT < 0) P.duckT = 0; }
   // JF-#047: NES held crouch — while ▼ is held (key or pad button) the duck never
   // expires; release and the last sliver of duckT runs out and you stand.
-  if ((duckHeld || padDuckActive) && P.jumpT <= 0 && !grapple && !scrollOffer)
+  if ((duckHeld || padDuckActive) && P.riseT <= 0 && !grapple && !scrollOffer)
     P.duckT = Math.max(P.duckT, 1.5);
   P.duckAge = P.duckT > 0 ? P.duckAge + dt : 0;   // frames spent in this crouch
-  P.y = GROUND_Y - (P.jumpT > 0 ? Math.sin((1 - P.jumpT / JUMP_DUR) * Math.PI) * JUMP_H : 0);
+  P.y = GROUND_Y;
   if (P.backT > 0){ P.backT -= dt; if (P.backT < 0) P.backT = 0; }   // JF-#042
-  // JF-#028: thrown spears fly flat at their telegraphed height; dodge or wear it
+  // JF-#059: thrown projectiles fly flat at their telegraphed height; each
+  // height has its own answer now (matches the melee mapping): HIGH -> rise
+  // (spin-catch, thrown back), LOW -> duck (kicked back), MID -> back-step
+  // (sidestepped only — no reflection, per Mike's "sidestepped and dodged").
   for (const d of darts){
     d.x += d.vx * dt; d.spin += 0.5 * dt;
     if (!d.hit && !d.returned && Math.abs(d.x - P.x) < 30){
-      const dodged = d.high ? P.duckT > 0 : P.jumpT > 0;
+      const dodged = d.line === 'high' ? P.riseT > 0 : d.line === 'low' ? P.duckT > 0 : P.backT > 0;
       if (dodged){
-        // JF-#047: duckAge-based timing (held crouches never expire duckT).
-        // NES knives: a held crouch lets the high spear sail over for free —
-        // only a FRESH read pays, and a last-instant one CATCHES it (JF-#044).
-        const age = d.high ? P.duckAge : JUMP_DUR - P.jumpT;
-        if (age <= 7){
+        // JF-#047: duckAge-based timing (a held crouch lets a low dart sail
+        // over for free — only a FRESH read pays, a last-instant one reflects
+        // it). Rise/back-step are timed presses like the old jump was.
+        const age = d.line === 'high' ? RISE_DUR - P.riseT
+                  : d.line === 'low'  ? P.duckAge
+                  : BACK_DUR - P.backT;
+        if (age <= 7 && d.line !== 'mid'){   // JF-#059: mid has no reflect tier
           combo++; comboT = CW;
           if (combo > bestCombo) bestCombo = combo;
           d.returned = true; d.vx *= -1.15; d.life = 120;
           score += 100; jadeRun++;
-          popup(P.x, d.y0 - 20, 'CAUGHT!', '#e8c76a', true);
+          popup(P.x, d.y0 - 20, d.line === 'high' ? 'CAUGHT!' : 'KICKED!', '#e8c76a', true);
           Snd.counter(); slowMo = Math.max(slowMo, 22);
           burst(P.x, d.y0, '#e8c76a', 10, 4);
         } else if (age <= 20){
           combo++; comboT = CW;            // JF-#043: defense feeds FLOW
           if (combo > bestCombo) bestCombo = combo;
           d.hit = true; d.dead = true;
-          readyT = READY_DUR;              // JF-#053: spear dodge arms the counter too
+          readyT = READY_DUR;              // JF-#053: a projectile dodge arms the counter too
           score += 150; jadeRun++; bumpTrial('dodge');
           slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
-          popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
+          popup(P.x, GROUND_Y - (d.line === 'high' ? 60 : 96),
+                d.line === 'mid' ? 'SIDESTEPPED +150' : 'DODGED +150', '#7ce8a8');
           burst(P.x, d.y0, '#7ce8a8', 8, 3);
         } else {
-          d.hit = true; d.dead = true;     // lazy crouch: it just sails over
+          d.hit = true; d.dead = true;     // lazy read: it just sails over
           bumpTrial('dodge');
-          popup(P.x, GROUND_Y - (d.high ? 60 : 96), d.high ? 'under it' : 'over it', '#9aa2b0');
+          popup(P.x, GROUND_Y - (d.line === 'high' ? 60 : 96),
+                d.line === 'high' ? 'under it' : d.line === 'low' ? 'over it' : 'past it', '#9aa2b0');
         }
       } else {
         d.hit = true; d.dead = true;
-        // JF-#028: log dart hits for the fairness suite (marked type 'dart')
-        if (BOT && BOT.cur) BOT.cur.hits.push({ wave, type: 'dart', windup: d.high ? 'high' : 'low', pincer: false, fast: false });
+        // JF-#028: log dart hits for the fairness suite
+        if (BOT && BOT.cur) BOT.cur.hits.push({ wave, type: 'dart', windup: d.line, pincer: false, fast: false });
         hurtPlayer();
       }
     }
@@ -1850,14 +1910,16 @@ function update(){
       e.face = Math.sign(P.x - e.x) || e.face || 1;
     if (e.evadeCd > 0) e.evadeCd -= dt;   // JF-#041
     if (e.leanT > 0) e.leanT -= dt;       // JF-#043: hit-reaction decay
-    // JF-#034: THE BUTCHER lobs a cleaver from range — a high or low throw you
-    // duck/jump like a spearman's (reuses the dart system, boss keeps fighting).
+    // JF-#034/#059: THE BUTCHER lobs a cleaver from range at one of the three
+    // heights (reuses the dart system, boss keeps fighting). This one has no
+    // multi-frame wind-up pose to read (it's a single instant spawn), so it
+    // keeps a one-word cue — everything else lost captions, this didn't earn one.
     if (e.type === T_BOSS && e.flavor && e.flavor.cleaver && e.st !== E_DOWN && e.st !== E_THROWN){
       e.throwCd -= dt;
       if (e.throwCd <= 0 && Math.abs(e.x - P.x) > 150){
-        const dir = Math.sign(P.x - e.x) || 1, high = Math.random() < 0.5;
-        darts.push({ x: e.x + dir * 24, vx: dir * 8, high, y0: high ? P.y - 78 : P.y - 20, life: 120, cleaver: true });
-        popup(e.x, e.y - 150, high ? 'HIGH!' : 'LOW!', high ? '#f0b24a' : '#5fd0e0');
+        const dir = Math.sign(P.x - e.x) || 1, line = pickProjLine();
+        darts.push({ x: e.x + dir * 24, vx: dir * 8, line, y0: projY(line), life: 120, cleaver: true });
+        popup(e.x, e.y - 150, line.toUpperCase() + '!', PROJ_COL[line]);
         Snd.hurt(); e.throwCd = 200 + Math.random() * 90;
       }
     }
@@ -1947,8 +2009,8 @@ function update(){
         // JF-#028: release the spear at the telegraphed height, then close to melee
         if (e.stT >= e.aimDur){
           const dir = Math.sign(P.x - e.x) || 1;
-          darts.push({ x: e.x + dir * 20, vx: dir * 8.5, high: e.projHigh,
-            y0: e.projHigh ? P.y - 78 : P.y - 20, life: 120, spin: 0 });
+          darts.push({ x: e.x + dir * 20, vx: dir * 8.5, line: e.projLine,
+            y0: projY(e.projLine), life: 120, spin: 0 });
           Snd.hurt();
           e.willThrow = false; e.st = E_WALK; e.stT = 0;
         }
@@ -2011,7 +2073,7 @@ function update(){
             e.windup = Math.max(20, e.windup0 * (0.7 + 0.3 * e.hp / e.hpMax));
             if (e.type === T_FAST) e.feint = Math.random() < 0.4;
             if (e.type === T_SPEAR && !e.willThrow && Math.random() < 0.45){
-              e.willThrow = true; e.projHigh = Math.random() < 0.5;
+              e.willThrow = true; e.projLine = pickProjLine();   // JF-#059
             }
           }
         }
@@ -2385,11 +2447,11 @@ function drawControlPad(){
   // left cluster: strike + dodge
   btn('strikeL', 24, 60, '◀', 'A', false);
   btn('duck',    90, 78, 'DUCK', 'hold ▼', P.duckT > 0);   // JF-#047: held stance
-  btn('jump',   172, 78, 'JUMP', '▲ / W', P.jumpT > 0);
+  btn('jump',   172, 78, 'HIGH', '▲ / W', P.riseT > 0);    // JF-#059: was JUMP
   btn('strikeR',254, 60, '▶', 'D', false);
   // JF-#046: right cluster removed — the four arrows are the whole fight
   btn('duck2',  794, 68, 'DUCK', 'hold', P.duckT > 0);
-  btn('jump2',  868, 68, 'JUMP', '▲', P.jumpT > 0);
+  btn('jump2',  868, 68, 'HIGH', '▲', P.riseT > 0);        // JF-#059: was JUMP
 }
 
 function drawWorld(){
@@ -2599,11 +2661,12 @@ function draw(){
     else if (e.st === E_RECOVER){ col = '#7a6a9a'; rot += 0.12 * Math.sign(e.x - P.x); eyes = 'dizzy'; }  // slumped = punishable
     else if (e.st === E_STAGGER){ col = '#9a90b0'; rot += 0.2 * Math.sign(e.vx || 1); eyes = 'dizzy'; }
     else if (e.st === E_AIM){
-      // JF-#028: throw wind-up — amber = high (DUCK), cyan = low (JUMP). Never
-      // red: red is reserved for meleecounter windows, throws read differently.
+      // JF-#059: throw wind-up — amber high / orange mid / cyan low. Wordless
+      // (JF-#058 text purge): the dashed line + pulsing dot at the telegraphed
+      // height IS the read now, no caption.
       eyes = 'angry';
-      const tcol = e.projHigh ? '#f0b24a' : '#5fd0e0';
-      const ty = e.projHigh ? P.y - 78 : P.y - 20;
+      const tcol = PROJ_COL[e.projLine];
+      const ty = projY(e.projLine);
       const prog = Math.min(1, e.stT / e.aimDur), pulse = 0.4 + 0.4 * Math.sin(e.stT * 0.5);
       cx.strokeStyle = tcol; cx.globalAlpha = 0.35 + prog * 0.4; cx.lineWidth = 2;
       cx.setLineDash([8, 8]); cx.lineDashOffset = -e.stT * 2;
@@ -2611,12 +2674,6 @@ function draw(){
       cx.setLineDash([]); cx.globalAlpha = 1;
       cx.fillStyle = tcol; cx.globalAlpha = pulse;
       cx.beginPath(); cx.arc(e.x, ty, 6 + prog * 4, 0, 7); cx.fill(); cx.globalAlpha = 1;
-      // caption teaches the read
-      cx.save(); cx.translate(P.x, ty - 22); cx.scale(0.9, 0.9);
-      cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-      cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(e.projHigh ? 'DUCK!' : 'JUMP!', 0, 0);
-      cx.fillStyle = tcol; cx.fillText(e.projHigh ? 'DUCK!' : 'JUMP!', 0, 0);
-      cx.restore();
     }
     else if (e.st === E_DOWN || e.st === E_THROWN){
       eyes = 'x';
@@ -2677,7 +2734,7 @@ function draw(){
 
   // JF-#028: thrown spears in flight — colored by the height they demand
   for (const d of darts){
-    const dir = Math.sign(d.vx) || 1, tip = d.x + dir * 22, tc = d.high ? '#f0b24a' : '#5fd0e0';
+    const dir = Math.sign(d.vx) || 1, tip = d.x + dir * 22, tc = PROJ_COL[d.line];   // JF-#059
     cx.strokeStyle = 'rgba(200,190,170,0.3)'; cx.lineWidth = 2;   // motion streak
     cx.beginPath(); cx.moveTo(d.x - dir * 26, d.y0); cx.lineTo(d.x, d.y0); cx.stroke();
     if (d.cleaver){                    // JF-#034: the Butcher's spinning cleaver
@@ -2700,13 +2757,12 @@ function draw(){
 
   // player
   const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : wearCol();   // JF-#023
-  // JF-#029: a ground shadow that shrinks + fades as you leave the ground sells the
-  // jump; a wide flat shadow under the crouch sells the duck.
-  const airFrac = (GROUND_Y - P.y) / JUMP_H;             // 0 grounded, ~1 at apex
-  const pPose = P.duckT > 0 ? 'duck' : P.jumpT > 0 ? 'air' : '';
-  cx.fillStyle = `rgba(8,10,14,${0.32 * (1 - airFrac * 0.7)})`;
+  // JF-#059: no more jump arc — player stays grounded, so the shadow is just
+  // the plain-vs-crouch width swap (was also shrinking/fading with jump height).
+  const pPose = P.duckT > 0 ? 'duck' : '';
+  cx.fillStyle = 'rgba(8,10,14,0.32)';
   cx.beginPath();
-  cx.ellipse(P.x, GROUND_Y + 4, (pPose === 'duck' ? 34 : 22) * (1 - airFrac * 0.4), 6 * (1 - airFrac * 0.5), 0, 0, 7);
+  cx.ellipse(P.x, GROUND_Y + 4, pPose === 'duck' ? 34 : 22, 6, 0, 0, 7);
   cx.fill();
   // JF-#042: back-step evade — a quick lean-and-slide away, then spring back
   const backP = P.backT > 0 ? Math.sin((P.backT / BACK_DUR) * Math.PI) : 0;
@@ -2725,7 +2781,10 @@ function draw(){
   fighter(P.x + P.backDir * backP * 26 + (grapple ? Math.sin(t * 1.2) * 3 : 0), P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,   // JF-#044: grapple tremble
     punch: Math.max(P.punchT, flPunch), pose: pPose,
     rot: (run.drunken ? Math.sin(t * 0.14) * 0.1 : 0) + P.backDir * backP * 0.22 + flRot,   // JF-#032 sway + JF-#042 lean + JF-#044 flourish
-    line: P.duckT > 0 && P.punchT > 0 ? 'low' : null,   // JF-#041: crouch sweep read
+    // JF-#041/#059: crouch = low-line read; risen = the same high-line rise
+    // pose the enemies use for their own high attack (highAction/UP).
+    line: P.duckT > 0 && P.punchT > 0 ? 'low' : P.riseT > 0 ? 'high' : null,
+    phase: P.riseT > 0 ? 'strike' : '',
     acc: wornAcc(),   // JF-#033
     eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
@@ -2953,7 +3012,7 @@ function draw(){
     // JF-#054: text purge — one short controls line (the rest is taught in-game
     // per CG "teach visually"; the demo card above already shows the loop)
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap toward · swipe ↑ jump · hold ↓ crouch' : '◀▶ strike · ▲ jump · hold ▼ crouch', W/2, 230);
+    cx.fillText(TOUCH ? 'tap toward · swipe ↑ high · hold ↓ crouch' : '◀▶ strike · ▲ high · hold ▼ crouch', W/2, 230);   // JF-#059
     // JF-#009: district selector — the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';
