@@ -1,6 +1,40 @@
 # FLIPLINE → ODD SOCK — Dev Handoff / Resume Point
 
-## ⚡ RESUME HERE (2026-07-11): DRUM BUILD-OUT
+## ✅ DRUM ALIVE batch (2026-07-16) — GQ-B core + E4 + coin choreography, in proto/drum.html
+🔷 Mike: "the side-to-side cylinder feels like the beginning of the core movement but is
+missing something" → triple research pass (movement feel / engagement systems / secondary
+verbs; Super Hexagon, Slope, Downwell, Jetpack Joyride, Touhou graze, Tempest 2000 all
+cited in session). Diagnosis: playing normally, CHASE sat at ~0 the whole run (measured in
+live play) — the risk layer was invisible; drum tumble too weak to matter; no music.
+Built (world moves, player NEVER displaced — E3/B1 lesson holds):
+- **Living tumble:** `spinNow` = DRUMSPIN·(1 + chase·0.35 + (stage−1)·0.12); sock, laundry
+  AND change all ride the same spin (gaps never move relative to the player — fair).
+- **DRUM JAM (E4):** every 11–17s (not <50m or last 80m): 0.9s grind telegraph (shudder +
+  grind SFX + "THE DRUM GRINDS…") → 2.6s eased ×3 spin surge ("DRUM JAM!", spawns ×0.7
+  denser) → 2s relief (no new laundry). Rotational only — zeff untouched.
+- **Beat-lock:** BEAT=0.5s dryer THUMP; spawn cadence arms `wantSpawn`, actual pattern
+  lands ON the next thump; rim breathes with beatP.
+- **Music bed (GQ-3):** thump kick each beat, bass root on the 1 + answering fifth,
+  pentatonic off-beat layer + noise hats that open with `inten = max(chase, prog·0.5,
+  jam·0.85)` — the CHASE is now audible.
+- **HOT ¢×2 (visible risk pay):** chase>0.66 = HOT — every coin pays double, "HOT ¢×2"
+  flashes on the chase bar, "×2!" pop at the bank.
+- **Hem-hug trails (coin choreography):** `hemTrail()` lays 3 pennies ALONG a garment's
+  graze edge (solo + pair patterns) — the greedy line IS the graze line.
+Verified (live harness): 13/13 spawns on-beat; spin 0.22→0.297 @ chase 1; jam surge peaks
+0.89 rad/s and ends clean; HOT quarter paid 6¢, cool penny 1¢; draw clean; node --check ok.
+Test steps: DA-a idle at stage 1 — hear the thump, rim breathes, patterns arrive on it ·
+DA-b graze + grab change till the chase bar crosses the hot line — music opens up, world
+spins faster, "HOT ¢×2" shows, coins bank double · DA-c wait for "THE DRUM GRINDS…" —
+shudder, then a 2.6s fast-spin jam, then a quiet breather · DA-d confirm you're never
+shoved: sock only moves when you steer (plus the shared drum carry) · DA-e hem-hug penny
+runs sit along hot edges — riding them = riding the graze line · DA-f play pure-safe —
+music stays sparse, drum stays slow (the contrast IS the feature).
+NEXT: Mike feel-gates DRUM ALIVE. Parked candidates if it lands: STATIC PULSE second verb
+(tap = 0.25s intangible-in-place discharge, graze-charged — research pick, own feel-gate),
+instant restart (<1s death→play), 3-slot mission layer + permanent multiplier (C3).
+
+## ⚡ PREVIOUS RESUME (2026-07-11): DRUM BUILD-OUT
 🔷 DRUM-ONLY ARC LOCKED — `proto/drum.html` IS the CrazyGames submission; the flip-runner
 `index.html` (Batches A/B/B2) is a post-launch content update, never mixed into the review.
 **Build order (one large chunk per session): GQ-A feel & feedback → GQ-B sound & drama →

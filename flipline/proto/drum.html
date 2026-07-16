@@ -67,7 +67,22 @@ const CHASE_SPD=0.5;                   // dist multiplier at full chase (+50%)
 const CHASE_Z=0.25;                    // approach-speed multiplier at full chase (+25% intensity — opt-in difficulty)
 const PAIR_MPS=18, PAIR_HEAD=30;       // the pair's pace + head start each stage
 const GAIN_BONUS=10;                   // ¢ bonus for beating your pair to the vortex
-const DRUMSPIN=0.22;                   // the drum itself slowly tumbles (rad/s) — sells the dryer
+const DRUMSPIN=0.22;                   // the drum's base tumble (rad/s) — sells the dryer
+/* DRUM ALIVE batch (research: Super Hexagon keeps its rotation because the game is less
+   engaging without it — world motion forces re-reads; fairness holds because the sock,
+   laundry AND change all ride the SAME spin, so gaps never move relative to the player):
+   the tumble ramps with CHASE + stage, and telegraphed DRUM JAM surges (E4 — world moves,
+   never the player) spike it for a beat of drama, then ease off. */
+const SPIN_CHASE=0.35, SPIN_STAGE=0.12;         // spin = DRUMSPIN*(1 + chase*0.35 + (stage-1)*0.12)
+const JAM_CD_MIN=11, JAM_CD_MAX=17;             // seconds between drum jams
+const JAM_TELE=0.9, JAM_LEN=2.6, JAM_SPIN=3.0;  // grind telegraph → surge (×3 spin) → relief
+const JAM_RELIEF=2.0;                            // no new laundry right after a jam — breathe
+/* BEAT — the dryer thump is the game's metronome (Super Hexagon/Tunnel Rush rhythm-lock):
+   laundry spawns land ON the thump, music pulses with it. */
+const BEAT=0.5;                                  // 120 bpm thump
+/* HOT streak — risk must pay in the moment (Downwell/Touhou): CHASE above the line
+   doubles every coin. The greedy line and the graze line are the same line. */
+const HOTX=0.66;
 
 /* ===== Audio (tiny) ===== */
 const PENT=[220,261.63,293.66,329.63,392,440,523.25,587.33];   // A-minor pentatonic (same ladder as the main game's Snd)
@@ -91,7 +106,16 @@ const Snd={ctx:null,g:null,
     this.b(f,f*0.92,0.035,"square",0.05); this.b(f*1.35,f*1.25,0.05,"triangle",0.07); },
   orb(){ this.b(520,780,0.18,"triangle",0.11); this.b(780,1170,0.22,"triangle",0.09); },
   shieldPop(){ this.b(300,90,0.22,"sawtooth",0.14); },
-  graze(){ this.b(1500,2100,0.05,"triangle",0.055); }
+  graze(){ this.b(1500,2100,0.05,"triangle",0.055); },
+  thump(v){ this.b(85,42,0.11,"sine",v||0.1); },                      // the dryer's heartbeat
+  grind(){ this.b(140,70,0.7,"sawtooth",0.09); this.b(70,55,0.7,"square",0.06); },   // jam telegraph
+  hat(v){ if(!this.ctx)return; const t=this.ctx.currentTime,          // tiny noise tick for the hot layer
+    n=this.ctx.sampleRate*0.03|0, b2=this.ctx.createBuffer(1,n,this.ctx.sampleRate), d=b2.getChannelData(0);
+    for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+    const s=this.ctx.createBufferSource(); s.buffer=b2;
+    const hp=this.ctx.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=5500;
+    const g=this.ctx.createGain(); g.gain.value=v||0.05;
+    s.connect(hp); hp.connect(g); g.connect(this.g); s.start(t); }
 };
 
 /* ===== Sock sprite (trimmed from the main game) ===== */
@@ -173,6 +197,10 @@ let spawnCd=1.2, patCd=0;
 let buttons=0, runBtns=0, shieldUp=false, magnetT=0, graceT=0, coinPopT=0, coinPopV=0;   // "buttons" var = ¢ loose change now (kept name to avoid churn)
 let orbCd=8.0, orbSeq=0;                   // buff orb ~8s (SHIELD first); change now spawns WITH the laundry patterns
 let chase=0, pairDist=0, gained=false;     // THE CHASE — risk meter + the pair racing you to the vortex
+let spinNow=DRUMSPIN;                      // this frame's actual drum spin (chase/stage/jam all fold in)
+let jamCd=13, jamTele=0, jamT=0, jamRelief=0;   // DRUM JAM surge state (E4)
+let beatT=BEAT, beatP=0, musStep=0, wantSpawn=false;  // dryer-thump metronome + spawn gate + music step
+let hotPopT=0;                             // "HOT ¢×2" flash when a doubled coin lands
 let hp=HP_MAX, stage=1, patchCd=12;        // health carries ACROSS stages; patches only spawn when hurt
 /* steering direction: SCREEN (default — right key moves the sock right when it's at the bottom;
    angle DECREASES) vs WHEEL (right = clockwise drum rotation — intuitive for some). 🔷 Mike. */
@@ -198,7 +226,9 @@ function reset(){ a=Math.PI/2; steer=0; cling=0; rideT=0; zspd=zBase(); dist=0; 
   for(const o of obs)o.on=false; for(const c of col)c.on=false; shake=0; flash=0;
   shieldUp=false; magnetT=0; graceT=0; coinPopT=0; coinPopV=0; orbCd=5.0; orbSeq=0; patchCd=12;
   steerV=0; lastMove=0; revCd=0; hitStop=0; zoomP=0;
-  chase=0; pairDist=PAIR_HEAD; gained=false; }
+  chase=0; pairDist=PAIR_HEAD; gained=false;
+  spinNow=DRUMSPIN; jamCd=JAM_CD_MIN+Math.random()*(JAM_CD_MAX-JAM_CD_MIN); jamTele=0; jamT=0; jamRelief=0;
+  beatT=BEAT; beatP=0; musStep=0; wantSpawn=false; hotPopT=0; }
 function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
 function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
 
@@ -213,13 +243,19 @@ function garment(ang,dz){ const o=alloc(); if(!o)return; o.on=true; o.ang=ang; o
    Pennies (1¢) thread the pattern's gaps; a QUARTER (3¢) sits tucked right beside a garment. */
 function pennies(gapAng,z){ for(let k=0;k<3;k++) placeCol(gapAng, (z||Z0)+0.05+k*0.055, 0, 1); }   // a run of change through the gap
 function quarter(edgeAng,z){ placeCol(edgeAng, (z||Z0)+0.06, 0, 3); }               // tucked beside the hot hem — worth the lean
+/* HEM-HUG trail (coin choreography — Jetpack Joyride shapes coins into the line it wants you
+   to fly): a run of pennies laid ALONG the graze edge of a garment, so the greedy line IS the
+   graze line. Same angle as the hem edge, stacked in depth. */
+function hemTrail(edgeAng,z){ for(let k=0;k<3;k++) placeCol(edgeAng, (z||Z0)+0.04+k*0.06, 0, 1); }
 function spawnPattern(){
   const r=Math.random(), pa=Math.random()*TAU, D=2*GHW+0.5;   // D = centre spacing leaving a 0.5rad threadable gap
   const side=Math.random()<0.5?1:-1, EDGE=GHW+0.14;           // quarter offset: just past the hem, inside graze range
   if(dist<60 || r<0.3){ garment(pa);                                               // solo — dodge around
-    if(Math.random()<0.6) quarter(pa+side*EDGE); }
+    if(Math.random()<0.5) quarter(pa+side*EDGE);
+    else hemTrail(pa+side*EDGE); }                                                 // or a hem-hug run — ride the graze line
   else if(r<0.55){ garment(pa-D/2); garment(pa+D/2);                               // pair — thread the gap or go around
-    pennies(pa); }
+    if(Math.random()<0.5) pennies(pa);
+    else hemTrail(pa-D/2+side*EDGE); }                                             // hug the inner hem through the gap
   else if(r<0.75){ garment(pa-D); garment(pa); garment(pa+D);                      // wall of 3 — two seams + the long way
     pennies(pa+side*D/2); if(Math.random()<0.5) quarter(pa-side*(D+EDGE)); }
   else if(r<0.9){ const n=5; for(let k=0;k<n;k++) garment(pa+k*TAU/n);             // ring of 5 — five ~0.78rad gaps
@@ -259,7 +295,40 @@ function tryTap(){ tryLeap(); }
 
 /* ===== Update ===== */
 function update(dt){
-  t+=dt; drumRot+=DRUMSPIN*dt;
+  t+=dt;
+  /* THE DRUM IS ALIVE — spin ramps with CHASE + stage; DRUM JAM surges spike it.
+     Everything on the drum (sock, laundry, change) rides spinNow together — fair. */
+  if(mode==="play"){
+    let spin=DRUMSPIN*(1+chase*SPIN_CHASE+(stage-1)*SPIN_STAGE);
+    if(jamTele>0){ jamTele-=dt; spin+=Math.sin(t*34)*0.10;             // the grind — drum shudders before it slips
+      if(jamTele<=0){ jamTele=0; jamT=JAM_LEN; shake=Math.max(shake,5); } }
+    else if(jamT>0){ jamT-=dt; const k=Math.min(1,(JAM_LEN-jamT)*3,jamT*2);
+      spin*=1+(JAM_SPIN-1)*k;                                          // eased surge in and out
+      if(jamT<=0){ jamT=0; jamRelief=JAM_RELIEF; } }
+    else if(jamRelief>0){ jamRelief-=dt; if(jamRelief<0)jamRelief=0; }
+    else { jamCd-=dt;
+      if(jamCd<=0 && dist>50 && dist<LEVEL_LEN-80){                    // never in the teach zone or the vortex approach
+        jamCd=JAM_CD_MIN+Math.random()*(JAM_CD_MAX-JAM_CD_MIN); jamTele=JAM_TELE; Snd.grind(); } }
+    spinNow=spin;
+  } else spinNow=DRUMSPIN;
+  drumRot+=spinNow*dt;
+  /* the dryer THUMP — metronome for spawns + music (beat-locked reads) */
+  if(beatP>0){ beatP-=dt*4; if(beatP<0)beatP=0; }
+  if(hotPopT>0){ hotPopT-=dt; if(hotPopT<0)hotPopT=0; }
+  if(mode==="play"){
+    beatT-=dt;
+    if(beatT<=0){ beatT+=BEAT/2; musStep++;
+      const inten=Math.max(chase, Math.min(1,dist/LEVEL_LEN)*0.5, jamT>0?0.85:0);
+      if(musStep%2===0){                                               // FULL BEAT
+        beatP=1; Snd.thump(0.07+0.06*inten);
+        if(wantSpawn && dist<LEVEL_LEN-40 && jamRelief<=0){ wantSpawn=false; spawnPattern(); }
+        if(musStep%4===0) Snd.b(110,110,0.32,"triangle",0.05+0.05*inten);            // bass root on the 1
+        else if(inten>0.3 && musStep%8===6) Snd.b(164.81,164.81,0.3,"triangle",0.04+0.04*inten); // fifth answers
+      } else {                                                         // OFF-BEAT — the hot layer opens with CHASE
+        if(inten>0.15){ const n=PENT[(musStep>>1)%8];
+          Snd.b(n,n,0.13,"triangle",0.02+0.08*inten); }
+        if(inten>0.5) Snd.hat(0.03+0.04*inten);
+      } } }
   if(shake>0){ shake-=dt*60; if(shake<0)shake=0; }
   if(flash>0){ flash-=dt*2.2; if(flash<0)flash=0; }
   for(const p of par){ if(p.life>0){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; } }
@@ -280,7 +349,7 @@ function update(dt){
   if(Math.abs(steerV)<0.02 && steer===0) steerV=0;
   a+=steerV*AV*dt*(ctrlWheel?1:-1); a=((a%TAU)+TAU)%TAU;   // SCREEN mode: right = sock moves right at the bottom
   lastMove=steerV*(ctrlWheel?1:-1);
-  if(rideT<=0) a+=DRUMSPIN*dt;   // static cling: the drum CARRIES the sock — gaps stay where you put yourself (fair)
+  if(rideT<=0) a+=spinNow*dt;   // static cling: the drum CARRIES the sock — gaps stay where you put yourself (fair)
 
   // static cling charges while sliding on the drum (never while riding the current)
   if(steer!==0 && rideT<=0 && cling<1){ const was=cling; cling=Math.min(1,cling+CLING_RATE*dt);
@@ -302,8 +371,9 @@ function update(dt){
     if(gained) runBtns+=GAIN_BONUS;
     mode="stage"; bank(); Snd.win(); return; }                       // stage cleared → mend shop → next drum, faster
 
-  // spawn (hold off in the last stretch so the vortex approach is clean)
-  spawnCd-=dt; if(spawnCd<=0 && dist<LEVEL_LEN-40){ spawnPattern(); spawnCd=0.9+Math.random()*0.5-Math.min(0.35,dist*0.0009); }
+  // spawn cadence arms the gate; the actual spawn lands ON the next dryer thump (beat-locked reads)
+  spawnCd-=dt; if(spawnCd<=0 && dist<LEVEL_LEN-40){ wantSpawn=true;
+    spawnCd=(0.9+Math.random()*0.5-Math.min(0.35,dist*0.0009))*(jamT>0?0.7:1); }   // jams run a little denser
 
   // buff orbs / patches keep the safe placement — utility shouldn't gamble; CHANGE spawns with the laundry now
   orbCd-=dt; if(orbCd<=0 && dist<LEVEL_LEN-30){ orbCd=8;
@@ -321,13 +391,14 @@ function update(dt){
 
   // collectibles approach + collect at the rim (generous window; magnet pulls buttons in)
   for(const c of col){ if(!c.on) continue;
-    c.z+=zeff*dt; c.ang+=DRUMSPIN*dt;
+    c.z+=zeff*dt; c.ang+=spinNow*dt;
     if(c.z>1.12){ c.on=false; continue; }
     if(magnetT>0 && c.kind===0 && c.z>0.8){ const d2=angDiff(a,c.ang);
       if(Math.abs(d2)<1.3) c.ang+=d2*Math.min(1,dt*7); }
     if(c.z>0.9 && rideT<=0 && Math.abs(angDiff(a,c.ang))<0.26){   // can't grab rim loot while riding the centre
       c.on=false;
-      if(c.kind===0){ runBtns+=c.val; coinPopV+=c.val; coinPopT=0.8; Snd.coin();
+      if(c.kind===0){ const hot=chase>HOTX, pay=c.val*(hot?2:1);           // HOT streak: risk pays DOUBLE, right now
+        runBtns+=pay; coinPopV+=pay; coinPopT=0.8; if(hot)hotPopT=0.8; Snd.coin();
         chase=Math.min(1,chase+(c.val>1?CHASE_QTR:CHASE_COIN));            // change grabbed in the laundry feeds THE CHASE
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
         for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*110,(Math.random()-0.5)*110,0.35,c.val>1?"#dfe6ee":"#e0995c"); }
@@ -340,7 +411,7 @@ function update(dt){
 
   // obstacles approach the camera
   for(const o of obs){ if(!o.on) continue;
-    o.z+=zeff*dt; o.ang+=DRUMSPIN*dt;                       // they ride the tumbling drum
+    o.z+=zeff*dt; o.ang+=spinNow*dt;                        // they ride the tumbling drum
     if(o.z>1.16){ o.on=false; continue; }
     if(o.z>HITLO && o.z<HITHI && rideT<=0 && graceT<=0){
       const dA=Math.abs(angDiff(a,o.ang));
@@ -387,8 +458,9 @@ function draw(){
     ctx.strokeStyle="rgba(140,100,60,0.28)"; ctx.lineWidth=5;
     ctx.beginPath(); ctx.moveTo(CX+Math.cos(an)*RIM*0.18,CY+Math.sin(an)*RIM*0.18);
     ctx.lineTo(CX+Math.cos(an)*RIM*0.97,CY+Math.sin(an)*RIM*0.97); ctx.stroke(); }
-  // rim of the opening (where the sock rides)
-  ctx.strokeStyle="rgba(200,150,90,0.6)"; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(CX,CY,RIM,0,TAU); ctx.stroke();
+  // rim of the opening (where the sock rides) — breathes on the dryer thump
+  ctx.strokeStyle="rgba(200,150,90,"+(0.6+0.25*beatP)+")"; ctx.lineWidth=5+2*beatP;
+  ctx.beginPath(); ctx.arc(CX,CY,RIM,0,TAU); ctx.stroke();
   ctx.strokeStyle="rgba(60,40,24,0.9)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(CX,CY,RIM+4,0,TAU); ctx.stroke();
 
   // THE LOST SOCK VORTEX — grows as you near it; swirl arms rotate
@@ -506,8 +578,17 @@ function draw(){
     txt("THE LOST SOCK VORTEX",CX,28,9,"#c9b0ff",700);
     // CHASE meter — thin hot bar under the progress bar; this is your speed
     ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.fillRect(90,20,300,4);
-    ctx.fillStyle=chase>0.66?"#ff9a3c":"#c76f35"; ctx.fillRect(90,20,300*chase,4);
-    if(chase>0.05) txt("CHASE",406,26,7,"#ff9a3c",700);
+    ctx.fillStyle=chase>HOTX?"#ff9a3c":"#c76f35"; ctx.fillRect(90,20,300*chase,4);
+    if(chase>HOTX){ const fl=0.6+0.4*Math.sin(t*8);                     // over the line = HOT: change pays double
+      ctx.globalAlpha=fl; txt("HOT ¢×2",406,27,8,"#ffcf5c",800); ctx.globalAlpha=1; }
+    else if(chase>0.05) txt("CHASE",406,26,7,"#ff9a3c",700);
+    if(hotPopT>0){ ctx.globalAlpha=Math.min(1,hotPopT*1.6);
+      txt("×2!",60,47-(0.8-hotPopT)*10,10,"#ffcf5c",800); ctx.globalAlpha=1; }
+    // DRUM JAM drama — grind warning, then the surge banner
+    if(jamTele>0){ ctx.globalAlpha=0.7+0.3*Math.sin(t*20);
+      txt("THE DRUM GRINDS…",CX,64,12,"#ffb056",800); ctx.globalAlpha=1; }
+    else if(jamT>0){ ctx.globalAlpha=0.8;
+      txt("DRUM JAM!",CX,64,15,"#ff7a3c",800); ctx.globalAlpha=1; }
     txt((dist|0)+"m",60,17,10,"#e8dcc8",700);
     txt("¢ "+(mode==="play"?buttons+runBtns:buttons),34,33,coinPopT>0?12:10,coinPopT>0?"#ffe9a8":"#e0995c",700);   // bank() folds runBtns in on death/win
     if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.6);

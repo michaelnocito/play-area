@@ -194,8 +194,10 @@ before spending GQ-B/C2.
 
 ### Build order (locked): ✅ GQ-A feel & feedback DONE 2026-07-11 (GQ-1,2,4-graze — steering
 ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, graze reward, story lock;
-see dev notes) → GQ-B sound & drama
-(GQ-3,4-surges,7) → C1 compliance (pause/auto-pause, music-mute persisted, AZERTY, CG SDK
+see dev notes) → GQ-B sound & drama — ✅ CORE DONE 2026-07-16 as the DRUM ALIVE batch
+(GQ-3 music bed keyed to CHASE+progress, GQ-4 surges = DRUM JAM grind→surge→relief + E4,
+beat-locked spawns on the dryer thump, living tumble ramp, HOT ¢×2 visible risk pay,
+hem-hug coin trails; see dev notes; GQ-7 ceremony still open) → C1 compliance (pause/auto-pause, music-mute persisted, AZERTY, CG SDK
 adapter w/ rewarded mend + stage-break interstitials, DEV:BEGIN/END menu, shared ODD SOCK
 save, real-device mobile pass) → C2 content depth (4-5 authored stages w/ GQ-5/6 reads,
 ENDING + endless unlock, drum bot-sim fairness harness) → C3 score/meta (Batch-B tally port,
