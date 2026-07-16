@@ -1065,3 +1065,86 @@ property gone; boss spawns with entry flourish 0; non-boss wave-clear still sets
 flourishT 40 (test-harness note: calling onWaveClear() on a BOSS wave takes the
 boss branch which never had a flourish — check the non-boss branch or you'll
 misread it as a regression).
+
+## JF-#061 — CAPCOM PASS: hit-stop tiers, shape language, input leniency (2026-07-16)
+Mike: "look up 2d street fighter type mechanics and size them for our game, capcom
+vs marvel as well. combat, visuals, sounds... see what fits our framework."
+Research pass done (full source list below). Capcom publishes their own frame data
+in an official dev-authored course (SF Seminar) — better than any interview.
+
+**Adopted:**
+- **Hit-stop tiers 8/12/16F.** SF Seminar Hour 11, verbatim: "light/medium/heavy
+  attacks cause 8F/12F/16F of hit/block stop respectively," to give "a sense of the
+  attack hitting as well as the weight of the attack." Mapped: chip + armored
+  bounce + boss shrug = LIGHT(8); ordinary counter = MED(12); perfect counter,
+  felling throw, boss phase = HEAVY(16). The TIERING is the mechanism — 8F exists
+  so 16F reads heavy by contrast; uniform hit-stop destroys the signal.
+- **Telegraph floor 14 -> 18F.** Hour 1: raw human reaction is "at least 10 frames"
+  even for a screen flash. Sub-10F telegraphs are memory tests, not reads. Verified
+  at max difficulty (diff 15): slowest enemy 18F, viper 16F, brute 23F — all clear
+  the floor. ?dev=1 wind knob can still go under for tuning.
+- **Input leniency 8 -> 10F + the buffer keeps its LINE.** Hour 6: "That small
+  window is only 10 frames." Also fixed a real bug: the hit-stop buffer stored only
+  `dir`, so a buffered UP press replayed as a plain forward strike and silently
+  lost its high-block — punishing a player for being right but early.
+- **Shape language.** SF6 VFX team on Drive Parry: "we actually even made the light
+  form an X, as opposed to the hit effect forming an O to subtly push the visual
+  clarity further." Outcomes now differ by SHAPE, not just color — the wordless way
+  to say what the captions did before the JF-#058 purge. ring/O = hit landed;
+  X = deflected or your read was right (dodges, armored bounce); implode/converge =
+  a counter fired. `burst()` gained a `shape` arg; imploding sparks ignore gravity
+  so the converge stays a clean shape.
+- **Audio identity + compound hit.** Hour 11 bundles hit effects AND sounds into the
+  same strength tier, so Snd.hit(combo, strength) now takes the same 8/12/16 tier:
+  heavier = longer envelope, lower pitch floor, darker transient. Envelope spans the
+  freeze (a 16F/267ms hit-stop behind a 60ms tick leaves 200ms of silent frozen
+  frames and reads as a bug). Block is now DULL (no pitch drop, filtered) vs hit
+  (full spectrum + drop) vs counter (added RISING octave, its audio signature) —
+  the ear's version of the X-vs-O logic, identifiable without looking.
+- **Shake cap.** Nijman's Art of Screenshake + Zaimont (Skullgirls replicated 3rd
+  Strike's per-frame falloff "down to the pixel"). We fight WAVES, so simultaneous
+  hits stacked into unreadable noise; total shake is now capped (16) before the
+  existing 0.85 falloff.
+
+**Rejected (and why):** motion inputs/negative edge (arrows only; MvC's own Tezuka
+made specials share inputs "for simplicity's sake"); per-character frame tables (3
+tiers IS our whole table); 6-button/chain combos (MvC2 went DOWN to 4 for
+intuitiveness); juggles/air combos (needs an airborne state — we just removed
+jumping); **corner carry/pushback** — a genuine trap: in SF the corner is a reward
+because the attacker eats the pushback, but versus WAVES the corner is where you get
+surrounded, so it would punish the exact positioning SF rewards.
+
+**BUG FOUND + FIXED (mine, from JF-#059).** `highAction()` called `armRise()` then
+struck UNCONDITIONALLY, but armRise() refuses while another dodge is active. So
+pressing UP mid-duck fired an unarmed high strike. Nasty tail: the bot's gate is
+`P.riseT <= 0`, which never closed when the arm was refused, so it re-fired
+highAction EVERY frame; each strike re-armed hit-stop before update()'s freeze
+guard, so the world could never advance — a HARD INFINITE STALL. Caught by the bot
+suite sitting at 2.1M frames with zero state change (boss frozen at hp 1, kills and
+counters unmoving across 50k frames). armRise() now returns a bool; highAction()
+does nothing if it can't arm; botThink gates on all of armRise's conditions instead
+of riseT alone. NOTE: a human could hit the unarmed-strike half of this bug, but not
+the freeze (JF-#050's e.repeat guard blocks auto-repeat) — it needed the bot's
+per-frame calls. Suite went from hanging to 12/12 runs in ~55k frames.
+
+VALIDATION (headless, audio hard-stubbed FIRST, single forced probes): all five
+hit-stop tiers land exactly on 8/12/16; X-burst arms are diagonal; implode
+particles all travel toward the origin, spawn on a ring, and ignore gravity; ring
+unchanged; buffer keeps dir+line for 10F; telegraph floor holds at max difficulty;
+shake caps from a pathological 99 to <=16. Bot suite ?bot=3 = 12/12 runs complete,
+7 wins, **0% unreactable hits** (the fairness bar), 2.25 hits/run, 22% pincer.
+WATCH ITEM for Mike: all 5 losses were boss waves — boss + adds create genuine
+two-sided pressure now that it's one dodge at a time. Tune with ?dev=1 if it reads
+unfair rather than hard.
+
+Sources (Capcom's own frame data — worth keeping as ongoing reference):
+- SF Seminar Hour 11 (hit stop 8/12/16, pushback): game.capcom.com/cfn/sfv/column/131545
+- SF Seminar Hour 1 (60fps, 10-frame reaction floor): .../112424
+- SF Seminar Hour 6 (10-frame input leniency): .../131406
+- SF Seminar Hour 9 (startup/active/recovery): .../131432
+- SF Seminar Hour 12 (advantage, meaty, punish): .../131611
+- SF Seminar contents: .../130448
+- Akiman 2003 interview (SFII walks = 6 frames; brightness = depth): shmuplations.com/akirayasuda/
+- MvC2 interview (6 buttons -> 4 for intuitiveness): eventhubs.com/news/2021/oct/09/marvel-vs-capcom-interview/
+- Capcom VFX team on Drive Parry X-vs-O: eventhubs.com/news/2023/jul/18/capcom-early-sf6-drive-parry/
+- Nijman, "The art of screenshake": youtube.com/watch?v=AJdEqssNZ-U

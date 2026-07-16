@@ -158,13 +158,24 @@ const Snd = (() => {
       }
     },
     whoosh(){ ensure(); noise(0.09, 0.25, 2200); },
-    hit(combo){
+    // JF-#061: COMPOUND HIT, tiered to match the hit-stop. Capcom bundles hit
+    // effects, sounds, and damage motion into one strength tier (SF Seminar
+    // Hour 11), so `strength` here is the same 8/12/16 tier the freeze uses.
+    // Three envelopes: transient (noise click) + body (pitch-dropping tone —
+    // the part that reads as WEIGHT) + sub. The envelope must roughly SPAN the
+    // freeze: a 16F (267ms) hit-stop behind a 60ms tick leaves 200ms of silent
+    // frozen frames and the freeze reads as a bug, not as impact.
+    hit(combo, strength){
       ensure();
       const p = Math.min(combo, 8);
-      noise(0.05, 0.5, 2500);                          // transient click
-      tone(220 * Math.pow(1.06, p), 0.09, 'square', 0.22);  // mid body, pitch rises w/ combo
-      tone(90, 0.12, 'sine', 0.4, 0, 55);              // harmonic bass thump
-      tone(52, 0.14, 'sine', 0.3);                     // sub garnish
+      const s = strength || HS_MED;
+      const dur = s / 60;                              // envelope spans the freeze
+      const heavy = s >= HS_HEAVY, light = s <= HS_LIGHT;
+      noise(light ? 0.04 : 0.06, light ? 0.38 : 0.55, heavy ? 1800 : 2500);   // transient: heavier = darker
+      tone(220 * Math.pow(1.06, p), Math.max(0.09, dur * 0.6), 'square', light ? 0.16 : 0.22);
+      // body: bigger pitch drop + lower floor as strength climbs = more weight
+      tone(heavy ? 110 : 90, Math.max(0.12, dur), 'sine', heavy ? 0.5 : 0.4, 0, heavy ? 38 : 55);
+      tone(heavy ? 44 : 52, Math.max(0.14, dur * 1.1), 'sine', heavy ? 0.38 : 0.3);
     },
     counter(){
       ensure();
@@ -173,6 +184,7 @@ const Snd = (() => {
       tone(662.5, 0.5, 'sine', 0.2);                   // beat frequency = gong wobble
       tone(110, 0.3, 'triangle', 0.35, 0, 70);
       tone(48, 0.3, 'sine', 0.35);
+      tone(392, 0.26, 'sine', 0.2, 0.02, 784);         // JF-#061: RISING octave — the counter's audio signature, nothing else rises
     },
     hurt(){
       ensure();
@@ -187,11 +199,15 @@ const Snd = (() => {
       noise(0.3, 0.3, 400, 0.05);
     },
     windup(frames){ ensure(); tone(320, frames / 60, 'sine', 0.12, 0, 520); },
+    // JF-#061: block is DULL on purpose — the outcome should be identifiable
+    // with your eyes shut (the audio half of SF6's X-vs-O logic). Block = no
+    // pitch drop, filtered, muted. Hit = full spectrum + pitch drop. Counter =
+    // adds a rising pitched interval nothing else has.
     block(){
       ensure();
-      noise(0.05, 0.5, 4000);                          // metallic clank
-      tone(1200, 0.08, 'square', 0.12);
-      tone(300, 0.1, 'triangle', 0.2, 0, 200);
+      noise(0.045, 0.32, 1400);                        // duller thud, not a bright clank
+      tone(300, 0.07, 'triangle', 0.14);               // flat: deliberately no bend
+      tone(150, 0.09, 'sine', 0.16);
     },
     tick(){ ensure(); tone(880, 0.05, 'sine', 0.15); },
     best(){ ensure(); [523,659,784].forEach((f,i)=>tone(f, 0.25, 'sine', 0.2, i*0.09)); }
@@ -397,7 +413,11 @@ function botThink(){
   // JF-#059: a HIGH windup in reach and ripening — press UP. highAction() arms
   // the rise AND immediately attempts the strike, so this one call both dodges
   // and lands the new block+counter (replaces duck as high's answer).
-  if (P.riseT <= 0){
+  // JF-#061: gate on ALL the conditions armRise() actually checks, not just
+  // riseT. Guarding on riseT alone meant that while committed to another dodge
+  // the bot called highAction(), which now correctly refuses to arm — burning
+  // the frame doing nothing instead of falling through to other logic.
+  if (P.riseT <= 0 && P.duckT <= 0 && P.backT <= 0 && !grapple){
     for (const e of enemies){
       if (e.st !== E_WINDUP || e.atk !== 'high') continue;
       if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
@@ -582,6 +602,17 @@ const S_MENU = 0, S_PLAY = 1, S_DEAD = 2, S_STORY = 3, S_END = 4, S_PAUSE = 5;  
 let state = save.intro ? S_MENU : S_STORY;   // JF-#012: first launch opens on the tale
 let t = 0;                       // global frame clock
 let shake = 0, hitStop = 0, slowMo = 0;
+// JF-#061: hit-stop tiers straight from Capcom's own numbers. Their SF Seminar
+// (Hour 11) states light/medium/heavy attacks cause 8F/12F/16F of hit/block stop,
+// to "give the player a sense of the attack hitting as well as the weight of the
+// attack." The TIERING is the mechanism — 8F exists so 16F reads as heavy by
+// contrast; uniform hit-stop destroys the signal. Capcom also bundles effect +
+// sound + damage motion into the SAME strength tier, so HS_* is passed to Snd
+// and burst alongside the freeze.
+const HS_LIGHT = 8, HS_MED = 12, HS_HEAVY = 16;
+// Waves compound: three foes landing at once must not stack into unreadable
+// noise, so total shake is capped per frame (see the draw clamp).
+const SHAKE_CAP = 16;
 let score = 0, best = +(localStorage.getItem('jf_best') || 0);
 let combo = 0, comboT = 0;       // combo count + decay timer
 const FINISH_AT = 4;             // JF-#038: consecutive good hits to unlock the empowered throw
@@ -630,7 +661,13 @@ let fought = 0;                       // district of the current/last run (tally
 let bannerTxt = '', bannerT = 0;      // big center banner (wave/boss/clear)
 function banner(txt, col, frames){ bannerTxt = txt; bannerCol = col || '#e8dcc0'; bannerT = frames || 110; }
 let bannerCol = '#e8dcc0';
-let bufDir = 0, bufT = 0;        // input buffer across hit-stop
+// JF-#061: input buffer across hit-stop. Capcom's SF Seminar (Hour 6) puts their
+// command leniency window at 10 frames — "That small window is only 10 frames."
+// Ours was 8; matched to 10. bufLine carries WHICH input was pressed (JF-#059's
+// forceLine): a buffered UP press used to replay as a plain forward strike and
+// silently lose its high-block, punishing a player for being right but early.
+let bufDir = 0, bufT = 0, bufLine = null;
+const BUF_WIN = 10;
 let whiffT = 0;                  // whiff recovery: striking air locks strikes briefly (JF-#006)
 let adaptShown = false;          // "crowd wises up" banner shown once per run (JF-#007)
 let finisherCue = false;         // JF-#038: "next hit throws" cue shown once per run
@@ -744,11 +781,16 @@ let darts = [];   // in-flight thrown spears: {x, vx, line:'high'|'mid'|'low', y
 function pickProjLine(){ const r = Math.random(); return r < 1/3 ? 'high' : r < 2/3 ? 'mid' : 'low'; }
 const PROJ_COL = { high: '#f0b24a', mid: '#ff8c42', low: '#5fd0e0' };
 function projY(line){ return line === 'high' ? P.y - 78 : line === 'low' ? P.y - 20 : P.y - 48; }
-function armRise(){                   // JF-#059: was jump() — grounded now, no Y arc
-  if (state === S_PAUSE){ resumeGame(); return; }
-  if (state !== S_PLAY || scrollOffer) return;
-  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;   // one dodge at a time
+// JF-#059: was jump() — grounded now, no Y arc.
+// JF-#061: returns TRUE only if the rise actually armed. highAction() depends on
+// this: it used to strike unconditionally, so pressing UP while already committed
+// to another dodge fired an UNARMED high strike (see highAction).
+function armRise(){
+  if (state === S_PAUSE){ resumeGame(); return false; }
+  if (state !== S_PLAY || scrollOffer) return false;
+  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return false;   // one dodge at a time
   P.riseT = RISE_DUR; Snd.whoosh();
+  return true;
 }
 function duck(){
   if (state === S_PAUSE){ resumeGame(); return; }
@@ -763,7 +805,15 @@ function duck(){
 // strike()'s highBlock). This is what "up does a high attack that if done at
 // the right time does a high block" means as one mechanic, not two.
 function highAction(){
-  armRise();
+  // JF-#061 FIX: if the rise can't arm (already ducking / back-stepping /
+  // grappled / mid-rise), UP does NOTHING. It used to fall through and throw an
+  // unarmed high strike anyway. That was a real bug with a nasty tail: the bot's
+  // "have I risen yet?" gate is `P.riseT <= 0`, which never closed when the arm
+  // was refused, so it re-fired highAction EVERY frame. Each strike re-armed
+  // hit-stop before update()'s freeze guard was reached, so the world could
+  // never advance — a hard infinite stall (caught by the bot suite hanging at
+  // 50k frames with zero state change).
+  if (!armRise()) return;
   const target = nearestInReach(0);
   const dir = target ? (Math.sign(target.x - P.x) || P.face) : P.face;
   strike(dir, 'high');
@@ -819,7 +869,12 @@ function spawnEnemy(forceSide){
   else if (difficulty > bruteDiff && r < bruteTh) type = T_BRUTE;
   else if (difficulty > 1 && r < fastTh) type = T_FAST;
   const base = (1.1 + Math.random() * 0.5 + difficulty * 0.12) * TUNE.spd;          // JF-#049: dev knob
-  const wind = Math.max(14, (46 - difficulty * 2.4) * TUNE.wind);   // telegraph shrinks as waves rise (JF-#006; JF-#049 knob, floor lowered for tuning headroom)
+  // JF-#061: telegraph floor raised 14 -> 18. Capcom's SF Seminar (Hour 1) puts
+  // raw human reaction at "at least 10 frames" even for a screen flash, so a
+  // sub-10F telegraph isn't a read at all — it's a memory test. 18F leaves ~8F
+  // of actual decision time after reaction. T_FAST still floors lower (16) as
+  // its identity; the ?dev=1 wind knob can still go below this for tuning.
+  const wind = Math.max(18, (46 - difficulty * 2.4) * TUNE.wind);   // telegraph shrinks as waves rise (JF-#006; JF-#049 knob)
   enemies.push({
     x: W/2 + side * (W/2 + 40 + Math.random() * 70), side: -side,   // walks toward center
     face: -side,                   // JF-#057: live facing, kept separate from movement
@@ -1029,12 +1084,36 @@ function nearestInReach(dir){
 function popup(x, y, txt, col, big){
   popups.push({ x, y, txt, col: col || '#e8dcc0', life: 46, big: !!big });
 }
-function burst(x, y, col, n, pow){
+// JF-#061: SHAPE LANGUAGE. Capcom's SF6 VFX team on Drive Parry: "we actually
+// even made the light form an X, as opposed to the hit effect forming an O to
+// subtly push the visual clarity further." Different OUTCOMES get different
+// SHAPES, not just different colors — which is the wordless way to say what the
+// captions used to (JF-#058 purge). Our vocabulary:
+//   'ring'    (default) = a hit landed          -> radial, the O
+//   'x'       = your read was right (dodge/block/armored bounce) -> crossing diagonals
+//   'implode' = a counter fired                 -> particles converge inward
+function burst(x, y, col, n, pow, shape){
   const star = (pow || 3) >= 5;   // JF-#027: heavy hits throw comic stars
   for (let i = 0; i < n; i++){
-    const a = Math.random() * Math.PI * 2, s = (0.5 + Math.random()) * (pow || 3);
-    parts.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 1, life: 20 + Math.random()*16, col,
-      star: star && i % 3 === 0, sz: 2 + Math.random() * 2, rot: Math.random() * 7 });
+    let a, s = (0.5 + Math.random()) * (pow || 3), px = x, py = y, vx, vy;
+    if (shape === 'x'){
+      // four diagonal arms — reads as a struck-through X even mid-flight
+      const arm = (i % 4) * (Math.PI / 2) + Math.PI / 4;
+      a = arm + (Math.random() - 0.5) * 0.25;
+      vx = Math.cos(a) * s; vy = Math.sin(a) * s;          // no upward bias: keep the X square
+    } else if (shape === 'implode'){
+      // spawn on a ring and fly INWARD — the converge that says "countered"
+      a = (i / n) * Math.PI * 2;
+      const r = 34 + Math.random() * 10;
+      px = x + Math.cos(a) * r; py = y + Math.sin(a) * r;
+      vx = -Math.cos(a) * s * 0.9; vy = -Math.sin(a) * s * 0.9;
+    } else {
+      a = Math.random() * Math.PI * 2;
+      vx = Math.cos(a) * s; vy = Math.sin(a) * s - 1;
+    }
+    parts.push({ x: px, y: py, vx, vy, life: 20 + Math.random()*16, col,
+      star: star && i % 3 === 0 && shape !== 'implode', sz: 2 + Math.random() * 2, rot: Math.random() * 7,
+      noGrav: shape === 'implode' });
   }
 }
 
@@ -1089,7 +1168,7 @@ function strike(dir, forceLine){
     return;
   }
   if (whiffT > 0) return;                               // still recovering from a whiff
-  if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
+  if (hitStop > 0){ bufDir = dir; bufLine = forceLine || null; bufT = BUF_WIN; return; }   // JF-#061: buffer through hit-stop, keeping the line
   P.flourishT = 0;                                      // JF-#044: fists cancel the pose
   P.face = dir; P.punchT = 12; P.punchSide = dir;
   const atkLine = forceLine || atkLineNow();   // JF-#059: UP forces 'high'
@@ -1108,8 +1187,9 @@ function strike(dir, forceLine){
   // dodge (duck), not a punch. Poking it costs you a beat and teaches the rule.
   if (e.st === E_WINDUP && e.atk && e.atk !== 'strike' && !highBlock){
     // JF-#058: wordless — the armored clang + the bounce say "that won't work"
-    burst(e.x, e.y - 56, '#a8b4c8', 6, 2);
-    Snd.block(); hitStop = 2; whiffT = 10;
+    // JF-#061: X = deflected (SF6's parry-X vs hit-O language), light tier.
+    burst(e.x, e.y - 56, '#a8b4c8', 8, 2, 'x');
+    Snd.block(); hitStop = HS_LIGHT; whiffT = 10;
     return;
   }
   // JF-#010: IRON CATCH — with the technique, an unlanded strike can still be
@@ -1122,7 +1202,9 @@ function strike(dir, forceLine){
   if ((e.st === E_WINDUP || ironCatch) && !armed && e.type !== T_BOSS){   // ---- UNARMED CHIP ----
     e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
     P.punchT = 12; whiffT = 12;
-    Snd.block(); hitStop = 1;
+    // JF-#061: LIGHT tier — a chip is Capcom's jab. It gets the 8F freeze so the
+    // 16F counter lands like a truck by contrast. Still joyless: no shape, no shake.
+    Snd.block(); hitStop = HS_LIGHT;
     burst(e.x, e.y - 46, '#9aa2b0', 5, 2);      // grey thud, no words (JF-#054)
     if (e.hp <= 0){                              // chipping CAN fell — slow and joyless
       e.st = E_DOWN; e.stT = 0; e.vx = dir * 3; e.vy = -4;
@@ -1131,7 +1213,7 @@ function strike(dir, forceLine){
     return;
   }
   if ((e.st === E_WINDUP || ironCatch) && !armed && e.type === T_BOSS){   // boss shrugs chips
-    P.punchT = 12; whiffT = 12; Snd.block(); hitStop = 1;
+    P.punchT = 12; whiffT = 12; Snd.block(); hitStop = HS_LIGHT;   // JF-#061
     burst(e.x, e.y - 46, '#9aa2b0', 5, 2);
     return;
   }
@@ -1144,8 +1226,8 @@ function strike(dir, forceLine){
     popup(e.x, e.y - 110, 'MASTER STAGGERED +1000', '#7ce8a8', true);
     // JF-#056: boss stagger jab removed — the MASTER STAGGERED read stands alone
     clash(e.x, e.y - 60);   // JF-#043: the clash freeze — boss counters always earn it
-    Snd.counter(); hitStop = 8; shake = 14; slowMo = 30;
-    burst(e.x, e.y - 50, '#e86a6a', 26, 6);
+    Snd.counter(); hitStop = HS_HEAVY; shake = 14; slowMo = 30;   // JF-#061: heavy tier
+    burst(e.x, e.y - 50, '#e86a6a', 26, 6, 'implode');            // JF-#061: converge = countered
     banner('HE CALLS HIS STUDENTS', '#e8b06a', 80);
     spawnEnemy(-1); spawnEnemy(1);               // phase adds, both sides
     if (combo > bestCombo) bestCombo = combo;
@@ -1186,9 +1268,12 @@ function strike(dir, forceLine){
       score += pts;
       popup(e.x, e.y - 90, (perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8');
       if (perfect) clash(e.x, e.y - 55);       // JF-#043: perfect = the freeze-frame moment
-      // JF-#053: every earned counter gets the full dodge-grade bullet time
-      Snd.counter(); hitStop = 6; shake = perfect ? 8 : 6; slowMo = Math.max(slowMo, 26);
-      burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4);
+      // JF-#053: every earned counter gets the full dodge-grade bullet time.
+      // JF-#061: a perfect read is the HEAVY tier, an ordinary counter MEDIUM —
+      // Capcom's 12F/16F split, so the perfect one is felt, not just scored.
+      Snd.counter(); hitStop = perfect ? HS_HEAVY : HS_MED;
+      shake = perfect ? 8 : 6; slowMo = Math.max(slowMo, 26);
+      burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4, 'implode');
       if (perfect && hasTech(2)){ perfChain++; } else if (!perfect) perfChain = 0;
       if (combo > bestCombo) bestCombo = combo;
       if (combo === FINISH_AT - 1 && !finisherCue){
@@ -1230,9 +1315,10 @@ function strike(dir, forceLine){
       clash(e.x, e.y - 60); slowMo = Math.max(slowMo, 60);
       shake = Math.max(shake, 18); moonWake(220);
     }
-    Snd.counter(); hitStop = Math.max(hitStop, empowered ? 7 : 5); shake = Math.max(shake, empowered ? (perfect ? 13 : 10) : 6);
+    // JF-#061: the felling throw is the game's heaviest blow — always HEAVY tier.
+    Snd.counter(); hitStop = Math.max(hitStop, HS_HEAVY); shake = Math.max(shake, empowered ? (perfect ? 13 : 10) : 6);
     slowMo = Math.max(slowMo, 26);   // JF-#053: throw counters get full bullet time (JF-#044: don't clobber boss finale)
-    burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4);
+    burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4, 'implode');
     if (empowered){
       // ---- EMPOWERED THROW: the payoff — thrown body knocks down neighbors in its path ----
       let felled = 0;
@@ -1445,8 +1531,9 @@ function resolveEnemyHit(e){
     } else {
       popup(P.x, P.y - (ducked ? 58 : 100), ducked ? 'under it' : 'over it', '#9aa2b0');
     }
+    // JF-#061: X = your read was RIGHT (Capcom's parry-X vs hit-O shape language)
     burst(P.x + (Math.sign(e.x - P.x) || 1) * 30,
-      ducked ? P.y - 88 : atk === 'strike' ? P.y - 58 : P.y - 16, '#7ce8a8', 8, 3);
+      ducked ? P.y - 88 : atk === 'strike' ? P.y - 58 : P.y - 16, '#7ce8a8', 10, 3, 'x');
     return;
   }
   if (BOT) botHit(e);                              // JF-#022: classify before it lands
@@ -1756,6 +1843,11 @@ function update(){
   if (state === S_PAUSE) return;   // JF-#014: world fully frozen
   t++;
   if (BOT) botFrame();             // JF-#022: the bot drives every state
+  // JF-#061: cap total shake. Nijman's "Art of Screenshake" point is that shake
+  // makes reactions PHYSICAL — but we fight waves, so simultaneous hits used to
+  // stack into unreadable noise. Cap first, then the 0.85 per-frame falloff runs
+  // the authored decay (Skullgirls replicated 3rd Strike's falloff exactly).
+  if (shake > SHAKE_CAP) shake = SHAKE_CAP;
   if (shake > 0) shake *= 0.85;
   if (hurtFlash > 0) hurtFlash--;
   if (msgT > 0) msgT--;
@@ -1773,14 +1865,14 @@ function update(){
 
   popups = popups.filter(p => (p.life--, p.y -= 0.7, p.life > 0));
   parts = parts.filter(p => {
-    p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life--;
+    p.x += p.vx; p.y += p.vy; if (!p.noGrav) p.vy += 0.25; p.life--;   // JF-#061: imploding counter sparks ignore gravity so the converge stays a clean shape
     return p.life > 0 && p.y < 470;
   });
 
   if (state !== S_PLAY){ if (state === S_DEAD) tallyT++; return; }
   if (hitStop > 0){ hitStop--; return; }
   if (whiffT > 0) whiffT--;
-  if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir; bufDir = 0; bufT = 0; strike(d); } }
+  if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir, l = bufLine; bufDir = 0; bufLine = null; bufT = 0; strike(d, l); } }   // JF-#061: replay with its original line
   const dt = slowMo > 0 ? 0.35 : 1;
   if (slowMo > 0) slowMo--;
   // JF-#044: grapple clock — mash out before it hits zero or get slammed
@@ -1827,7 +1919,7 @@ function update(){
           score += 100; jadeRun++;
           popup(P.x, d.y0 - 20, d.line === 'high' ? 'CAUGHT!' : 'KICKED!', '#e8c76a', true);
           Snd.counter(); slowMo = Math.max(slowMo, 22);
-          burst(P.x, d.y0, '#e8c76a', 10, 4);
+          burst(P.x, d.y0, '#e8c76a', 12, 4, 'implode');   // JF-#061: catch/kick-back = a counter, so it converges
         } else if (age <= 20){
           combo++; comboT = CW;            // JF-#043: defense feeds FLOW
           if (combo > bestCombo) bestCombo = combo;
@@ -1837,7 +1929,7 @@ function update(){
           slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
           popup(P.x, GROUND_Y - (d.line === 'high' ? 60 : 96),
                 d.line === 'mid' ? 'SIDESTEPPED +150' : 'DODGED +150', '#7ce8a8');
-          burst(P.x, d.y0, '#7ce8a8', 8, 3);
+          burst(P.x, d.y0, '#7ce8a8', 10, 3, 'x');         // JF-#061: clean read = X
         } else {
           d.hit = true; d.dead = true;     // lazy read: it just sails over
           bumpTrial('dodge');
