@@ -787,6 +787,7 @@ function spawnEnemy(forceSide){
   const wind = Math.max(14, (46 - difficulty * 2.4) * TUNE.wind);   // telegraph shrinks as waves rise (JF-#006; JF-#049 knob, floor lowered for tuning headroom)
   enemies.push({
     x: W/2 + side * (W/2 + 40 + Math.random() * 70), side: -side,   // walks toward center
+    face: -side,                   // JF-#057: live facing, kept separate from movement
     st: E_WALK, stT: 0, type,
     speed: (type === T_FAST ? base * 1.5 : type === T_BRUTE ? base * 0.7 : base) * omen.spdScale,
     windup: (type === T_FAST ? Math.max(16, wind * 0.6) : type === T_BRUTE ? wind * 1.3 : wind) * omen.windScale,
@@ -843,7 +844,7 @@ function spawnEnemy(forceSide){
 function spawnBoss(hp){
   const side = Math.random() < 0.5 ? -1 : 1;
   enemies.push({
-    x: W/2 + side * (W/2 + 60), side: -side, y: 420,
+    x: W/2 + side * (W/2 + 60), side: -side, face: -side, y: 420,   // JF-#057
     st: E_WALK, stT: 0, type: T_BOSS,
     speed: 0.9, windup: 52, windup0: 52,
     reach: REACH + 24, guard: 0, feint: false,
@@ -893,12 +894,8 @@ let clashT = 0, clashX = 0, clashY = 0;
 function clash(x, y){ clashT = 10; clashX = x; clashY = y; hitStop = Math.max(hitStop, 8); }
 // Duel stare-down name cards (structure #11): each type announces itself once.
 const TYPE_NAMES = { [T_NORM]: 'INITIATE', [T_FAST]: 'VIPER', [T_BRUTE]: 'IRON MONK', [T_SPEAR]: 'SPEARMAN' };
-// JF-#044: stare-down trash talk — one line per type, one per elite
-const STARE_QUIPS = { [T_NORM]: 'the guild sends its regards', [T_FAST]: 'blink and lose',
-  [T_BRUTE]: 'small monk. big problem.', [T_SPEAR]: 'stay RIGHT there' };
-const ELITE_QUIPS = { 'IRON ELBOW': 'go on — swing at me', 'THE HAGGLER': 'special price, just for you',
-  'BRASS PALM': 'find the opening, little fist', 'TWO STEPS': 'you are already too slow',
-  'THE ECHO': 'again. again. again.' };
+// JF-#056: STARE_QUIPS / ELITE_QUIPS removed — the stare-down keeps its beat
+// (name card + 40f face-off + hero flourish), just without the trash talk.
 // JF-#046: TAUNT removed with the extra buttons — arrows carry the whole fight.
 // Named mini-boss duelists (behavior #8): wave 3 of each district fields an
 // ELITE with a name card, +1 hp, a gold sash, and ONE signature habit — the
@@ -917,13 +914,13 @@ const ELITES = [
 ];
 let eliteQueued = false;   // set by beginWave, consumed by the next spawn
 
-// JF-#034: boss personalities — a taunt on the name-card, a jab when staggered,
-// and one silly signature. The Butcher hurls cleavers you DUCK/JUMP (reuses darts).
+// JF-#034: boss signatures. JF-#056: taunt/jab lines removed (Mike: stop the
+// taunting) — the object stays because `cleaver` gates THE BUTCHER's throw.
 const BOSS_FLAVOR = {
-  'THE IRON MASTER': { taunt: 'Show me the school still teaches something.', jab: 'Hmph. Lucky.' },
-  'THE BUTCHER':     { taunt: 'Fresh cuts today! Hah!', jab: 'You dented my cleaver!', cleaver: true },
-  'THE ABBOT':       { taunt: 'Violence solves nothing. Observe.', jab: 'Inner peace… interrupted.' },
-  'THE JADE THIEF':  { taunt: 'Pbbbt! Too slow, monk.', jab: 'Okay okay — rude!' }
+  'THE IRON MASTER': {},
+  'THE BUTCHER':     { cleaver: true },
+  'THE ABBOT':       {},
+  'THE JADE THIEF':  {}
 };
 // wave lifecycle
 function beginWave(n){
@@ -937,8 +934,7 @@ function beginWave(n){
     spawnBoss(D.bossHp + Math.floor(wave / WAVES_PER_DISTRICT) - 1);  // +1 hp per extra cycle (Legend)
     const bz = enemies[enemies.length - 1];
     bz.flavor = BOSS_FLAVOR[D.boss]; bz.throwCd = 220;   // JF-#034: personality + cleaver cadence
-    banner(D.boss, '#e86a6a', 140);
-    if (bz.flavor) popup(W/2, 210, '“' + bz.flavor.taunt + '”', '#e8b06a', true);   // taunt on entry
+    banner(D.boss, '#e86a6a', 140);   // JF-#056: entry taunt removed — the name banner is the beat
     P.flourishT = 40;   // JF-#044: the hero limbers up as the master arrives
     Snd.windup(60);
   } else {
@@ -1010,32 +1006,13 @@ function burst(x, y, col, n, pow){
 // wall bonks, and the odd felled-foe yelp. Rare on purpose: seasoning, not a tone change.
 const SENDS = ['SEE YOU NEXT SPRING', "HE'LL WALK THAT OFF", 'STRAIGHT TO THE HEALER',
                'OVER THE NOODLE CART', 'TELL THE OTHERS', 'AND STAY OUT', 'INTO NEXT WEEK'];
-const YELPS = ['my sandals…', 'not the face', 'I quit', 'who hired him?', 'ow.',
-               'worth it', 'nap time', 'tell my mother', 'I felt that', 'unfair'];
-function yelp(x, y){
-  if (Math.random() < 0.12) popup(x, y, YELPS[(Math.random() * YELPS.length) | 0], '#c8bfa8');
-}
-// JF-#030: enemy chatter — type-flavored mutters as they approach. Cocky vipers,
-// dim monks, twitchy spearmen, rank-and-file bravado. Rare so it stays a garnish.
-const MUTTERS = {
-  [T_NORM]:  ['get him!', 'for the guild', 'easy money', 'you again?', 'surround him'],
-  [T_FAST]:  ['too slow', 'catch me', 'blink and miss', 'hah!', 'over here~'],
-  [T_BRUTE]: ['me smash', 'hnngh', 'big hands', 'squish', '...'],
-  [T_SPEAR]: ['stay back!', "don't look at me", 'from waaay over here', 'nervous laugh', 'eep']
-};
-function mutter(e){
-  if (state !== S_PLAY || Math.random() > 0.14) return;
-  const bank = MUTTERS[e.type] || MUTTERS[T_NORM];
-  popup(e.x, e.y - 108, bank[(Math.random() * bank.length) | 0], '#9aa2b0');
-}
-// JF-#030: hype announcer — cheeky bad-kung-fu-dub callouts as combos climb.
-// Escalates from encouraging to "okay, calm down". One line per threshold per run.
-const HYPE = [
-  { at: 3,  txt: 'Nice.' }, { at: 5, txt: 'Show off.' }, { at: 8, txt: 'UNBELIEVABLE!' },
-  { at: 12, txt: 'Okay, calm down.' }, { at: 16, txt: 'THE CROWD GOES WILD' },
-  { at: 22, txt: 'save some for the rest of us' }, { at: 30, txt: 'legally, this is too cool' }
-];
-let hypeShown = -1;
+// JF-#056: ENEMY CHATTER REMOVED (Mike: "stop the taunting, it's confusing").
+// YELPS/MUTTERS/HYPE all shared popup() with the mechanical telegraph captions
+// (DUCK!/COUNTER!/GRAB!), so flavor lines competed with the reads the player must
+// act on. Kept: mechanical captions, banners, the rare SENDS throw payoff.
+function yelp(){}                  // no-op: felled foes are silent now (call sites kept)
+function mutter(){}                // no-op: no approach one-liners
+let hypeShown = -1;                // retained: run-reset bookkeeping only
 let longestSend = 0;   // JF-#030: farthest yeet this run (px), bragged on the tally
 // JF-#031: the moon wakes up and reacts to the big moments
 let moonWakeT = 0;
@@ -1052,15 +1029,7 @@ const PROPS = [
 const PROP_X = 132;   // stands off to the left; bodies thrown that way crash it
 // JF-#031: between-wave background cameo (a straggler waves off, or a cat trots by)
 let restGag = null;
-function hype(c){
-  for (const H of HYPE){
-    if (c >= H.at && H.at > hypeShown){
-      hypeShown = H.at;
-      popup(W/2, 108, H.txt, '#ffd98a', true);
-      break;
-    }
-  }
-}
+function hype(){}                   // JF-#056: announcer callouts removed (text noise mid-fight)
 
 // ----------------------------------------------------------------- verbs ----
 function strike(dir){
@@ -1126,7 +1095,7 @@ function strike(dir){
     counters++; jadeRun += 3; combo++; comboT = CW;
     score += 1000;
     popup(e.x, e.y - 110, 'MASTER STAGGERED +1000', '#7ce8a8', true);
-    if (e.flavor) popup(e.x, e.y - 140, '“' + e.flavor.jab + '”', '#e8b06a');   // JF-#034: boss grumbles
+    // JF-#056: boss stagger jab removed — the MASTER STAGGERED read stands alone
     clash(e.x, e.y - 60);   // JF-#043: the clash freeze — boss counters always earn it
     Snd.counter(); hitStop = 8; shake = 14; slowMo = 30;
     burst(e.x, e.y - 50, '#e86a6a', 26, 6);
@@ -1870,6 +1839,14 @@ function update(){
   for (const e of enemies){
     if (e.grappled) continue;             // JF-#044: held in the grapple, frozen
     e.stT += dt;
+    // JF-#057: FACING — was drawn from e.side, which is set ONCE at spawn and
+    // never updated, so every foe was mirrored: the swing tracked the player
+    // (live Math.sign(P.x - e.x) in the aim lines + hit resolve) while the BODY
+    // pointed wherever it spawned. Facing is now live and toward the player,
+    // and LOCKED once the swing commits (E_STRIKE onward) so a whiff that
+    // carries past you doesn't spin the body around mid-follow-through.
+    if (e.st === E_WALK || e.st === E_WINDUP || e.st === E_AIM || e.st === E_FEINT)
+      e.face = Math.sign(P.x - e.x) || e.face || 1;
     if (e.evadeCd > 0) e.evadeCd -= dt;   // JF-#041
     if (e.leanT > 0) e.leanT -= dt;       // JF-#043: hit-reaction decay
     // JF-#034: THE BUTCHER lobs a cleaver from range — a high or low throw you
@@ -1901,12 +1878,10 @@ function update(){
           const live = enemies.reduce((n, o) => n + (o.st !== E_DOWN && o.st !== E_THROWN ? 1 : 0), 0);
           if (live === 1){
             e.staredown = 40;
-            popup(e.x, e.y - 132, e.elite ? e.elite.name : TYPE_NAMES[e.type] || '',
-                  e.elite ? '#e8c76a' : '#c8bfa8', true);
-            // JF-#044: trash talk + the hero answers with a movie flourish
-            const quip = e.elite ? ELITE_QUIPS[e.elite.name] : STARE_QUIPS[e.type];
-            if (quip) popup(e.x, e.y - 160, '“' + quip + '”', '#9aa2b0');
-            P.flourishT = 40;
+            // JF-#056: name card only for ELITES (a real "who is this" beat);
+            // rank-and-file no longer announce themselves. Quips gone.
+            if (e.elite) popup(e.x, e.y - 132, e.elite.name, '#e8c76a', true);
+            P.flourishT = 40;   // JF-#044: the hero answers with a movie flourish
             break;
           }
         }
@@ -1964,7 +1939,7 @@ function update(){
               popup(W/2, 250, '!!', '#e8a06a', true);
             }
           }
-        } else e.x += e.side * e.speed * dt;
+        } else e.x += (Math.sign(P.x - e.x) || e.side) * e.speed * dt;   // JF-#057: walk TOWARD the player (was a fixed spawn-direction march that could stroll straight past him)
         break;
       }
       case E_AIM:
@@ -2663,7 +2638,7 @@ function draw(){
     // squash: pop on spawn-walk and squish when knocked down
     let squash = (e.st === E_DOWN || e.st === E_THROWN) ? -0.5 : 0;
     if (squash < 0 && e.koStyle === 2){ squash = -0.75; rot *= 0.3; }   // JF-#044: sit-down slump
-    fighter(e.x, e.y - evY, -e.side, {
+    fighter(e.x, e.y - evY, e.face || -e.side, {   // JF-#057: live facing (was -e.side, stale from spawn)
       col, punch, rot, size, eyes, squash,
       pose: epose,
       line: atkActive ? e.atk : null,
