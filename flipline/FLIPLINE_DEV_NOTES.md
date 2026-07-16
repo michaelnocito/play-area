@@ -30,9 +30,27 @@ shudder, then a 2.6s fast-spin jam, then a quiet breather · DA-d confirm you're
 shoved: sock only moves when you steer (plus the shared drum carry) · DA-e hem-hug penny
 runs sit along hot edges — riding them = riding the graze line · DA-f play pure-safe —
 music stays sparse, drum stays slow (the contrast IS the feature).
-NEXT: Mike feel-gates DRUM ALIVE. Parked candidates if it lands: STATIC PULSE second verb
-(tap = 0.25s intangible-in-place discharge, graze-charged — research pick, own feel-gate),
-instant restart (<1s death→play), 3-slot mission layer + permanent multiplier (C3).
+## ✅ STATIC PULSE + INSTANT RESTART (2026-07-16, same session) — 🔷 Mike: "do 4 and 5 first"
+- **STATIC PULSE (second verb, feel-gate):** tap with a PARTIAL static bar (≥0.35) = 0.3s
+  intangible-IN-PLACE discharge, costs ⅓ meter (crack SFX, expanding ring, spark shower).
+  Full bar + tap = RIDE THE CURRENT, untouched and locked. No displacement ever (E3 lesson).
+  Creates the spend decision: pulse now vs save for the ride; graze charges it, so the
+  second verb is earned by risky use of the first (Downwell coupling).
+- **INSTANT RESTART:** death screen accepts ANY key/tap after a 0.4s lockout (panic-tap
+  guard so the haul is still readable) — steering keys included, so retry is <1s without
+  moving your hands (Crossy Road rule).
+- HUD: static meter shows the pulse-threshold notch; label cycles slide→PULSE→RIDE;
+  ready screen teaches all three.
+Verified live: pulse i-frame survives a direct rim overlap, same overlap damages after it
+ends; cling 0.5→0.15 on pulse; full bar rides (never pulses); early arrow blocked on death,
+arrow restarts at 0.66s; draw clean; node --check ok.
+Test steps: SP-a build ⅓ static, tap — crack + ring, meter drops to the notch · SP-b tap
+INSIDE a garment's arrival — it passes through you · SP-c full bar tap still rides the
+current · SP-d die — arrows do nothing for a beat, then any key relaunches instantly ·
+SP-e decide mid-wall: pulse through vs hold for the ride (the interesting choice).
+NEXT: Mike feel-gates DRUM ALIVE + PULSE together. Then P2 (near-reunion teases +
+expressive sock) → P1 (staged reunion ending, C2) → P3 (3-slot missions, C3);
+P4 Daily Tumble + P5 Lint Locker = post-launch update wave (roadmap 🧭 PURPOSE & RETURN).
 
 ## ⚡ PREVIOUS RESUME (2026-07-11): DRUM BUILD-OUT
 🔷 DRUM-ONLY ARC LOCKED — `proto/drum.html` IS the CrazyGames submission; the flip-runner
