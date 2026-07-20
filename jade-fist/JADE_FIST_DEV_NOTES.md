@@ -1174,3 +1174,22 @@ teach wrapped around the REAL combat (nothing faked).
   pctPincer 8), bot never enters the tutorial — combat provably unchanged. Inline script parses.
 - All new code is inert when `tut.active` is false, so returning players and the bot are byte-for-
   byte unchanged. Browser playtest (feel, first-time comprehension) = Mike.
+
+## JF-#063 — Clean first-impression menu + legibility audit (2026-07-19)
+Gap-analysis batch (first-impression clarity — Mike re-failed the title screen ~3× as a
+"jumbled mess"; JF-#051 already rebuilt the layout into budgeted bands, so this is NOT another
+title redesign — the returning-player menu is untouched).
+- **First-run declutter**: the four bottom info panels (TRIALS / WARDROBE / OMEN / BEST) now
+  draw only once `save.kills > 0`. A brand-new player (who has no trials, no cosmetics, no hall
+  entries, and for whom OMEN means nothing) sees a calm menu — title, how-to demo card, controls
+  line, district, CTA, belt — plus one italic line: "first time here? just begin — you will learn
+  as you fight". Now that JF-#062 teaches the controls interactively, the menu no longer has to
+  carry them. Panels return the instant they've fought once, so nothing is lost for real players
+  and the layout Mike has been iterating is byte-for-byte unchanged for them. `styleRect/
+  styleBuyRect/omenRect` are nulled in the first-run branch so no stale tap targets remain.
+- **Legibility audit (objective, code-verified)**: logical stage is 960×540, DPR-scaled canvas
+  (JF-#015). Menu bands: title uses a `measureText` shrink-to-fit loop (no overflow); demo card
+  600px centered; the panel row spans x18→942 (18px right margin) and y408→500 (40px bottom
+  margin) — all inside 960×540. No overflow/overlap defect found, so nothing was force-changed.
+- Verified headless: `draw()` at `save.kills=0` and `=5` both render without throwing; JF-#062
+  tutorial still graduates. The "does it FEEL clean" call is Mike's on the live URL.

@@ -3212,6 +3212,9 @@ function draw(){
     // JF-#051: info panels — ONE aligned row along the bottom (was four
     // corner-pinned boxes that collided with the centered stack). Equal size,
     // equal band, text left-aligned inside each.
+    // JF-#062: only once the player has actually fought — a brand-new player gets a
+    // clean first impression instead (the panels mean nothing to them yet).
+    if (save.kills > 0){
     const PX = [18, 251, 484, 717], PW = 225, PY = 408, PH = 92;
     // — TRIALS —
     const trio = todayTrio(), tdone = trio.filter((ti, i) => save.tdone[i]).length;
@@ -3261,6 +3264,13 @@ function draw(){
       cx.fillText('BEST — ' + DISTRICTS[sel].name, PX[3] + 10, PY + 20);
       cx.font = 'bold 14px Georgia'; cx.fillStyle = H && H.length ? '#e8c76a' : '#8a94a6';
       cx.fillText(H && H.length ? '#1  ' + H[0].s + '  · wave ' + H[0].w : 'no legend yet', PX[3] + 10, PY + 40);
+    }
+    } else {
+      // JF-#062: brand-new player — the advanced panels read as clutter (Mike's repeated
+      // "jumbled" note). The guided teach handles learning; the menu just says "begin".
+      styleRect = null; styleBuyRect = null; omenRect = null;
+      cx.textAlign = 'center'; cx.font = 'italic 16px Georgia'; cx.fillStyle = '#8a94a6';
+      cx.fillText('first time here? just begin — you will learn as you fight', W/2, 452);
     }
     cx.textAlign = 'center';
   } else if (state === S_DEAD){
