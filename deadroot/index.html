@@ -187,6 +187,28 @@ function endlessWave(n){
   if(n%3===2) grunts.push([Math.floor(n/3)%2===0 ? "boss" : "butcher", 1, 1]);
   return grunts;
 }
+/* DR-#053: endless "night modifiers". The base endless ramp only ever got BIGGER — every night
+   played the same. A rotating modifier per night changes HOW the raid fights (GAME_BIBLE law #5:
+   every run should differ), telegraphed in the prep-phase modal. Each is a light set of scalars +
+   an optional comp mutation read by systems that already exist (spawn HP, cleric heal, kill loot,
+   the rout trigger). `mut(def)` edits the wave composition in place. */
+function bumpCount(def, type, add){ // add N of `type` (or raise its count if present)
+  const row = def.find(r=>r[0]===type); if(row) row[1]+=add; else def.push([type, add, 0]); }
+function scaleCounts(def, mult){ for(const r of def) r[1]=Math.max(1, Math.round(r[1]*mult)); }
+const NIGHT_MODS = [
+  { name:"BLOOD MOON",     desc:"the raiders come faster — but the fallen drop DOUBLE loot", spd:1.28, loot:2 },
+  { name:"THE ZEALOTS",    desc:"more clerics, and their mending runs deep — kill the healers first", heal:1.6, mut:d=>bumpCount(d,"cleric",2) },
+  { name:"THE UNBOWED",    desc:"they have sworn an oath: this raid will NOT break — fight them to the last", noRout:true },
+  { name:"SIEGE COLUMN",   desc:"armored knights lead the charge and soak far more punishment", hp:1.35, mut:d=>bumpCount(d,"troop",2) },
+  { name:"WILDFIRE",       desc:"incinerators everywhere — spread your rooters or watch them burn", mut:d=>bumpCount(d,"incin",3) },
+  { name:"THIN RANKS",     desc:"fewer raiders, but each a hardened veteran — they hit hard and break easy", hp:1.7, cnt:0.6 },
+  { name:"NIGHT OF KNIVES",desc:"the dark is full of thieves — nothing you build is safe from ambush", mut:d=>bumpCount(d,"scav",5) },
+];
+let lastNightModIdx = -1;
+function pickNightMod(){ // random, never the same modifier twice in a row
+  let i; do { i = Math.floor(Math.random()*NIGHT_MODS.length); } while(NIGHT_MODS.length>1 && i===lastNightModIdx);
+  lastNightModIdx = i; return NIGHT_MODS[i];
+}
 
 /* ===== Save (versioned, defensive) ===== */
 const SAVE_KEY = "deadroot_save_v1";
@@ -519,7 +541,9 @@ const END_QUIPS_LOSE = ["they brought bleach. this time it worked.","death is ju
 function newRunMods(){
   return { spitDmg:0, rotBonus:0, killBonus:0, sweepSlow:0, cloudT:0, towerHp:0, rootR:0,
     grabR:0, grabSlow:0, hedgeDisc:0, // DR-#026 C7: grabber radius / slow-strength / hedge discount boons
-    enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[] }; // DR-#050: dropped in-run `abil` actives
+    enemyHp:1, enemySpd:1, endlessHpMult:1, endlessSpdMult:1, boonsUsed:[], // DR-#050: dropped in-run `abil` actives
+    // DR-#053 endless night-modifier flags + veteran carryover (routers who escape return tougher)
+    nightMod:null, nightHpMult:1, nightLootMult:1, nightHealMult:1, noRout:false, veterans:0 };
 }
 function offerBoons(){
   // prefer boons not yet seen this run so long sessions (deep endless) feel fresher;
@@ -743,7 +767,7 @@ function spawnEnemy(type){
   const c=g.c, r=g.r;
   let [x,y] = tileToXY(c,r);
   y += Math.random()*CFG.tile; // DR-#035: spread across the 2-wide entrance (rows 8-9), never into the wall above
-  const eHp=e.hp*devEnemyHpMult*(run?run.enemyHp*(run.endlessHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
+  const eHp=e.hp*devEnemyHpMult*(run?run.enemyHp*(run.endlessHpMult||1)*(run.nightHpMult||1):1), eSpd=e.spd*(run?run.enemySpd*(run.endlessSpdMult||1):1);
   // DR-#041: adventurer waypoints — pick a side around the Great Root, then most raiders
   // "search" one spot in the burrow on their way in (they're delvers looting a dungeon,
   // not ants on a rail). Search points must be open reachable floor.
@@ -1053,8 +1077,23 @@ function beginDoorway(){
   CG.happytime();
 }
 function queueWave(){
-  if(endless){ run.endlessHpMult = 1+endlessN*0.15; run.endlessSpdMult = 1+endlessN*0.05; }
+  let nightVets = 0;
+  if(endless){
+    run.endlessHpMult = 1+endlessN*0.15; run.endlessSpdMult = 1+endlessN*0.05;
+    // DR-#053: reset last night's modifier flags, roll a fresh modifier, fold its scalars in
+    run.nightHpMult = 1; run.nightLootMult = 1; run.nightHealMult = 1; run.noRout = false;
+    const mod = pickNightMod(); run.nightMod = mod;
+    if(mod.spd)  run.endlessSpdMult *= mod.spd;
+    if(mod.hp)   run.nightHpMult   *= mod.hp;
+    if(mod.loot) run.nightLootMult *= mod.loot;
+    if(mod.heal) run.nightHealMult *= mod.heal;
+    if(mod.noRout) run.noRout = true;
+    // veteran carryover: raiders who fled to the gate last night return hardier this night
+    nightVets = Math.min(run.veterans||0, 12); if(nightVets>0) run.nightHpMult *= 1 + nightVets*0.04;
+    run.veterans = 0;
+  }
   const def = endless ? endlessWave(endlessN) : WAVES[waveIdx];
+  if(endless && run.nightMod){ if(run.nightMod.cnt) scaleCounts(def, run.nightMod.cnt); if(run.nightMod.mut) run.nightMod.mut(def); }
   // DR-#049 teach-then-test: at the level's breach wave the raiders tunnel flank gaps through
   // the root walls — a plain center line no longer covers every approach (Mike 2026-07-13:
   // L1 beaten by a random zombie line with biomass to spare).
@@ -1087,7 +1126,14 @@ function queueWave(){
     else if(waveIdx===7) showInfo("THE BUTCHER","he burned a hundred hives");
     else if(waveIdx===8) showInfo("THE EXTERMINATION","everything they have left");
     else if(waveIdx===11){ showInfo("THE PURIFIER","kill it and the surface is yours"); tone(80,60,1.2,"sawtooth",0.2); tone(80,60,1.2,"sawtooth",0.2,1.3); }
-  } else if(endlessN%3===2) showInfo("PURIFIER INBOUND","the long night deepens");
+  } else {
+    // DR-#053: telegraph the night's modifier (and any veteran carryover / incoming Purifier)
+    const m = run.nightMod;
+    let sub = m ? m.desc : "the long night deepens";
+    if(nightVets>0) sub += " · "+nightVets+" veteran"+(nightVets>1?"s":"")+" returned, hardened";
+    if(endlessN%3===2) sub += " · a PURIFIER marches with them";
+    showInfo(m ? m.name : "THE LONG NIGHT", sub);
+  }
 }
 function waveCleared(){
   const wn = endless ? 12+endlessN+1 : waveIdx+1;
@@ -1231,7 +1277,10 @@ function update(){
       const m = Math.hypot(dx,dy)||1;
       moveWithWalls(e, dx/m*spd*1.35*DT, dy/m*spd*1.35*DT); // panic sprint
       if(Math.random()<0.1) addParticle({x:e.x+(Math.random()-0.5)*10, y:e.y-e.r, vx:0, vy:-24, t:0.5, col:"#ffe060"});
-      if(e.x < CFG.tile*0.55){ popup(e.x, e.y-e.r, "ESCAPES", "#b0a090"); enemies.splice(i,1); }
+      if(e.x < CFG.tile*0.55){ // reached the west gate — escapes clean
+        popup(e.x, e.y-e.r, "ESCAPES", "#b0a090"); enemies.splice(i,1);
+        if(endless && run) run.veterans = (run.veterans||0) + 1; // DR-#053: it comes back hardened next night
+      }
       continue;
     }
     // DR-#036 STEALTH: a hidden thief creeping within reach of a zombie AMBUSHES it — stuns that
@@ -1256,7 +1305,7 @@ function update(){
         if(fr<worst && dist2(e,a)<sq(CFG.enemies.cleric.healR*CFG.tile)){ worst=fr; e.healTgt=a; }
       }
       if(e.healTgt){
-        e.healTgt.hp = Math.min(e.healTgt.max, e.healTgt.hp + CFG.enemies.cleric.healRate*DT);
+        e.healTgt.hp = Math.min(e.healTgt.max, e.healTgt.hp + CFG.enemies.cleric.healRate*(run&&run.nightHealMult||1)*DT); // DR-#053: THE ZEALOTS heal deeper
         if(Math.random()<0.05) addParticle({x:e.healTgt.x+(Math.random()-0.5)*12, y:e.healTgt.y-e.healTgt.r, vx:0, vy:-28, t:0.6, col:"#9be07f"});
       }
     }
@@ -1397,7 +1446,7 @@ function update(){
   // (spawn queue empty), only if no anchor (boss/butcher) is holding them, only while the Hive is
   // still winning (they don't panic when they're about to break through), and only for waves big
   // enough to have a nerve to lose. Survivors then rout for the gate.
-  if(mode==="play" && !routed && spawnQ.length===0 && partyMoraleMax>=ROUT_MIN_PARTY && hiveHP > hiveMax*ROUT_FRAC){
+  if(mode==="play" && !routed && !(run&&run.noRout) && spawnQ.length===0 && partyMoraleMax>=ROUT_MIN_PARTY && hiveHP > hiveMax*ROUT_FRAC){
     const anchored = enemies.some(x=>isAnchor(x.type));
     const fleeable = enemies.some(x=>moraleWeight(x.type)>0 && !x.fleeing);
     if(!anchored && fleeable && partyMorale <= partyMoraleMax*ROUT_FRAC) triggerRout();
@@ -1603,7 +1652,7 @@ function kill(e){
   biomass += CFG.killBounty + run.killBonus;
   partyMorale -= moraleWeight(e.type); // DR-#052: this death shakes the party's nerve (2x for tank/healer)
   if(e.fleeing){ // DR-#052: a routed raider drops the treasure it came to steal — reward for breaking them
-    const loot = 14 + Math.floor(Math.random()*8);
+    const loot = Math.round((14 + Math.floor(Math.random()*8)) * (run&&run.nightLootMult||1)); // DR-#053: BLOOD MOON doubles it
     biomass += loot; popup(e.x, e.y-e.r-6, "LOOT +"+loot+"◈", "#ffd54a"); burst(e.x, e.y, "#ffd54a", 10);
   }
   killsThisRun++;

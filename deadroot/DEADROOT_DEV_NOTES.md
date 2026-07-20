@@ -1446,3 +1446,27 @@ last body. Now the raid has nerve.
   all survivors flee, killing a fleeing raider yields +24 biomass, the wave clears to prep.
   TEST 2 wave-7 (butcher anchor) → NO rout at morale 4/20 while the butcher lives; kill it →
   rout fires same frame. Inline script parses via `new Function`. Browser playtest = Mike.
+
+## DR-#053 — Endless night modifiers + veteran carryover (retention) (2026-07-19)
+Gap-analysis batch (CrazyGames Part 2, GAME_BIBLE law #5 "every run should differ"): endless
+only ever got BIGGER — same five roles, scaled up. That's the Flipline treadmill. Now every
+endless NIGHT rolls a modifier that changes HOW the raid fights, telegraphed in the prep modal.
+
+- **7 night modifiers** (`NIGHT_MODS`, `pickNightMod` = random, never twice in a row):
+  BLOOD MOON (raid +28% speed, DOUBLE loot on routers), THE ZEALOTS (+2 clerics, heal ×1.6),
+  THE UNBOWED (the raid will NOT rout this night — fight to the last), SIEGE COLUMN (+2 knights,
+  all raiders +35% HP), WILDFIRE (+3 incinerators), THIN RANKS (60% the bodies but +70% HP each),
+  NIGHT OF KNIVES (+5 thieves). Each is a few scalars (`run.nightHpMult/nightLootMult/
+  nightHealMult/noRout`, folded speed) + an optional in-place comp mutation (`bumpCount`/`scaleCounts`),
+  all read by systems that already existed (spawn HP, cleric heal, rout gate, rout loot).
+- **Veteran carryover** ties the new rout system (DR-#052) into retention: a routed raider that
+  reaches the west gate ESCAPES and is banked (`run.veterans`); next night that many return
+  hardened (`nightHpMult *= 1 + vets*0.04`, capped 12). This makes the run's history matter —
+  and creates a real decision at every rout: hunt the runners for loot AND to deny veterans, or
+  let them go and pay for it next night.
+- Telegraph: the endless prep modal now names the modifier + its effect (+ "N veterans returned"
+  + "a PURIFIER marches with them" on boss nights). Campaign waves untouched.
+- **Verified headless** (dr_rout_harness TEST 3): 80 rolls → all 7 modifiers appear, zero
+  consecutive repeats, every flag equals its modifier's declared scalars, WILDFIRE incin 6→9,
+  THIN RANKS party 46→28, veteran night nightHpMult = mod.hp × 1.32 with the counter reset to 0.
+  Rout/morale suites (TEST 1/2) still green. Inline script parses. Browser playtest = Mike.
