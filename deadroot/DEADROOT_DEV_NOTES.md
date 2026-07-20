@@ -1497,3 +1497,11 @@ Campaign threat curve (objective, from WAVES × CFG.enemies; hp in counter-hits,
   the rout in play — the old "waves 5-8 killed a sloppy sim" note is stale.
 - Knobs if it needs softening/hardening: per-level `grant` (startLevel economy), `endlessHpMult`
   base, `CFG.enemies.*.hp/dmg`, `ROUT_FRAC`/`ROUT_MIN_PARTY` (how readily waves break).
+
+## DR — Cover thumbnail added (2026-07-19)
+Closed the one missing Part-4 item from the shippable audit: `deadroot/thumbnail.html`, a
+procedural 2048×1152 (16:9) cover generator (click to download PNG), matching jade-fist's pattern.
+Scene themes the DR-#052 signature moment: the ROOTQUEEN deep in a root-cavern, green undead
+defenders posted, and adventurers ROUTING from the west gate (dropping gold loot) — "you are the
+dungeon. build it. break them." Verified rendered (canvas pixel-sample: Queen purple, fleeing
+raider blue, zombies green, 46% painted). Mike: open it, tweak to taste, download the PNG.

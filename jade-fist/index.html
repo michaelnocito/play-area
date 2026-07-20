@@ -367,6 +367,9 @@ const DEBUG = BOTQ.has('debug');
 // default; QA-only (never reachable from normal play, CG-safe).
 const DEVMODE = BOTQ.has('dev');
 const TUNE = { spd: 1, wind: 1, hpD: 0, heartsD: 0, diffD: 0 };
+// JF-#063 DEV:BEGIN — ?dev=1 live tuning panel. STRIP this block before submission
+// (GAME_BIBLE Part 5). Nothing here is load-bearing: it only writes to the TUNE object
+// above, whose neutral defaults (spd/wind 1, others 0) remain when the block is removed.
 if (DEVMODE) addEventListener('DOMContentLoaded', () => {
   const KNOBS = [
     ['spd',     'enemy speed ×',          0.4, 2.2, 0.05],
@@ -396,6 +399,7 @@ if (DEVMODE) addEventListener('DOMContentLoaded', () => {
     el.value = TUNE[k]; document.getElementById('devV_' + k).textContent = TUNE[k];
   });
 });
+// JF-#063 DEV:END
 function botThink(){
   // JF-#059: survival first — answer an incoming projectile by its height.
   // low -> duck (kick back), mid -> back-step (sidestep), high -> rise (catch).

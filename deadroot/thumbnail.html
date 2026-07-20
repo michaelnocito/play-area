@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DEADROOT — cover generator (DR-#053)</title>
+<style>
+  body{background:#0e1214;color:#dfe6ec;font-family:ui-monospace,monospace;text-align:center;margin:0;padding:20px}
+  canvas{max-width:90vw;height:auto;border:1px solid #2a3a2a}
+  button{font:bold 18px ui-monospace,monospace;background:#8fd9a8;color:#10201a;border:0;padding:12px 28px;margin:16px;cursor:pointer;border-radius:8px}
+  p{color:#9aa4b0}
+</style>
+</head>
+<body>
+<p>CrazyGames cover, 2048×1152 (16:9). Click to download the PNG. Procedural — refine to taste.</p>
+<canvas id="c" width="2048" height="1152"></canvas><br>
+<button id="dl">Download deadroot-cover.png</button>
+<script>
+'use strict';
+const cx = document.getElementById('c').getContext('2d');
+const W = 2048, H = 1152;
+
+// ---- underground cavern ----
+const g = cx.createLinearGradient(0, 0, 0, H);
+g.addColorStop(0, '#0a0f0c'); g.addColorStop(0.5, '#141c17'); g.addColorStop(1, '#080b09');
+cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+// deep chamber glow behind the Queen
+const gq = cx.createRadialGradient(1500, 620, 60, 1500, 620, 620);
+gq.addColorStop(0, 'rgba(176,136,224,0.30)'); gq.addColorStop(1, 'rgba(176,136,224,0)');
+cx.fillStyle = gq; cx.fillRect(0, 0, W, H);
+
+// ---- root tendrils framing the scene ----
+function root(x, y, ang, len, w, depth){
+  if (depth <= 0 || w < 2) return;
+  const nx = x + Math.cos(ang) * len, ny = y + Math.sin(ang) * len;
+  cx.strokeStyle = '#2c3a2a'; cx.lineWidth = w; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(x, y);
+  cx.quadraticCurveTo((x + nx) / 2 + w, (y + ny) / 2, nx, ny); cx.stroke();
+  root(nx, ny, ang - 0.5, len * 0.72, w * 0.7, depth - 1);
+  root(nx, ny, ang + 0.4, len * 0.78, w * 0.66, depth - 1);
+}
+for (let i = 0; i < 7; i++){ root(-40, 120 + i * 150, 0.15 + i * 0.03, 220, 44, 4); root(W + 40, 90 + i * 150, Math.PI - 0.15 - i * 0.03, 220, 40, 4); }
+// ceiling + floor rooty band
+cx.fillStyle = '#1a241a';
+for (let x = -20; x < W + 20; x += 90){ cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x + 45, 0); cx.lineTo(x + 22, 60 + (x % 3) * 14); cx.closePath(); cx.fill(); }
+
+// ---- biomass motes ----
+for (let i = 0; i < 90; i++){
+  const bx = (i * 137.5) % W, by = (i * 91.3) % H, r = 2 + (i % 4);
+  cx.fillStyle = 'rgba(143,217,168,' + (0.10 + (i % 5) * 0.05) + ')';
+  cx.beginPath(); cx.arc(bx, by, r, 0, 7); cx.fill();
+}
+
+// ---- the ROOTQUEEN (deep chamber, right) ----
+(function queen(){
+  const x = 1500, y = 640;
+  cx.fillStyle = '#3a2a4a';
+  cx.beginPath(); cx.ellipse(x, y, 210, 250, 0, 0, 7); cx.fill();
+  cx.fillStyle = '#7a4fa0';
+  cx.beginPath(); cx.ellipse(x, y, 165, 205, 0, 0, 7); cx.fill();
+  cx.fillStyle = '#b088e0';
+  cx.beginPath(); cx.ellipse(x, y - 20, 96, 120, 0, 0, 7); cx.fill();
+  // eyes
+  cx.fillStyle = '#e8f0c0';
+  for (const dx of [-46, 46]){ cx.beginPath(); cx.ellipse(x + dx, y - 40, 20, 30, 0, 0, 7); cx.fill(); }
+  cx.fillStyle = '#1a1020';
+  for (const dx of [-46, 46]){ cx.beginPath(); cx.arc(x + dx, y - 30, 11, 0, 7); cx.fill(); }
+  // spore crown
+  cx.strokeStyle = '#b088e0'; cx.lineWidth = 8; cx.lineCap = 'round';
+  for (let a = -1.2; a <= 1.2; a += 0.4){ cx.beginPath(); cx.moveTo(x, y - 150); cx.lineTo(x + Math.sin(a) * 150, y - 150 - Math.cos(a) * 120); cx.stroke(); }
+})();
+
+// ---- undead defenders (green, posted) ----
+function zombie(x, y, s, tint){
+  cx.save(); cx.translate(x, y); cx.scale(s, s);
+  cx.fillStyle = tint || '#5a7a4a';
+  cx.beginPath(); cx.ellipse(0, 0, 42, 64, 0, 0, 7); cx.fill();        // body
+  cx.fillStyle = tint || '#6a8a56';
+  cx.beginPath(); cx.arc(0, -78, 38, 0, 7); cx.fill();                  // head
+  cx.fillStyle = '#c8e0a0';                                            // eyes
+  cx.beginPath(); cx.arc(-13, -82, 7, 0, 7); cx.arc(13, -82, 7, 0, 7); cx.fill();
+  cx.fillStyle = '#1a2414';
+  cx.beginPath(); cx.arc(-13, -80, 3, 0, 7); cx.arc(13, -80, 3, 0, 7); cx.fill();
+  cx.strokeStyle = tint || '#6a8a56'; cx.lineWidth = 18; cx.lineCap = 'round';  // arms out (shamble)
+  cx.beginPath(); cx.moveTo(-30, -18); cx.lineTo(-70, -34); cx.moveTo(30, -18); cx.lineTo(70, -30); cx.stroke();
+  cx.restore();
+}
+zombie(760, 940, 1.5);
+zombie(980, 1000, 1.25, '#4a6a3c');
+zombie(1180, 940, 1.35);
+zombie(560, 1010, 1.15, '#4a6a3c');
+
+// ---- a GRABBER (rooted, rot aura) ----
+(function grabber(){
+  const x = 1330, y = 980;
+  cx.fillStyle = 'rgba(120,90,160,0.22)';
+  cx.beginPath(); cx.arc(x, y - 60, 150, 0, 7); cx.fill();
+  zombie(x, y, 1.4, '#6a4f8a');
+})();
+
+// ---- the RAID BREAKS: adventurers routing from the west gate ----
+function raider(x, y, s, col, flee){
+  cx.save(); cx.translate(x, y); cx.scale(flee ? -s : s, s);   // flee = facing back toward the gate
+  cx.fillStyle = col;
+  cx.beginPath(); cx.ellipse(0, 0, 34, 56, 0, 0, 7); cx.fill();          // torso/armor
+  cx.fillStyle = '#d8cbb0'; cx.beginPath(); cx.arc(0, -70, 30, 0, 7); cx.fill();  // head
+  cx.fillStyle = '#2a2a30'; cx.fillRect(-30, -92, 60, 14);               // helm brim
+  if (flee){                                                             // dropped loot + panic lines
+    cx.fillStyle = '#ffd54a'; cx.beginPath(); cx.arc(40, 46, 12, 0, 7); cx.fill();
+    cx.strokeStyle = 'rgba(255,213,74,0.6)'; cx.lineWidth = 5;
+    cx.beginPath(); cx.moveTo(-58, -40); cx.lineTo(-30, -40); cx.moveTo(-58, -10); cx.lineTo(-24, -10); cx.stroke();
+  } else {
+    cx.strokeStyle = '#c8ccd4'; cx.lineWidth = 12; cx.lineCap = 'round';  // sword raised
+    cx.beginPath(); cx.moveTo(24, -26); cx.lineTo(64, -96); cx.stroke();
+  }
+  cx.restore();
+}
+// west root-gate glow
+const gg = cx.createRadialGradient(140, 640, 30, 140, 640, 420);
+gg.addColorStop(0, 'rgba(200,150,90,0.28)'); gg.addColorStop(1, 'rgba(200,150,90,0)');
+cx.fillStyle = gg; cx.fillRect(0, 0, 560, H);
+raider(360, 760, 2.1, '#7fb2d9', true);   // fleeing knight (blue)
+raider(230, 900, 1.7, '#b06a6a', true);   // fleeing cleric (red), dropping loot
+raider(520, 700, 1.8, '#6a80a0', false);  // one still pressing in
+
+// ---- title ----
+cx.textAlign = 'center';
+cx.fillStyle = 'rgba(6,9,7,0.5)'; cx.fillRect(0, 70, W, 250);
+cx.font = 'bold 210px ui-monospace, monospace'; cx.lineJoin = 'round';
+cx.strokeStyle = '#0a0f0c'; cx.lineWidth = 22; cx.strokeText('DEADROOT', W/2, 250);
+const tg = cx.createLinearGradient(0, 90, 0, 270);
+tg.addColorStop(0, '#b088e0'); tg.addColorStop(1, '#8fd9a8');
+cx.fillStyle = tg; cx.fillText('DEADROOT', W/2, 250);
+cx.fillStyle = '#dfe6ec'; cx.font = 'italic 56px Georgia, serif';
+cx.fillText('you are the dungeon.  build it.  break them.', W/2, 330);
+
+document.getElementById('dl').onclick = () => {
+  const a = document.createElement('a');
+  a.download = 'deadroot-cover.png';
+  a.href = document.getElementById('c').toDataURL('image/png');
+  a.click();
+};
+</script>
+</body>
+</html>
