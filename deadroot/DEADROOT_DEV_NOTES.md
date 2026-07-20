@@ -1416,3 +1416,33 @@ Verified: inline script parses clean via `new Function` (node). Logic trace on L
 top/bottom split) and L3 (three routes around the two-mouth throne ring): pathStep routes each
 waypoint around the walls; arrival + route-advance + flow-field handoff preserved. Browser
 playtest deferred to Mike (preview not feasible this session).
+
+## DR-#052 — Party morale & rout (the signature reverse-dungeon moment) (2026-07-19)
+Gap-analysis batch (CrazyGames Part 2, "the retellable moment"): the reverse-TD fantasy is
+"you build the dungeon, the heroes break against it and RUN." Until now they fought to the
+last body. Now the raid has nerve.
+
+- **Morale** = weight-sum of the wave's living rank-and-file. Knights (tanks) and clerics
+  (healers) count DOUBLE (`moraleWeight`), so losing them craters morale — this teaches the
+  same "kill the healer/tank first" priority the first-encounter banners already hint at.
+  Bosses/butchers are ANCHORS (`isAnchor`): weight 0, never flee, and their presence
+  suppresses the rout entirely. Kill the anchor and the rest can break.
+- **Rout** (`triggerRout`) fires once the whole party has committed (spawn queue empty), no
+  anchor is alive, the Hive is still winning (`hiveHP > hiveMax*ROUT_FRAC` — they don't panic
+  when they're about to break through), and morale has fallen to `ROUT_FRAC` (34%) of its
+  start. `ROUT_MIN_PARTY = 6` keeps the 4-scav opening scout wave (the tutorial) from ever
+  breaking. Survivors turn and sprint for the west gate (`e.fleeing`, BFS `pathStep` to the
+  gate, 1.35× panic speed), dropping their objective; they still run the tower gauntlet.
+- **Loot**: a routed raider cut down drops the treasure it came to steal (`+14–21` biomass,
+  gold burst) — the reward for breaking them. Reaching the gate = ESCAPES clean (you cleared
+  the wave either way, since fleeing raiders leave `enemies` and `waveCleared` fires normally).
+- **Feedback**: a "RAID MORALE" bar under the wave counter with a red tick at the break point
+  (turns amber as it nears, gold "RAID ROUTED — LOOT THEM" after); gold screen pulse + broken
+  war-horn `SFX.rout` + shake + brief slow-mo on the break; gold panic particles off runners.
+- **Tuning knobs for playtest**: `ROUT_FRAC` (break point), `ROUT_MIN_PARTY` (smallest wave
+  that can break), panic-speed 1.35×, loot 14–21, double-weight members.
+- **Verified headless** (scratchpad `dr_rout_harness.js`, stubs DOM/audio, evals the real
+  script, drives real waves): TEST 1 wave-6 (moraleMax 19, no anchor) → rout fires at 5/19,
+  all survivors flee, killing a fleeing raider yields +24 biomass, the wave clears to prep.
+  TEST 2 wave-7 (butcher anchor) → NO rout at morale 4/20 while the butcher lives; kill it →
+  rout fires same frame. Inline script parses via `new Function`. Browser playtest = Mike.

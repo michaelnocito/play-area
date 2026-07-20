@@ -275,7 +275,8 @@ const SFX = {
   sweep(){ tone(900,1400,0.12,"square",0.05); },
   wave(){ tone(200,400,0.35,"triangle",0.12); tone(300,600,0.35,"triangle",0.09,0.12); },
   ui(){ tone(600,800,0.06,"sine",0.07); },
-  deny(){ tone(220,150,0.12,"square",0.09); }
+  deny(){ tone(220,150,0.12,"square",0.09); },
+  rout(){ tone(300,110,0.6,"sawtooth",0.22); tone(220,80,0.7,"sawtooth",0.16,0.08); noise(0.4,0.18,false); } // DR-#052: a broken war-horn as the raid's nerve snaps
 };
 
 /* ===== Drone (persistent bass, rises as Hive HP drops) ===== */
@@ -431,6 +432,12 @@ function towerAimAngle(t){
 // DR-#010 juice
 let hitStop = 0, slowMoT = 0, timeScale = 1; // hit-stop + wave-clear slow-mo
 let edgePulseT = 0;                           // screen-edge red flash on hive damage
+// DR-#052: party morale + rout. partyMorale is the weight-sum of the wave's living rank-and-file
+// (knights/clerics count double); when it falls below ROUT_FRAC of its start AND no boss anchors
+// the raid, the survivors break and flee for the west gate, dropping loot when cut down.
+let routed = false, partyMorale = 0, partyMoraleMax = 0, routFlashT = 0;
+const ROUT_FRAC = 0.34;
+const ROUT_MIN_PARTY = 6; // the 4-scav opening scout wave never breaks (it's the tutorial); wave 2+ can
 let droneNode = null, droneGain = null;       // persistent bass drone
 let droneNode2 = null, droneGain2 = null;     // tension layer (joins below 25% HP)
 // run stats
@@ -984,6 +991,7 @@ function newRun(){
   gateOpenT = [0,0,0,0]; prevGateN = 0; // DR-#029 C9
   if(daily){ const [h,hp]=dailyMods(); h.apply(run); hp.apply(run); }
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
+  routed=false; partyMorale=0; partyMoraleMax=0; routFlashT=0; // DR-#052
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
   comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
   seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; seenEvolveTeach=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
@@ -1065,6 +1073,8 @@ function queueWave(){
     for(let i=0;i<count;i++){ spawnQ.push({type, at:t}); t += 0.1; }
   }
   spawnQ.sort((a,b)=>a.at-b.at);
+  // DR-#052: seed party morale from the wave's fleeable strength (anchors excluded)
+  partyMoraleMax = spawnQ.reduce((s,q)=>s+moraleWeight(q.type), 0); partyMorale = partyMoraleMax; routed = false;
   spawnT = 0; waveT = 0; waveStartHP = hiveHP; waveFlashT = 0.15; lastSurvivorShown = false;
   mode = "play";
   SFX.wave();
@@ -1206,6 +1216,24 @@ function update(){
     }
     if(strangled) e.hp -= 8*DT*meta.dmg;
     let spd = e.spd * CFG.tile * slowMul;
+    // DR-#052 ROUT: a broken raider ignores its objective and sprints back to the west gate.
+    // It still runs the gauntlet (towers/auras keep hurting it — that's how you loot it); reaching
+    // the gate = escapes clean. Placed before the type-specific logic so fleeing overrides everything.
+    if(e.fleeing){
+      if(e.hp<=0){ kill(e); continue; }
+      const gate = CFG.gates[0];
+      const [ec,er] = xyToTile(e.x, e.y);
+      let dx, dy;
+      const key = "F|"+ec+","+er;
+      if(e.wpKey!==key){ e.wpKey=key; e.wpStep = (ec===gate.c && er===gate.r) ? null : pathStep(ec,er,gate.c,gate.r); }
+      if(e.wpStep){ const [nx,ny]=tileToXY(ec+e.wpStep[0], er+e.wpStep[1]); dx=nx-e.x; dy=ny-e.y; }
+      else { const [gx,gy]=tileToXY(gate.c,gate.r); dx=gx-e.x; dy=gy-e.y; }
+      const m = Math.hypot(dx,dy)||1;
+      moveWithWalls(e, dx/m*spd*1.35*DT, dy/m*spd*1.35*DT); // panic sprint
+      if(Math.random()<0.1) addParticle({x:e.x+(Math.random()-0.5)*10, y:e.y-e.r, vx:0, vy:-24, t:0.5, col:"#ffe060"});
+      if(e.x < CFG.tile*0.55){ popup(e.x, e.y-e.r, "ESCAPES", "#b0a090"); enemies.splice(i,1); }
+      continue;
+    }
     // DR-#036 STEALTH: a hidden thief creeping within reach of a zombie AMBUSHES it — stuns that
     // one unit for 1.5s and breaks stealth. Towers can't target it while hidden.
     if(e.hidden){
@@ -1364,6 +1392,15 @@ function update(){
       }
     }
     if(e.hp<=0){ kill(e); }
+  }
+  // DR-#052: does the raid's nerve break this frame? Only once the whole party has committed
+  // (spawn queue empty), only if no anchor (boss/butcher) is holding them, only while the Hive is
+  // still winning (they don't panic when they're about to break through), and only for waves big
+  // enough to have a nerve to lose. Survivors then rout for the gate.
+  if(mode==="play" && !routed && spawnQ.length===0 && partyMoraleMax>=ROUT_MIN_PARTY && hiveHP > hiveMax*ROUT_FRAC){
+    const anchored = enemies.some(x=>isAnchor(x.type));
+    const fleeable = enemies.some(x=>moraleWeight(x.type)>0 && !x.fleeing);
+    if(!anchored && fleeable && partyMorale <= partyMoraleMax*ROUT_FRAC) triggerRout();
   }
   // last survivor drama — one banner per wave
   if(mode==="play" && spawnQ.length===0 && enemies.length===1 && !lastSurvivorShown){
@@ -1564,6 +1601,11 @@ function damage(e, amt, pierce){
 function kill(e){
   const idx = enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
   biomass += CFG.killBounty + run.killBonus;
+  partyMorale -= moraleWeight(e.type); // DR-#052: this death shakes the party's nerve (2x for tank/healer)
+  if(e.fleeing){ // DR-#052: a routed raider drops the treasure it came to steal — reward for breaking them
+    const loot = 14 + Math.floor(Math.random()*8);
+    biomass += loot; popup(e.x, e.y-e.r-6, "LOOT +"+loot+"◈", "#ffd54a"); burst(e.x, e.y, "#ffd54a", 10);
+  }
   killsThisRun++;
   // death yelp (dark comedy — 1 in 5 non-bosses)
   if(e.type!=="boss" && e.type!=="butcher" && Math.random()<0.2)
@@ -1596,6 +1638,25 @@ function kill(e){
 }
 function dist2(a,b){ return (a.x-b.x)**2+(a.y-b.y)**2; }
 function sq(n){ return n*n; }
+// DR-#052: how much a member is worth to party nerve. Bosses/butchers anchor the raid (they never
+// flee) so they sit outside the morale pool; the knight (tank) and cleric (healer) are worth double
+// — losing them craters morale, which teaches the same "kill the healer/tank first" priority the
+// first-encounter banners hint at.
+function isAnchor(type){ return type==="boss" || type==="butcher"; }
+function moraleWeight(type){ return isAnchor(type) ? 0 : (type==="troop"||type==="cleric") ? 2 : 1; }
+function triggerRout(){
+  routed = true;
+  let n = 0;
+  for(const e of enemies){
+    if(isAnchor(e.type) || e.fleeing) continue;
+    e.fleeing = true; e.aggro = null; e.aggroT = 0; e.target = null;
+    e.wp = null; e.wps = []; e.wpStep = null; e.wpKey = null; e.searchT = 0; e.hidden = false;
+    burst(e.x, e.y - e.r, "#ffe060", 6); n++;
+  }
+  if(n <= 0){ return; }
+  showBanner("THE RAID BREAKS!", "they run for the gate — cut them down to loot the fallen");
+  routFlashT = 1.0; shakeIt(6); slowMoT = 0.4; timeScale = 0.25; SFX.rout();
+}
 
 /* ===== Input ===== */
 let paused = false;
@@ -2933,6 +2994,12 @@ function draw(){
   }
   // wave-start flash
   if(waveFlashT>0){ ctx.fillStyle="rgba(255,255,255,"+(waveFlashT/0.15*0.13)+")"; ctx.fillRect(0,0,W,H); }
+  // DR-#052: gold pulse the moment the raid breaks
+  if(routFlashT>0){
+    const rg = ctx.createRadialGradient(W/2,H/2,H*0.15,W/2,H/2,H*0.9);
+    rg.addColorStop(0,"rgba(0,0,0,0)"); rg.addColorStop(1,"rgba(240,200,70,"+(routFlashT*0.4).toFixed(3)+")");
+    ctx.fillStyle=rg; ctx.fillRect(0,0,W,H);
+  }
 }
 /* DR-#039: the ROOTQUEEN — compact, regal, fits her 2x2 (4-tile) footprint. She replaces the
    old sprawling central eye; she is the boss of each level from the raiders' side. */
@@ -3032,6 +3099,18 @@ function drawHUD(){
   ctx.fillText(wn, W/2+90, 36);
   ctx.font="bold 15px monospace"; ctx.fillStyle="#9aa4b0";
   ctx.fillText(endless?"THE LONG NIGHT":("LEVEL "+(levelIdx+1)+" — "+curLevel().name), W/2+90, 58);
+  // DR-#052: raid morale meter — a small bar under the wave label; a red tick marks the break point.
+  if(mode==="play" && partyMoraleMax>=ROUT_MIN_PARTY){
+    const mr = Math.max(0, Math.min(1, partyMorale/partyMoraleMax));
+    const bw=150, bh=8, bx=W/2+90-bw/2, by=64;
+    ctx.fillStyle="#241d2e"; ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle = routed ? "#ffd54a" : (mr<=0.45 ? "#e0a040" : "#7fae7f");
+    ctx.fillRect(bx,by,bw*(routed?1:mr),bh);
+    ctx.fillStyle="rgba(255,80,80,0.75)"; ctx.fillRect(bx+bw*ROUT_FRAC-1,by-2,2,bh+4); // break threshold
+    ctx.strokeStyle="rgba(255,255,255,0.18)"; ctx.strokeRect(bx,by,bw,bh);
+    ctx.fillStyle = routed ? "#ffd54a" : "#7a8590"; ctx.font="10px monospace"; ctx.textAlign="center";
+    ctx.fillText(routed?"RAID ROUTED — LOOT THEM":"RAID MORALE", W/2+90, by+bh+11);
+  }
   // DNA
   ctx.fillStyle="#c9a0f0"; ctx.textAlign="right"; ctx.font="bold 24px monospace";
   ctx.fillText("◆"+save.dna, W-146, 44);
@@ -3432,6 +3511,7 @@ function frame(t){
   if(dt>0.25) dt = 0.25;
   perfNow += dt;
   if(edgePulseT>0) edgePulseT = Math.max(0, edgePulseT - dt*2.5);
+  if(routFlashT>0) routFlashT = Math.max(0, routFlashT - dt*1.6); // DR-#052
   if(rotateHintT>0) rotateHintT = Math.max(0, rotateHintT - dt);
   if(rotTipT>0 && !paused && mode!=="over" && mode!=="victory") rotTipT = Math.max(0, rotTipT - dt);
   if(evolveTipT>0 && !paused) evolveTipT = Math.max(0, evolveTipT - dt);
