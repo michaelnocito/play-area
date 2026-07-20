@@ -1470,3 +1470,30 @@ endless NIGHT rolls a modifier that changes HOW the raid fights, telegraphed in 
   consecutive repeats, every flag equals its modifier's declared scalars, WILDFIRE incin 6→9,
   THIN RANKS party 46→28, veteran night nightHpMult = mod.hp × 1.32 with the counter reset to 0.
   Rout/morale suites (TEST 1/2) still green. Inline script parses. Browser playtest = Mike.
+
+## DR — Shippable audit + L2/L3 balance note (2026-07-19, post DR-#052/#053)
+Part 4 audit (code-verified, not guessed):
+- ✅ No Escape/Ctrl+W. Mouse-only core → AZERTY N/A; only keys are P (pause) / M (mute) / ` (dev),
+  all resolve by character so AZERTY is fine anyway.
+- ✅ Fixed-timestep accumulator (`frame()`: `acc += dt*timeScale; while(acc>=DT) update()`) →
+  144Hz-stable. ✅ DPR crisp (`min(dpr,2)`). ✅ Pause + on-screen button + visibilitychange +
+  window-blur auto-pause. ✅ SDK init/gameplayStart-Stop/midgame+rewarded(Second Wind)/adblock.
+  ✅ localStorage `deadroot_save_v1` (Progress-Save toggle at submit). ✅ Mute persists.
+  ✅ No external/cross-promo links. ✅ `DR-#019 DEV:BEGIN..DEV:END` markers paired (strip in 1 step).
+- ⚠️ NO thumbnail/cover asset in deadroot/ (jade-fist has thumbnail.html). Needs a 2048×1152 cover
+  before submission — build a deadroot/thumbnail.html generator matching the art.
+- ⏳ Mike: PEGI 12 + honest description, full live playthrough QA (desktop + mobile).
+
+Campaign threat curve (objective, from WAVES × CFG.enemies; hp in counter-hits, dps = hive dmg/attack):
+  W1 L1 cnt4 hp160 dps20        W5 L2 cnt5 hp630 dps20 (RELIEF)   W9  L3 cnt13 hp1020 dps120
+  W2 L1 cnt6 hp240 dps30        W6 L2 cnt9 hp460 dps70            W10 L3 cnt17 hp1670 dps100
+  W3 L1 cnt11 hp540 dps45       W7 L2 cnt13 hp1510 dps120 (SPIKE) W11 L3 cnt27 hp2295 dps200 (PEAK)
+  W4 L1 cnt8 hp640 dps50        W8 L2 BOSS hp1620 dps102          W12 L3 BOSS hp2960 dps84
+- The SHAPE is already dramatic (W5 relief, W7/W11 spikes, bosses punctuate; threat rises ~18×
+  L1→L3), so it is NOT a monotone treadmill. The open question is absolute player-power vs these
+  numbers — a FEEL call, Mike's to make on the live build, and it just shifted EASIER + RICHER:
+  DR-#052 rout now breaks W7 (moraleMax 19, breakAt 7) and W11 (moraleMax 36, breakAt 13) once
+  softened, ending the two hardest waves early and refunding loot. So re-tune L2/L3 AFTER feeling
+  the rout in play — the old "waves 5-8 killed a sloppy sim" note is stale.
+- Knobs if it needs softening/hardening: per-level `grant` (startLevel economy), `endlessHpMult`
+  base, `CFG.enemies.*.hp/dmg`, `ROUT_FRAC`/`ROUT_MIN_PARTY` (how readily waves break).
