@@ -301,14 +301,14 @@ CG.init(() => { CG.loadingStart(); CG.loadingStop(); CG.checkAdblock(); cv.style
 // never raise the skill ceiling; ~×2 cost per tier; first buy within 1-2 runs.
 const SAVE_KEY = 'jf_save_v1';
 let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
-             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0,
+             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0, tut: 0,
              cos: { own: [1,0,0,0,0], wear: 0 }, hall: [[],[],[],[],[]] };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && s.up) save = {
     jade: s.jade | 0, up: Object.assign(save.up, s.up),
     kills: s.kills | 0, ach: s.ach || {}, day: s.day || '', streak: s.streak | 0,
-    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0,
+    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0, tut: s.tut | 0,
     cos: (s.cos && s.cos.own) ? { own: s.cos.own, wear: s.cos.wear | 0 } : save.cos,
     hall: Array.isArray(s.hall) && s.hall.length === 5 ? s.hall : save.hall
   };
@@ -600,6 +600,15 @@ const UPS = [
 
 const S_MENU = 0, S_PLAY = 1, S_DEAD = 2, S_STORY = 3, S_END = 4, S_PAUSE = 5;   // JF-#014
 let state = save.intro ? S_MENU : S_STORY;   // JF-#012: first launch opens on the tale
+// JF-#062: guided first-fight tutorial. A scripted, SKIPPABLE teach of the core
+// dodge->counter loop, wrapped around the REAL combat (one slow strike-only
+// sparring dummy, hearts disabled) so nothing about the mechanics is faked.
+// Runs once, gated on save.tut; ?tut=1 forces it for QA. Success bar (CG onboarding):
+// the player lands a counter well inside their first few windups.
+const TUT_FORCE = new URLSearchParams(location.search).has('tut');
+const TUT_WINDUP = 80, TUT_GOAL = 3;   // long unmissable telegraph; 3 counters to graduate
+let tut = { active: false, step: 0, counters: 0, done: false };
+let tutSkipRect = null;
 let t = 0;                       // global frame clock
 let shake = 0, hitStop = 0, slowMo = 0;
 // JF-#061: hit-stop tiers straight from Capcom's own numbers. Their SF Seminar
@@ -1243,6 +1252,7 @@ function strike(dir, forceLine){
     if (e.type === T_FAST) bumpTrial('vip');
     if (perfect) bumpTrial('perf');
     counters++; jadeRun += perfect ? 5 : 3;
+    if (tut.active) tutOnCounter();   // JF-#062: advance the guided teach
     award('counter');
     if (e.type === T_BRUTE) award('monk');
     if (e.type === T_SPEAR) award('spear');
@@ -1559,6 +1569,7 @@ function resolveEnemyHit(e){
 }
 
 function hurtPlayer(){
+  if (tut.active){ hurtFlash = 8; shake = Math.max(shake, 4); return; }   // JF-#062: no damage while learning — a whiffed dodge just costs the exchange
   hearts--; hurtFlash = 18; combo = 0; perfChain = 0; hitsWave++;
   shake = 12; Snd.hurt();
   burst(P.x, P.y - 50, '#e86a6a', 16, 4);
@@ -1727,6 +1738,10 @@ cv.addEventListener('pointerdown', e => {
     }
     if (y > 370) return;    // dead zone around the shop — no accidental restarts
   }
+  // JF-#062: SKIP button during the guided teach (onboarding must be skippable)
+  if (state === S_PLAY && tut.active && tutSkipRect &&
+      x >= tutSkipRect.x && x <= tutSkipRect.x + tutSkipRect.w &&
+      y >= tutSkipRect.y && y <= tutSkipRect.y + tutSkipRect.h){ skipTut(); return; }
   // JF-#040: on-screen control pad takes priority over tap-to-strike
   if (state === S_PLAY && !scrollOffer){
     for (const b of padRects){
@@ -1827,20 +1842,66 @@ function beginRun(){
   moonWakeT = 0; propHitT = 0; restGag = null;   // JF-#031
   dBase = DISTRICTS[sel].dBase;
   beginWave(1);
+  // JF-#062: on first launch, run the guided teach in place of the normal wave.
+  // BOT excluded — the fairness suite tests real combat, not onboarding.
+  tut.active = ((!save.tut) || TUT_FORCE) && !BOT;
+  tut.step = 0; tut.counters = 0; tut.done = false;
+  if (tut.active){
+    enemies.length = 0; toSpawn = 0; difficulty = 0; INTRO = 1e9; spawnT = 24;
+    hearts = Math.max(3, hearts);
+  }
   // JF-#012: veterans get the district's line instead of the controls lesson
-  msg = save.kills > 50
-    ? DISTRICTS[sel].name + ' — ' + DISTRICTS[sel].line
-    // JF-#059: no jumping — AMBER (high) answered by ▲, GRAB by ▼
-    : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade · AMBER ▲ · GRAB duck ▼'
-             : 'RED: strike INTO it or press AWAY · AMBER: press ▲ · GRAB: HOLD ▼');
-  msgT = 300;
+  if (!tut.active){
+    msg = save.kills > 50
+      ? DISTRICTS[sel].name + ' — ' + DISTRICTS[sel].line
+      // JF-#059: no jumping — AMBER (high) answered by ▲, GRAB by ▼
+      : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade · AMBER ▲ · GRAB duck ▼'
+               : 'RED: strike INTO it or press AWAY · AMBER: press ▲ · GRAB: HOLD ▼');
+    msgT = 300;
+  }
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS — DOUBLE JADE' +
     (save.streak > 1 ? '  ·  DAY ' + save.streak : ''), '#7ce8a8', true);
 }
 
+// JF-#062: tutorial helpers -------------------------------------------------
+function tutMaintain(dt){
+  // keep exactly ONE slow, strike-only sparring dummy alive; no other spawns
+  const live = enemies.some(e => e.tut && e.st !== E_DOWN && e.st !== E_THROWN);
+  if (live){ spawnT = 20; return; }
+  spawnT -= dt;
+  if (spawnT <= 0){
+    spawnEnemy(Math.random() < 0.5 ? -1 : 1);
+    const e = enemies[enemies.length - 1];
+    e.tut = 1; e.type = T_NORM; e.guard = 0; e.guardLine = undefined;
+    e.canEvade = false; e.feint = false; e.willThrow = false; e.elite = undefined;
+    e.hp = 2; e.hpMax = 2; e.speed *= 0.85;
+    spawnT = 26;
+  }
+}
+function tutOnCounter(){
+  tut.counters++;
+  if (tut.step === 1 && tut.counters >= TUT_GOAL) tut.done = true;   // graduate (finalized safely in update)
+}
+function finalizeTut(){
+  tut.active = false; tut.done = false;
+  save.tut = 1; persist();
+  enemies.length = 0; darts.length = 0;
+  banner('YOU ARE READY  ·  THE DISTRICT AWAITS', '#7ce8a8', 150);
+  slowMo = Math.max(slowMo, 24);
+  difficulty = 0; waveT = 0; INTRO = Math.max(240, 720 - beltOf(save.kills) * 120);
+  beginWave(1);   // start the real wave clean
+}
+function skipTut(){ if (tut.active){ Snd.tick(); finalizeTut(); } }
+
 // ---------------------------------------------------------------- update ----
 function update(){
   if (state === S_PAUSE) return;   // JF-#014: world fully frozen
+  // JF-#062: graduate the tutorial at a SAFE point (never mid enemy-loop)
+  if (tut.done) finalizeTut();
+  // JF-#062: first dodge arms readyT -> advance from the DODGE beat to the COUNTER beat
+  if (tut.active && tut.step === 0 && readyT > 0){
+    tut.step = 1; popup(P.x, P.y - 150, 'DODGED — YOU ARE ARMED', '#7ce8a8', true); Snd.tick();
+  }
   t++;
   if (BOT) botFrame();             // JF-#022: the bot drives every state
   // JF-#061: cap total shake. Nijman's "Art of Screenshake" point is that shake
@@ -1976,6 +2037,8 @@ function update(){
       if (won) endRun(true);                           // district cleared — run ends in victory
       else beginWave(wave + 1);
     }
+  } else if (tut.active){
+    tutMaintain(dt);   // JF-#062: the guided teach owns spawning until the player graduates
   } else {
     spawnT -= dt;
     // JF-#039: Punch-Out pacing — duelists enter ONE AT A TIME. The next
@@ -2054,10 +2117,11 @@ function update(){
           // JF-#040: pick this swing's attack + keep non-red swings reactable.
           // High/low/grab must clear the reaction+dodge budget (~react 12 + 30f
           // dodge), so they floor higher than a countered strike can.
-          e.atk = chooseAtk(e);
+          e.atk = e.tut ? 'strike' : chooseAtk(e);   // JF-#062: the sparring dummy only ever throws the core RED strike
           e.converted = false;
           if (e.atk === 'grab') e.windup = Math.max(e.windup, 36);
           else if (e.atk !== 'strike') e.windup = Math.max(e.windup, 32);
+          if (e.tut) e.windup = TUT_WINDUP;   // JF-#062: long, unmissable telegraph while learning
           // JF-#040: combo strings — a rank-and-file strike sometimes chains into
           // a second, mixed-up swing, so blocking the first doesn't end the
           // exchange (research: combos with a defender break-out window).
@@ -2985,6 +3049,38 @@ function draw(){
       cx.fillText(msg, W/2, 120);
       cx.globalAlpha = 1;
     }
+    // JF-#062: guided-teach coach overlay (captions + ripe-windup nudge + SKIP)
+    if (tut.active){
+      const dummy = enemies.find(e => e.tut);
+      const ripe = dummy && dummy.st === E_WINDUP && dummy.stT > dummy.windup * 0.45;
+      cx.textAlign = 'center';
+      // teach the LOOP: unarmed -> DODGE to arm, armed -> COUNTER. The prompt
+      // always names the correct next action, so the player never stalls.
+      const wantDodge = tut.step === 0 || readyT <= 0;
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = '#8a94a6';
+      cx.fillText('TRAINING', W/2, 150);
+      cx.font = 'bold 23px Georgia'; cx.fillStyle = '#e8dcc0';
+      cx.fillText(wantDodge
+        ? (TOUCH ? 'When he flashes RED — tap AWAY to DODGE' : 'When he flashes RED — press ◀ or ▶ AWAY to DODGE')
+        : (TOUCH ? 'ARMED! Now tap INTO his RED to COUNTER' : 'ARMED! Now STRIKE ◀ / ▶ into his RED to COUNTER'),
+        W/2, 178);
+      if (tut.step === 1){
+        cx.font = '15px Georgia'; cx.fillStyle = '#7ce8a8';
+        cx.fillText('counters  ' + tut.counters + ' / ' + TUT_GOAL, W/2, 200);
+      }
+      if (ripe){
+        cx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 0.3);
+        cx.font = 'bold 22px ' + COMIC; cx.fillStyle = wantDodge ? '#f0b24a' : '#7ce8a8';
+        cx.fillText(wantDodge ? 'DODGE!' : 'COUNTER!', W/2, 232);
+        cx.globalAlpha = 1;
+      }
+      const bw = 96, bh = 34, bx = W - bw - 16, by = H - bh - 16;
+      tutSkipRect = { x: bx, y: by, w: bw, h: bh };
+      cx.fillStyle = 'rgba(20,22,28,0.72)'; cx.fillRect(bx, by, bw, bh);
+      cx.strokeStyle = '#8a94a6'; cx.lineWidth = 1.5; cx.strokeRect(bx, by, bw, bh);
+      cx.fillStyle = '#c8bfa8'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'center';
+      cx.fillText('SKIP ▶', bx + bw/2, by + 23);
+    } else if (tutSkipRect){ tutSkipRect = null; }
     // JF-#025: scrolls held this run — small gold glyph row under the hearts
     {
       const held = SCROLLS.filter(s => run[s.k]);

@@ -1148,3 +1148,29 @@ Sources (Capcom's own frame data — worth keeping as ongoing reference):
 - MvC2 interview (6 buttons -> 4 for intuitiveness): eventhubs.com/news/2021/oct/09/marvel-vs-capcom-interview/
 - Capcom VFX team on Drive Parry X-vs-O: eventhubs.com/news/2023/jul/18/capcom-early-sf6-drive-parry/
 - Nijman, "The art of screenshake": youtube.com/watch?v=AJdEqssNZ-U
+
+## JF-#062 — Guided first-fight onboarding (2026-07-19)
+Gap-analysis batch (CrazyGames onboarding filter, the #1 acceptance risk after depth): the
+control model was reworked ~15 times because the dodge->counter loop never taught itself in the
+first seconds — the menu demo (JF-#018) is passive. This is an interactive, SKIPPABLE guided
+teach wrapped around the REAL combat (nothing faked).
+
+- Gated on `save.tut` (0 by default; `?tut=1` forces it for QA; `!BOT` so the fairness suite is
+  untouched). On first launch, `beginRun` clears the normal wave and hands spawning to `tutMaintain`,
+  which keeps exactly ONE slow (`TUT_WINDUP=80`), strike-only, guard/feint/evade-free sparring dummy
+  (hp 2) alive — via `chooseAtk`'s `e.tut ? 'strike'` + windup override. `hurtPlayer` is a no-op
+  while learning (safe space — a whiffed dodge just costs the exchange, not a heart).
+- Teaches the LOOP, not one beat: step 0 = "press ◀/▶ AWAY to DODGE the RED" (a fresh back-step
+  arms `readyT`, detected in update -> step 1). Step 1 coach reads the armed state every frame —
+  unarmed shows DODGE, armed shows "STRIKE INTO his RED to COUNTER" — so the player never stalls
+  after a counter consumes the arm. `TUT_GOAL=3` counters to graduate. A ripe-windup "DODGE!/
+  COUNTER!" nudge pulses when the swing is past 45%.
+- Graduation (`tut.done` handled at a SAFE point in update, never mid enemy-loop): sets `save.tut`,
+  banners "YOU ARE READY", resets difficulty/INTRO and calls `beginWave(1)` for a clean real fight.
+  A SKIP button (bottom-right, `tutSkipRect`) finalizes immediately (onboarding must be skippable).
+- **Verified headless** (scratchpad `jf_tut_harness.js`, real script + DOM/audio stubs, drives
+  press() by the dummy's telegraph): dodge learned, 3 counters landed, graduated, `save.tut=1`,
+  hearts stayed 3 (safe). `jf_bot_smoke.js`: `?bot=1` fairness suite still "✓ fair" (pctFast 0,
+  pctPincer 8), bot never enters the tutorial — combat provably unchanged. Inline script parses.
+- All new code is inert when `tut.active` is false, so returning players and the bot are byte-for-
+  byte unchanged. Browser playtest (feel, first-time comprehension) = Mike.
