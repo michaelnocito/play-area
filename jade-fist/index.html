@@ -772,7 +772,7 @@ const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, ri
 // timed duck for touch. duckAge (frames since the crouch began) gates rewards:
 // a FRESH read pays points + bullet time, a lazy held crouch just makes them
 // whiff — the NES paid you nothing for sitting down either.
-let duckHeld = false, padDuckActive = false;
+let duckHeld = false, padDuckActive = false, gpDuckActive = false;   // JF-#064: third crouch source (gamepad)
 // JF-#046: block/parry, heavy blow, and taunt REMOVED — Mike's call: the whole
 // fight fits on the arrow keys (◀▶ strike/evade, ▲▼ dodge + attack lines).
 // Mid attacks are answered by counter or back-step; guards are answered by
@@ -1767,6 +1767,64 @@ cv.addEventListener('pointerdown', e => {
 function padRelease(){ padDuckActive = false; }
 cv.addEventListener('pointerup', padRelease);
 cv.addEventListener('pointercancel', padRelease);
+
+// ------------------------------------------------ gamepad (G7 / JF-#064) ----
+// Roadmap G7: CrazyGames' "Controller" tag sits on only ~59 of the top games,
+// so it is cheap differentiation. Deliberately a THIN LAYER over the verbs the
+// keyboard already calls (press / highAction / duck / pauseGame) — there is
+// still exactly one combat implementation, so nothing here can change fight
+// balance, and polling is skipped outright while the bot fairness suite runs.
+let gpOn = false;                 // a pad has actually been used → show its hints
+let shopCur = 0;                  // tally cursor: 0-3 = upgrade tiles, 4 = ×2 ad tile
+const gpWas = { l: 0, r: 0, u: 0, d: 0, go: 0, alt: 0, alt2: 0, pause: 0 };
+function pollPad(){
+  if (BOT || !navigator.getGamepads) return;
+  let gp = null;
+  for (const g of navigator.getGamepads()){ if (g && g.connected){ gp = g; break; } }
+  if (!gp){ gpDuckActive = false; for (const k in gpWas) gpWas[k] = 0; return; }
+  const btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  const ax  = i => (gp.axes.length > i ? gp.axes[i] : 0);
+  const DZ = 0.5;                 // stick deadzone — drift must never read as a strike
+  const now = {
+    l: btn(14) || ax(0) < -DZ,
+    r: btn(15) || ax(0) >  DZ,
+    u: btn(12) || ax(1) < -DZ || btn(3),        // dpad-up / stick-up / Y = the high line
+    d: btn(13) || ax(1) >  DZ,                  // held, like the ▼ key (JF-#047 crouch)
+    go: btn(0),                                 // A: confirm / strike ahead
+    alt: btn(2),                                // X: wardrobe browse on the menu
+    alt2: btn(1),                               // B: buy / omen
+    pause: btn(9),
+  };
+  const hit = k => now[k] && !gpWas[k];         // rising edge only (no auto-repeat, matches e.repeat guard)
+  if (!gpOn && (now.l || now.r || now.u || now.d || now.go || now.pause)) gpOn = true;
+
+  if (hit('pause')){ state === S_PAUSE ? resumeGame() : pauseGame(); }
+  else if (state === S_MENU){
+    // mirrors keydown: ◀ ▶ browse districts, A fights, X/B drive the wardrobe/omen
+    if (hit('l') && save.dist > 0){ sel = (sel + save.dist) % (save.dist + 1); Snd.tick(); }
+    if (hit('r') && save.dist > 0){ sel = (sel + 1) % (save.dist + 1); Snd.tick(); }
+    if (hit('go') || hit('u')) press(P.face);
+    if (hit('alt')) styleNext();
+    if (hit('alt2')){ omenOn = !omenOn; Snd.tick(); }
+  } else if (state === S_DEAD && tallyDone){
+    // the shop is pointer/number-key driven, so the pad gets a cursor of its own
+    const lastI = adRect ? 4 : 3;               // the ×2 tile only exists while the reward is live
+    if (shopCur > lastI) shopCur = lastI;       // ...so never leave the cursor parked on a gone tile
+    if (hit('l')){ shopCur = (shopCur + lastI) % (lastI + 1); Snd.tick(); }
+    if (hit('r')){ shopCur = (shopCur + 1) % (lastI + 1); Snd.tick(); }
+    if (hit('go')){ shopCur === 4 ? doubleJade() : buyUp(shopCur); }
+    if (hit('u')) press(P.face);                // start the next run
+  } else {
+    if (hit('l')) press(-1);
+    if (hit('r')) press(1);
+    if (hit('u')){ Snd.unlock(); highAction(); }
+    if (hit('go')) press(P.face);               // A also strikes the way you face
+    if (hit('d')){ Snd.unlock(); duck(); }      // press = duck, hold = stay down
+  }
+  gpDuckActive = now.d && state === S_PLAY;
+  for (const k in gpWas) gpWas[k] = now[k] ? 1 : 0;
+}
+addEventListener('gamepadconnected', () => { gpOn = true; });
 addEventListener('pointerup', padRelease);
 addEventListener('blur', padRelease);
 // JF-#028: a vertical drag during play is a dodge (swipe up = high, down = duck).
@@ -1957,7 +2015,7 @@ function update(){
   if (P.duckT > 0){ P.duckT -= dt; if (P.duckT < 0) P.duckT = 0; }
   // JF-#047: NES held crouch — while ▼ is held (key or pad button) the duck never
   // expires; release and the last sliver of duckT runs out and you stand.
-  if ((duckHeld || padDuckActive) && P.riseT <= 0 && !grapple && !scrollOffer)
+  if ((duckHeld || padDuckActive || gpDuckActive) && P.riseT <= 0 && !grapple && !scrollOffer)
     P.duckT = Math.max(P.duckT, 1.5);
   P.duckAge = P.duckT > 0 ? P.duckAge + dt : 0;   // frames spent in this crouch
   P.y = GROUND_Y;
@@ -3189,7 +3247,9 @@ function draw(){
     // JF-#054: text purge — one short controls line (the rest is taught in-game
     // per CG "teach visually"; the demo card above already shows the loop)
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap toward · swipe ↑ high · hold ↓ crouch' : '◀▶ strike · ▲ high · hold ▼ crouch', W/2, 230);   // JF-#059
+    // JF-#064: a connected pad re-labels the SAME one line — no extra text on the menu
+    cx.fillText(gpOn ? 'D-pad ◀▶ strike · ▲ high · hold ▼ crouch · A fight' :
+                TOUCH ? 'tap toward · swipe ↑ high · hold ↓ crouch' : '◀▶ strike · ▲ high · hold ▼ crouch', W/2, 230);   // JF-#059
     // JF-#009: district selector — the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';
@@ -3376,6 +3436,11 @@ function draw(){
         cx.strokeStyle = can ? (isPulse ? '#b8ffd8' : '#7ce8a8') : 'rgba(140,148,166,0.4)';
         cx.lineWidth = isPulse ? 3 : 1.5;
         cx.strokeRect(bx, by, tw, th);
+        // JF-#064: pad players have no pointer and no number row — give the tiles a cursor
+        if (gpOn && shopCur === i){
+          cx.strokeStyle = '#ffe9a8'; cx.lineWidth = 3;
+          cx.strokeRect(bx - 4, by - 4, tw + 8, th + 8);
+        }
         const colr = can ? '#e8dcc0' : '#6a7482';
         icon(u.k, bx + tw/2, by + 36, colr);
         cx.textAlign = 'center'; cx.font = 'bold 12px Georgia'; cx.fillStyle = colr;
@@ -3392,6 +3457,7 @@ function draw(){
         cx.fillStyle = 'rgba(232,199,106,0.16)'; cx.fillRect(ax, ay, aw, ah);
         cx.strokeStyle = glow ? '#ffe9a8' : '#e8c76a'; cx.lineWidth = glow ? 3 : 1.5;
         cx.strokeRect(ax, ay, aw, ah);
+        if (gpOn && shopCur === 4){ cx.strokeStyle = '#ffe9a8'; cx.lineWidth = 3; cx.strokeRect(ax - 4, ay - 4, aw + 8, ah + 8); }   // JF-#064
         cx.fillStyle = '#e8c76a'; cx.font = 'bold 26px Georgia'; cx.textAlign = 'center';
         cx.fillText('▶ ×2', ax + aw/2, ay + 40);   // JF-#055: icon-first, minimal words
         cx.font = 'bold 15px Georgia';
@@ -3478,6 +3544,7 @@ const STEP = 1000 / 60;
 function loop(ts){
   requestAnimationFrame(loop);
   if (!last) last = ts;
+  pollPad();   // JF-#064: read the pad once per frame, before the fixed-step catch-up
   acc += Math.min(ts - last, 100); last = ts;
   while (acc >= STEP){ update(); acc -= STEP; }
   // JF-#021: one intensity knob feeds the music every frame

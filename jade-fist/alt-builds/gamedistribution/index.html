@@ -163,13 +163,24 @@ const Snd = (() => {
       }
     },
     whoosh(){ ensure(); noise(0.09, 0.25, 2200); },
-    hit(combo){
+    // JF-#061: COMPOUND HIT, tiered to match the hit-stop. Capcom bundles hit
+    // effects, sounds, and damage motion into one strength tier (SF Seminar
+    // Hour 11), so `strength` here is the same 8/12/16 tier the freeze uses.
+    // Three envelopes: transient (noise click) + body (pitch-dropping tone â€”
+    // the part that reads as WEIGHT) + sub. The envelope must roughly SPAN the
+    // freeze: a 16F (267ms) hit-stop behind a 60ms tick leaves 200ms of silent
+    // frozen frames and the freeze reads as a bug, not as impact.
+    hit(combo, strength){
       ensure();
       const p = Math.min(combo, 8);
-      noise(0.05, 0.5, 2500);                          // transient click
-      tone(220 * Math.pow(1.06, p), 0.09, 'square', 0.22);  // mid body, pitch rises w/ combo
-      tone(90, 0.12, 'sine', 0.4, 0, 55);              // harmonic bass thump
-      tone(52, 0.14, 'sine', 0.3);                     // sub garnish
+      const s = strength || HS_MED;
+      const dur = s / 60;                              // envelope spans the freeze
+      const heavy = s >= HS_HEAVY, light = s <= HS_LIGHT;
+      noise(light ? 0.04 : 0.06, light ? 0.38 : 0.55, heavy ? 1800 : 2500);   // transient: heavier = darker
+      tone(220 * Math.pow(1.06, p), Math.max(0.09, dur * 0.6), 'square', light ? 0.16 : 0.22);
+      // body: bigger pitch drop + lower floor as strength climbs = more weight
+      tone(heavy ? 110 : 90, Math.max(0.12, dur), 'sine', heavy ? 0.5 : 0.4, 0, heavy ? 38 : 55);
+      tone(heavy ? 44 : 52, Math.max(0.14, dur * 1.1), 'sine', heavy ? 0.38 : 0.3);
     },
     counter(){
       ensure();
@@ -178,6 +189,7 @@ const Snd = (() => {
       tone(662.5, 0.5, 'sine', 0.2);                   // beat frequency = gong wobble
       tone(110, 0.3, 'triangle', 0.35, 0, 70);
       tone(48, 0.3, 'sine', 0.35);
+      tone(392, 0.26, 'sine', 0.2, 0.02, 784);         // JF-#061: RISING octave â€” the counter's audio signature, nothing else rises
     },
     hurt(){
       ensure();
@@ -192,11 +204,15 @@ const Snd = (() => {
       noise(0.3, 0.3, 400, 0.05);
     },
     windup(frames){ ensure(); tone(320, frames / 60, 'sine', 0.12, 0, 520); },
+    // JF-#061: block is DULL on purpose â€” the outcome should be identifiable
+    // with your eyes shut (the audio half of SF6's X-vs-O logic). Block = no
+    // pitch drop, filtered, muted. Hit = full spectrum + pitch drop. Counter =
+    // adds a rising pitched interval nothing else has.
     block(){
       ensure();
-      noise(0.05, 0.5, 4000);                          // metallic clank
-      tone(1200, 0.08, 'square', 0.12);
-      tone(300, 0.1, 'triangle', 0.2, 0, 200);
+      noise(0.045, 0.32, 1400);                        // duller thud, not a bright clank
+      tone(300, 0.07, 'triangle', 0.14);               // flat: deliberately no bend
+      tone(150, 0.09, 'sine', 0.16);
     },
     tick(){ ensure(); tone(880, 0.05, 'sine', 0.15); },
     best(){ ensure(); [523,659,784].forEach((f,i)=>tone(f, 0.25, 'sine', 0.2, i*0.09)); }
@@ -237,14 +253,14 @@ CG.init(() => {});
 // never raise the skill ceiling; ~Ã—2 cost per tier; first buy within 1-2 runs.
 const SAVE_KEY = 'jf_save_v1';
 let save = { jade: 0, up: { body: 0, palm: 0, focus: 0, wind: 0 },
-             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0,
+             kills: 0, ach: {}, day: '', streak: 0, dist: 0, tday: '', tdone: [0,0,0], intro: 0, tut: 0,
              cos: { own: [1,0,0,0,0], wear: 0 }, hall: [[],[],[],[],[]] };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && s.up) save = {
     jade: s.jade | 0, up: Object.assign(save.up, s.up),
     kills: s.kills | 0, ach: s.ach || {}, day: s.day || '', streak: s.streak | 0,
-    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0,
+    dist: s.dist | 0, tday: s.tday || '', tdone: s.tdone || [0,0,0], intro: s.intro | 0, tut: s.tut | 0,
     cos: (s.cos && s.cos.own) ? { own: s.cos.own, wear: s.cos.wear | 0 } : save.cos,
     hall: Array.isArray(s.hall) && s.hall.length === 5 ? s.hall : save.hall
   };
@@ -279,7 +295,7 @@ function styleBuy(){
   save.jade -= c; save.cos.own[styleSel] = 1; save.cos.wear = styleSel; persist();
   Snd.best();
 }
-let styleRect = null, styleBuyRect = null;   // menu hitboxes (rebuilt each draw)
+let styleRect = null, styleBuyRect = null, omenRect = null;   // menu hitboxes (rebuilt each draw; JF-#051 adds omen)
 function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
 // JF-#022: bot fairness suite â€” open index.html?bot=3 (&react=12) and a bot with
 // a fixed human reaction time (frames, 12 â‰ˆ 200ms) plays N runs in each of the
@@ -298,23 +314,90 @@ if (BOT){ save.dist = 4; save.intro = 1; persist = () => {}; }
 // state in a corner readout so Mike can verify on the CG preview environment
 // without opening devtools.
 const DEBUG = BOTQ.has('debug');
+// JF-#049: ?dev=1 â€” Deadroot-style live tuning panel. DOM sliders over the
+// canvas so numbers can be retuned mid-run without code edits. Neutral by
+// default; QA-only (never reachable from normal play, CG-safe).
+const DEVMODE = BOTQ.has('dev');
+const TUNE = { spd: 1, wind: 1, hpD: 0, heartsD: 0, diffD: 0 };
+// JF-#063 DEV:BEGIN â€” ?dev=1 live tuning panel. STRIP this block before submission
+// (GAME_BIBLE Part 5). Nothing here is load-bearing: it only writes to the TUNE object
+// above, whose neutral defaults (spd/wind 1, others 0) remain when the block is removed.
+if (DEVMODE) addEventListener('DOMContentLoaded', () => {
+  const KNOBS = [
+    ['spd',     'enemy speed Ã—',          0.4, 2.2, 0.05],
+    ['wind',    'telegraph time Ã—',       0.4, 2.2, 0.05],
+    ['hpD',     'enemy hp +',             -2,  4,   1],
+    ['heartsD', 'player hearts +',        -2,  6,   1],
+    ['diffD',   'difficulty +',           -4,  8,   0.5]
+  ];
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;right:8px;top:8px;z-index:99;background:rgba(10,13,18,0.92);' +
+    'border:1px solid #2a3242;border-radius:10px;padding:10px 12px;font:12px monospace;color:#c8bfa8;width:212px';
+  wrap.innerHTML = '<b style="color:#7ce8a8">DEV TUNING</b>' +
+    '<span id="devReset" style="float:right;cursor:pointer;color:#e8c76a">reset</span>' +
+    KNOBS.map(([k, lab]) =>
+      `<label style="display:block;margin-top:7px">${lab} <span id="devV_${k}" style="color:#e8dcc0">${TUNE[k]}</span><br>` +
+      `<input id="dev_${k}" type="range" style="width:100%"></label>`).join('') +
+    '<div style="margin-top:6px;color:#8a94a6">speed / telegraph / hp apply to new spawns Â· hearts &amp; difficulty at next run</div>';
+  document.body.appendChild(wrap);
+  KNOBS.forEach(([k, _lab, mn, mx, st]) => {
+    const el = document.getElementById('dev_' + k);
+    el.min = mn; el.max = mx; el.step = st; el.value = TUNE[k];
+    el.oninput = () => { TUNE[k] = +el.value; document.getElementById('devV_' + k).textContent = el.value; };
+  });
+  document.getElementById('devReset').onclick = () => KNOBS.forEach(([k]) => {
+    TUNE[k] = (k === 'spd' || k === 'wind') ? 1 : 0;
+    const el = document.getElementById('dev_' + k);
+    el.value = TUNE[k]; document.getElementById('devV_' + k).textContent = TUNE[k];
+  });
+});
+// JF-#063 DEV:END
 function botThink(){
-  // JF-#028: survival first â€” dodge an incoming spear before anything else
-  if (P.jumpT <= 0 && P.duckT <= 0){
+  // JF-#059: survival first â€” answer an incoming projectile by its height.
+  // low -> duck (kick back), mid -> back-step (sidestep), high -> rise (catch).
+  if (P.riseT <= 0 && P.duckT <= 0 && P.backT <= 0){
     for (const d of darts){
       if (d.hit) continue;
       const closing = (d.x - P.x) * Math.sign(d.vx) < 0;   // heading toward us
-      if (closing && Math.abs(d.x - P.x) < 90){ d.high ? duck() : jump(); return; }
+      if (!closing || Math.abs(d.x - P.x) >= 90) continue;
+      if (d.line === 'low') duck();
+      else if (d.line === 'mid') press(Math.sign(P.x - d.x) || 1);   // step away from its line
+      else armRise();
+      return;
     }
   }
-  // JF-#040: dodge an armored melee swing (high/low/grab) just before it lands â€”
-  // block/counter don't answer these, only the right dodge does
-  if (P.jumpT <= 0 && P.duckT <= 0){
+  // JF-#059: a HIGH windup in reach and ripening â€” press UP. highAction() arms
+  // the rise AND immediately attempts the strike, so this one call both dodges
+  // and lands the new block+counter (replaces duck as high's answer).
+  // JF-#061: gate on ALL the conditions armRise() actually checks, not just
+  // riseT. Guarding on riseT alone meant that while committed to another dodge
+  // the bot called highAction(), which now correctly refuses to arm â€” burning
+  // the frame doing nothing instead of falling through to other logic.
+  if (P.riseT <= 0 && P.duckT <= 0 && P.backT <= 0 && !grapple){
     for (const e of enemies){
-      if (e.st !== E_WINDUP || !e.atk || e.atk === 'strike') continue;
+      if (e.st !== E_WINDUP || e.atk !== 'high') continue;
       if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
       if (e.stT < e.windup - 12) continue;                 // react late so the dodge covers the hit
-      if (e.atk === 'high') duck(); else jump();           // low & grab â†’ jump
+      highAction(); return;
+    }
+  }
+  // JF-#059: GRAB is duck-only now (jump removed â€” no second option).
+  if (P.riseT <= 0 && P.duckT <= 0){
+    for (const e of enemies){
+      if (e.st !== E_WINDUP || e.atk !== 'grab') continue;
+      if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
+      if (e.stT < e.windup - 12) continue;
+      duck(); return;
+    }
+  }
+  // JF-#053: the counter must be EARNED â€” if unarmed, back-step the ripening
+  // mid swing (that fresh evade arms readyT), THEN counter the next windup.
+  if (readyT <= 0 && P.backT <= 0 && P.riseT <= 0 && P.duckT <= 0){
+    for (const e of enemies){
+      if (e.st !== E_WINDUP || (e.atk && e.atk !== 'strike')) continue;
+      if (Math.abs(e.x - P.x) > Math.max(e.reach, PR) + 24) continue;
+      if (e.stT < e.windup - 10) continue;                 // evade just before impact = fresh
+      press(Math.sign(P.x - e.x) || 1);                    // press AWAY = back-step
       return;
     }
   }
@@ -323,6 +406,7 @@ function botThink(){
   for (const e of enemies){
     if (e.st !== E_WINDUP || e.stT < BOT.react) continue;
     if (e.atk && e.atk !== 'strike') continue;             // JF-#040: armored â€” handled above
+    if (readyT <= 0) continue;                             // JF-#053: unarmed = don't chip windups
     const range = Math.max(e.reach, PR) + 18;
     if (Math.abs(e.x - P.x) > range) continue;
     const r = e.stT / e.windup;
@@ -472,8 +556,28 @@ const UPS = [
 
 const S_MENU = 0, S_PLAY = 1, S_DEAD = 2, S_STORY = 3, S_END = 4, S_PAUSE = 5;   // JF-#014
 let state = save.intro ? S_MENU : S_STORY;   // JF-#012: first launch opens on the tale
+// JF-#062: guided first-fight tutorial. A scripted, SKIPPABLE teach of the core
+// dodge->counter loop, wrapped around the REAL combat (one slow strike-only
+// sparring dummy, hearts disabled) so nothing about the mechanics is faked.
+// Runs once, gated on save.tut; ?tut=1 forces it for QA. Success bar (CG onboarding):
+// the player lands a counter well inside their first few windups.
+const TUT_FORCE = new URLSearchParams(location.search).has('tut');
+const TUT_WINDUP = 80, TUT_GOAL = 3;   // long unmissable telegraph; 3 counters to graduate
+let tut = { active: false, step: 0, counters: 0, done: false };
+let tutSkipRect = null;
 let t = 0;                       // global frame clock
 let shake = 0, hitStop = 0, slowMo = 0;
+// JF-#061: hit-stop tiers straight from Capcom's own numbers. Their SF Seminar
+// (Hour 11) states light/medium/heavy attacks cause 8F/12F/16F of hit/block stop,
+// to "give the player a sense of the attack hitting as well as the weight of the
+// attack." The TIERING is the mechanism â€” 8F exists so 16F reads as heavy by
+// contrast; uniform hit-stop destroys the signal. Capcom also bundles effect +
+// sound + damage motion into the SAME strength tier, so HS_* is passed to Snd
+// and burst alongside the freeze.
+const HS_LIGHT = 8, HS_MED = 12, HS_HEAVY = 16;
+// Waves compound: three foes landing at once must not stack into unreadable
+// noise, so total shake is capped per frame (see the draw clamp).
+const SHAKE_CAP = 16;
 let score = 0, best = +(localStorage.getItem('jf_best') || 0);
 let combo = 0, comboT = 0;       // combo count + decay timer
 const FINISH_AT = 4;             // JF-#038: consecutive good hits to unlock the empowered throw
@@ -481,6 +585,12 @@ let kills = 0, counters = 0, bestCombo = 0;
 let hearts = 3, hurtFlash = 0;
 let popups = [], parts = [], enemies = [];
 let waveT = 0, spawnT = 60, difficulty = 0;
+// JF-#053: dodgeâ†’counter loop. A FRESH dodge arms a counter window (readyT);
+// striking a winding foe while armed = the full COUNTER (throw, bullet time,
+// flourish). Unarmed, the same press is a weak chip that does NOT interrupt
+// their swing â€” you trade unless you dodge first. One counter per dodge.
+let readyT = 0;
+const READY_DUR = 110;
 // JF-#008: wave machine â€” quota waves with rest beats; every 5th wave = boss
 const WAVES_PER_DISTRICT = 5;
 let wave = 1, wavePhase = 0, restT = 0, toSpawn = 0;   // phase 0=fight 1=rest
@@ -489,24 +599,26 @@ let won = false;                      // district boss felled this run
 // JF-#009: districts are levels â€” each with its own fight, palette, and boss.
 // Beat a district's master to unlock the next.
 const DISTRICTS = [
+  // JF-#049: second bump (+1 dBase everywhere) â€” 2026-07-16 playtest still read
+  // "way too easy"; fine-tune from here with the ?dev=1 panel.
   // JF-#028: difficulty bump â€” Mike's playtest read the campaign as too easy.
   // Raised district bases + boss HP; harder pressure also comes from spearman
   // throws (dodge axis) and earlier pincers, not just faster telegraphs.
   { name: 'COURTYARD', line: 'Where the jade was taken.', boss: 'THE IRON MASTER',
-    dBase: 1, quirk: '', bossHp: 3,
+    dBase: 2, quirk: '', bossHp: 3,
     sky: ['#0b1020','#131a26','#0e1218'], ground: '#1a1f26', lant: [240,150,90], pag: 4 },
   { name: 'MARKET', line: 'They crowd like locusts.', boss: 'THE BUTCHER',
-    dBase: 3, quirk: 'crowd', bossHp: 4,
+    dBase: 4, quirk: 'crowd', bossHp: 4,
     sky: ['#180f0c','#2a1a10','#170f0a'], ground: '#241a12', lant: [250,190,90], pag: 6 },
   { name: 'TEMPLE', line: 'Every hand is guarded.', boss: 'THE ABBOT',
-    dBase: 5, quirk: 'guard', bossHp: 5,
+    dBase: 6, quirk: 'guard', bossHp: 5,
     sky: ['#0c1410','#14231a','#0c1410'], ground: '#16211a', lant: [140,230,160], pag: 3 },
   { name: 'ROOFTOP', line: 'The thief waits above.', boss: 'THE JADE THIEF',
-    dBase: 7, quirk: 'spear', bossHp: 5,
+    dBase: 8, quirk: 'spear', bossHp: 5,
     sky: ['#141020','#221a33','#120e1c'], ground: '#1d1826', lant: [190,150,240], pag: 5 },
   // JF-#012: LEGEND â€” the endless retelling, unlocked by reclaiming the jade
   { name: 'LEGEND', line: 'The tale retold, without end.', boss: 'THE IRON MASTER',
-    dBase: 9, quirk: '', bossHp: 6, legend: true,
+    dBase: 10, quirk: '', bossHp: 6, legend: true,
     sky: ['#100c18','#1c1426','#0e0a14'], ground: '#1c1620', lant: [232,199,106], pag: 5 }
 ];
 let sel = 0;                          // selected district (menu)
@@ -514,7 +626,13 @@ let fought = 0;                       // district of the current/last run (tally
 let bannerTxt = '', bannerT = 0;      // big center banner (wave/boss/clear)
 function banner(txt, col, frames){ bannerTxt = txt; bannerCol = col || '#e8dcc0'; bannerT = frames || 110; }
 let bannerCol = '#e8dcc0';
-let bufDir = 0, bufT = 0;        // input buffer across hit-stop
+// JF-#061: input buffer across hit-stop. Capcom's SF Seminar (Hour 6) puts their
+// command leniency window at 10 frames â€” "That small window is only 10 frames."
+// Ours was 8; matched to 10. bufLine carries WHICH input was pressed (JF-#059's
+// forceLine): a buffered UP press used to replay as a plain forward strike and
+// silently lose its high-block, punishing a player for being right but early.
+let bufDir = 0, bufT = 0, bufLine = null;
+const BUF_WIN = 10;
 let whiffT = 0;                  // whiff recovery: striking air locks strikes briefly (JF-#006)
 let adaptShown = false;          // "crowd wises up" banner shown once per run (JF-#007)
 let finisherCue = false;         // JF-#038: "next hit throws" cue shown once per run
@@ -543,7 +661,7 @@ const SCROLLS = [
 // guarded foes can adapt to it (Punch-Out Title Defense: they learn your habits).
 let lineUse = { mid: 0, low: 0, high: 0 };
 let guardTaught = false;              // "they guard X â€” vary your line" shown once per run
-function atkLineNow(){ return P.duckT > 0 ? 'low' : P.jumpT > 0 ? 'high' : 'mid'; }
+function atkLineNow(){ return P.duckT > 0 ? 'low' : P.riseT > 0 ? 'high' : 'mid'; }
 function pickGuardLine(){
   if (Math.random() < 0.3) return ['mid', 'low', 'high'][(Math.random() * 3) | 0];
   let best = 'mid';
@@ -597,7 +715,7 @@ let hallRank = 0;                     // JF-#026: rank earned by the last run (0
 let msg = null, msgT = 0;
 
 const GROUND_Y = 420;
-const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, jumpT: 0, duckT: 0,
+const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, riseT: 0, duckT: 0,
   backT: 0, backDir: 0,                     // JF-#042: back-step evade (mid attacks)
   flourishT: 0, duckAge: 0 };               // JF-#044 flourish Â· JF-#047 frames spent crouched
 // JF-#047: NES Kung Fu duck â€” DOWN is a HELD STANCE, not a timed window. Hold â–¼
@@ -606,7 +724,7 @@ const P = { x: W/2, y: GROUND_Y, face: 1, punchT: 0, punchSide: 1, stance: 0, ju
 // timed duck for touch. duckAge (frames since the crouch began) gates rewards:
 // a FRESH read pays points + bullet time, a lazy held crouch just makes them
 // whiff â€” the NES paid you nothing for sitting down either.
-let duckHeld = false, padDuckActive = false;
+let duckHeld = false, padDuckActive = false, gpDuckActive = false;   // JF-#064: third crouch source (gamepad)
 // JF-#046: block/parry, heavy blow, and taunt REMOVED â€” Mike's call: the whole
 // fight fits on the arrow keys (â—€â–¶ strike/evade, â–²â–¼ dodge + attack lines).
 // Mid attacks are answered by counter or back-step; guards are answered by
@@ -616,27 +734,61 @@ let duckHeld = false, padDuckActive = false;
 // staggered); let it expire and you get slammed. Bots keep the old instant path
 // so fairness stats stay comparable.
 let grapple = null;
-// JF-#028: vertical dodge axis. Jump = airborne (dodges LOW throws); duck = crouch
-// (dodges HIGH throws). Brief action windows, not held stances, so the fight stays
-// snappy and you commit to a read the same way a counter commits.
-const JUMP_DUR = 32, JUMP_H = 76, DUCK_DUR = 30;   // JF-#036: was 26 â€” bot suite showed duck (high-windup) eating most hits
-let darts = [];   // in-flight thrown spears: {x, vx, high, y0, life}
-function jump(){
-  if (state === S_PAUSE){ resumeGame(); return; }
-  if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;   // one dodge at a time
-  P.jumpT = JUMP_DUR; Snd.whoosh();
+// JF-#059: NO JUMPING (Mike's call â€” the old jump was a leap purely to dodge
+// low attacks; those don't exist anymore, see chooseAtk). UP is now a GROUNDED
+// rise: a brief armed window (P.riseT, same duration/timing math the old jump
+// used) that answers HIGH threats and doubles as the high attack â€” see
+// highAction()/strike(). Duck still answers grab + kicks back low projectiles.
+const RISE_DUR = 32, DUCK_DUR = 30;   // JF-#036: was 26 â€” bot suite showed duck (high-windup) eating most hits
+let darts = [];   // in-flight thrown spears: {x, vx, line:'high'|'mid'|'low', y0, life}
+// JF-#059: MID projectiles are new â€” a third thrown height, sidestepped (back-
+// step) with no reflect, filling the gap left by removing melee low.
+function pickProjLine(){ const r = Math.random(); return r < 1/3 ? 'high' : r < 2/3 ? 'mid' : 'low'; }
+const PROJ_COL = { high: '#f0b24a', mid: '#ff8c42', low: '#5fd0e0' };
+function projY(line){ return line === 'high' ? P.y - 78 : line === 'low' ? P.y - 20 : P.y - 48; }
+// JF-#059: was jump() â€” grounded now, no Y arc.
+// JF-#061: returns TRUE only if the rise actually armed. highAction() depends on
+// this: it used to strike unconditionally, so pressing UP while already committed
+// to another dodge fired an UNARMED high strike (see highAction).
+function armRise(){
+  if (state === S_PAUSE){ resumeGame(); return false; }
+  if (state !== S_PLAY || scrollOffer) return false;
+  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return false;   // one dodge at a time
+  P.riseT = RISE_DUR; Snd.whoosh();
+  return true;
 }
 function duck(){
   if (state === S_PAUSE){ resumeGame(); return; }
   if (state !== S_PLAY || scrollOffer) return;
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
+  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
   P.duckT = DUCK_DUR; P.duckAge = 0; Snd.whoosh();   // JF-#047: fresh crouch
 }
-// JF-#042: BACK-STEP â€” the mid-line evade that completes the dodge triad:
-//   AMBER high  -> DUCK under it
-//   CYAN  low   -> JUMP over it
-//   RED   mid   -> press AWAY to lean out of it (or counter/block/parry it)
+// JF-#059: UP is dual-purpose â€” arms the rise-block window AND throws a high
+// attack at the nearest reachable foe (either side), same press. If nothing's
+// in reach it just whiffs like any other strike; if an enemy is genuinely
+// winding a HIGH attack, being armed turns the strike into a block (see
+// strike()'s highBlock). This is what "up does a high attack that if done at
+// the right time does a high block" means as one mechanic, not two.
+function highAction(){
+  // JF-#061 FIX: if the rise can't arm (already ducking / back-stepping /
+  // grappled / mid-rise), UP does NOTHING. It used to fall through and throw an
+  // unarmed high strike anyway. That was a real bug with a nasty tail: the bot's
+  // "have I risen yet?" gate is `P.riseT <= 0`, which never closed when the arm
+  // was refused, so it re-fired highAction EVERY frame. Each strike re-armed
+  // hit-stop before update()'s freeze guard was reached, so the world could
+  // never advance â€” a hard infinite stall (caught by the bot suite hanging at
+  // 50k frames with zero state change).
+  if (!armRise()) return;
+  const target = nearestInReach(0);
+  const dir = target ? (Math.sign(target.x - P.x) || P.face) : P.face;
+  strike(dir, 'high');
+}
+// JF-#059: BACK-STEP â€” the mid-line evade, still kept alongside the new
+// forward-block (Mike didn't ask to remove it, and it costs nothing to keep
+// as a second valid answer to a mid attack):
+//   HIGH -> UP (rise-block, doubles as your own high attack)
+//   MID  -> press AWAY to lean out of it (or counter/block it head-on)
+//   GRAB -> DUCK
 // Pressing away from a foe mid-RED-windup is an evade, not a whiffed punch.
 // Pressing away at any other time still strikes that direction (two-sided
 // offense is untouched â€” the evade only claims the press when a mid threat
@@ -644,7 +796,7 @@ function duck(){
 const BACK_DUR = 20;
 function tryBackstep(dir){
   if (grapple) return false;   // JF-#044: pinned â€” presses go to the mash-out
-  if (P.jumpT > 0 || P.duckT > 0 || P.backT > 0) return false;
+  if (P.riseT > 0 || P.duckT > 0 || P.backT > 0) return false;
   for (const e of enemies){
     if (e.st !== E_WINDUP && !(e.st === E_STRIKE && !e.didHit)) continue;
     if (e.atk && e.atk !== 'strike') continue;              // high/low/grab keep their own answers
@@ -681,10 +833,16 @@ function spawnEnemy(forceSide){
   if (difficulty > spearDiff && r < spearTh) type = T_SPEAR;
   else if (difficulty > bruteDiff && r < bruteTh) type = T_BRUTE;
   else if (difficulty > 1 && r < fastTh) type = T_FAST;
-  const base = 1.1 + Math.random() * 0.5 + difficulty * 0.12;
-  const wind = Math.max(20, 46 - difficulty * 2.4);   // telegraph shrinks as waves rise (JF-#006: tighter late)
+  const base = (1.1 + Math.random() * 0.5 + difficulty * 0.12) * TUNE.spd;          // JF-#049: dev knob
+  // JF-#061: telegraph floor raised 14 -> 18. Capcom's SF Seminar (Hour 1) puts
+  // raw human reaction at "at least 10 frames" even for a screen flash, so a
+  // sub-10F telegraph isn't a read at all â€” it's a memory test. 18F leaves ~8F
+  // of actual decision time after reaction. T_FAST still floors lower (16) as
+  // its identity; the ?dev=1 wind knob can still go below this for tuning.
+  const wind = Math.max(18, (46 - difficulty * 2.4) * TUNE.wind);   // telegraph shrinks as waves rise (JF-#006; JF-#049 knob)
   enemies.push({
     x: W/2 + side * (W/2 + 40 + Math.random() * 70), side: -side,   // walks toward center
+    face: -side,                   // JF-#057: live facing, kept separate from movement
     st: E_WALK, stT: 0, type,
     speed: (type === T_FAST ? base * 1.5 : type === T_BRUTE ? base * 0.7 : base) * omen.spdScale,
     windup: (type === T_FAST ? Math.max(16, wind * 0.6) : type === T_BRUTE ? wind * 1.3 : wind) * omen.windScale,
@@ -699,13 +857,13 @@ function spawnEnemy(forceSide){
     vx: 0, vy: 0, y: 420, rot: 0,
     // JF-#028: a spearman hurls ONE spear from range before closing to melee.
     // high throw -> DUCK, low throw -> JUMP. After it throws, it fights normally.
-    willThrow: type === T_SPEAR, projHigh: Math.random() < 0.5,
+    willThrow: type === T_SPEAR, projLine: pickProjLine(),   // JF-#059: 3-way (was 2-way projHigh)
     // JF-#039: DUEL toughness â€” far fewer bodies, so every foe is a real
     // back-and-forth: 2-4 good reads to fell, more as waves climb.
-    hp: type === T_BRUTE ? 2
+    hp: Math.max(1, TUNE.hpD + (type === T_BRUTE ? 2      // JF-#049: dev knob delta
       : type === T_FAST  ? (2 + (difficulty > 7 ? 1 : 0))
       : type === T_SPEAR ? (3 + (difficulty > 9 ? 1 : 0))
-      : (3 + (difficulty > 6 ? 1 : 0))   // T_NORM
+      : (3 + (difficulty > 6 ? 1 : 0))))   // T_NORM
   });
   const ne = enemies[enemies.length - 1];
   ne.hpMax = ne.hp;                           // JF-#039: pips + wounded-pressure scale off this
@@ -741,7 +899,7 @@ function spawnEnemy(forceSide){
 function spawnBoss(hp){
   const side = Math.random() < 0.5 ? -1 : 1;
   enemies.push({
-    x: W/2 + side * (W/2 + 60), side: -side, y: 420,
+    x: W/2 + side * (W/2 + 60), side: -side, face: -side, y: 420,   // JF-#057
     st: E_WALK, stT: 0, type: T_BOSS,
     speed: 0.9, windup: 52, windup0: 52,
     reach: REACH + 24, guard: 0, feint: false,
@@ -769,13 +927,13 @@ function chooseAtk(e){
   if (e.type === T_SPEAR) return 'strike';
   if (difficulty <= 2) return 'strike';           // early game teaches the counter first
   const r = Math.random();
-  if (e.type === T_FAST){                          // vipers: quick strikes + snap high/low
-    return r < 0.58 ? 'strike' : r < 0.79 ? 'high' : 'low';
-  }
-  // T_NORM at melee: the full mixup
+  // JF-#059: LOW melee removed â€” jump was its only dodge, and jump is gone.
+  // Low threats are projectile-only now (kicked back, see darts). Freed
+  // probability folds into 'high'.
+  if (e.type === T_FAST) return r < 0.58 ? 'strike' : 'high';   // vipers: quick strikes + snap high
+  // T_NORM at melee: strike / high / grab
   if (r < 0.48) return 'strike';
-  if (r < 0.66) return 'high';
-  if (r < 0.84) return 'low';
+  if (r < 0.75) return 'high';
   return difficulty > 4 ? 'grab' : 'strike';
 }
 // JF-#040: color + duck/jump/dodge caption for a non-red attack telegraph
@@ -791,12 +949,8 @@ let clashT = 0, clashX = 0, clashY = 0;
 function clash(x, y){ clashT = 10; clashX = x; clashY = y; hitStop = Math.max(hitStop, 8); }
 // Duel stare-down name cards (structure #11): each type announces itself once.
 const TYPE_NAMES = { [T_NORM]: 'INITIATE', [T_FAST]: 'VIPER', [T_BRUTE]: 'IRON MONK', [T_SPEAR]: 'SPEARMAN' };
-// JF-#044: stare-down trash talk â€” one line per type, one per elite
-const STARE_QUIPS = { [T_NORM]: 'the guild sends its regards', [T_FAST]: 'blink and lose',
-  [T_BRUTE]: 'small monk. big problem.', [T_SPEAR]: 'stay RIGHT there' };
-const ELITE_QUIPS = { 'IRON ELBOW': 'go on â€” swing at me', 'THE HAGGLER': 'special price, just for you',
-  'BRASS PALM': 'find the opening, little fist', 'TWO STEPS': 'you are already too slow',
-  'THE ECHO': 'again. again. again.' };
+// JF-#056: STARE_QUIPS / ELITE_QUIPS removed â€” the stare-down keeps its beat
+// (name card + 40f face-off + hero flourish), just without the trash talk.
 // JF-#046: TAUNT removed with the extra buttons â€” arrows carry the whole fight.
 // Named mini-boss duelists (behavior #8): wave 3 of each district fields an
 // ELITE with a name card, +1 hp, a gold sash, and ONE signature habit â€” the
@@ -815,13 +969,13 @@ const ELITES = [
 ];
 let eliteQueued = false;   // set by beginWave, consumed by the next spawn
 
-// JF-#034: boss personalities â€” a taunt on the name-card, a jab when staggered,
-// and one silly signature. The Butcher hurls cleavers you DUCK/JUMP (reuses darts).
+// JF-#034: boss signatures. JF-#056: taunt/jab lines removed (Mike: stop the
+// taunting) â€” the object stays because `cleaver` gates THE BUTCHER's throw.
 const BOSS_FLAVOR = {
-  'THE IRON MASTER': { taunt: 'Show me the school still teaches something.', jab: 'Hmph. Lucky.' },
-  'THE BUTCHER':     { taunt: 'Fresh cuts today! Hah!', jab: 'You dented my cleaver!', cleaver: true },
-  'THE ABBOT':       { taunt: 'Violence solves nothing. Observe.', jab: 'Inner peaceâ€¦ interrupted.' },
-  'THE JADE THIEF':  { taunt: 'Pbbbt! Too slow, monk.', jab: 'Okay okay â€” rude!' }
+  'THE IRON MASTER': {},
+  'THE BUTCHER':     { cleaver: true },
+  'THE ABBOT':       {},
+  'THE JADE THIEF':  {}
 };
 // wave lifecycle
 function beginWave(n){
@@ -835,9 +989,9 @@ function beginWave(n){
     spawnBoss(D.bossHp + Math.floor(wave / WAVES_PER_DISTRICT) - 1);  // +1 hp per extra cycle (Legend)
     const bz = enemies[enemies.length - 1];
     bz.flavor = BOSS_FLAVOR[D.boss]; bz.throwCd = 220;   // JF-#034: personality + cleaver cadence
-    banner(D.boss, '#e86a6a', 140);
-    if (bz.flavor) popup(W/2, 210, 'â€œ' + bz.flavor.taunt + 'â€', '#e8b06a', true);   // taunt on entry
-    P.flourishT = 40;   // JF-#044: the hero limbers up as the master arrives
+    banner(D.boss, '#e86a6a', 140);   // JF-#056: entry taunt removed â€” the name banner is the beat
+    // JF-#060: boss-entry flourish removed too â€” same "no taunt animation before
+    // the battle" rule as the stare-down. The banner announces him; the fight starts.
     Snd.windup(60);
   } else {
     toSpawn = Math.min(3, 1 + Math.floor(wave / 2));   // JF-#039: DUELS â€” 1-3 tough foes per wave, not a crowd
@@ -895,12 +1049,36 @@ function nearestInReach(dir){
 function popup(x, y, txt, col, big){
   popups.push({ x, y, txt, col: col || '#e8dcc0', life: 46, big: !!big });
 }
-function burst(x, y, col, n, pow){
+// JF-#061: SHAPE LANGUAGE. Capcom's SF6 VFX team on Drive Parry: "we actually
+// even made the light form an X, as opposed to the hit effect forming an O to
+// subtly push the visual clarity further." Different OUTCOMES get different
+// SHAPES, not just different colors â€” which is the wordless way to say what the
+// captions used to (JF-#058 purge). Our vocabulary:
+//   'ring'    (default) = a hit landed          -> radial, the O
+//   'x'       = your read was right (dodge/block/armored bounce) -> crossing diagonals
+//   'implode' = a counter fired                 -> particles converge inward
+function burst(x, y, col, n, pow, shape){
   const star = (pow || 3) >= 5;   // JF-#027: heavy hits throw comic stars
   for (let i = 0; i < n; i++){
-    const a = Math.random() * Math.PI * 2, s = (0.5 + Math.random()) * (pow || 3);
-    parts.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 1, life: 20 + Math.random()*16, col,
-      star: star && i % 3 === 0, sz: 2 + Math.random() * 2, rot: Math.random() * 7 });
+    let a, s = (0.5 + Math.random()) * (pow || 3), px = x, py = y, vx, vy;
+    if (shape === 'x'){
+      // four diagonal arms â€” reads as a struck-through X even mid-flight
+      const arm = (i % 4) * (Math.PI / 2) + Math.PI / 4;
+      a = arm + (Math.random() - 0.5) * 0.25;
+      vx = Math.cos(a) * s; vy = Math.sin(a) * s;          // no upward bias: keep the X square
+    } else if (shape === 'implode'){
+      // spawn on a ring and fly INWARD â€” the converge that says "countered"
+      a = (i / n) * Math.PI * 2;
+      const r = 34 + Math.random() * 10;
+      px = x + Math.cos(a) * r; py = y + Math.sin(a) * r;
+      vx = -Math.cos(a) * s * 0.9; vy = -Math.sin(a) * s * 0.9;
+    } else {
+      a = Math.random() * Math.PI * 2;
+      vx = Math.cos(a) * s; vy = Math.sin(a) * s - 1;
+    }
+    parts.push({ x: px, y: py, vx, vy, life: 20 + Math.random()*16, col,
+      star: star && i % 3 === 0 && shape !== 'implode', sz: 2 + Math.random() * 2, rot: Math.random() * 7,
+      noGrav: shape === 'implode' });
   }
 }
 
@@ -908,32 +1086,13 @@ function burst(x, y, col, n, pow){
 // wall bonks, and the odd felled-foe yelp. Rare on purpose: seasoning, not a tone change.
 const SENDS = ['SEE YOU NEXT SPRING', "HE'LL WALK THAT OFF", 'STRAIGHT TO THE HEALER',
                'OVER THE NOODLE CART', 'TELL THE OTHERS', 'AND STAY OUT', 'INTO NEXT WEEK'];
-const YELPS = ['my sandalsâ€¦', 'not the face', 'I quit', 'who hired him?', 'ow.',
-               'worth it', 'nap time', 'tell my mother', 'I felt that', 'unfair'];
-function yelp(x, y){
-  if (Math.random() < 0.12) popup(x, y, YELPS[(Math.random() * YELPS.length) | 0], '#c8bfa8');
-}
-// JF-#030: enemy chatter â€” type-flavored mutters as they approach. Cocky vipers,
-// dim monks, twitchy spearmen, rank-and-file bravado. Rare so it stays a garnish.
-const MUTTERS = {
-  [T_NORM]:  ['get him!', 'for the guild', 'easy money', 'you again?', 'surround him'],
-  [T_FAST]:  ['too slow', 'catch me', 'blink and miss', 'hah!', 'over here~'],
-  [T_BRUTE]: ['me smash', 'hnngh', 'big hands', 'squish', '...'],
-  [T_SPEAR]: ['stay back!', "don't look at me", 'from waaay over here', 'nervous laugh', 'eep']
-};
-function mutter(e){
-  if (state !== S_PLAY || Math.random() > 0.14) return;
-  const bank = MUTTERS[e.type] || MUTTERS[T_NORM];
-  popup(e.x, e.y - 108, bank[(Math.random() * bank.length) | 0], '#9aa2b0');
-}
-// JF-#030: hype announcer â€” cheeky bad-kung-fu-dub callouts as combos climb.
-// Escalates from encouraging to "okay, calm down". One line per threshold per run.
-const HYPE = [
-  { at: 3,  txt: 'Nice.' }, { at: 5, txt: 'Show off.' }, { at: 8, txt: 'UNBELIEVABLE!' },
-  { at: 12, txt: 'Okay, calm down.' }, { at: 16, txt: 'THE CROWD GOES WILD' },
-  { at: 22, txt: 'save some for the rest of us' }, { at: 30, txt: 'legally, this is too cool' }
-];
-let hypeShown = -1;
+// JF-#056: ENEMY CHATTER REMOVED (Mike: "stop the taunting, it's confusing").
+// YELPS/MUTTERS/HYPE all shared popup() with the mechanical telegraph captions
+// (DUCK!/COUNTER!/GRAB!), so flavor lines competed with the reads the player must
+// act on. Kept: mechanical captions, banners, the rare SENDS throw payoff.
+function yelp(){}                  // no-op: felled foes are silent now (call sites kept)
+function mutter(){}                // no-op: no approach one-liners
+let hypeShown = -1;                // retained: run-reset bookkeeping only
 let longestSend = 0;   // JF-#030: farthest yeet this run (px), bragged on the tally
 // JF-#031: the moon wakes up and reacts to the big moments
 let moonWakeT = 0;
@@ -950,18 +1109,14 @@ const PROPS = [
 const PROP_X = 132;   // stands off to the left; bodies thrown that way crash it
 // JF-#031: between-wave background cameo (a straggler waves off, or a cat trots by)
 let restGag = null;
-function hype(c){
-  for (const H of HYPE){
-    if (c >= H.at && H.at > hypeShown){
-      hypeShown = H.at;
-      popup(W/2, 108, H.txt, '#ffd98a', true);
-      break;
-    }
-  }
-}
+function hype(){}                   // JF-#056: announcer callouts removed (text noise mid-fight)
 
 // ----------------------------------------------------------------- verbs ----
-function strike(dir){
+// JF-#059: forceLine tags WHICH input threw this strike ('high' from
+// highAction()/UP; omitted for a normal FORWARD press). Only the high-tagged
+// strike can turn a HIGH windup into a block+counter â€” a plain forward strike
+// into a high windup still just bounces off (see the armored-chip check below).
+function strike(dir, forceLine){
   if (state !== S_PLAY) return;
   // JF-#044: grabbed = every strike press is a mash-out attempt
   if (grapple){
@@ -978,25 +1133,55 @@ function strike(dir){
     return;
   }
   if (whiffT > 0) return;                               // still recovering from a whiff
-  if (hitStop > 0){ bufDir = dir; bufT = 8; return; }   // buffer through hit-stop
+  if (hitStop > 0){ bufDir = dir; bufLine = forceLine || null; bufT = BUF_WIN; return; }   // JF-#061: buffer through hit-stop, keeping the line
   P.flourishT = 0;                                      // JF-#044: fists cancel the pose
   P.face = dir; P.punchT = 12; P.punchSide = dir;
-  const atkLine = atkLineNow();   // JF-#041: mid, or low (ducking) / high (airborne)
+  const atkLine = forceLine || atkLineNow();   // JF-#059: UP forces 'high'
   lineUse[atkLine]++;
   const e = nearestInReach(dir);
   if (!e){ Snd.whoosh(); whiffT = run.monkey ? 7 : 14; return; }   // JF-#006 whiff recovery (JF-#025: MONKEY halves it)
 
-  // JF-#040: only a RED windup (a plain strike) can be countered. High/low
-  // swings and grabs are ARMORED during their windup â€” the answer is a dodge,
-  // not a punch. Poking one costs you a beat and teaches the rule in place.
-  if (e.st === E_WINDUP && e.atk && e.atk !== 'strike'){
-    popup(e.x, e.y - 100, e.atk === 'grab' ? 'ARMORED â€” DODGE!' : e.atk === 'high' ? 'DUCK IT!' : 'JUMP IT!', '#a8b4c8');
-    Snd.block(); hitStop = 2; whiffT = 10;
+  // JF-#059: HIGH BLOCK â€” pressing UP (forceLine==='high') while armed (rise
+  // active) against a live HIGH windup answers it exactly like the mid counter
+  // below: damage + stagger/fell + bullet time, not just a bounce. Only the
+  // dedicated high input can do this â€” a forward strike into a high windup
+  // still just bounces (the armored-chip branch right after this).
+  const highBlock = e.st === E_WINDUP && e.atk === 'high' && forceLine === 'high' && P.riseT > 0;
+  // JF-#040: only a RED windup (a plain strike) â€” or now a rise-armed HIGH one
+  // â€” can be countered. Grab stays ARMORED during its windup: the answer is a
+  // dodge (duck), not a punch. Poking it costs you a beat and teaches the rule.
+  if (e.st === E_WINDUP && e.atk && e.atk !== 'strike' && !highBlock){
+    // JF-#058: wordless â€” the armored clang + the bounce say "that won't work"
+    // JF-#061: X = deflected (SF6's parry-X vs hit-O language), light tier.
+    burst(e.x, e.y - 56, '#a8b4c8', 8, 2, 'x');
+    Snd.block(); hitStop = HS_LIGHT; whiffT = 10;
     return;
   }
   // JF-#010: IRON CATCH â€” with the technique, an unlanded strike can still be
   // countered. JF-#040: only a plain strike is catchable; armored swings aren't.
   const ironCatch = e.st === E_STRIKE && !e.didHit && hasTech(1) && (!e.atk || e.atk === 'strike');
+  // JF-#053: the counter is EARNED â€” only armed by a fresh dodge (readyT), an
+  // IRON CATCH read, or (JF-#059) a rise-armed high block. Unarmed strike into
+  // a windup = weak chip: 1 hp, but it does NOT interrupt the swing. Dodge first.
+  const armed = readyT > 0 || ironCatch || highBlock;
+  if ((e.st === E_WINDUP || ironCatch) && !armed && e.type !== T_BOSS){   // ---- UNARMED CHIP ----
+    e.hp = (e.hp === undefined ? 1 : e.hp) - 1;
+    P.punchT = 12; whiffT = 12;
+    // JF-#061: LIGHT tier â€” a chip is Capcom's jab. It gets the 8F freeze so the
+    // 16F counter lands like a truck by contrast. Still joyless: no shape, no shake.
+    Snd.block(); hitStop = HS_LIGHT;
+    burst(e.x, e.y - 46, '#9aa2b0', 5, 2);      // grey thud, no words (JF-#054)
+    if (e.hp <= 0){                              // chipping CAN fell â€” slow and joyless
+      e.st = E_DOWN; e.stT = 0; e.vx = dir * 3; e.vy = -4;
+      kills++; jadeRun++; score += 100;
+    }
+    return;
+  }
+  if ((e.st === E_WINDUP || ironCatch) && !armed && e.type === T_BOSS){   // boss shrugs chips
+    P.punchT = 12; whiffT = 12; Snd.block(); hitStop = HS_LIGHT;   // JF-#061
+    burst(e.x, e.y - 46, '#9aa2b0', 5, 2);
+    return;
+  }
   if ((e.st === E_WINDUP || ironCatch) && e.type === T_BOSS && e.hp > 1){   // ---- BOSS PHASE ----
     // JF-#008: counters are the only damage; each one staggers him a phase
     e.hp--; e.st = E_STAGGER; e.stT = 0; e.vx = dir * 7;
@@ -1004,22 +1189,26 @@ function strike(dir){
     counters++; jadeRun += 3; combo++; comboT = CW;
     score += 1000;
     popup(e.x, e.y - 110, 'MASTER STAGGERED +1000', '#7ce8a8', true);
-    if (e.flavor) popup(e.x, e.y - 140, 'â€œ' + e.flavor.jab + 'â€', '#e8b06a');   // JF-#034: boss grumbles
+    // JF-#056: boss stagger jab removed â€” the MASTER STAGGERED read stands alone
     clash(e.x, e.y - 60);   // JF-#043: the clash freeze â€” boss counters always earn it
-    Snd.counter(); hitStop = 8; shake = 14; slowMo = 30;
-    burst(e.x, e.y - 50, '#e86a6a', 26, 6);
+    Snd.counter(); hitStop = HS_HEAVY; shake = 14; slowMo = 30;   // JF-#061: heavy tier
+    burst(e.x, e.y - 50, '#e86a6a', 26, 6, 'implode');            // JF-#061: converge = countered
     banner('HE CALLS HIS STUDENTS', '#e8b06a', 80);
     spawnEnemy(-1); spawnEnemy(1);               // phase adds, both sides
     if (combo > bestCombo) bestCombo = combo;
     return;
   }
-  if (e.st === E_WINDUP || ironCatch){          // ---- COUNTER ----
+  if (e.st === E_WINDUP || ironCatch){          // ---- COUNTER (armed by a dodge, JF-#053) ----
+    const wasRisen = P.riseT > 0;                // JF-#059: snapshot before clearing â€” THROW AIMING below still needs it
+    readyT = 0; P.riseT = 0;                     // one counter per dodge/rise
+    P.ctrFlashT = 16; P.ctrX = e.x; P.ctrY = e.y - 55;   // flourish: rings + speed lines
     // JF-#007: final-third ("NOW" bright flash) = PERFECT counter
     // JF-#010: an IRON CATCH always counts as perfect
     const perfect = ironCatch || e.stT / e.windup > perfTh();   // JF-#025: CRANE widens
     if (e.type === T_FAST) bumpTrial('vip');
     if (perfect) bumpTrial('perf');
     counters++; jadeRun += perfect ? 5 : 3;
+    if (tut.active) tutOnCounter();   // JF-#062: advance the guided teach
     award('counter');
     if (e.type === T_BRUTE) award('monk');
     if (e.type === T_SPEAR) award('spear');
@@ -1045,8 +1234,12 @@ function strike(dir){
       score += pts;
       popup(e.x, e.y - 90, (perfect ? 'PERFECT +' : 'COUNTER +') + pts, perfect ? '#e8c76a' : '#7ce8a8');
       if (perfect) clash(e.x, e.y - 55);       // JF-#043: perfect = the freeze-frame moment
-      Snd.counter(); hitStop = 5; shake = perfect ? 8 : 6; slowMo = 18;
-      burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4);
+      // JF-#053: every earned counter gets the full dodge-grade bullet time.
+      // JF-#061: a perfect read is the HEAVY tier, an ordinary counter MEDIUM â€”
+      // Capcom's 12F/16F split, so the perfect one is felt, not just scored.
+      Snd.counter(); hitStop = perfect ? HS_HEAVY : HS_MED;
+      shake = perfect ? 8 : 6; slowMo = Math.max(slowMo, 26);
+      burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', 14, 4, 'implode');
       if (perfect && hasTech(2)){ perfChain++; } else if (!perfect) perfChain = 0;
       if (combo > bestCombo) bestCombo = combo;
       if (combo === FINISH_AT - 1 && !finisherCue){
@@ -1063,10 +1256,10 @@ function strike(dir){
     e.vx = slip(dir * (perfect ? (sweep ? 15 : 12) : 9) * (run.tiger ? 1.3 : 1));   // JF-#025 TIGER, JF-#032 slip
     e.vy = perfect ? -8 : -7;
     // JF-#044: THROW AIMING â€” counter from a stance to shape the throw. Ducking
-    // = a LOW SKID that trips everyone at floor level; airborne = a HIGH ARC
-    // that sails long. Same stance keys, third use.
+    // = a LOW SKID that trips everyone at floor level; a risen high-block =
+    // a HIGH ARC that sails long (JF-#059: was airborne/jump).
     if (P.duckT > 0){ e.vy = -3.5; e.vx *= 1.4; popup(e.x, e.y - 122, 'LOW SKID', '#c8bfa8'); }
-    else if (P.jumpT > 0){ e.vy = -12; popup(e.x, e.y - 122, 'SKY THROW', '#c8bfa8'); }
+    else if (wasRisen){ e.vy = -12; popup(e.x, e.y - 122, 'SKY THROW', '#c8bfa8'); }
     // JF-#020: ~1 in 6 perfect EMPOWERED counters is a comedy send â€” twice the arc, wild spin
     if (empowered && perfect && e.type !== T_BOSS && Math.random() < 0.18){
       e.vx *= 1.7; e.vy = -11; e.bigSend = true;
@@ -1088,9 +1281,10 @@ function strike(dir){
       clash(e.x, e.y - 60); slowMo = Math.max(slowMo, 60);
       shake = Math.max(shake, 18); moonWake(220);
     }
-    Snd.counter(); hitStop = Math.max(hitStop, empowered ? 7 : 5); shake = Math.max(shake, empowered ? (perfect ? 13 : 10) : 6);
-    slowMo = Math.max(slowMo, empowered ? 26 : 18);   // JF-#044: don't clobber the boss-finale slow-mo
-    burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4);
+    // JF-#061: the felling throw is the game's heaviest blow â€” always HEAVY tier.
+    Snd.counter(); hitStop = Math.max(hitStop, HS_HEAVY); shake = Math.max(shake, empowered ? (perfect ? 13 : 10) : 6);
+    slowMo = Math.max(slowMo, 26);   // JF-#053: throw counters get full bullet time (JF-#044: don't clobber boss finale)
+    burst(e.x, e.y - 40, perfect ? '#e8c76a' : '#7ce8a8', empowered ? (perfect ? 30 : 22) : 14, empowered ? (perfect ? 6 : 5) : 4, 'implode');
     if (empowered){
       // ---- EMPOWERED THROW: the payoff â€” thrown body knocks down neighbors in its path ----
       let felled = 0;
@@ -1247,25 +1441,37 @@ function strike(dir){
   }
 }
 
-// JF-#040/#046: resolve a landing enemy blow against the player's defense.
-// Arrows only: each attack has exactly ONE dodge â€” duck the high, jump the low,
-// back-step the mid (or counter it before it lands), jump-or-duck the grab.
+// JF-#059: resolve a landing enemy blow against the player's defense.
+// SIMPLIFIED, height-matched inputs (Mike: "no jumping... up = high, forward =
+// mid" â€” see highAction()/strike() for the offense side of this same mapping):
+//   HIGH -> UP (armed rise, P.riseT)      MID -> back-step / forward-block
+//   GRAB -> DOWN (duck)                   LOW melee no longer exists â€” jump was
+// its only dodge, so low threats are projectile-only now (kicked back, below).
 function resolveEnemyHit(e){
-  if (Math.abs(e.x - P.x) >= REACH + 14) return;   // drifted out of range â€” no hit
+  // JF-#053: range uses the ATTACKER's reach (was fixed REACH+14, so a boss or
+  // spearman swinging from his longer reach never resolved â€” the dodge neither
+  // paid nor armed the counter window)
+  if (Math.abs(e.x - P.x) >= Math.max(REACH, e.reach || 0) + 14) return;
   const atk = e.atk || 'strike';
-  const airborne = P.jumpT > 0, ducked = P.duckT > 0;
+  const risen = P.riseT > 0, ducked = P.duckT > 0;
   let avoided = false;
-  if (atk === 'high')      avoided = ducked;                 // duck the high swing
-  else if (atk === 'low')  avoided = airborne;               // jump the low sweep
-  else if (atk === 'grab') avoided = airborne || ducked;     // dodge only
+  if (atk === 'high')      avoided = risen;                  // JF-#059: press UP (was duck)
+  else if (atk === 'low')  avoided = ducked;                 // shouldn't occur (chooseAtk no longer picks it); safety net
+  else if (atk === 'grab') avoided = ducked;                 // JF-#059: duck only (jump removed)
   else                     avoided = P.backT > 0;            // mid: press away
   if (avoided){                                    // ---- clean dodge ----
+    // JF-#050: FOLLOW-THROUGH â€” a dodged swing carries the attacker's body
+    // through and past the space you left (Mike: "mob attacks still don't
+    // follow through past you if you dodge"). Decaying drift, ~45px total.
+    e.thruV = (Math.sign(P.x - e.x) || 1) * 6;
     if (atk === 'grab'){ e.recoverLong = true; e.st = E_STRIKE; }   // whiffed grab = long punish window
     // JF-#047: duckAge counts frames in the crouch (held ducks never expire, so
     // DUCK_DUR - duckT stopped measuring age). FRESH (â‰¤20f) = a read: pays points,
     // FLOW, and bullet time. A lazy held crouch just makes them whiff â€” the NES
-    // paid you nothing for sitting down either.
-    const dodgeAge = ducked ? P.duckAge : airborne ? JUMP_DUR - P.jumpT
+    // paid you nothing for sitting down either. JF-#059: rise is a timed press
+    // like the old jump was, so RISE_DUR - P.riseT measures its age the same way.
+    const dodgeAge = atk === 'high' ? RISE_DUR - P.riseT
+                   : ducked ? P.duckAge
                    : P.backT > 0 ? BACK_DUR - P.backT : 99;
     // JF-#044: PERFECT READ â€” a dodge input within 8f of the blow landing leaves
     // the foe hanging in a LONG recover. The last-instant read, paid like one.
@@ -1275,6 +1481,7 @@ function resolveEnemyHit(e){
       popup(e.x, e.y - 108, 'PERFECT READ +160', '#e8c76a', true);
     }
     if (dodgeAge <= 20){                           // fresh read: full reward
+      readyT = READY_DUR;                          // JF-#053: dodge arms the counter
       score += 80; jadeRun++;
       combo++; comboT = CW;                        // JF-#043: defense feeds FLOW too
       if (combo > bestCombo) bestCombo = combo;
@@ -1290,8 +1497,9 @@ function resolveEnemyHit(e){
     } else {
       popup(P.x, P.y - (ducked ? 58 : 100), ducked ? 'under it' : 'over it', '#9aa2b0');
     }
+    // JF-#061: X = your read was RIGHT (Capcom's parry-X vs hit-O shape language)
     burst(P.x + (Math.sign(e.x - P.x) || 1) * 30,
-      ducked ? P.y - 88 : atk === 'strike' ? P.y - 58 : P.y - 16, '#7ce8a8', 8, 3);
+      ducked ? P.y - 88 : atk === 'strike' ? P.y - 58 : P.y - 16, '#7ce8a8', 10, 3, 'x');
     return;
   }
   if (BOT) botHit(e);                              // JF-#022: classify before it lands
@@ -1317,6 +1525,7 @@ function resolveEnemyHit(e){
 }
 
 function hurtPlayer(){
+  if (tut.active){ hurtFlash = 8; shake = Math.max(shake, 4); return; }   // JF-#062: no damage while learning â€” a whiffed dodge just costs the exchange
   hearts--; hurtFlash = 18; combo = 0; perfChain = 0; hitsWave++;
   shake = 12; Snd.hurt();
   burst(P.x, P.y - 50, '#e86a6a', 16, 4);
@@ -1423,6 +1632,10 @@ function buyUp(i){
 }
 addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
+  // JF-#050: ignore OS key auto-repeat â€” holding the attack key no longer
+  // machine-guns strikes (Mike: "user can just hold down the attack button").
+  // One press = one strike; held â–¼ crouch is unaffected (duckHeld + keyup).
+  if (e.repeat) return;
   if (e.code === 'KeyM'){ Snd.toggleMute(); return; }
   if (e.code === 'KeyP'){ state === S_PAUSE ? resumeGame() : pauseGame(); return; }   // JF-#014
   if (e.code === 'KeyO' && state === S_MENU){ omenOn = !omenOn; Snd.tick(); return; }
@@ -1441,9 +1654,9 @@ addEventListener('keydown', e => {
     sel = (sel + 1) % (save.dist + 1); Snd.tick(); return;
   }
   // JF-#046: block/heavy/taunt keys removed â€” the arrows carry the whole fight
-  // JF-#028: vertical dodge â€” up/W jump, down/S duck (KeyW/KeyS are physical
-  // positions, so they land on AZERTY's Z/S up-down keys too)
-  if (e.code === 'ArrowUp' || e.code === 'KeyW'){ Snd.unlock(); jump(); return; }
+  // JF-#059: NO JUMPING â€” up/W is now the high attack/block (KeyW/KeyS are
+  // physical positions, so they land on AZERTY's Z/S up-down keys too)
+  if (e.code === 'ArrowUp' || e.code === 'KeyW'){ Snd.unlock(); highAction(); return; }
   // JF-#047: NES crouch â€” holding â–¼ keeps you down (duckHeld tops duckT up each frame)
   if (e.code === 'ArrowDown' || e.code === 'KeyS'){ Snd.unlock(); duckHeld = true; duck(); return; }
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.code === 'KeyQ') press(-1);
@@ -1461,7 +1674,8 @@ cv.addEventListener('pointerdown', e => {
   // JF-#011/#036: omen toggle hitbox (top-right offer card) â€” matches the
   // JF-#035 panel bounds (y 76-136); the old y<148 spilled into the Hall of
   // Legends panel just below it, wrongly toggling Omen on a tap there.
-  if (state === S_MENU && x > W - 266 && y > 76 && y < 136){ omenOn = !omenOn; Snd.tick(); return; }
+  if (state === S_MENU && omenRect && x >= omenRect.x && x <= omenRect.x + omenRect.w &&
+      y >= omenRect.y && y <= omenRect.y + omenRect.h){ omenOn = !omenOn; Snd.tick(); return; }   // JF-#051: row-panel hitbox
   // JF-#023: wardrobe hitboxes â€” tap the block to browse, tap BUY to purchase
   if (state === S_MENU && styleBuyRect && x >= styleBuyRect.x && x <= styleBuyRect.x + styleBuyRect.w &&
       y >= styleBuyRect.y && y <= styleBuyRect.y + styleBuyRect.h){ styleBuy(); return; }
@@ -1480,6 +1694,10 @@ cv.addEventListener('pointerdown', e => {
     }
     if (y > 370) return;    // dead zone around the shop â€” no accidental restarts
   }
+  // JF-#062: SKIP button during the guided teach (onboarding must be skippable)
+  if (state === S_PLAY && tut.active && tutSkipRect &&
+      x >= tutSkipRect.x && x <= tutSkipRect.x + tutSkipRect.w &&
+      y >= tutSkipRect.y && y <= tutSkipRect.y + tutSkipRect.h){ skipTut(); return; }
   // JF-#040: on-screen control pad takes priority over tap-to-strike
   if (state === S_PLAY && !scrollOffer){
     for (const b of padRects){
@@ -1487,7 +1705,7 @@ cv.addEventListener('pointerdown', e => {
         Snd.unlock();
         if (b.id === 'strikeL') press(-1);
         else if (b.id === 'strikeR') press(1);
-        else if (b.id === 'jump' || b.id === 'jump2') jump();
+        else if (b.id === 'jump' || b.id === 'jump2') highAction();   // JF-#059: pad button now throws/blocks high
         else if (b.id === 'duck' || b.id === 'duck2'){ padDuckActive = true; duck(); }   // JF-#047: hold to stay down
         return;
       }
@@ -1501,9 +1719,67 @@ cv.addEventListener('pointerdown', e => {
 function padRelease(){ padDuckActive = false; }
 cv.addEventListener('pointerup', padRelease);
 cv.addEventListener('pointercancel', padRelease);
+
+// ------------------------------------------------ gamepad (G7 / JF-#064) ----
+// Roadmap G7: CrazyGames' "Controller" tag sits on only ~59 of the top games,
+// so it is cheap differentiation. Deliberately a THIN LAYER over the verbs the
+// keyboard already calls (press / highAction / duck / pauseGame) â€” there is
+// still exactly one combat implementation, so nothing here can change fight
+// balance, and polling is skipped outright while the bot fairness suite runs.
+let gpOn = false;                 // a pad has actually been used â†’ show its hints
+let shopCur = 0;                  // tally cursor: 0-3 = upgrade tiles, 4 = Ã—2 ad tile
+const gpWas = { l: 0, r: 0, u: 0, d: 0, go: 0, alt: 0, alt2: 0, pause: 0 };
+function pollPad(){
+  if (BOT || !navigator.getGamepads) return;
+  let gp = null;
+  for (const g of navigator.getGamepads()){ if (g && g.connected){ gp = g; break; } }
+  if (!gp){ gpDuckActive = false; for (const k in gpWas) gpWas[k] = 0; return; }
+  const btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  const ax  = i => (gp.axes.length > i ? gp.axes[i] : 0);
+  const DZ = 0.5;                 // stick deadzone â€” drift must never read as a strike
+  const now = {
+    l: btn(14) || ax(0) < -DZ,
+    r: btn(15) || ax(0) >  DZ,
+    u: btn(12) || ax(1) < -DZ || btn(3),        // dpad-up / stick-up / Y = the high line
+    d: btn(13) || ax(1) >  DZ,                  // held, like the â–¼ key (JF-#047 crouch)
+    go: btn(0),                                 // A: confirm / strike ahead
+    alt: btn(2),                                // X: wardrobe browse on the menu
+    alt2: btn(1),                               // B: buy / omen
+    pause: btn(9),
+  };
+  const hit = k => now[k] && !gpWas[k];         // rising edge only (no auto-repeat, matches e.repeat guard)
+  if (!gpOn && (now.l || now.r || now.u || now.d || now.go || now.pause)) gpOn = true;
+
+  if (hit('pause')){ state === S_PAUSE ? resumeGame() : pauseGame(); }
+  else if (state === S_MENU){
+    // mirrors keydown: â—€ â–¶ browse districts, A fights, X/B drive the wardrobe/omen
+    if (hit('l') && save.dist > 0){ sel = (sel + save.dist) % (save.dist + 1); Snd.tick(); }
+    if (hit('r') && save.dist > 0){ sel = (sel + 1) % (save.dist + 1); Snd.tick(); }
+    if (hit('go') || hit('u')) press(P.face);
+    if (hit('alt')) styleNext();
+    if (hit('alt2')){ omenOn = !omenOn; Snd.tick(); }
+  } else if (state === S_DEAD && tallyDone){
+    // the shop is pointer/number-key driven, so the pad gets a cursor of its own
+    const lastI = adRect ? 4 : 3;               // the Ã—2 tile only exists while the reward is live
+    if (shopCur > lastI) shopCur = lastI;       // ...so never leave the cursor parked on a gone tile
+    if (hit('l')){ shopCur = (shopCur + lastI) % (lastI + 1); Snd.tick(); }
+    if (hit('r')){ shopCur = (shopCur + 1) % (lastI + 1); Snd.tick(); }
+    if (hit('go')){ shopCur === 4 ? doubleJade() : buyUp(shopCur); }
+    if (hit('u')) press(P.face);                // start the next run
+  } else {
+    if (hit('l')) press(-1);
+    if (hit('r')) press(1);
+    if (hit('u')){ Snd.unlock(); highAction(); }
+    if (hit('go')) press(P.face);               // A also strikes the way you face
+    if (hit('d')){ Snd.unlock(); duck(); }      // press = duck, hold = stay down
+  }
+  gpDuckActive = now.d && state === S_PLAY;
+  for (const k in gpWas) gpWas[k] = now[k] ? 1 : 0;
+}
+addEventListener('gamepadconnected', () => { gpOn = true; });
 addEventListener('pointerup', padRelease);
 addEventListener('blur', padRelease);
-// JF-#028: a vertical drag during play is a dodge (swipe up = jump, down = duck).
+// JF-#028: a vertical drag during play is a dodge (swipe up = high, down = duck).
 // The tap already fired a strike on pointerdown so counters stay instant; if that
 // strike only hit air, the swipe refunds the whiff so a pure dodge costs nothing.
 let touchStartY = 0, touchSwiped = false;
@@ -1512,7 +1788,7 @@ cv.addEventListener('pointermove', e => {
   const dy = (e.clientY - touchStartY) / scale;
   if (Math.abs(dy) > 42){
     touchSwiped = true; whiffT = 0;            // refund the tap's whiff
-    if (dy < 0) jump(); else duck();
+    if (dy < 0) highAction(); else duck();     // JF-#059: swipe up = high attack/block
   }
 });
 
@@ -1566,10 +1842,11 @@ function beginRun(){
     save.streak = save.day === yest.toDateString() ? save.streak + 1 : 1;
     save.day = today; persist();
   }
-  hearts = Math.max(1, 3 + save.up.body + omen.heart); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false; finisherCue = false;
+  hearts = Math.max(1, 3 + save.up.body + omen.heart + TUNE.heartsD); hurtFlash = 0; difficulty = 0; spawnT = 50; whiffT = 0; adaptShown = false; finisherCue = false;   // JF-#049 knob
+  readyT = 0; P.ctrFlashT = 0;   // JF-#053
   if (omenOn) popup(W/2, 200, 'OMEN ACCEPTED: ' + O.b.toUpperCase() + ' / ' + O.c.toUpperCase(), '#c8a8e8', true);
   enemies.length = 0; popups.length = 0; parts.length = 0; darts.length = 0;
-  P.jumpT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028
+  P.riseT = 0; P.duckT = 0; P.y = GROUND_Y;   // JF-#028; JF-#059 rename
   lineUse = { mid: 0, low: 0, high: 0 }; guardTaught = false;   // JF-#041
   grapple = null; P.flourishT = 0; clashT = 0;   // JF-#044
   P.duckAge = 0; padDuckActive = false;          // JF-#047 (duckHeld follows the physical key)
@@ -1579,21 +1856,73 @@ function beginRun(){
   moonWakeT = 0; propHitT = 0; restGag = null;   // JF-#031
   dBase = DISTRICTS[sel].dBase;
   beginWave(1);
+  // JF-#062: on first launch, run the guided teach in place of the normal wave.
+  // BOT excluded â€” the fairness suite tests real combat, not onboarding.
+  tut.active = ((!save.tut) || TUT_FORCE) && !BOT;
+  tut.step = 0; tut.counters = 0; tut.done = false;
+  if (tut.active){
+    enemies.length = 0; toSpawn = 0; difficulty = 0; INTRO = 1e9; spawnT = 24;
+    hearts = Math.max(3, hearts);
+  }
   // JF-#012: veterans get the district's line instead of the controls lesson
-  msg = save.kills > 50
-    ? DISTRICTS[sel].name + ' â€” ' + DISTRICTS[sel].line
-    : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade Â· AMBER duck â–¼ Â· CYAN jump â–²'
-             : 'RED: strike INTO it or press AWAY Â· AMBER: HOLD â–¼ to duck under Â· CYAN: â–² jump');
-  msgT = 300;
+  if (!tut.active){
+    msg = save.kills > 50
+      ? DISTRICTS[sel].name + ' â€” ' + DISTRICTS[sel].line
+      // JF-#059: no jumping â€” AMBER (high) answered by â–², GRAB by â–¼
+      : (TOUCH ? 'RED: tap INTO it to counter, or tap AWAY to evade Â· AMBER â–² Â· GRAB duck â–¼'
+               : 'RED: strike INTO it or press AWAY Â· AMBER: press â–² Â· GRAB: HOLD â–¼');
+    msgT = 300;
+  }
   if (dailyBonus) popup(W/2, 160, 'RETURN BONUS â€” DOUBLE JADE' +
     (save.streak > 1 ? '  Â·  DAY ' + save.streak : ''), '#7ce8a8', true);
 }
 
+// JF-#062: tutorial helpers -------------------------------------------------
+function tutMaintain(dt){
+  // keep exactly ONE slow, strike-only sparring dummy alive; no other spawns
+  const live = enemies.some(e => e.tut && e.st !== E_DOWN && e.st !== E_THROWN);
+  if (live){ spawnT = 20; return; }
+  spawnT -= dt;
+  if (spawnT <= 0){
+    spawnEnemy(Math.random() < 0.5 ? -1 : 1);
+    const e = enemies[enemies.length - 1];
+    e.tut = 1; e.type = T_NORM; e.guard = 0; e.guardLine = undefined;
+    e.canEvade = false; e.feint = false; e.willThrow = false; e.elite = undefined;
+    e.hp = 2; e.hpMax = 2; e.speed *= 0.85;
+    spawnT = 26;
+  }
+}
+function tutOnCounter(){
+  tut.counters++;
+  if (tut.step === 1 && tut.counters >= TUT_GOAL) tut.done = true;   // graduate (finalized safely in update)
+}
+function finalizeTut(){
+  tut.active = false; tut.done = false;
+  save.tut = 1; persist();
+  enemies.length = 0; darts.length = 0;
+  banner('YOU ARE READY  Â·  THE DISTRICT AWAITS', '#7ce8a8', 150);
+  slowMo = Math.max(slowMo, 24);
+  difficulty = 0; waveT = 0; INTRO = Math.max(240, 720 - beltOf(save.kills) * 120);
+  beginWave(1);   // start the real wave clean
+}
+function skipTut(){ if (tut.active){ Snd.tick(); finalizeTut(); } }
+
 // ---------------------------------------------------------------- update ----
 function update(){
   if (state === S_PAUSE) return;   // JF-#014: world fully frozen
+  // JF-#062: graduate the tutorial at a SAFE point (never mid enemy-loop)
+  if (tut.done) finalizeTut();
+  // JF-#062: first dodge arms readyT -> advance from the DODGE beat to the COUNTER beat
+  if (tut.active && tut.step === 0 && readyT > 0){
+    tut.step = 1; popup(P.x, P.y - 150, 'DODGED â€” YOU ARE ARMED', '#7ce8a8', true); Snd.tick();
+  }
   t++;
   if (BOT) botFrame();             // JF-#022: the bot drives every state
+  // JF-#061: cap total shake. Nijman's "Art of Screenshake" point is that shake
+  // makes reactions PHYSICAL â€” but we fight waves, so simultaneous hits used to
+  // stack into unreadable noise. Cap first, then the 0.85 per-frame falloff runs
+  // the authored decay (Skullgirls replicated 3rd Strike's falloff exactly).
+  if (shake > SHAKE_CAP) shake = SHAKE_CAP;
   if (shake > 0) shake *= 0.85;
   if (hurtFlash > 0) hurtFlash--;
   if (msgT > 0) msgT--;
@@ -1611,14 +1940,14 @@ function update(){
 
   popups = popups.filter(p => (p.life--, p.y -= 0.7, p.life > 0));
   parts = parts.filter(p => {
-    p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life--;
+    p.x += p.vx; p.y += p.vy; if (!p.noGrav) p.vy += 0.25; p.life--;   // JF-#061: imploding counter sparks ignore gravity so the converge stays a clean shape
     return p.life > 0 && p.y < 470;
   });
 
   if (state !== S_PLAY){ if (state === S_DEAD) tallyT++; return; }
   if (hitStop > 0){ hitStop--; return; }
   if (whiffT > 0) whiffT--;
-  if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir; bufDir = 0; bufT = 0; strike(d); } }
+  if (bufT > 0){ bufT--; if (bufDir){ const d = bufDir, l = bufLine; bufDir = 0; bufLine = null; bufT = 0; strike(d, l); } }   // JF-#061: replay with its original line
   const dt = slowMo > 0 ? 0.35 : 1;
   if (slowMo > 0) slowMo--;
   // JF-#044: grapple clock â€” mash out before it hits zero or get slammed
@@ -1632,51 +1961,60 @@ function update(){
       hurtPlayer();
     }
   }
-  // JF-#028: dodge timers + jump arc (world-time so it slows with hit-stop/slow-mo)
-  if (P.jumpT > 0){ P.jumpT -= dt; if (P.jumpT < 0) P.jumpT = 0; }
+  // JF-#059: dodge timers (world-time so it slows with hit-stop/slow-mo). Rise
+  // is grounded now â€” no arc, no jump() â€” so P.y just stays put.
+  if (P.riseT > 0){ P.riseT -= dt; if (P.riseT < 0) P.riseT = 0; }
   if (P.duckT > 0){ P.duckT -= dt; if (P.duckT < 0) P.duckT = 0; }
   // JF-#047: NES held crouch â€” while â–¼ is held (key or pad button) the duck never
   // expires; release and the last sliver of duckT runs out and you stand.
-  if ((duckHeld || padDuckActive) && P.jumpT <= 0 && !grapple && !scrollOffer)
+  if ((duckHeld || padDuckActive || gpDuckActive) && P.riseT <= 0 && !grapple && !scrollOffer)
     P.duckT = Math.max(P.duckT, 1.5);
   P.duckAge = P.duckT > 0 ? P.duckAge + dt : 0;   // frames spent in this crouch
-  P.y = GROUND_Y - (P.jumpT > 0 ? Math.sin((1 - P.jumpT / JUMP_DUR) * Math.PI) * JUMP_H : 0);
+  P.y = GROUND_Y;
   if (P.backT > 0){ P.backT -= dt; if (P.backT < 0) P.backT = 0; }   // JF-#042
-  // JF-#028: thrown spears fly flat at their telegraphed height; dodge or wear it
+  // JF-#059: thrown projectiles fly flat at their telegraphed height; each
+  // height has its own answer now (matches the melee mapping): HIGH -> rise
+  // (spin-catch, thrown back), LOW -> duck (kicked back), MID -> back-step
+  // (sidestepped only â€” no reflection, per Mike's "sidestepped and dodged").
   for (const d of darts){
     d.x += d.vx * dt; d.spin += 0.5 * dt;
     if (!d.hit && !d.returned && Math.abs(d.x - P.x) < 30){
-      const dodged = d.high ? P.duckT > 0 : P.jumpT > 0;
+      const dodged = d.line === 'high' ? P.riseT > 0 : d.line === 'low' ? P.duckT > 0 : P.backT > 0;
       if (dodged){
-        // JF-#047: duckAge-based timing (held crouches never expire duckT).
-        // NES knives: a held crouch lets the high spear sail over for free â€”
-        // only a FRESH read pays, and a last-instant one CATCHES it (JF-#044).
-        const age = d.high ? P.duckAge : JUMP_DUR - P.jumpT;
-        if (age <= 7){
+        // JF-#047: duckAge-based timing (a held crouch lets a low dart sail
+        // over for free â€” only a FRESH read pays, a last-instant one reflects
+        // it). Rise/back-step are timed presses like the old jump was.
+        const age = d.line === 'high' ? RISE_DUR - P.riseT
+                  : d.line === 'low'  ? P.duckAge
+                  : BACK_DUR - P.backT;
+        if (age <= 7 && d.line !== 'mid'){   // JF-#059: mid has no reflect tier
           combo++; comboT = CW;
           if (combo > bestCombo) bestCombo = combo;
           d.returned = true; d.vx *= -1.15; d.life = 120;
           score += 100; jadeRun++;
-          popup(P.x, d.y0 - 20, 'CAUGHT!', '#e8c76a', true);
+          popup(P.x, d.y0 - 20, d.line === 'high' ? 'CAUGHT!' : 'KICKED!', '#e8c76a', true);
           Snd.counter(); slowMo = Math.max(slowMo, 22);
-          burst(P.x, d.y0, '#e8c76a', 10, 4);
+          burst(P.x, d.y0, '#e8c76a', 12, 4, 'implode');   // JF-#061: catch/kick-back = a counter, so it converges
         } else if (age <= 20){
           combo++; comboT = CW;            // JF-#043: defense feeds FLOW
           if (combo > bestCombo) bestCombo = combo;
           d.hit = true; d.dead = true;
+          readyT = READY_DUR;              // JF-#053: a projectile dodge arms the counter too
           score += 150; jadeRun++; bumpTrial('dodge');
           slowMo = Math.max(slowMo, 18);   // JF-#041: bullet-time beat as it sails past
-          popup(P.x, GROUND_Y - (d.high ? 60 : 96), 'DODGED +150', '#7ce8a8');
-          burst(P.x, d.y0, '#7ce8a8', 8, 3);
+          popup(P.x, GROUND_Y - (d.line === 'high' ? 60 : 96),
+                d.line === 'mid' ? 'SIDESTEPPED +150' : 'DODGED +150', '#7ce8a8');
+          burst(P.x, d.y0, '#7ce8a8', 10, 3, 'x');         // JF-#061: clean read = X
         } else {
-          d.hit = true; d.dead = true;     // lazy crouch: it just sails over
+          d.hit = true; d.dead = true;     // lazy read: it just sails over
           bumpTrial('dodge');
-          popup(P.x, GROUND_Y - (d.high ? 60 : 96), d.high ? 'under it' : 'over it', '#9aa2b0');
+          popup(P.x, GROUND_Y - (d.line === 'high' ? 60 : 96),
+                d.line === 'high' ? 'under it' : d.line === 'low' ? 'over it' : 'past it', '#9aa2b0');
         }
       } else {
         d.hit = true; d.dead = true;
-        // JF-#028: log dart hits for the fairness suite (marked type 'dart')
-        if (BOT && BOT.cur) BOT.cur.hits.push({ wave, type: 'dart', windup: d.high ? 'high' : 'low', pincer: false, fast: false });
+        // JF-#028: log dart hits for the fairness suite
+        if (BOT && BOT.cur) BOT.cur.hits.push({ wave, type: 'dart', windup: d.line, pincer: false, fast: false });
         hurtPlayer();
       }
     }
@@ -1699,11 +2037,13 @@ function update(){
   darts = darts.filter(d => !d.dead && d.x > -40 && d.x < W + 40 && d.life-- > 0);
 
   if (comboT > 0){ comboT -= dt; if (comboT <= 0) combo = 0; }
+  if (readyT > 0) readyT -= dt;            // JF-#053: counter window drains
+  if (P.ctrFlashT > 0) P.ctrFlashT -= dt;  // JF-#053: counter flourish timer
 
   // JF-#008: wave machine â€” difficulty comes from wave number, not a treadmill
   waveT += dt;
   if (waveT >= 5400) award('endure');
-  difficulty = Math.min(13, dBase + (wave - 1) * 1.3 + Math.min(beltOf(save.kills), 6) * 0.3);   // JF-#028: steeper
+  difficulty = Math.max(0, Math.min(15, dBase + TUNE.diffD + (wave - 1) * 1.3 + Math.min(beltOf(save.kills), 6) * 0.3));   // JF-#028: steeper; JF-#049 knob
   if (wavePhase === 1){                                // rest beat between waves
     if (scrollOffer) return;                           // JF-#025: world waits on the choice
     restT -= dt;
@@ -1711,6 +2051,8 @@ function update(){
       if (won) endRun(true);                           // district cleared â€” run ends in victory
       else beginWave(wave + 1);
     }
+  } else if (tut.active){
+    tutMaintain(dt);   // JF-#062: the guided teach owns spawning until the player graduates
   } else {
     spawnT -= dt;
     // JF-#039: Punch-Out pacing â€” duelists enter ONE AT A TIME. The next
@@ -1728,46 +2070,38 @@ function update(){
   for (const e of enemies){
     if (e.grappled) continue;             // JF-#044: held in the grapple, frozen
     e.stT += dt;
+    // JF-#057: FACING â€” was drawn from e.side, which is set ONCE at spawn and
+    // never updated, so every foe was mirrored: the swing tracked the player
+    // (live Math.sign(P.x - e.x) in the aim lines + hit resolve) while the BODY
+    // pointed wherever it spawned. Facing is now live and toward the player,
+    // and LOCKED once the swing commits (E_STRIKE onward) so a whiff that
+    // carries past you doesn't spin the body around mid-follow-through.
+    if (e.st === E_WALK || e.st === E_WINDUP || e.st === E_AIM || e.st === E_FEINT)
+      e.face = Math.sign(P.x - e.x) || e.face || 1;
     if (e.evadeCd > 0) e.evadeCd -= dt;   // JF-#041
     if (e.leanT > 0) e.leanT -= dt;       // JF-#043: hit-reaction decay
-    // JF-#034: THE BUTCHER lobs a cleaver from range â€” a high or low throw you
-    // duck/jump like a spearman's (reuses the dart system, boss keeps fighting).
+    // JF-#034/#059: THE BUTCHER lobs a cleaver from range at one of the three
+    // heights (reuses the dart system, boss keeps fighting). This one has no
+    // multi-frame wind-up pose to read (it's a single instant spawn), so it
+    // keeps a one-word cue â€” everything else lost captions, this didn't earn one.
     if (e.type === T_BOSS && e.flavor && e.flavor.cleaver && e.st !== E_DOWN && e.st !== E_THROWN){
       e.throwCd -= dt;
       if (e.throwCd <= 0 && Math.abs(e.x - P.x) > 150){
-        const dir = Math.sign(P.x - e.x) || 1, high = Math.random() < 0.5;
-        darts.push({ x: e.x + dir * 24, vx: dir * 8, high, y0: high ? P.y - 78 : P.y - 20, life: 120, cleaver: true });
-        popup(e.x, e.y - 150, high ? 'HIGH!' : 'LOW!', high ? '#f0b24a' : '#5fd0e0');
+        const dir = Math.sign(P.x - e.x) || 1, line = pickProjLine();
+        darts.push({ x: e.x + dir * 24, vx: dir * 8, line, y0: projY(line), life: 120, cleaver: true });
+        popup(e.x, e.y - 150, line.toUpperCase() + '!', PROJ_COL[line]);
         Snd.hurt(); e.throwCd = 200 + Math.random() * 90;
       }
     }
     switch (e.st){
       case E_WALK: {
         const d = Math.abs(e.x - P.x);
-        // JF-#043: duel STARE-DOWN â€” a lone challenger stops at the edge of the
-        // fight and announces itself (name card) before engaging. Punch-Out framing.
-        if (e.staredown > 0){
-          e.staredown -= dt;
-          if (e.staredown <= 0){   // JF-#044: the face-off breaks
-            popup(W/2, 244, 'FIGHT!', '#e8c76a', true);
-            Snd.hit(4);
-          }
-          break;
-        }
-        if (!e.met && d < 280 && e.type !== T_BOSS){
-          e.met = true;
-          const live = enemies.reduce((n, o) => n + (o.st !== E_DOWN && o.st !== E_THROWN ? 1 : 0), 0);
-          if (live === 1){
-            e.staredown = 40;
-            popup(e.x, e.y - 132, e.elite ? e.elite.name : TYPE_NAMES[e.type] || '',
-                  e.elite ? '#e8c76a' : '#c8bfa8', true);
-            // JF-#044: trash talk + the hero answers with a movie flourish
-            const quip = e.elite ? ELITE_QUIPS[e.elite.name] : STARE_QUIPS[e.type];
-            if (quip) popup(e.x, e.y - 160, 'â€œ' + quip + 'â€', '#9aa2b0');
-            P.flourishT = 40;
-            break;
-          }
-        }
+        // JF-#060: STARE-DOWN REMOVED (Mike: "remove the taunt animations before
+        // we battle, they are just distracting"). The 40f face-off froze the foe
+        // at ~280px, fired an elite name card + the hero's flourish pose, then a
+        // FIGHT! popup â€” a pre-fight ceremony that stalled the loop every duel.
+        // Enemies now walk straight in and engage. Kept: the wave-clear victory
+        // flourish (that's a reward AFTER the fight, not a delay before it).
         // JF-#043: STANCE SWITCH â€” a guarded foe slides his bracer to a new line
         // every few seconds, so reading guards is ongoing, never solved once
         if (e.guard > 0){
@@ -1797,10 +2131,11 @@ function update(){
           // JF-#040: pick this swing's attack + keep non-red swings reactable.
           // High/low/grab must clear the reaction+dodge budget (~react 12 + 30f
           // dodge), so they floor higher than a countered strike can.
-          e.atk = chooseAtk(e);
+          e.atk = e.tut ? 'strike' : chooseAtk(e);   // JF-#062: the sparring dummy only ever throws the core RED strike
           e.converted = false;
           if (e.atk === 'grab') e.windup = Math.max(e.windup, 36);
           else if (e.atk !== 'strike') e.windup = Math.max(e.windup, 32);
+          if (e.tut) e.windup = TUT_WINDUP;   // JF-#062: long, unmissable telegraph while learning
           // JF-#040: combo strings â€” a rank-and-file strike sometimes chains into
           // a second, mixed-up swing, so blocking the first doesn't end the
           // exchange (research: combos with a defender break-out window).
@@ -1822,15 +2157,15 @@ function update(){
               popup(W/2, 250, '!!', '#e8a06a', true);
             }
           }
-        } else e.x += e.side * e.speed * dt;
+        } else e.x += (Math.sign(P.x - e.x) || e.side) * e.speed * dt;   // JF-#057: walk TOWARD the player (was a fixed spawn-direction march that could stroll straight past him)
         break;
       }
       case E_AIM:
         // JF-#028: release the spear at the telegraphed height, then close to melee
         if (e.stT >= e.aimDur){
           const dir = Math.sign(P.x - e.x) || 1;
-          darts.push({ x: e.x + dir * 20, vx: dir * 8.5, high: e.projHigh,
-            y0: e.projHigh ? P.y - 78 : P.y - 20, life: 120, spin: 0 });
+          darts.push({ x: e.x + dir * 20, vx: dir * 8.5, line: e.projLine,
+            y0: projY(e.projLine), life: 120, spin: 0 });
           Snd.hurt();
           e.willThrow = false; e.st = E_WALK; e.stT = 0;
         }
@@ -1865,6 +2200,8 @@ function update(){
           e.st = E_WALK; e.stT = 0; e.recoverLong = false;
         }
         break;
+      // (JF-#050 follow-through drift applied below the switch â€” E_STRIKE and
+      // E_RECOVER both carry it so the whiff slides through the player's spot)
       case E_STAGGER:
         e.x += e.vx * dt; e.vx *= run.grease ? 0.95 : 0.86;   // JF-#032: GREASE = long comic slide
         // a shoved body stumbles whoever it slides into
@@ -1891,7 +2228,7 @@ function update(){
             e.windup = Math.max(20, e.windup0 * (0.7 + 0.3 * e.hp / e.hpMax));
             if (e.type === T_FAST) e.feint = Math.random() < 0.4;
             if (e.type === T_SPEAR && !e.willThrow && Math.random() < 0.45){
-              e.willThrow = true; e.projHigh = Math.random() < 0.5;
+              e.willThrow = true; e.projLine = pickProjLine();   // JF-#059
             }
           }
         }
@@ -1944,6 +2281,12 @@ function update(){
         if (e.y > 470) e.dead = true;
         break;
     }
+    // JF-#050: follow-through â€” the committed swing's momentum slides the
+    // attacker through and past the dodged spot, decaying over ~14 frames.
+    if (e.thruV && (e.st === E_STRIKE || e.st === E_RECOVER)){
+      e.x += e.thruV * dt; e.thruV *= 0.88;
+      if (Math.abs(e.thruV) < 0.4) e.thruV = 0;
+    } else if (e.thruV && e.st !== E_STRIKE && e.st !== E_RECOVER) e.thruV = 0;
   }
   enemies = enemies.filter(e => !e.dead && e.x > -120 && e.x < W + 120);
 }
@@ -1967,6 +2310,15 @@ function fighter(x, y, face, opts){
   // splay), air = tucked knees (feet up) â€” instead of a uniform squash that only
   // read as "short". torsoDrop shifts the whole upper body so the crouch is obvious.
   const pose = o.pose || '';
+  // JF-#058: the POSE carries the attack line now, not just the overlays. `phase`
+  // splits windup from strike explicitly (before, windup was just "the strike pose
+  // with a shorter arm" â€” punch>0 was the only difference, which is why heights
+  // never read). Windup silhouettes are deliberately opposite shapes:
+  //   HIGH = rise tall, elbow cocked ABOVE the shoulder
+  //   LOW  = drop low, body sinks, arm loads at ankle height
+  //   MID  = coil back, fist chambered at the waist, weight on the back leg
+  const line = o.line || '', phase = o.phase || '';
+  const winding = phase === 'wind', striking = phase === 'strike';
   cx.lineJoin = 'round'; cx.lineCap = 'round';
   const legStroke = segs => {
     cx.strokeStyle = OUT; cx.lineWidth = 9; cx.beginPath(); segs(); cx.stroke();
@@ -1984,6 +2336,19 @@ function fighter(x, y, face, opts){
                       cx.moveTo(4, -30);  cx.lineTo(14, -22);  cx.lineTo(6, -15); });
     foot(-6, -13); foot(7, -15);
     torsoDrop = -3;
+  } else if ((winding || striking) && line === 'high'){
+    // JF-#058: HIGH = RISE. Back heel lifts, legs straighten, the whole body
+    // grows taller â€” the opposite silhouette to the low sweep's drop.
+    legStroke(() => { cx.moveTo(0, -32); cx.lineTo(-13, -1); cx.moveTo(0, -32); cx.lineTo(15, -9); });
+    foot(-14, 1); foot(17, -10);        // front heel off the ground
+    torsoDrop = -8;
+  } else if (winding && line === 'mid'){
+    // JF-#058: MID = COIL. Weight sinks back onto the rear leg, front foot light â€”
+    // the body loads like a spring, so the straight punch reads before it fires.
+    legStroke(() => { cx.moveTo(0, -30); cx.lineTo(-19, -9); cx.lineTo(-22, 0);
+                      cx.moveTo(0, -30); cx.lineTo(16, -2); });
+    foot(-23, 1); foot(17, -1);
+    torsoDrop = 6;
   } else {                              // planted stance
     legStroke(() => { cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); });
     foot(-16, 1); foot(18, -2);
@@ -2074,18 +2439,41 @@ function fighter(x, y, face, opts){
   if (run.tiny) ext *= 0.5;             // JF-#032: TINY-FISTS â€” itty-bitty arms
   if (pose === 'duck'){                 // arms tuck in tight to the crouch
     arm(-8, -58, -15, -46);
-    // JF-#041: a crouched LOW attack sweeps at ankle height â€” the leg-line read
-    arm(8, -58, 8 + ext * (o.line === 'low' ? 1.15 : 0.8),
-        o.line === 'low' ? -34 - (punch > 0 ? 0 : 6) : -52 - (punch > 0 ? 2 : -4));
+    if (o.line === 'low' && winding){
+      // JF-#058: LOW windup â€” the sweeping arm WINDS BACK behind the hip first,
+      // so the sweep has somewhere to come from (and reads as "something is
+      // loading down there" rather than "arm already out").
+      arm(8, -58, -10, -32);
+    } else {
+      // JF-#041: a crouched LOW attack sweeps at ankle height â€” the leg-line read
+      arm(8, -58, 8 + ext * (o.line === 'low' ? 1.15 : 0.8),
+          o.line === 'low' ? -34 - (punch > 0 ? 0 : 6) : -52 - (punch > 0 ? 2 : -4));
+    }
   } else if (pose === 'air'){           // trailing + leading (flying-kick read)
     arm(-8, -64, -20, -58);
     arm(8, -64, 8 + ext, -66 - (punch > 0 ? 6 : 0));
+  } else if (o.line === 'grab' && winding){
+    // JF-#058: GRAB windup â€” BOTH arms reach out open-handed. Unmistakable
+    // silhouette: wide, two-armed, nothing cocked back.
+    arm(-6, -62, 14, -56);
+    arm(6, -64, 22, -62);
   } else if (o.line === 'high'){
-    // JF-#041: HIGH-line attack â€” the lead arm cocks up then swings at HEAD
-    // height, so a duck visibly slips UNDER it. Windup = raised; strike = out high.
-    // JF-#045: strike arm reaches 1.35Ã— so the fist visually crosses to the head.
+    // JF-#041/#045: HIGH-line attack â€” swings at HEAD height so a duck slips under.
     arm(-7, -62, -18, -50);
-    arm(5, -66, 5 + (punch > 0 ? ext * 1.35 : 6), punch > 0 ? -84 : -96);
+    if (winding){
+      // JF-#058: elbow cocks ABOVE the shoulder, fist back over the head â€” the
+      // classic overhead tell, readable in one frame from the silhouette alone.
+      arm(5, -66, 12, -94);             // upper arm: shoulder â†’ elbow up high
+      arm(12, -94, -4, -106);           // forearm: fist chambered behind the head
+    } else {
+      arm(5, -66, 5 + ext * 1.35, -84); // strike: lashes out at head height
+    }
+  } else if (o.line === 'mid' && winding){
+    // JF-#058: MID windup â€” fist CHAMBERS at the waist and the shoulder twists
+    // back. The lead arm pulls AWAY from you before it fires, which is the tell
+    // the red flash alone never gave.
+    arm(-7, -62, -16, -52);
+    arm(7, -60, -8, -44);
   } else {
     arm(-7, -62, -18, -50);
     arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7));
@@ -2214,11 +2602,11 @@ function drawControlPad(){
   // left cluster: strike + dodge
   btn('strikeL', 24, 60, 'â—€', 'A', false);
   btn('duck',    90, 78, 'DUCK', 'hold â–¼', P.duckT > 0);   // JF-#047: held stance
-  btn('jump',   172, 78, 'JUMP', 'â–² / W', P.jumpT > 0);
+  btn('jump',   172, 78, 'HIGH', 'â–² / W', P.riseT > 0);    // JF-#059: was JUMP
   btn('strikeR',254, 60, 'â–¶', 'D', false);
   // JF-#046: right cluster removed â€” the four arrows are the whole fight
   btn('duck2',  794, 68, 'DUCK', 'hold', P.duckT > 0);
-  btn('jump2',  868, 68, 'JUMP', 'â–²', P.jumpT > 0);
+  btn('jump2',  868, 68, 'HIGH', 'â–²', P.riseT > 0);        // JF-#059: was JUMP
 }
 
 function drawWorld(){
@@ -2363,46 +2751,25 @@ function draw(){
     if (e.st === E_WINDUP && e.atk && e.atk !== 'strike'){
       // JF-#040: armored swing telegraph â€” amber DUCK / cyan JUMP / purple DODGE.
       // Never red: red is reserved for the counter/block window.
-      const [tcol, tcap] = atkTell(e.atk);
+      const [tcol] = atkTell(e.atk);   // JF-#058: caption text no longer drawn
       eyes = 'angry'; col = tcol;
       const prog = Math.min(1, e.stT / e.windup), pulse = 0.5 + 0.4 * Math.sin(e.stT * 0.5);
       cx.fillStyle = tcol; cx.globalAlpha = (0.18 + prog * 0.28) * (0.7 + 0.3 * pulse);
       cx.beginPath(); cx.arc(e.x, e.y - 55, (38 + prog * 16) * size, 0, 7); cx.fill();
       cx.globalAlpha = 1;
+      // JF-#058: the POSE is the telegraph now (rise for high, drop for low, both
+      // arms out for grab). What's left is a SILENT target ring at the threatened
+      // height â€” no dashed line, no words. Removed: the aim line + DUCK!/JUMP!/
+      // DODGE! captions (they were compensating for windup poses that all looked
+      // the same, and they were exactly the "text all over the place" problem).
       if (e.atk === 'high' || e.atk === 'low'){
-        // JF-#045: the swing is AIMED â€” a dashed threat line runs from the cocked
-        // fist to the exact body part it will hit (standing HEAD height for high,
-        // ankles for low), with a target ring pulsing on it. Duck and the line
-        // visibly passes over your head; stand there and that's where it lands.
-        // Same language as the spearman's aim line (JF-#028), so it's pre-taught.
-        const high = e.atk === 'high';
-        const ty = high ? GROUND_Y - 84 : GROUND_Y - 12;                // head / ankles
-        const dirP = Math.sign(P.x - e.x) || 1;
-        const fx = e.x + dirP * 14, fy = e.y - (high ? 96 : 20) * size; // from the fist
-        cx.strokeStyle = tcol; cx.globalAlpha = 0.4 + prog * 0.45; cx.lineWidth = 2.5;
-        cx.setLineDash([7, 7]); cx.lineDashOffset = -e.stT * 2;
-        cx.beginPath(); cx.moveTo(fx, fy); cx.lineTo(P.x, ty); cx.stroke();
-        cx.setLineDash([]);
-        // target ring locked on the head (or shins) â€” tightens as the swing ripens
-        const rr = (high ? 19 : 13) - prog * 5;
-        cx.lineWidth = 3; cx.globalAlpha = 0.5 + 0.5 * pulse;
+        const ty = e.atk === 'high' ? GROUND_Y - 84 : GROUND_Y - 12;   // head / ankles
+        const rr = (e.atk === 'high' ? 19 : 13) - prog * 5;            // tightens as it ripens
+        cx.strokeStyle = tcol; cx.lineWidth = 3; cx.globalAlpha = 0.5 + 0.5 * pulse;
         cx.beginPath(); cx.arc(P.x, ty, rr, 0, 7); cx.stroke();
         cx.beginPath(); cx.moveTo(P.x - rr - 5, ty); cx.lineTo(P.x - rr + 2, ty);
         cx.moveTo(P.x + rr - 2, ty); cx.lineTo(P.x + rr + 5, ty); cx.stroke();
         cx.globalAlpha = 1;
-        // the answer, written AT the threatened body part
-        cx.save(); cx.translate(P.x, ty - rr - 10);
-        cx.font = 'bold 21px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(tcap, 0, 0);
-        cx.fillStyle = tcol; cx.fillText(tcap, 0, 0);
-        cx.restore();
-      } else {
-        // grab keeps its caption above the foe (it targets all of you)
-        cx.save(); cx.translate(e.x, e.y - 118 - (size - 1) * 40); cx.scale(0.92, 0.92);
-        cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-        cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(tcap, 0, 0);
-        cx.fillStyle = tcol; cx.fillText(tcap, 0, 0);
-        cx.restore();
       }
     } else if (e.st === E_WINDUP){
       const late = e.stT / e.windup > perfTh();   // final third: solid bright = NOW (JF-#025: CRANE widens)
@@ -2411,6 +2778,18 @@ function draw(){
       eyes = 'angry';
       cx.fillStyle = late ? 'rgba(255,74,74,0.4)' : 'rgba(232,90,90,0.25)';
       cx.beginPath(); cx.arc(e.x, e.y - 55, ((late ? 50 : 40) + Math.sin(e.stT*0.5)*5) * size, 0, 7); cx.fill();
+      // JF-#058: mid keeps a silent torso ring â€” the COIL pose (weight back, fist
+      // chambered at the waist) is the real tell now. Dashed line + AWAY!/COUNTER!
+      // captions removed.
+      if (e.type !== T_BOSS){
+        const ty = GROUND_Y - 48;                                    // torso line
+        const prog = Math.min(1, e.stT / e.windup);
+        const rr = 16 - prog * 5;
+        cx.strokeStyle = '#ff4a4a'; cx.lineWidth = 3;
+        cx.globalAlpha = 0.45 + 0.5 * (0.5 + 0.4 * Math.sin(e.stT * 0.5));
+        cx.beginPath(); cx.arc(P.x, ty, rr, 0, 7); cx.stroke();
+        cx.globalAlpha = 1;
+      }
     } else if (e.st === E_FEINT){
       // feint tell: PALE flash, no red, no audio â€” only real telegraphs go red
       col = Math.sin(e.stT * 0.8) > 0 ? '#c8a8a0' : '#b8c8d8';
@@ -2425,21 +2804,24 @@ function draw(){
         const dirP = Math.sign(P.x - e.x) || 1;
         const [tcol] = atkTell(e.atk);
         const sw = Math.max(0, 1 - e.stT / 10);
+        // JF-#050: streak carries PAST the player (was +26 â€” stopped at the body,
+        // which read as the swing pulling its punch when dodged)
         cx.strokeStyle = tcol; cx.globalAlpha = 0.75 * sw; cx.lineWidth = 7; cx.lineCap = 'round';
-        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 26, ty); cx.stroke();
+        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 64, ty); cx.stroke();
         cx.globalAlpha = 0.3 * sw; cx.lineWidth = 14;
-        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 26, ty); cx.stroke();
+        cx.beginPath(); cx.moveTo(e.x + dirP * 20, ty); cx.lineTo(P.x + dirP * 64, ty); cx.stroke();
         cx.globalAlpha = 1; cx.lineWidth = 1;
       }
     }
     else if (e.st === E_RECOVER){ col = '#7a6a9a'; rot += 0.12 * Math.sign(e.x - P.x); eyes = 'dizzy'; }  // slumped = punishable
     else if (e.st === E_STAGGER){ col = '#9a90b0'; rot += 0.2 * Math.sign(e.vx || 1); eyes = 'dizzy'; }
     else if (e.st === E_AIM){
-      // JF-#028: throw wind-up â€” amber = high (DUCK), cyan = low (JUMP). Never
-      // red: red is reserved for meleecounter windows, throws read differently.
+      // JF-#059: throw wind-up â€” amber high / orange mid / cyan low. Wordless
+      // (JF-#058 text purge): the dashed line + pulsing dot at the telegraphed
+      // height IS the read now, no caption.
       eyes = 'angry';
-      const tcol = e.projHigh ? '#f0b24a' : '#5fd0e0';
-      const ty = e.projHigh ? P.y - 78 : P.y - 20;
+      const tcol = PROJ_COL[e.projLine];
+      const ty = projY(e.projLine);
       const prog = Math.min(1, e.stT / e.aimDur), pulse = 0.4 + 0.4 * Math.sin(e.stT * 0.5);
       cx.strokeStyle = tcol; cx.globalAlpha = 0.35 + prog * 0.4; cx.lineWidth = 2;
       cx.setLineDash([8, 8]); cx.lineDashOffset = -e.stT * 2;
@@ -2447,12 +2829,6 @@ function draw(){
       cx.setLineDash([]); cx.globalAlpha = 1;
       cx.fillStyle = tcol; cx.globalAlpha = pulse;
       cx.beginPath(); cx.arc(e.x, ty, 6 + prog * 4, 0, 7); cx.fill(); cx.globalAlpha = 1;
-      // caption teaches the read
-      cx.save(); cx.translate(P.x, ty - 22); cx.scale(0.9, 0.9);
-      cx.font = 'bold 22px ' + COMIC; cx.textAlign = 'center'; cx.lineJoin = 'round';
-      cx.strokeStyle = OUT; cx.lineWidth = 6; cx.strokeText(e.projHigh ? 'DUCK!' : 'JUMP!', 0, 0);
-      cx.fillStyle = tcol; cx.fillText(e.projHigh ? 'DUCK!' : 'JUMP!', 0, 0);
-      cx.restore();
     }
     else if (e.st === E_DOWN || e.st === E_THROWN){
       eyes = 'x';
@@ -2486,10 +2862,14 @@ function draw(){
     // squash: pop on spawn-walk and squish when knocked down
     let squash = (e.st === E_DOWN || e.st === E_THROWN) ? -0.5 : 0;
     if (squash < 0 && e.koStyle === 2){ squash = -0.75; rot *= 0.3; }   // JF-#044: sit-down slump
-    fighter(e.x, e.y - evY, -e.side, {
+    fighter(e.x, e.y - evY, e.face || -e.side, {   // JF-#057: live facing (was -e.side, stale from spawn)
       col, punch, rot, size, eyes, squash,
       pose: epose,
-      line: atkActive ? e.atk : null,
+      // ('strike' is the internal name for the mid line â€” normalize so the pose reads)
+      line: atkActive ? ((!e.atk || e.atk === 'strike') ? 'mid' : e.atk) : null,
+      // JF-#058: explicit windup/strike phase â€” the pose branches key off this
+      // instead of inferring "am I striking?" from arm length (punch > 0)
+      phase: e.st === E_WINDUP ? 'wind' : e.st === E_STRIKE ? 'strike' : '',
       sash: e.elite ? '#e8c76a' : e.type === T_BOSS ? '#a02828' : e.type === T_BRUTE ? '#3a3050' : e.type === T_SPEAR ? '#2a6a48' : '#a04848',   // JF-#043: elites wear gold
       spear: e.type === T_SPEAR,
       guard: e.guard > 0 && (e.st === E_WALK || e.st === E_STAGGER),
@@ -2509,7 +2889,7 @@ function draw(){
 
   // JF-#028: thrown spears in flight â€” colored by the height they demand
   for (const d of darts){
-    const dir = Math.sign(d.vx) || 1, tip = d.x + dir * 22, tc = d.high ? '#f0b24a' : '#5fd0e0';
+    const dir = Math.sign(d.vx) || 1, tip = d.x + dir * 22, tc = PROJ_COL[d.line];   // JF-#059
     cx.strokeStyle = 'rgba(200,190,170,0.3)'; cx.lineWidth = 2;   // motion streak
     cx.beginPath(); cx.moveTo(d.x - dir * 26, d.y0); cx.lineTo(d.x, d.y0); cx.stroke();
     if (d.cleaver){                    // JF-#034: the Butcher's spinning cleaver
@@ -2532,13 +2912,12 @@ function draw(){
 
   // player
   const pcol = hurtFlash > 0 && (hurtFlash & 2) ? '#e86a6a' : wearCol();   // JF-#023
-  // JF-#029: a ground shadow that shrinks + fades as you leave the ground sells the
-  // jump; a wide flat shadow under the crouch sells the duck.
-  const airFrac = (GROUND_Y - P.y) / JUMP_H;             // 0 grounded, ~1 at apex
-  const pPose = P.duckT > 0 ? 'duck' : P.jumpT > 0 ? 'air' : '';
-  cx.fillStyle = `rgba(8,10,14,${0.32 * (1 - airFrac * 0.7)})`;
+  // JF-#059: no more jump arc â€” player stays grounded, so the shadow is just
+  // the plain-vs-crouch width swap (was also shrinking/fading with jump height).
+  const pPose = P.duckT > 0 ? 'duck' : '';
+  cx.fillStyle = 'rgba(8,10,14,0.32)';
   cx.beginPath();
-  cx.ellipse(P.x, GROUND_Y + 4, (pPose === 'duck' ? 34 : 22) * (1 - airFrac * 0.4), 6 * (1 - airFrac * 0.5), 0, 0, 7);
+  cx.ellipse(P.x, GROUND_Y + 4, pPose === 'duck' ? 34 : 22, 6, 0, 0, 7);
   cx.fill();
   // JF-#042: back-step evade â€” a quick lean-and-slide away, then spring back
   const backP = P.backT > 0 ? Math.sin((P.backT / BACK_DUR) * Math.PI) : 0;
@@ -2557,7 +2936,10 @@ function draw(){
   fighter(P.x + P.backDir * backP * 26 + (grapple ? Math.sin(t * 1.2) * 3 : 0), P.y, P.face, { col: pcol, sash: BELTS[beltOf(save.kills + kills)].col,   // JF-#044: grapple tremble
     punch: Math.max(P.punchT, flPunch), pose: pPose,
     rot: (run.drunken ? Math.sin(t * 0.14) * 0.1 : 0) + P.backDir * backP * 0.22 + flRot,   // JF-#032 sway + JF-#042 lean + JF-#044 flourish
-    line: P.duckT > 0 && P.punchT > 0 ? 'low' : null,   // JF-#041: crouch sweep read
+    // JF-#041/#059: crouch = low-line read; risen = the same high-line rise
+    // pose the enemies use for their own high attack (highAction/UP).
+    line: P.duckT > 0 && P.punchT > 0 ? 'low' : P.riseT > 0 ? 'high' : null,
+    phase: P.riseT > 0 ? 'strike' : '',
     acc: wornAcc(),   // JF-#033
     eyes: P.punchT > 0 || hurtFlash > 0 ? 'angry' : 'idle' });
 
@@ -2568,6 +2950,30 @@ function draw(){
     else { cx.fillStyle = p.col; cx.beginPath(); cx.arc(p.x, p.y, p.sz || 2.4, 0, 7); cx.fill(); }
   }
   cx.globalAlpha = 1;
+
+  // JF-#053: counter flourish â€” expanding double ring + radial speed lines at
+  // the impact point, riding the bullet time. Pure motion, zero words.
+  if (P.ctrFlashT > 0){
+    const p = P.ctrFlashT / 16, r0 = (1 - p) * 90 + 18;
+    cx.strokeStyle = '#e8c76a'; cx.globalAlpha = p * 0.9; cx.lineWidth = 4;
+    cx.beginPath(); cx.arc(P.ctrX, P.ctrY, r0, 0, 7); cx.stroke();
+    cx.globalAlpha = p * 0.5; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(P.ctrX, P.ctrY, r0 * 0.62, 0, 7); cx.stroke();
+    for (let i = 0; i < 8; i++){
+      const a = i * Math.PI / 4 + 0.35;
+      cx.beginPath(); cx.moveTo(P.ctrX + Math.cos(a) * (r0 + 8), P.ctrY + Math.sin(a) * (r0 + 8));
+      cx.lineTo(P.ctrX + Math.cos(a) * (r0 + 26 + p * 14), P.ctrY + Math.sin(a) * (r0 + 26 + p * 14)); cx.stroke();
+    }
+    cx.globalAlpha = 1; cx.lineWidth = 1;
+  }
+  // JF-#053: while the counter window is armed, the player glows jade â€” the
+  // visual "NOW you may counter" cue (replaces any text prompt)
+  if (readyT > 0 && state === S_PLAY){
+    const g = 0.25 + 0.2 * Math.sin(t * 0.4) + 0.35 * (readyT / READY_DUR);
+    cx.strokeStyle = '#7ce8a8'; cx.globalAlpha = Math.min(0.8, g); cx.lineWidth = 3;
+    cx.beginPath(); cx.arc(P.x, P.y - 55, 46, 0, 7); cx.stroke();
+    cx.globalAlpha = 1; cx.lineWidth = 1;
+  }
 
   // popups â€” JF-#027: comic pop-in (springy scale), jaunty tilt, cel outline
   cx.textAlign = 'center';
@@ -2638,7 +3044,7 @@ function draw(){
       cx.fillRect(W/2 - bw/2, 80, bw, 4);
     }
     // hearts
-    const maxH = Math.max(1, 3 + save.up.body + omen.heart + (run.ox ? 1 : 0));   // JF-#025
+    const maxH = Math.max(1, 3 + save.up.body + omen.heart + TUNE.heartsD + (run.ox ? 1 : 0));   // JF-#025; JF-#049 knob
     cx.font = '22px Georgia'; cx.textAlign = 'left'; cx.fillStyle = '#e86a6a';
     cx.fillText('â™¥ '.repeat(Math.max(0, hearts)) + 'â™¡ '.repeat(Math.max(0, maxH - hearts)), 20, 40);
     if (windAvail){ cx.fillStyle = '#7ce8a8'; cx.font = '15px Georgia'; cx.fillText('second wind ready', 20, 62); }
@@ -2657,6 +3063,38 @@ function draw(){
       cx.fillText(msg, W/2, 120);
       cx.globalAlpha = 1;
     }
+    // JF-#062: guided-teach coach overlay (captions + ripe-windup nudge + SKIP)
+    if (tut.active){
+      const dummy = enemies.find(e => e.tut);
+      const ripe = dummy && dummy.st === E_WINDUP && dummy.stT > dummy.windup * 0.45;
+      cx.textAlign = 'center';
+      // teach the LOOP: unarmed -> DODGE to arm, armed -> COUNTER. The prompt
+      // always names the correct next action, so the player never stalls.
+      const wantDodge = tut.step === 0 || readyT <= 0;
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = '#8a94a6';
+      cx.fillText('TRAINING', W/2, 150);
+      cx.font = 'bold 23px Georgia'; cx.fillStyle = '#e8dcc0';
+      cx.fillText(wantDodge
+        ? (TOUCH ? 'When he flashes RED â€” tap AWAY to DODGE' : 'When he flashes RED â€” press â—€ or â–¶ AWAY to DODGE')
+        : (TOUCH ? 'ARMED! Now tap INTO his RED to COUNTER' : 'ARMED! Now STRIKE â—€ / â–¶ into his RED to COUNTER'),
+        W/2, 178);
+      if (tut.step === 1){
+        cx.font = '15px Georgia'; cx.fillStyle = '#7ce8a8';
+        cx.fillText('counters  ' + tut.counters + ' / ' + TUT_GOAL, W/2, 200);
+      }
+      if (ripe){
+        cx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 0.3);
+        cx.font = 'bold 22px ' + COMIC; cx.fillStyle = wantDodge ? '#f0b24a' : '#7ce8a8';
+        cx.fillText(wantDodge ? 'DODGE!' : 'COUNTER!', W/2, 232);
+        cx.globalAlpha = 1;
+      }
+      const bw = 96, bh = 34, bx = W - bw - 16, by = H - bh - 16;
+      tutSkipRect = { x: bx, y: by, w: bw, h: bh };
+      cx.fillStyle = 'rgba(20,22,28,0.72)'; cx.fillRect(bx, by, bw, bh);
+      cx.strokeStyle = '#8a94a6'; cx.lineWidth = 1.5; cx.strokeRect(bx, by, bw, bh);
+      cx.fillStyle = '#c8bfa8'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'center';
+      cx.fillText('SKIP â–¶', bx + bw/2, by + 23);
+    } else if (tutSkipRect){ tutSkipRect = null; }
     // JF-#025: scrolls held this run â€” small gold glyph row under the hearts
     {
       const held = SCROLLS.filter(s => run[s.k]);
@@ -2687,11 +3125,15 @@ function draw(){
     }
     if (!scrollOffer) drawControlPad();   // JF-#040: on-screen controls
   } else if (state === S_MENU){
-    // JF-#035: darker vignette (was flat 0.55 alpha, too see-through vs CG legibility bar)
-    cx.fillStyle = 'rgba(6,8,11,0.82)'; cx.fillRect(0, 0, W, H);
-    const vg = cx.createRadialGradient(W/2, H*0.42, H*0.15, W/2, H*0.42, H*0.75);
-    vg.addColorStop(0, 'rgba(6,8,11,0)'); vg.addColorStop(1, 'rgba(4,5,7,0.55)');
-    cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
+    // JF-#052: FULLY OPAQUE menu backdrop â€” three dim passes (0.55â†’0.82â†’0.90)
+    // all still let the district art distract. The menu is now its own scene:
+    // a solid vertical gradient in the district's palette, nothing animating.
+    {
+      const sky = DISTRICTS[sel].sky;
+      const g = cx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#07090d'); g.addColorStop(0.5, sky[1]); g.addColorStop(1, '#07090d');
+      cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+    }
     // helper: solid rounded panel so corner text has real contrast, not floating on art
     const panel = (px, py, pw, ph, align) => {
       cx.save(); cx.fillStyle = 'rgba(14,17,22,0.72)'; cx.strokeStyle = 'rgba(255,255,255,0.08)'; cx.lineWidth = 1;
@@ -2701,19 +3143,35 @@ function draw(){
       cx.arcTo(x2, py + ph, x2, py, r); cx.arcTo(x2, py, x2 + pw, py, r); cx.closePath();
       cx.fill(); cx.stroke(); cx.restore();
     };
-    // JF-#027: chunky outlined comic title with a lil bounce
+    // JF-#051: MENU LAYOUT REBUILD â€” one centered column, top to bottom:
+    // title â†’ framed demo â†’ controls â†’ district â†’ CTA â†’ belt/stats, with the
+    // four info panels (TRIALS/WARDROBE/OMEN/BEST) in ONE aligned row along the
+    // bottom. Kills the corner-pinned boxes that kept colliding with the
+    // centered stack (playtest Ã—3: "title screen still looks like a jumbled
+    // mess"). Nothing is edge-pinned anymore; every element has its own band.
     cx.textAlign = 'center';
     cx.save();
-    cx.translate(W/2, 196 + Math.sin(t * 0.05) * 4); cx.rotate(-0.03);
-    cx.font = 'bold 66px ' + COMIC; cx.lineJoin = 'round';
-    cx.strokeStyle = OUT; cx.lineWidth = 12; cx.strokeText('JADE FIST', 0, 0);
+    cx.translate(W/2, 64);
+    let tfs = 54;   // JF-#048: static, fitted; JF-#051: smaller, top band of its own
+    cx.font = 'bold ' + tfs + 'px ' + COMIC;
+    while (tfs > 38 && cx.measureText('JADE FIST').width > W - 80){
+      tfs -= 2; cx.font = 'bold ' + tfs + 'px ' + COMIC;
+    }
+    cx.lineJoin = 'round';
+    cx.strokeStyle = OUT; cx.lineWidth = Math.max(8, tfs * 0.18); cx.strokeText('JADE FIST', 0, 0);
     cx.fillStyle = '#7ce8a8'; cx.fillText('JADE FIST', 0, 0);
     cx.restore();
     // JF-#018: visual onboarding â€” a looping counter demo instead of two text lines
     // (CG: teach visually, minimal text). 240-frame script: approach â†’ red flash â†’
     // counter throw â†’ reset. Captions change per phase.
     {
-      const dT = t % 240, gy = 312;
+      // JF-#048: the demo sits in its own framed card so it reads as an inset
+      // "how to play" strip. JF-#051: card moved into the column band under the
+      // title; thrown body's rise is capped so it can't climb into the caption.
+      const cardY = 88;
+      panel(W/2 - 300, cardY, 600, 118, 'left');
+      cx.save(); cx.beginPath(); cx.rect(W/2 - 300, cardY, 600, 118); cx.clip();
+      const dT = t % 240, gy = cardY + 96;
       let ex2 = 0, ecol = '#8a94a6', erot = 0, ppunch = 0, cap, capCol = '#e8dcc0';
       if (dT < 80){                                   // approach from the right
         ex2 = W/2 + 220 - dT * 1.6;
@@ -2733,22 +3191,27 @@ function draw(){
       } else { ex2 = -999; cap = 'they come at you â€” strike toward them'; }
       fighter(W/2 - 40, gy, 1, { col: wearCol(), sash: '#3fae7c', punch: ppunch, size: 0.72, acc: wornAcc() });   // JF-#023/#033
       if (ex2 > -200 && ex2 < W + 200)
-        fighter(ex2, gy - (erot ? erot * 30 : 0), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });
+        fighter(ex2, gy - Math.min(erot ? erot * 30 : 0, 36), -1, { col: ecol, sash: '#7a4040', rot: erot, size: 0.72 });   // JF-#051: rise cap
       cx.fillStyle = capCol; cx.font = '19px Georgia'; cx.textAlign = 'center';
-      cx.fillText(cap, W/2, 236);
+      cx.fillText(cap, W/2, cardY + 24);
+      cx.restore();   // JF-#048: end demo-card clip
     }
+    // JF-#054: text purge â€” one short controls line (the rest is taught in-game
+    // per CG "teach visually"; the demo card above already shows the loop)
     cx.fillStyle = '#c8bfa8'; cx.font = '17px Georgia';
-    cx.fillText(TOUCH ? 'tap toward = strike Â· tap away = evade Â· swipe â†‘ jump â†“ duck' : 'â—€â–¶ strike / evade away Â· HOLD â–¼ crouch Â· â–² jump Â· strike while down/up = low/high attack', W/2, 332);
+    // JF-#064: a connected pad re-labels the SAME one line â€” no extra text on the menu
+    cx.fillText(gpOn ? 'D-pad â—€â–¶ strike Â· â–² high Â· hold â–¼ crouch Â· A fight' :
+                TOUCH ? 'tap toward Â· swipe â†‘ high Â· hold â†“ crouch' : 'â—€â–¶ strike Â· â–² high Â· hold â–¼ crouch', W/2, 230);   // JF-#059
     // JF-#009: district selector â€” the campaign map in one line
     const MD = DISTRICTS[sel];
     cx.font = 'bold 24px Georgia'; cx.fillStyle = '#e8dcc0';
     cx.fillText((save.dist > 0 ? 'â—€   ' : '') + MD.name + '  ' + (sel + 1) + '/' + DISTRICTS.length +
-      (save.dist > 0 ? '   â–¶' : ''), W/2, 378);
+      (save.dist > 0 ? '   â–¶' : ''), W/2, 264);
     cx.font = 'italic 16px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText(MD.line + '   Â·   ' + (sel < save.dist ? 'CLEARED' : sel === 3 && save.dist === 3 ? 'the last district' : 'boss: ' + MD.boss), W/2, 400);
+    cx.fillText(sel < save.dist ? 'CLEARED' : 'boss: ' + MD.boss, W/2, 286);   // JF-#054: flavor line cut
     // JF-#035: real filled CTA button (was blinking bare text) â€” one obvious click-to-play target
     {
-      const bw = 220, bh = 40, bx = W/2 - bw/2, by = 408, pulse = 0.85 + Math.sin(t * 0.12) * 0.15;
+      const bw = 220, bh = 40, bx = W/2 - bw/2, by = 300, pulse = 0.85 + Math.sin(t * 0.12) * 0.15;
       cx.fillStyle = `rgba(124,232,168,${0.22 * pulse})`; cx.strokeStyle = '#7ce8a8'; cx.lineWidth = 2;
       cx.beginPath(); cx.moveTo(bx + 8, by); cx.arcTo(bx + bw, by, bx + bw, by + bh, 8);
       cx.arcTo(bx + bw, by + bh, bx, by + bh, 8); cx.arcTo(bx, by + bh, bx, by, 8); cx.arcTo(bx, by, bx + bw, by, 8);
@@ -2756,72 +3219,74 @@ function draw(){
       cx.fillStyle = '#e8dcc0'; cx.font = 'bold 20px Georgia'; cx.textAlign = 'center';
       cx.fillText(TOUCH ? 'TAP TO FIGHT' : 'SPACE TO FIGHT', W/2, by + 27);
     }
+    // JF-#054: belt + wallet merged to ONE line (was two lines listing training
+    // ratios and next-belt math â€” stat noise on a menu)
     const mb = beltOf(save.kills);
     cx.fillStyle = BELTS[mb].col === '#3a3f48' ? '#e8dcc0' : BELTS[mb].col;
     cx.font = 'bold 18px Georgia';
-    cx.fillText(BELTS[mb].name + ' BELT' + (save.streak > 1 ? '   Â·   day ' + save.streak : ''), W/2, 458);
-    cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia';
-    const trained = UPS.reduce((n, u) => n + save.up[u.k], 0);
-    cx.fillText((best > 0 ? 'BEST ' + best + '   Â·   ' : '') + 'â—† ' + save.jade +
-      (trained ? '   Â·   training ' + trained + '/' + UPS.reduce((n,u)=>n+u.max,0) : '') +
-      (mb < BELTS.length - 1 ? '   Â·   ' + (BELTS[mb+1].need - save.kills) + ' foes to ' + BELTS[mb+1].name : ''), W/2, 482);
-    // JF-#035/#036: today's trials (left) and the omen offer (right), panels behind
-    // them, one muted info color (gold reserved for CTA/highlights). JF-#036 restores
-    // which trials are still open (condensing to a bare count lost "what to do now").
+    cx.fillText(BELTS[mb].name + ' BELT   Â·   â—† ' + save.jade + (best > 0 ? '   Â·   BEST ' + best : ''), W/2, 374);
+    // JF-#051: info panels â€” ONE aligned row along the bottom (was four
+    // corner-pinned boxes that collided with the centered stack). Equal size,
+    // equal band, text left-aligned inside each.
+    // JF-#062: only once the player has actually fought â€” a brand-new player gets a
+    // clean first impression instead (the panels mean nothing to them yet).
+    if (save.kills > 0){
+    const PX = [18, 251, 484, 717], PW = 225, PY = 408, PH = 92;
+    // â€” TRIALS â€”
     const trio = todayTrio(), tdone = trio.filter((ti, i) => save.tdone[i]).length;
     const remaining = trio.filter((ti, i) => !save.tdone[i]).map(ti => TRIALS[ti].name);
-    // JF-#037: one trial name per line instead of ' Â· '-joined on one line â€”
-    // measured 354px of text landing in a 250px-wide panel (confirmed via
-    // measureText), spilling ~115px past the right edge into the CTA area.
     const trialLines = remaining.length ? remaining : ['all done today'];
-    const trialsH = 34 + trialLines.length * 15;
-    panel(16, 76, 250, trialsH, 'left');
+    panel(PX[0], PY, PW, PH, 'left');
     cx.textAlign = 'left'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
-    cx.fillText('TRIALS  ' + tdone + '/3', 26, 96);
-    cx.font = '14px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText('+15â—† each', 150, 96);
+    cx.fillText('TRIALS  ' + tdone + '/3', PX[0] + 10, PY + 20);   // JF-#054: '+15â—† each' cut
     cx.font = '12px Georgia'; cx.fillStyle = '#8a94a6';
-    trialLines.forEach((line, i) => cx.fillText(line, 26, 113 + i * 15));
-    // JF-#023/#036/#037: wardrobe (left, under the trials) â€” pushed down to
-    // clear the trials panel (now variable-height since #037's per-line fix)
+    trialLines.forEach((line, i) => cx.fillText(line, PX[0] + 10, PY + 38 + i * 15));
+    // â€” WARDROBE â€”
     {
       const S = STYLES[styleSel], owned = !!save.cos.own[styleSel];
-      const wY = 76 + trialsH + 10;
-      styleRect = { x: 16, y: wY, w: 250, h: owned ? 40 : 78 };
-      panel(styleRect.x, styleRect.y, styleRect.w, styleRect.h, 'left');
-      cx.textAlign = 'left'; cx.font = 'bold 13px Georgia'; cx.fillStyle = '#c8bfa8';
-      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), 26, wY + 18);
+      styleRect = { x: PX[1], y: PY, w: PW, h: PH };
+      panel(PX[1], PY, PW, PH, 'left');
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
+      cx.fillText('WARDROBE  ' + (TOUCH ? '(tap)' : '(C)'), PX[1] + 10, PY + 20);
       cx.fillStyle = S.col; cx.font = 'bold 13px Georgia';
-      cx.fillText(S.name + (save.cos.wear === styleSel ? ' â€” worn' : owned ? ' â€” owned' : ''), 26, wY + 36);
+      cx.fillText(S.name + (save.cos.wear === styleSel ? ' â€” worn' : owned ? ' â€” owned' : ''), PX[1] + 10, PY + 40);
       styleBuyRect = null;
       if (!owned){
         const can = save.jade >= S.cost;
-        styleBuyRect = { x: 26, y: wY + 48, w: 150, h: 26 };
+        styleBuyRect = { x: PX[1] + 10, y: PY + 52, w: 150, h: 26 };
         cx.fillStyle = can ? 'rgba(124,232,168,0.28)' : 'rgba(140,148,166,0.14)';
         cx.fillRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
         cx.strokeStyle = can ? '#7ce8a8' : 'rgba(140,148,166,0.4)'; cx.lineWidth = 1.5;
         cx.strokeRect(styleBuyRect.x, styleBuyRect.y, styleBuyRect.w, styleBuyRect.h);
         cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 14px Georgia';
-        cx.fillText((TOUCH ? 'BUY' : 'B â€” buy') + '  â—† ' + S.cost, 34, wY + 66);
+        cx.fillText((TOUCH ? 'BUY' : 'B â€” buy') + '  â—† ' + S.cost, PX[1] + 18, PY + 70);
       }
     }
+    // â€” OMEN â€”
     const OM = todayOmen();
-    panel(W - 16, 76, 250, 60, 'right');
-    cx.textAlign = 'right'; cx.font = 'bold 14px Georgia';
+    omenRect = { x: PX[2], y: PY, w: PW, h: PH };
+    panel(PX[2], PY, PW, PH, 'left');
+    cx.font = 'bold 14px Georgia';
     cx.fillStyle = omenOn ? '#c8a8e8' : '#c8bfa8';
-    cx.fillText("OMEN  " + (omenOn ? 'â€” ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), W - 26, 96);
-    cx.font = '14px Georgia'; cx.fillStyle = '#8a94a6';
-    cx.fillText(OM.b + '  /  ' + OM.c, W - 26, 118);
-    // JF-#026: Hall of Legends â€” condensed to just #1 (right, under the omen)
+    cx.fillText('OMEN  ' + (omenOn ? 'â€” ACCEPTED' : (TOUCH ? '(tap)' : '(O)')), PX[2] + 10, PY + 20);
+    cx.font = '13px Georgia'; cx.fillStyle = '#8a94a6';
+    cx.fillText(OM.b, PX[2] + 10, PY + 40);
+    cx.fillText(OM.c, PX[2] + 10, PY + 58);
+    // â€” BEST (Hall of Legends #1) â€”
     {
       const H = save.hall[sel];
-      if (H && H.length){
-        panel(W - 16, 144, 250, 34, 'right');
-        cx.textAlign = 'right'; cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
-        cx.fillText('BEST â€” ' + DISTRICTS[sel].name, W - 26, 162);
-        cx.font = 'bold 14px Georgia'; cx.fillStyle = '#e8c76a';
-        cx.fillText('#1  ' + H[0].s + '  Â· wave ' + H[0].w, W - 26, 178);
-      }
+      panel(PX[3], PY, PW, PH, 'left');
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = '#c8bfa8';
+      cx.fillText('BEST â€” ' + DISTRICTS[sel].name, PX[3] + 10, PY + 20);
+      cx.font = 'bold 14px Georgia'; cx.fillStyle = H && H.length ? '#e8c76a' : '#8a94a6';
+      cx.fillText(H && H.length ? '#1  ' + H[0].s + '  Â· wave ' + H[0].w : 'no legend yet', PX[3] + 10, PY + 40);
+    }
+    } else {
+      // JF-#062: brand-new player â€” the advanced panels read as clutter (Mike's repeated
+      // "jumbled" note). The guided teach handles learning; the menu just says "begin".
+      styleRect = null; styleBuyRect = null; omenRect = null;
+      cx.textAlign = 'center'; cx.font = 'italic 16px Georgia'; cx.fillStyle = '#8a94a6';
+      cx.fillText('first time here? just begin â€” you will learn as you fight', W/2, 452);
     }
     cx.textAlign = 'center';
   } else if (state === S_DEAD){
@@ -2885,37 +3350,72 @@ function draw(){
         cx.fillStyle = '#7ce8a8'; cx.font = 'bold 16px Georgia';
         cx.fillText('â–¼ you can afford your first training â–¼', W/2, 394);
       }
-      const bw2 = 218, bh = 44, gap = 10;   // 2Ã—2 upgrade grid
+      // JF-#055: BIG ICON TILES (was a text-dense 2Ã—2 of names + descriptions â€”
+      // Mike/CG: too much text; the icon should say what it does). One row of
+      // four 100Ã—96 tiles: drawn glyph + tier pips + cost. Number keys / taps
+      // unchanged.
+      const tw = 100, th = 96, gap = 14;
+      const row0 = W/2 - (4 * tw + 3 * gap) / 2;
+      const icon = (k, ix, iy, colr) => {   // hand-drawn vector glyphs, ~34px
+        cx.save(); cx.translate(ix, iy); cx.strokeStyle = colr; cx.fillStyle = colr; cx.lineWidth = 3; cx.lineJoin = cx.lineCap = 'round';
+        if (k === 'body'){            // heart
+          cx.beginPath(); cx.moveTo(0, 12);
+          cx.bezierCurveTo(-20, -6, -10, -20, 0, -8); cx.bezierCurveTo(10, -20, 20, -6, 0, 12);
+          cx.fill();
+        } else if (k === 'palm'){     // reach: open palm + motion arrow
+          cx.beginPath(); cx.arc(-8, 0, 9, 0, 7); cx.fill();                     // palm
+          cx.beginPath(); cx.moveTo(2, 0); cx.lineTo(20, 0); cx.stroke();        // arrow shaft
+          cx.beginPath(); cx.moveTo(14, -6); cx.lineTo(21, 0); cx.lineTo(14, 6); cx.stroke();
+        } else if (k === 'focus'){    // combo: two chain links
+          cx.beginPath(); cx.arc(-7, 0, 8, 0, 7); cx.stroke();
+          cx.beginPath(); cx.arc(7, 0, 8, 0, 7); cx.stroke();
+        } else {                      // second wind: rising phoenix arrow
+          cx.beginPath(); cx.moveTo(-10, 12); cx.quadraticCurveTo(-14, -4, 0, -12); cx.stroke();
+          cx.beginPath(); cx.moveTo(-6, -10); cx.lineTo(1, -13); cx.lineTo(-2, -5); cx.stroke();
+          cx.beginPath(); cx.moveTo(6, 12); cx.quadraticCurveTo(14, 2, 6, -8); cx.stroke();
+        }
+        cx.restore();
+      };
       for (let i = 0; i < UPS.length; i++){
         const u = UPS[i], tier = save.up[u.k], maxed = tier >= u.max;
         const cost = maxed ? 0 : u.cost(tier);
-        const bx = W/2 + (i % 2 === 0 ? -bw2 - gap/2 : gap/2), by = 398 + Math.floor(i / 2) * (bh + gap);
+        const bx = row0 + i * (tw + gap), by = 398;
         const can = !maxed && save.jade >= cost;
-        btnRects.push({ x: bx, y: by, w: bw2, h: bh, i });
+        btnRects.push({ x: bx, y: by, w: tw, h: th, i });
         cx.fillStyle = maxed ? 'rgba(124,232,168,0.10)' : can ? 'rgba(124,232,168,0.22)' : 'rgba(140,148,166,0.10)';
-        cx.fillRect(bx, by, bw2, bh);
+        cx.fillRect(bx, by, tw, th);
         const isPulse = i === pulseI && (t / 20 | 0) % 2 === 0;
         cx.strokeStyle = can ? (isPulse ? '#b8ffd8' : '#7ce8a8') : 'rgba(140,148,166,0.4)';
         cx.lineWidth = isPulse ? 3 : 1.5;
-        cx.strokeRect(bx, by, bw2, bh);
-        cx.fillStyle = can ? '#e8dcc0' : '#8a94a6'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
-        cx.fillText((i + 1) + '. ' + u.name + ' ' + 'â—'.repeat(tier) + 'â—‹'.repeat(u.max - tier), bx + 10, by + 18);
-        cx.font = '13px Georgia';
-        cx.fillText(u.desc + (maxed ? '  Â· MAX' : '  Â· â—† ' + cost), bx + 10, by + 35);
+        cx.strokeRect(bx, by, tw, th);
+        // JF-#064: pad players have no pointer and no number row â€” give the tiles a cursor
+        if (gpOn && shopCur === i){
+          cx.strokeStyle = '#ffe9a8'; cx.lineWidth = 3;
+          cx.strokeRect(bx - 4, by - 4, tw + 8, th + 8);
+        }
+        const colr = can ? '#e8dcc0' : '#6a7482';
+        icon(u.k, bx + tw/2, by + 36, colr);
+        cx.textAlign = 'center'; cx.font = 'bold 12px Georgia'; cx.fillStyle = colr;
+        cx.fillText('â—'.repeat(tier) + 'â—‹'.repeat(u.max - tier), bx + tw/2, by + 66);
+        cx.font = 'bold 14px Georgia';
+        cx.fillText(maxed ? 'MAX' : 'â—† ' + cost, bx + tw/2, by + 86);
       }
       // JF-#016: rewarded DOUBLE JADE offer, right of the upgrade grid
       adRect = null;
       if (!rewardUsed && jadeRun > 0){
-        const ax = 724, ay = 398, aw = 216, ah = 44;
+        const ax = 724, ay = 398, aw = 216, ah = 96;   // JF-#055: matches icon-tile row height
         adRect = { x: ax, y: ay, w: aw, h: ah };
         const glow = (t / 22 | 0) % 2 === 0;
         cx.fillStyle = 'rgba(232,199,106,0.16)'; cx.fillRect(ax, ay, aw, ah);
         cx.strokeStyle = glow ? '#ffe9a8' : '#e8c76a'; cx.lineWidth = glow ? 3 : 1.5;
         cx.strokeRect(ax, ay, aw, ah);
-        cx.fillStyle = '#e8c76a'; cx.font = 'bold 15px Georgia'; cx.textAlign = 'left';
-        cx.fillText('â–¶ DOUBLE JADE  +' + jadeRun + 'â—†', ax + 10, ay + 18);
-        cx.font = '13px Georgia'; cx.fillStyle = '#c8bfa8';
-        cx.fillText(TOUCH ? 'watch an ad Â· tap here' : 'watch an ad Â· press R', ax + 10, ay + 35);
+        if (gpOn && shopCur === 4){ cx.strokeStyle = '#ffe9a8'; cx.lineWidth = 3; cx.strokeRect(ax - 4, ay - 4, aw + 8, ah + 8); }   // JF-#064
+        cx.fillStyle = '#e8c76a'; cx.font = 'bold 26px Georgia'; cx.textAlign = 'center';
+        cx.fillText('â–¶ Ã—2', ax + aw/2, ay + 40);   // JF-#055: icon-first, minimal words
+        cx.font = 'bold 15px Georgia';
+        cx.fillText('+' + jadeRun + 'â—†', ax + aw/2, ay + 64);
+        cx.font = '12px Georgia'; cx.fillStyle = '#c8bfa8';
+        cx.fillText(TOUCH ? 'ad Â· tap' : 'ad Â· press R', ax + aw/2, ay + 86);
       }
       cx.fillStyle = '#8a94a6'; cx.font = '15px Georgia'; cx.textAlign = 'center';
       cx.fillText((newBest ? '' : 'BEST ' + best + '   Â·   ') + (TOUCH ? 'tap the top half to rise again' : '1-4 to train  Â·  arrows to rise again'), W/2, 522);
@@ -2996,6 +3496,7 @@ const STEP = 1000 / 60;
 function loop(ts){
   requestAnimationFrame(loop);
   if (!last) last = ts;
+  pollPad();   // JF-#064: read the pad once per frame, before the fixed-step catch-up
   acc += Math.min(ts - last, 100); last = ts;
   while (acc >= STEP){ update(); acc -= STEP; }
   // JF-#021: one intensity knob feeds the music every frame

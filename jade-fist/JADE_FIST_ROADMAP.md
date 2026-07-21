@@ -105,4 +105,9 @@ endless LEGEND mode, cosmetics (#023), mobile one-tap controls, district/boss go
 - [ ] G5 Update cadence: ship a visible update ~monthly post-launch — "Updated" badge
       re-triggers discovery placement
 - [ ] G6 Local 2P versus mode (Ragdoll Archers model): split-keyboard duel, "2 Player" tag
-- [ ] G7 Controller support: small curated tag (only ~59 games), cheap differentiation
+- [x] G7 → JF-#064 Controller support: one pad polled per frame, mapped as a thin layer
+      over the existing verbs (D-pad/stick ◀▶ strike, ▲ high line, hold ▼ crouch, A
+      confirm/fight, X wardrobe, B omen, Start pause) + a cursor for the tally shop, since
+      pad players have neither a pointer nor the number row. Menu shows pad labels on the
+      SAME single controls line once a pad is seen — no extra menu text. Polling is skipped
+      entirely under `?bot=`, so the fairness suite and fight balance are untouched.
