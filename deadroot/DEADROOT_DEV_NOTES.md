@@ -1447,6 +1447,56 @@ last body. Now the raid has nerve.
   TEST 2 wave-7 (butcher anchor) → NO rout at morale 4/20 while the butcher lives; kill it →
   rout fires same frame. Inline script parses via `new Function`. Browser playtest = Mike.
 
+## DR-#054 — the four S-batch items: bait, synergy, kill-combo, party intel (2026-07-21)
+The handoff's own recommendation was "batch the 4 S items, then #5"; #5 (morale/rout) shipped as
+DR-#052, so this closes the small-feature backlog. All four are built on systems that already
+existed — no new subsystem, no new screen.
+
+- **1. TREASURE BAIT** (`CFG.bait`, new third palette brush at 25◈). A loot pile placed on any
+  walkable tile. It deals no damage; it is a kill-zone tool — it pulls greedy delvers OFF the flow
+  field and holds them stock-still for 2.6s while they scoop it up, which is only worth 25◈ if you
+  drop it inside spikes/zombies you already own. Lure radius 4.5 tiles, previewed as a dashed gold
+  ring under the build cursor so you can see which stretch of corridor it will empty before paying.
+  **Who bites is the design:** the DPS, the thief and plain grunts break formation; the KNIGHT is
+  holding the line and the CLERIC is watching the party, so they march on (`isGreedy`). That makes
+  bait a tool for SPLITTING a raid, not stalling all of it. Routing raiders and anchors never bite.
+  Chases route with the same BFS as every other waypoint (DR-#051), so bait around a corner works;
+  a chase that runs >6s is abandoned with a cooldown so a pile can never permanently pin a raider
+  the way a bad waypoint did in DR-#042. Removable like any fixture (60% refund), and unlooted
+  piles are reabsorbed with the rest of your dungeon at the doorway.
+- **2. ADJACENCY SYNERGY** (`CFG.synergy`). A zombie orthogonally adjacent to a GRABBER hits +30%
+  (the aura holds them still, the zombie gets a clean swing); a spike trap orthogonally adjacent to
+  any monster re-arms 45% sooner (the monster resets it). **Orthogonal only** — diagonals would let
+  a solid block of one thing synergise with itself and quietly reward the exact spam this is meant
+  to discourage. This is the first direct answer to the standing "spam Spitters and ride them"
+  difficulty note: a bare Spitter line earns none of it. Both are legible on the board — an amber
+  dashed tie between grabber and empowered zombie, an amber ring on a boosted trap. Recomputed per
+  shot rather than cached, so the bonus follows a grabber being brawled down mid-wave.
+- **3. KILL-COMBO BONUS.** The outbreak chain (comboN/comboT) already existed for flavour; now it
+  pays `2 × chain` biomass, capped at 24, and a chain that used BOTH a spike trap and a monster is
+  COORDINATED and pays **double** — the reward for a dungeon whose parts work together. `damage()`
+  gained a `src` argument ('trap' | 'mob', defaulting to mob) purely to tell those apart.
+- **4. PARTY INTEL.** The prep preview was five coloured dots and a count, which told you nothing
+  you could act on. It now names each role, totals the party's HP (carrying the endless night's HP
+  modifier so the number stays honest), and prints the ONE read that most changes how you build,
+  picked by a priority list (anchors > clerics > knights > burners > thieves). Draw-only.
+
+**BUG CAUGHT IN TEST (mine):** the greed gate read `e.baitCd<=0`, but raiders spawn without the
+field and `undefined <= 0` is **false** — so no fresh raider ever took the bait. Reads `!(e.baitCd>0)`
+now. Worth remembering: every new per-enemy field on this codebase is undefined on spawn unless it
+is added to the spawn literal, and `<=` silently swallows that where `>` does not.
+
+**Verified headless in-browser** (sim driven directly, audio muted first; `infoModal` must be
+cleared or `update()` returns immediately and nothing moves):
+T1 greed — burner diverted and reached the pile at 2.7s, consumed it at 5.3s, banked a 6s cooldown;
+knight and cleric never targeted it. T2 synergy — adjacency true only orthogonally (diagonal
+correctly false), and a real measured shot went 14.0 → 18.2 damage = exactly +30%. T3 trap re-arm
+0.900s → 0.495s = exactly 45%. T4 combo — 3 kills paid 10◈ of bonus as monsters-only vs 20◈ as
+trap+monsters (exactly double), and the chain's source mix clears when it lapses. T5 bait costs
+25◈ and refunds 15◈. T6 palette — three brushes, x 322-718 inside a 1040 board. Bait art
+pixel-sampled gold on the floor layer; the wave-6 intel line resolves to the cleric read. Inline
+scripts parse, console clean. Browser playtest = Mike.
+
 ## DR-#053 — Endless night modifiers + veteran carryover (retention) (2026-07-19)
 Gap-analysis batch (CrazyGames Part 2, GAME_BIBLE law #5 "every run should differ"): endless
 only ever got BIGGER — same five roles, scaled up. That's the Flipline treadmill. Now every

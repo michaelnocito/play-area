@@ -25,15 +25,20 @@ Known tooling: preview `deadroot` (4216) often dead → use `deadroot-alt` (4226
 - **D1 — Human sprite roster.** ⛔ ASSET-GATED: Engvee Knight/Barbarian/Halberdier sheets into `assets/raw/` (SPR-#003 pipeline). **M**
 - **A3 — Shippable.** GAME_BIBLE Part 4 checklist + strip `?dev=1`. After the loop feels done. **M**
 
-### Feature backlog (DR-#042 research, Mike to pick — rec: batch the 4 S items, then #5)
-1. **Treasure bait** (S) — placeable loot piles lure greedy heroes off-path into kill zones.
-2. **Adjacency synergy** (S) — zombie next to grabber hits harder; adjacent spikes re-arm faster.
-3. **Kill-combo bonus** (S) — extra biomass for trap+monster kills within a short window.
-4. **Party intel** (S) — richer pre-wave party preview to re-tune the dungeon.
-5. **Morale & retreat** (M) — party morale bar; at zero survivors rout to the entrance and drop loot. The signature reverse-dungeon moment.
-6. **Queen active abilities** (M) — root-slam AoE / terror scream on cooldown.
-7. **Room-purpose tiles** (M) — Nest (free zombie/wave), Larder (regen), Bone Pit (+essence).
-8. Later: torch/darkness ambush bonus, per-level modifiers, veteran carryover, monster fusion.
+### Feature backlog (DR-#042 research)
+1. ✅ **Treasure bait** (S) → DR-#054 — third build brush; greedy roles break formation, knight/cleric don't.
+2. ✅ **Adjacency synergy** (S) → DR-#054 — zombie beside a grabber +30% dmg; trap beside a monster re-arms 45% sooner.
+3. ✅ **Kill-combo bonus** (S) → DR-#054 — chain pays biomass, trap+monster mix pays double.
+4. ✅ **Party intel** (S) → DR-#054 — roles named, party HP totalled, one actionable threat read.
+5. ✅ **Morale & retreat** (M) → DR-#052 — the signature reverse-dungeon moment.
+6. **Queen active abilities** (M) — root-slam AoE / terror scream on cooldown. **Mike to pick.**
+7. **Room-purpose tiles** (M) — Nest (free zombie/wave), Larder (regen), Bone Pit (+essence). **Mike to pick.**
+8. Partly done: per-level modifiers + veteran carryover shipped as DR-#053. Left: torch/darkness ambush bonus, monster fusion.
+
+**Balance note carried by DR-#054:** adjacency synergy is the first direct answer to the standing
+"spam one tower type and ride it to level 12" playtest failure — a bare Spitter line earns none of
+it. Whether that is enough, or whether it still needs escalating per-duplicate cost, is a FEEL call
+on the live build.
 
 ### Housekeeping
 - Dormant dead code: doors (placeDoor/drawDoors/CFG.door), hedges, feast/mutate menu tangle — rip when convenient. **S**

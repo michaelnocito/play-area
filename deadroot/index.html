@@ -104,6 +104,17 @@ const CFG = {
   gates: [ {c:0,r:8} ], // DR-#035: ONE dungeon entrance (west) — the raiding party pours in as a batch
   door:   { cost:15, hp:150 },            // DR-#035: breakable barrier — raiders stop and hack it down
   spikes: { cost:20, dmg:30, uses:3 },    // DR-#035: floor trap — fires on raiders standing on it, then dulls
+  // DR-#054 TREASURE BAIT — a loot pile that pulls greedy delvers OFF the flow field and holds
+  // them still while they scoop it up. It deals no damage; it is a kill-zone tool, so it only
+  // earns its cost dropped inside spikes/zombies you already own.
+  bait:   { cost:25, lure:4.5, hold:2.6 },   // lure radius in tiles, hold time in seconds
+  // DR-#054 ADJACENCY SYNERGY — makes PLACEMENT a lever, not just quantity, and it is the first
+  // direct answer to the standing "spam one tower type and ride it" note: a lone Spitter line
+  // earns none of this.
+  synergy: { grabDmg:0.30, trapRearm:0.45 }, // zombie beside a GRABBER hits +30%; trap beside a monster re-arms 45% sooner
+  // DR-#054 KILL-COMBO — the outbreak chain already existed for flavour; now it pays. A chain that
+  // mixes a TRAP kill with a MONSTER kill is COORDINATED and pays double: the dungeon working as one.
+  combo:  { perKill:2, cap:24 },
   corpse: { rot: 15, payout: 25 },
   towers: {
     warden:   { cost:0,  name:"WARDEN",   desc:"chain brute", range:1.7, rate:0.8, dmg:32 },  /* DR-#019: one-shots a 30hp scav so the cardinal perimeter reliably answers normal mobs; tune live in the dev menu */
@@ -344,6 +355,9 @@ let blocked = null, flow = null;
 let rock = [];             // DR-#034/#035: permanent dungeon-wall terrain; never buildable, never unblocked
 let doors = [];            // DR-#035: [{c,r,hp,max}] breakable barriers — walkable for the flow field, physically solid until hacked down
 let traps = [];            // DR-#035: [{c,r,uses,cd}] spike traps — fire on raiders standing on them
+let baits = [];            // DR-#054: [{c,r,taken}] treasure piles — lure greedy raiders off-path and hold them still
+// DR-#054: the kill chain now tracks WHAT did the killing, so a trap+monster mix pays double
+let comboSrc = {};         // {trap:true, mob:true} for the current chain, cleared when it lapses
 let hedge = [];            // DR-#023: hedge[r][c] = player-placed maze wall (blocks + renders as topiary)
 let hedgePaid = [];        // DR-#025 C5: true only for hedges the player paid for (seeded ones refund nothing)
 let buildMode = null;      // DR-#023: null | 'hedge' | 'spitter' — active build brush from the palette
@@ -692,7 +706,8 @@ function tryPlaceBlock(c,r){
    stop and hack them down; traps fire on raiders standing on them. */
 function doorAt(c,r){ return doors.find(d=>d.c===c&&d.r===r) || null; }
 function trapAt(c,r){ return traps.find(t=>t.c===c&&t.r===r) || null; }
-function buildCost(m){ return m==="door"?CFG.door.cost : m==="spikes"?CFG.spikes.cost : CFG.towers[m].cost; }
+function baitAt(c,r){ return baits.find(b=>b.c===c&&b.r===r) || null; }   // DR-#054
+function buildCost(m){ return m==="door"?CFG.door.cost : m==="spikes"?CFG.spikes.cost : m==="bait"?CFG.bait.cost : CFG.towers[m].cost; }
 function placeDoor(c,r){
   if(!inGrid(c,r) || isHive(c,r) || gateAt(c,r) || blocked[r][c] || doorAt(c,r) || trapAt(c,r)) { SFX.deny(); return; }
   if(biomass < CFG.door.cost){ SFX.deny(); popup(...tileToXY(c,r), "NEED BIOMASS", "#e07f7f"); return; }
@@ -707,6 +722,17 @@ function placeTrap(c,r){
   traps.push({c, r, uses:CFG.spikes.uses, cd:0});
   const [x,y]=tileToXY(c,r); popup(x,y-20,"-"+CFG.spikes.cost+"◈","#e07f7f"); SFX.ui(); burst(x,y,"#aab0ba",8);
 }
+// DR-#054: a treasure pile. Same placement rules as a trap (walkable floor, nothing else on the
+// tile) — the two are meant to be stacked side by side, which is the whole point of the brush.
+function placeBait(c,r){
+  if(!inGrid(c,r) || isHive(c,r) || gateAt(c,r) || blocked[r][c] || doorAt(c,r) || trapAt(c,r) || baitAt(c,r)){ SFX.deny(); return; }
+  if(biomass < CFG.bait.cost){ SFX.deny(); popup(...tileToXY(c,r), "NEED BIOMASS", "#e07f7f"); return; }
+  biomass -= CFG.bait.cost; firstMutateDone = true;
+  baits.push({c, r, kind:"bait"});
+  const [x,y]=tileToXY(c,r); popup(x,y-20,"-"+CFG.bait.cost+"◈","#e07f7f"); SFX.ui(); burst(x,y,"#ffd54a",10);
+  if(!seenBaitTeach){ seenBaitTeach=true; showBanner("GREED IS A DOOR","delvers break formation for loot — bait them onto your spikes"); }
+}
+let seenBaitTeach = false;
 function breakDoor(d){
   const i=doors.indexOf(d); if(i<0) return;
   doors.splice(i,1);
@@ -1017,8 +1043,8 @@ function newRun(){
   gameSpeed = 1; hitStop=0; slowMoT=0; timeScale=1; edgePulseT=0;
   routed=false; partyMorale=0; partyMoraleMax=0; routFlashT=0; // DR-#052
   killsThisRun=0; towersBuiltThisRun=0; towersEvolvedThisRun=0; peakBiomass=0;
-  comboT=0; comboN=0; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;
-  seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; seenEvolveTeach=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
+  comboT=0; comboN=0; comboSrc={}; noHitWaves=0; waveStartHP=0; waveT=0; waveFlashT=0;   // DR-#054
+  seenSweeper=false; seenTank=false; seenCleric=false; seenAmbush=false; seenAggro=false; seenEvolveTeach=false; seenBaitTeach=false; lastSurvivorShown=false; secondWindUsed=false; adFailReason=null; awaitingAd=false;
   rotTipT=0; evolveTipT=0; firstMutateDone = false;
   save.plays=(save.plays|0)+1; persist();
   startLevel(); // DR-#042: build level 1's dungeon, settle the Queen (shows the level info modal)
@@ -1045,7 +1071,7 @@ function startLevel(){
   }
   levelTransT = 0;
   enemies=[]; corpses=[]; towers=[]; projectiles=[]; clouds=[]; particles=[]; popups=[];
-  stains=[]; rings=[]; doors=[]; traps=[]; souls=[]; exitPulseT=0; // DR-#046
+  stains=[]; rings=[]; doors=[]; traps=[]; baits=[]; souls=[]; exitPulseT=0; // DR-#046; DR-#054 baits
   breached = []; // DR-#049: walls heal between levels/runs
   blocked = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
   hedge = Array.from({length:CFG.rows},()=>new Array(CFG.cols).fill(false));
@@ -1069,6 +1095,7 @@ function beginDoorway(){
   let reclaim = 0;
   for(const t of towers) reclaim += Math.round(CFG.towers[t.type].cost*0.6);
   for(const tp of traps) reclaim += Math.round(CFG.spikes.cost*0.6*tp.uses/CFG.spikes.uses);
+  for(const b of baits) reclaim += Math.round(CFG.bait.cost*0.6);   // DR-#054: unlooted treasure comes back down with you
   if(reclaim>0){ biomass += reclaim; showBanner("THE HIVE REABSORBS ITS CHILDREN","+"+reclaim+"◈ returned"); } // DR-#044: ticker, not center-screen
   const [ex,ey] = tileToXY(curLevel().exit.c, curLevel().exit.r);
   bigBurst(ex,ey,"#c9a0f0",26); bigBurst(ex,ey+CFG.tile,"#8fd9a8",18);
@@ -1209,7 +1236,7 @@ function update(){
   if(banner) { banner.t -= DT; if(banner.t<=0) banner=null; }
   if(reabsorbCD>0) reabsorbCD -= DT; // DR-#025 B2
   for(let i=0;i<gateOpenT.length;i++) if(gateOpenT[i]>0) gateOpenT[i]-=DT; // DR-#029 C9
-  if(comboT>0){ comboT-=DT; if(comboT<=0) comboN=0; }
+  if(comboT>0){ comboT-=DT; if(comboT<=0){ comboN=0; comboSrc={}; } }   // DR-#054: the chain's source mix dies with it
   if(mode==="play") waveT+=DT;
   peakBiomass = Math.max(peakBiomass, biomass);
 
@@ -1372,13 +1399,50 @@ function update(){
         // stop and hack at the zombie tower
         e.atkT += DT;
         if(e.atkT>=1){ e.atkT=0; damageTower(brawl, e.dmg); burst(brawl.x,brawl.y-4,"#c86060",4); }
+      } else if(e.lootT>0){
+        // DR-#054 GREED: standing over a treasure pile, scooping it up. It is stock-still and out
+        // of formation for CFG.bait.hold seconds — that is the whole product you bought.
+        e.lootT -= DT;
+        if(Math.random()<0.2) addParticle({x:e.x+(Math.random()-0.5)*14, y:e.y-e.r, vx:0, vy:-30, t:0.5, col:"#ffd54a"});
+        if(e.lootT<=0){
+          const bi = baits.indexOf(e.baitTgt);
+          if(bi>=0){ const [bx,by]=tileToXY(e.baitTgt.c,e.baitTgt.r); baits.splice(bi,1); popup(bx,by-14,"LOOTED","#ffd54a"); burst(bx,by,"#ffd54a",8); }
+          e.baitTgt=null; e.baitCd=6;   // sated for a while, so one pile can't chain-stall the same raider
+        }
       } else if(e.searchT>0){
         // DR-#041: pausing to search the chamber — delvers rummage, they don't march
         e.searchT -= DT;
       } else {
         let dx=0,dy=0;
+        // DR-#054: greed-target upkeep, all in one place so the movement branch below can
+        // assume e.baitTgt is live. A pile someone else already looted is dropped; a chase that
+        // runs long (unreachable tile, or wedged on a wall) is abandoned with a cooldown, so a
+        // bait can never permanently pin a raider the way a bad waypoint used to (DR-#042).
+        if(e.baitCd>0) e.baitCd -= DT;
+        if(e.baitTgt && !baits.includes(e.baitTgt)) e.baitTgt=null;
+        if(e.baitTgt){
+          e.baitChaseT = (e.baitChaseT||0) + DT;
+          if(e.baitChaseT > 6){ e.baitTgt=null; e.baitChaseT=0; e.baitCd=8; e.wpKey=null; e.wpStep=null; }
+        } else e.baitChaseT = 0;
+        // NB: raiders spawn without baitCd, and `undefined <= 0` is false — test the cooldown as
+        // "not currently ticking" or a fresh raider would never take the bait at all.
+        if(!e.baitTgt && baits.length && isGreedy(e) && !(e.baitCd>0)) e.baitTgt = nearestBait(e);
         // DR-#041: a wounded raider HUNTS the zombie that hit it (party fights back like players)
         if(e.aggro && e.aggroT>0){ dx=e.aggro.x-e.x; dy=e.aggro.y-e.y; }
+        else if(e.baitTgt){
+          // DR-#054: greed beats the objective — break formation and go get it. Routed with the
+          // same BFS as every other waypoint (DR-#051), so bait around a corner still works.
+          const bt=e.baitTgt, [bx,by]=tileToXY(bt.c,bt.r);
+          if((bx-e.x)**2+(by-e.y)**2 < sq(CFG.tile*0.6)){
+            e.lootT = CFG.bait.hold;
+            popup(e.x, e.y-e.r-6, "TREASURE!", "#ffd54a");
+          } else {
+            const key = "B|"+ec+","+er+"|"+bt.c+","+bt.r;
+            if(e.wpKey!==key){ e.wpKey=key; e.wpStep=(ec===bt.c&&er===bt.r)?null:pathStep(ec,er,bt.c,bt.r); }
+            if(e.wpStep){ const [nx,ny]=tileToXY(ec+e.wpStep[0],er+e.wpStep[1]); dx=nx-e.x; dy=ny-e.y; }
+            else { dx=bx-e.x; dy=by-e.y; }
+          }
+        }
         else{
         // DR-#038: head for the chosen side of the Great Root first, then follow the flow.
         // DR-#051: raiders now ROUTE to each waypoint around obstacles using the existing BFS
@@ -1520,6 +1584,11 @@ function update(){
     let rate = def.rate * meta.rate * (1+(lvl-1)*0.10); // DR-#050: pheromone fire-rate buff removed
     let dmgMult = 1 + (lvl-1)*0.25;
     for(const n of towers){ if(n.type==="node" && n!==t && dist2(n,t)<sq((n.tier===1?2.4:CFG.towers.node.range)*CFG.tile)){ rate*=1.5; if(n.tier===1) dmgMult*=1.25; break; } }
+    // DR-#054 SYNERGY: a zombie posted beside a GRABBER hits harder — the grabber's aura holds
+    // the raider still and the zombie gets a clean swing. Recomputed per shot rather than cached,
+    // because a grabber can be brawled down or evolved mid-wave and the bonus must follow.
+    t.synergy = hasAdjGrabber(t);
+    if(t.synergy) dmgMult *= 1 + CFG.synergy.grabDmg;
     t.cd -= DT*rate;
     if(t.cd<=0){
       // find target in range (hidden thieves untargetable) — DR-#050: pheromone sweeper-priority removed
@@ -1613,9 +1682,12 @@ function update(){
     const tp=traps[i];
     if(tp.cd>0){ tp.cd-=DT; continue; }
     const [tx,ty]=tileToXY(tp.c,tp.r); let hit=false;
-    for(const e of enemies){ if((e.x-tx)**2+(e.y-ty)**2 < sq(CFG.tile*0.7)){ damage(e, CFG.spikes.dmg, true); hit=true; } }
+    for(const e of enemies){ if((e.x-tx)**2+(e.y-ty)**2 < sq(CFG.tile*0.7)){ damage(e, CFG.spikes.dmg, true, "trap"); hit=true; } }   // DR-#054: tag the source for the kill chain
     if(hit){
-      tp.cd=0.9; tp.uses--;
+      // DR-#054 SYNERGY: a monster standing next to the trap resets it — spikes buried in your
+      // guard line cycle faster than a bare corridor of spikes, so mixed builds beat spam.
+      tp.synergy = hasAdjMonster(tp);
+      tp.cd = 0.9 * (tp.synergy ? 1-CFG.synergy.trapRearm : 1); tp.uses--;
       SFX.squelch(); burst(tx,ty,"#c9d3dd",10); rings.push({x:tx,y:ty,r:0,maxR:22,maxT:0.25,t:0.25,col:"rgba(200,210,220,0.7)"});
       if(tp.uses<=0){ traps.splice(i,1); popup(tx,ty,"TRAP SPENT","#8a94a0"); }
     }
@@ -1628,7 +1700,10 @@ function nearHive(e){
   const cx=Math.max(hx0-20,Math.min(e.x,hx1+20)), cy=Math.max(hy0-20,Math.min(e.y,hy1+20));
   return (e.x-cx)**2+(e.y-cy)**2 < sq(6);
 }
-function damage(e, amt, pierce){
+// DR-#054: `src` records what landed the blow ('trap' | 'mob') so kill() can tell a coordinated
+// trap+monster chain from a plain one. Everything that isn't a spike counts as the hive's bodies.
+function damage(e, amt, pierce, src){
+  e.lastSrc = src || "mob";
   const arm = Math.max(0, e.armor - (e.drench>0?0.15:0) - (e.corroded>0?e.armor:0));
   const dealt = amt * (pierce?1:(1-arm));
   e.hp -= dealt; e.flash = 0.12;
@@ -1661,6 +1736,17 @@ function kill(e){
     popup(e.x, e.y-36, YELPS[Math.floor(Math.random()*YELPS.length)], "#b0a090");
   // kill combo — escalating outbreak names
   comboN++; comboT = 1.5;
+  // DR-#054 KILL-COMBO BONUS: the chain now pays biomass, and a chain that used BOTH a spike trap
+  // and a monster pays DOUBLE — the reward for a dungeon whose parts work together rather than a
+  // corridor of one thing. Capped so a boss wipe can't mint a level's economy in one chain.
+  comboSrc[e.lastSrc || "mob"] = true;
+  if(comboN >= 2){
+    const coordinated = comboSrc.trap && comboSrc.mob;
+    const bonus = Math.min(CFG.combo.cap, CFG.combo.perKill * comboN) * (coordinated ? 2 : 1);
+    biomass += bonus;
+    if(coordinated && comboN === 2) popup(e.x, e.y-38, "COORDINATED! ×2", "#ffd54a");
+    popup(e.x, e.y-6, "+"+bonus+"◈", coordinated ? "#ffd54a" : "#8fd9a8");
+  }
   if(comboN >= 3){
     const cTxt = comboN>=12?"EXTINCTION EVENT!":comboN>=8?"PANDEMIC!":comboN>=5?"EPIDEMIC!":"OUTBREAK!";
     const cCol = comboN>=12?"#ff4040":comboN>=8?"#ff8020":comboN>=5?"#ffa040":"#ffe060";
@@ -1687,6 +1773,36 @@ function kill(e){
 }
 function dist2(a,b){ return (a.x-b.x)**2+(a.y-b.y)**2; }
 function sq(n){ return n*n; }
+// ---- DR-#054 TREASURE BAIT -------------------------------------------------
+// Who breaks formation for loot? The DPS, the thief and the plain grunts. The KNIGHT is holding
+// the line and the CLERIC is watching the party — them ignoring the pile is what makes bait a
+// tool for SPLITTING a raid instead of stalling all of it. Anchors (boss/butcher) never bite,
+// and a routing raider is already running for its life.
+function isGreedy(e){
+  if(e.fleeing || isAnchor(e.type) || e.type==="sweeper") return false;
+  return e.role!=="tank" && e.role!=="heal";
+}
+function nearestBait(e){
+  let best=null, bd=sq(CFG.bait.lure*CFG.tile);
+  for(const b of baits){
+    const [bx,by]=tileToXY(b.c,b.r);
+    const d=(bx-e.x)**2+(by-e.y)**2;
+    if(d<bd){ bd=d; best=b; }
+  }
+  return best;
+}
+// ---- DR-#054 ADJACENCY SYNERGY ---------------------------------------------
+// Orthogonal neighbours only — diagonals would make a solid block of anything synergise with
+// itself and quietly reward the very spam this is meant to discourage.
+const ADJ4 = [[1,0],[-1,0],[0,1],[0,-1]];
+function hasAdjGrabber(t){
+  for(const [dc,dr] of ADJ4) if(towers.some(o=>o!==t && o.type==="grabber" && o.c===t.c+dc && o.r===t.r+dr)) return true;
+  return false;
+}
+function hasAdjMonster(tp){
+  for(const [dc,dr] of ADJ4) if(towers.some(o=>o.c===tp.c+dc && o.r===tp.r+dr)) return true;
+  return false;
+}
 // DR-#052: how much a member is worth to party nerve. Bosses/butchers anchor the raid (they never
 // flee) so they sit outside the morale pool; the knight (tank) and cleric (healer) are worth double
 // — losing them craters morale, which teaches the same "kill the healer/tank first" priority the
@@ -1784,6 +1900,7 @@ function onTap(x,y){
       const onUnit = towers.find(t=>t.c===c&&t.r===r&&t.type!=="warden");
       if(onUnit){ buildMode=null; menu={tower:onUnit}; SFX.ui(); return; }
       if(buildMode==="spikes") placeTrap(c,r); // DR-#042: door brush retired — the dungeon IS the wall
+      else if(buildMode==="bait") placeBait(c,r); // DR-#054
       else placeUnit(c,r,buildMode);
     }
     return;
@@ -1817,7 +1934,7 @@ function onTap(x,y){
   for(const t of towers){ if(t.type==="warden") continue; const d=(t.x-x)**2+(t.y-y)**2; if(d<bestD && d<tapR*tapR){ bestD=d; tw=t; } }
   if(tw){ menu = {tower:tw}; SFX.ui(); return; }
   // DR-#035: tap a door/trap (no brush active) → REMOVE menu (60% refund)
-  { const [c,r]=xyToTile(x,y); if(inGrid(c,r)){ const f=doorAt(c,r)||trapAt(c,r); if(f){ menu = {fixture:f}; SFX.ui(); return; } } }
+  { const [c,r]=xyToTile(x,y); if(inGrid(c,r)){ const f=doorAt(c,r)||trapAt(c,r)||baitAt(c,r); if(f){ menu = {fixture:f}; SFX.ui(); return; } } }   // DR-#054: baits are removable like any fixture
   // DR-#027 C5: tap a hedge (no brush active) → open a REMOVE menu (refunds paid hedges)
   { const [c,r]=xyToTile(x,y); if(inGrid(c,r) && hedge[r] && hedge[r][c]){ menu = {hedge:{c,r}}; SFX.ui(); return; } }
 }
@@ -1844,11 +1961,12 @@ function evolveTower(t, type){
 }
 function evolveToGrabber(t){ evolveTower(t,"grabber"); }
 function evolveToMender(t){ evolveTower(t,"mender"); }
-function fixtureRefund(f){ const cost = f.max!==undefined ? CFG.door.cost : CFG.spikes.cost; return Math.max(1, Math.round(cost*0.6)); } // DR-#035
+function fixtureRefund(f){ const cost = f.kind==="bait" ? CFG.bait.cost : f.max!==undefined ? CFG.door.cost : CFG.spikes.cost; return Math.max(1, Math.round(cost*0.6)); } // DR-#035; DR-#054 bait
 function removeFixture(f){
   const refund = fixtureRefund(f);
   const di=doors.indexOf(f); if(di>=0) doors.splice(di,1);
   const ti=traps.indexOf(f); if(ti>=0) traps.splice(ti,1);
+  const bi=baits.indexOf(f); if(bi>=0) baits.splice(bi,1);   // DR-#054: pick the treasure back up
   const [x,y]=tileToXY(f.c,f.r);
   biomass+=refund; popup(x,y-10,"+"+refund+"◈","#e3d34e");
   burst(x,y,"#8a6a3f",8); SFX.squelch(); menu=null;
@@ -2436,8 +2554,50 @@ function drawTraps(){
       const sx=cx+Math.cos(a)*T*0.16, sy=cy+Math.sin(a)*T*0.16;
       ctx.beginPath(); ctx.moveTo(sx-3,sy+3); ctx.lineTo(sx,sy-6); ctx.lineTo(sx+3,sy+3); ctx.closePath(); ctx.fill(); }
     for(let k=0;k<tp.uses;k++){ ctx.fillStyle="#c9d3dd"; ctx.fillRect(cx-9+k*7, cy+T*0.4, 4, 4); } // uses pips
+    // DR-#054 SYNERGY tell: a trap with a monster beside it re-arms faster — mark the ring amber
+    // so the bonus is legible from the board, not just from the numbers.
+    if(hasAdjMonster(tp)){
+      ctx.strokeStyle="rgba(232,176,80,0.75)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx,cy,T*0.42,0,6.283); ctx.stroke();
+    }
     ctx.lineWidth=1;
   }
+}
+/* DR-#054: treasure piles — a small heap of gold that bobs and glints. Drawn on the floor layer
+   with the traps, since the two are meant to sit on top of each other. */
+function drawBaits(){
+  const T=CFG.tile;
+  for(const b of baits){
+    const [cx,cy]=tileToXY(b.c,b.r);
+    const bob = Math.sin(perfNow*2.2 + b.c*0.7 + b.r*1.3)*2;
+    ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(cx,cy+T*0.24,T*0.26,T*0.09,0,0,6.283); ctx.fill();
+    // heap of coins
+    for(const [ox,oy,rr] of [[-7,2,6],[7,3,6],[0,-1,7],[-3,-7,5],[4,-8,5]]){
+      ctx.fillStyle="#c9a227"; ctx.beginPath(); ctx.arc(cx+ox, cy+oy+bob, rr, 0, 6.283); ctx.fill();
+      ctx.fillStyle="#ffd54a"; ctx.beginPath(); ctx.arc(cx+ox-1, cy+oy-1+bob, rr*0.62, 0, 6.283); ctx.fill();
+    }
+    // glint
+    const g = 0.35+0.35*Math.sin(perfNow*3.4 + b.c);
+    ctx.globalAlpha=g; ctx.fillStyle="#fff6cf";
+    ctx.beginPath(); ctx.arc(cx+5, cy-9+bob, 2.4, 0, 6.283); ctx.fill();
+    ctx.globalAlpha=1;
+  }
+}
+/* DR-#054: draw the grabber-adjacency links so the bonus is visible on the board — a short amber
+   tie between each empowered zombie and the grabber empowering it. */
+function drawSynergyLinks(){
+  if(mode!=="play" && mode!=="prep") return;
+  ctx.save(); ctx.lineWidth=2; ctx.setLineDash([4,4]);
+  for(const t of towers){
+    if(t.type==="grabber") continue;
+    for(const [dc,dr] of ADJ4){
+      const g = towers.find(o=>o.type==="grabber" && o.c===t.c+dc && o.r===t.r+dr);
+      if(!g) continue;
+      ctx.strokeStyle="rgba(230,176,114,"+(0.35+0.2*Math.sin(perfNow*2.5))+")";
+      ctx.beginPath(); ctx.moveTo(t.x,t.y); ctx.lineTo(g.x,g.y); ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]); ctx.restore();
 }
 
 /* DR-#023: render placed hedges as merged topiary (autotile-lite: round only outer corners, extend
@@ -2649,9 +2809,15 @@ function drawMender(t, lvl){
 }
 /* DR-#023: bottom-center build palette. */
 function paletteBtns(){
-  const w=150,h=64,gap=14,y=H-h-12, total=w*2+gap, x0=W/2-total/2; // DR-#043b: ONE monster brush; DR-#046 desktop size pass
-  return [ {x:x0, y, w, h, mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
-           {x:x0+(w+gap), y, w, h, mode:"spikes", label:"SPIKES", cost:CFG.spikes.cost, unit:false} ];
+  // DR-#043b: ONE monster brush; DR-#046 desktop size pass; DR-#054: BAIT joins the row, so the
+  // buttons narrow to keep the same total footprint rather than spilling off a phone screen.
+  const w=124,h=64,gap=12, y=H-h-12, defs=[
+    {mode:"spitter", label:"ZOMBIE", cost:CFG.towers.spitter.cost, unit:true},
+    {mode:"spikes",  label:"SPIKES", cost:CFG.spikes.cost,         unit:false},
+    {mode:"bait",    label:"BAIT",   cost:CFG.bait.cost,           unit:false}
+  ];
+  const x0 = W/2 - (w*defs.length + gap*(defs.length-1))/2;
+  return defs.map((d,i)=>({ x:x0+i*(w+gap), y, w, h, ...d }));
 }
 function drawPalette(){
   if(mode!=="play"&&mode!=="prep") return;
@@ -2675,12 +2841,20 @@ function drawPalette(){
     if(inGrid(c,r)){
       const cost = buildCost(buildMode);
       const cool = (buildMode==="spitter"||buildMode==="grabber") && cooling;
-      const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && !doorAt(c,r) && !trapAt(c,r) && !towers.some(t=>t.c===c&&t.r===r) && biomass>=cost && !cool; // DR-#038: towers no longer block, so check occupancy directly
+      const ok = !blocked[r][c] && !isHive(c,r) && !gateAt(c,r) && !doorAt(c,r) && !trapAt(c,r) && !baitAt(c,r) && !towers.some(t=>t.c===c&&t.r===r) && biomass>=cost && !cool; // DR-#038: towers no longer block, so check occupancy directly
       const gx=c*CFG.tile, gy=TOP+r*CFG.tile, T=CFG.tile;
       // filled ghost — brush's own hue when valid, red when not
       const ghost = !ok ? "rgba(224,96,96,0.22)"
                     : buildMode==="spikes" ? "rgba(170,175,185,0.30)"
+                    : buildMode==="bait" ? "rgba(255,213,74,0.30)"
                     : buildMode==="grabber" ? "rgba(200,146,90,0.30)" : "rgba(126,208,56,0.30)";
+      // DR-#054: the bait brush shows the LURE radius, so you can see which stretch of corridor
+      // it will pull raiders out of before you spend on it.
+      if(buildMode==="bait"){
+        ctx.strokeStyle="rgba(255,213,74,0.45)"; ctx.setLineDash([6,6]); ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(gx+T/2, gy+T/2, CFG.bait.lure*T, 0, 6.283); ctx.stroke();
+        ctx.setLineDash([]);
+      }
       ctx.fillStyle=ghost; ctx.fillRect(gx+2,gy+2,T-4,T-4);
       ctx.strokeStyle = ok?"rgba(155,224,127,0.95)":"rgba(224,96,96,0.95)"; ctx.lineWidth=2.5;
       ctx.strokeRect(gx+1,gy+1,T-2,T-2);
@@ -2723,6 +2897,8 @@ function draw(){
   drawGates();       // DR-#023: labyrinth entrances
   drawExit();        // DR-#042: the sealed next-level doorway the Queen will open
   drawTraps();       // DR-#035: spike traps (floor layer, under bodies)
+  drawBaits();       // DR-#054: treasure piles sit on the floor with the traps
+  drawSynergyLinks();// DR-#054: amber ties between grabbers and the zombies they empower
   drawDoors();       // DR-#035: breakable doors
   // ground stains (fading death marks)
   for(const s of stains){
@@ -3328,23 +3504,48 @@ function drawPrep(){
   ctx.fillText(LORE[Math.floor(perfNow*0.07)%LORE.length], W/2, H-10);
 }
 function nextWaveDef(){ return endless ? endlessWave(endlessN) : WAVES[waveIdx]; }
+// DR-#054 PARTY INTEL: the preview used to be five coloured dots and a count, which told you
+// nothing you could act on during the build phase. It now names each role, totals the party's HP
+// so you can read the wave's weight against your own damage, and calls out the ONE threat that
+// most changes how you should build. Draw-only — no new state, no balance change.
+const ROLE_LABEL = { scav:"THIEF", troop:"KNIGHT", incin:"BURNER", cleric:"CLERIC", sweeper:"SWEEPER", butcher:"BUTCHER", boss:"PURIFIER" };
+// ordered — the first match is the read that matters most for how you place this build phase
+const INTEL_READS = [
+  { t:"boss",    say:"the PURIFIER anchors them — they will never rout" },
+  { t:"butcher", say:"the BUTCHER anchors them — they will never rout" },
+  { t:"cleric",  say:"clerics out-heal single zombies — focus them down first" },
+  { t:"troop",   say:"knights taunt your zombies — put damage outside their reach" },
+  { t:"incin",   say:"burners melt zombies from beside them — trap the approach" },
+  { t:"scav",    say:"thieves creep in hidden and stun a zombie — spread your posts" }
+];
 function drawWavePreview(cx,cy){
   const def = nextWaveDef();
   if(!def) return;
   const counts = {};
   for(const [type,count] of def) counts[type] = (counts[type]||0)+count;
   const types = Object.keys(counts);
-  const spacing = 64, totalW = types.length*spacing; // DR-#046 size pass
+  // party weight: total HP, carrying the night's HP modifier so endless previews stay honest
+  let totalHP = 0, n = 0;
+  const hpMult = (run && run.nightHpMult) || 1;
+  for(const t of types){ const e=CFG.enemies[t]; n += counts[t]; if(e) totalHP += e.hp*counts[t]*hpMult; }
+  const spacing = 76, totalW = types.length*spacing; // DR-#054: wider, the labels need the room
   let x = cx - totalW/2 + spacing/2;
   ctx.textAlign="center"; ctx.font="11px monospace"; ctx.fillStyle="#7a8490";
-  ctx.fillText("raid party", cx, cy-16); // DR-#035
+  ctx.fillText("raid party — "+n+" bodies · "+Math.round(totalHP).toLocaleString()+" hp", cx, cy-18);
   for(const t of types){
     const e = CFG.enemies[t];
     ctx.fillStyle = e ? e.col : "#888";
     ctx.beginPath(); ctx.arc(x, cy, 10, 0, 6.283); ctx.fill();
     ctx.fillStyle="#dfe6ec"; ctx.font="bold 14px monospace";
     ctx.fillText("×"+counts[t], x, cy+26);
+    ctx.fillStyle="#8a94a0"; ctx.font="10px monospace";
+    ctx.fillText(ROLE_LABEL[t]||t.toUpperCase(), x, cy+40);
     x += spacing;
+  }
+  const read = INTEL_READS.find(r=>counts[r.t]);
+  if(read){
+    ctx.fillStyle="#c9a0f0"; ctx.font="12px monospace";
+    ctx.fillText(read.say, cx, cy+62);
   }
 }
 // DR-#050: drawAbilities() removed — no more bottom-left Hive Mind active buttons.
