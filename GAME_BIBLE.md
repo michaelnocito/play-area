@@ -135,6 +135,35 @@ Where's the ending? What's the one-line pitch a player tells a friend? If any an
   polished finish line. Producer mindset: triage every request as blocker vs. backlog,
   and give every backlog item a touch.
 
+### The mobile standard (applies to EVERY app and game, not just games)
+
+Mobile is not a shrunk desktop. Every build ships a phone pass modeled on what
+sql-quest and sql-trail proved out. Low friction on a 375px phone is a launch
+requirement, not polish.
+
+- **Viewport meta**: `width=device-width, initial-scale=1, viewport-fit=cover`
+  (`viewport-fit=cover` is required before `env(safe-area-inset-*)` works).
+- **Touch targets gated on touch, not width**: an `@media (pointer:coarse)` block
+  bumps every interactive control to min 44px height (44×44 for icon buttons).
+  Desktop stays compact; any touch device gets finger-sized targets.
+- **16px floor on text inputs/editors** at the phone tier — anything smaller makes
+  iOS Safari zoom the page on focus. If the editor has a highlight underlay, keep
+  its font metrics identical so the caret doesn't drift.
+- **One concept per screen**: below ~600–720px every side-by-side layout stacks to
+  a single column, top-to-bottom, prep-kit card style — one card = one idea, with
+  a full-width primary CTA (`flex:1 1 100%`, min-height 48px).
+- **The primary action never scrolls away**: cap tall rails/panels at
+  `max-height:38–44vh; overflow-y:auto; -webkit-overflow-scrolling:touch` so the
+  work surface and its Execute/Submit button stay reachable.
+- **The page body never scrolls horizontally**: wide content (tables, sheets,
+  mockups, strips) scrolls inside its own `overflow-x:auto` container.
+- **Phone override blocks live LAST in the stylesheet**, with a comment saying so
+  — later same-selector rules win specificity ties.
+- **Rigid widths are the enemy**: no fixed-px sidebars with `min-width` that
+  refuse to shrink; use `max-width` in vw/clamp() so nothing overflows.
+- **Verify at 375px** before calling any layout done: nothing clipped, nothing
+  covered, every control tappable, `prefers-reduced-motion` respected.
+
 ---
 
 ## Part 4 — Pre-submission checklist (run top to bottom before any store/portal submit)
