@@ -219,12 +219,33 @@ ease/lean/reversal dust, 60-90ms hit-stop, camera zoom punches, graze reward, st
 see dev notes) → GQ-B sound & drama — ✅ CORE DONE 2026-07-16 as the DRUM ALIVE batch
 (GQ-3 music bed keyed to CHASE+progress, GQ-4 surges = DRUM JAM grind→surge→relief + E4,
 beat-locked spawns on the dryer thump, living tumble ramp, HOT ¢×2 visible risk pay,
-hem-hug coin trails; see dev notes; GQ-7 ceremony still open) → C1 compliance (pause/auto-pause, music-mute persisted, AZERTY, CG SDK
-adapter w/ rewarded mend + stage-break interstitials, DEV:BEGIN/END menu, shared ODD SOCK
-save, real-device mobile pass) → C2 content depth (4-5 authored stages w/ GQ-5/6 reads,
-ENDING + endless unlock, drum bot-sim fairness harness) → C3 score/meta (Batch-B tally port,
-points, shop port = sock patterns, daily gift, milestones, GQ-8 beats) → C4 ship wave
-(covers/clips/store copy in sock voice, 🔷 name final call, CG QA tool, ONE resubmission).
+hem-hug coin trails; see dev notes)
+→ ✅ **JOURNEY BATCH DONE 2026-07-21** (dev notes §journey-batch; test steps JB-a…JB-l):
+  - **C2/P1**: 9 named stages reading as one sentence (THE FIRST TUMBLE → THE LAST TUMBLE),
+    stage-name banner, staged REUNION ending scene, then "laundry day happens again" →
+    ENDLESS TUMBLE unlock. GQ-6 cumulative reads: drifting towels (2+), zipper whips (4+),
+    unbalanced-load wobble (5+), spin-cycle finale gauntlet (7+), lint veil (8+).
+  - **P2**: 2s cold-open (pair torn into the vortex, zero exposition, skippable), near-reunion
+    teases in stages 3/6/9 (pair swings out, hovers, snatched back), expressive sock (eyes
+    track the vortex/pair, wide-eyed "oh!" at teases).
+  - **GQ-5**: landing-arc telegraphs at the rim once approach speed crosses the threshold.
+  - **GQ-7**: vortex suck-in ceremony on every clear (slow spiral + button confetti + stinger),
+    NEW BEST fanfare.
+  - **GQ-8**: two one-time slow-time teach beats (steer glyphs on first garment, TAP glyph on
+    first full static) — pictures, not text.
+  - **C1 compliance**: P pause + tap/any-key resume + auto-pause on blur AND visibilitychange,
+    M mute persisted, AZERTY (Q/Z mirrors), SDKA platform-adapter SEAM (gameplayStart/Stop,
+    happytime, rewarded MEND on the stage screen when broke, stage-break interstitial w/ honest
+    3-min cooldown — real CG SDK swaps into the ONE SDKA block at C4), DEV:BEGIN/END-marked
+    ?dev=1 god/skip keys.
+  - **C3 meta**: Batch-B points port (10/m + 25/¢ + 250/stage), dead-screen line-item tally
+    count-up w/ ticks + points best, P3 3-slot missions (30-mission drip list, ¢ rewards,
+    named rank ladder on the ready screen).
+→ **LEFT before C4**: 🔶 Mike feel-gates the whole journey arc · drum bot-sim fairness
+  harness (fold sim.js pattern onto the drum) · sock-pattern shop port (cosmetic ¢ sink —
+  optional, ¢ already sinks into MEND) · real-device mobile pass
+→ C4 ship wave (real SDK into the SDKA seam, covers/clips/store copy in sock voice,
+  🔷 name final call, CG QA tool, ONE resubmission).
 
 ## 🧺 DRUM AUDIT vs CG standards (2026-07-11, docs re-verified) — ~40-45% to retail-worthy
 

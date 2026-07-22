@@ -1,5 +1,68 @@
 # FLIPLINE → ODD SOCK — Dev Handoff / Resume Point
 
+## ✅ JOURNEY BATCH (2026-07-21) — §journey-batch — P1+P2+P3 + GQ-5/6/7/8 + C1 + C3, in proto/drum.html
+The whole remaining feasible roadmap in one wave (Mike: "go for all that are feasible");
+C4 ship-wave assets + the feel-gate stay his. Full item list in FLIPLINE_ROADMAP.md build order.
+
+**Shape of it:**
+- **THE JOURNEY (C2/P1):** `STAGES[]` — 9 named drums reading as one sentence, cumulative
+  mechanics via `stageHas(stage,key)` (drift 2+ / zipper 4+ / wobble 5+ / spincycle 7+ / lint 8+),
+  per-stage teases via `stageTease` (3/6/9; endless = every 3rd). Stage 9 clear → `mode="reunion"`
+  scene (socks meet, biggest smile, confetti) → "…but laundry day happens again." → tap continues
+  into ENDLESS TUMBLE n (stage 10+, everything on). `reunited` persists; ready screen shows it.
+- **P2:** `mode="intro"` cold-open (2.6s, zero text, skippable, `seenIntro` persists);
+  `teaseT` timeline (out → hover → yank w/ speed lines + falling note); sock pupils aim at the
+  vortex (or the teased pair) via world→local rotation; wide eyes + "oh!" mouth during hover.
+- **GQ-5:** landing arcs at the rim for every obstacle with z<0.72 once `zeff>TELE_Z` (0.46),
+  drawn at LIVE angle so drum spin + towel drift stay truthful. Zippers get silver arcs.
+- **GQ-6 fairness notes:** drift 0.12rad/s vs steer 3.0 (4% — a re-read, not a reflex tax);
+  zipper `zm=1.5` + hw 0.09 + its own spawn tick; wobble/spincycle modulate SPIN only (world
+  moves, never the player — the E3 lesson); lint veil is draw-only.
+- **GQ-7:** `mode="clear"` 1.5s ceremony — sock spirals into the vortex (`ck` timeline in the
+  sock draw), button confetti rains inward, then the stage screen. NEW BEST (metres OR points)
+  plays the win stinger at death.
+- **GQ-8:** `teachT/teachKind` — world runs ×0.35 under the glyphs; beat 1 = ◀ ▶ on the first
+  garment ever (ends the moment they steer), beat 2 = ⊙ TAP on the first full bar (ends on tap).
+  `taught1/taught2` persist.
+- **C1:** P pause + any-input resume + auto-pause on BOTH visibilitychange and window blur
+  (CG iframe gotcha); M mute persisted, applied every frame (`(mutedFlag||paused)→gain 0` also
+  silences the always-on rumble loop); AZERTY = Q steers left, Z taps; `SDKA` adapter seam —
+  ONE object the real CG SDK swaps into at C4, already routed: gameplayStart/Stop at every
+  run/stage boundary, happytime on beating the pair, rewarded FREE MEND on the stage screen
+  (only when hp<max AND can't afford ¢25), `tryMidgame()` at final death + every 3rd stage
+  clear with an honest 180s cooldown clock. `?dev=1` god (G) + stage-skip (N) inside
+  DEV:BEGIN/END strip markers.
+- **C3:** `runPts() = m×10 + ¢×25 + stages×250`; dead screen = line-item tally revealing one
+  row per 0.45s with a tick (advanced in update, not draw), TOTAL, NEW BEST pulse, haul;
+  `bestPts` persists. **P3 missions:** `MISSIONS[30]` (graze/coin/stage/pulse/ride/jam/pair/
+  clean/hot/quarter kinds; run-scoped `M` + lifetime `TOT`), 3 visible slots, drip-feed
+  `mNext`, at most ONE completion per `mCheck()` call (breathing room), ¢ paid instantly +
+  banner; `RANKS[8]` ladder = mDone/4. Ready screen lists the 3 slots + rank.
+- **Save schema grew** (same key `flipline.drum.proto`): seenIntro/reunited/muted/bestPts/
+  tot/mSlots/mNext/mDone/t1/t2. Old saves migrate silently (missing fields default).
+  ⚠️ The 2026-07-21 test drive polluted the proto save → CLEARED it; Mike starts fresh
+  (cold-open + full mission list) — the proto bank was throwaway.
+
+**Verified headless (paused=true freezes the rAF loop, update() driven by hand; 12/12):**
+intro auto-advance + skip · teach1 fires at first garment z>0.55 and ends on steer ·
+stage names/mech gates/tease gates all correct · tease fires at 51% of stage 3 ·
+clear → 1.5s ceremony → stage screen, gained pays · stage 9 → reunion → endless ·
+mission pays +¢10 and refills its slot · zipper hw 0.09 zm 1.5 spawns at stage 4 ·
+drift towel at stage 2 · wobble swings spinNow 0.270..0.448 · spin-cycle surges + banner ·
+death tally reaches 4 lines w/ NEW BEST both-flavours · AZERTY q steers negative ·
+pause flag honoured. Console clean, `node` parse clean.
+
+**Test steps for Mike (JB-a…JB-l):** JB-a fresh load → cold-open plays once, tap skips it.
+JB-b first run → world slows w/ ◀ ▶ glyphs at the first shirt; steering ends it.
+JB-c full static bar → ⊙ TAP glyph slow-beat once ever. JB-d stage 1 clear → sock spirals
+into the vortex w/ confetti before the stage screen. JB-e stage 3 past halfway → your pair
+swings out, hovers wide-eyed, gets yanked back. JB-f stage 4+ → thin silver zipper whips
+(faster, telegraphed). JB-g stage 5+ → the drum visibly wobbles. JB-h stage 7+ → SPIN CYCLE!
+gauntlet before the vortex. JB-i die → tally counts up line by line; NEW BEST pulses when
+earned. JB-j ready screen → rank + 3 missions w/ live progress; complete one mid-run → banner
++ ¢. JB-k P pauses (and clicking off the tab pauses); M mutes and it sticks after reload.
+JB-l clear stage 9 → REUNION scene → tap → ENDLESS TUMBLE.
+
 ## ✅ DRUM ALIVE batch (2026-07-16) — GQ-B core + E4 + coin choreography, in proto/drum.html
 🔷 Mike: "the side-to-side cylinder feels like the beginning of the core movement but is
 missing something" → triple research pass (movement feel / engagement systems / secondary

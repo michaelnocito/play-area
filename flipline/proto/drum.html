@@ -90,6 +90,64 @@ const BEAT=0.5;                                  // 120 bpm thump
 /* HOT streak — risk must pay in the moment (Downwell/Touhou): CHASE above the line
    doubles every coin. The greedy line and the graze line are the same line. */
 const HOTX=0.66;
+/* ===== C2/P1 — THE JOURNEY: 9 named stages reading as one sentence, then the REUNION.
+   Alto/Hades pattern: a finite arc gives the run meaning, the loop after it keeps retention.
+   Mechanics are CUMULATIVE (GQ-6 — each stage ADDS one read, none retire); tease stages
+   (P2) are per-stage, not cumulative. Past stage 9 = ENDLESS TUMBLE, everything on. */
+const STAGES=[
+  {name:"THE FIRST TUMBLE"},
+  {name:"DEEP IN THE LAUNDRY",   drift:true},     // towels drift sideways as they come
+  {name:"A GLIMPSE OF YOUR PAIR",tease:true},     // P2 — near-reunion, snatched away
+  {name:"THE ZIPPER GAUNTLET",   zipper:true},    // fast thin silver whips
+  {name:"THE UNBALANCED LOAD",   wobble:true},    // the whole drum wobbles (world moves, never the player)
+  {name:"ALMOST TOUCHING",       tease:true},
+  {name:"THE SPIN CYCLE",        spincycle:true}, // finale gauntlet before each vortex
+  {name:"BEHIND THE LINT VEIL",  lint:true},      // drifting lint haze (visual pressure only)
+  {name:"THE LAST TUMBLE",       tease:true}
+];
+function stageName(s){ return s<=STAGES.length ? STAGES[s-1].name : "ENDLESS TUMBLE "+(s-STAGES.length); }
+function stageHas(s,k){ if(s>STAGES.length) return true;                      // endless runs everything
+  for(let i=0;i<s;i++) if(STAGES[i][k]) return true; return false; }
+function stageTease(s){ return s<=STAGES.length ? !!STAGES[s-1].tease : s%3===0; }
+const TEASE_LEN=3.4;                   // P2 tease timeline: out → hover → snatched back
+const ZIP_ZM=1.5, ZIP_HW=0.09;         // zipper whip: thin + half again as fast (telegraphed by GQ-5 arcs + its own tick)
+const WOB_AMP=0.22;                    // unbalanced-load spin wobble
+const SPIN_FINALE=110, SPINCYC_X=1.7;  // spin-cycle gauntlet: last 110m of the stage
+const TELE_Z=0.46;                     // GQ-5: landing arcs appear once effective approach speed crosses this
+/* C3/P3 — Jetpack Joyride 3-slot missions + named rank ladder (localStorage only) */
+const RANKS=["LOOSE THREAD","LINT BALL","TUMBLED SOCK","BRAVE SOCK","STATIC SOCK","DRUM RUNNER","VORTEX VETERAN","LEGEND OF LAUNDRY"];
+const MISSIONS=[
+  {txt:"graze hot laundry 3 times in one run",   k:"grazeRun",  n:3,  r:10},
+  {txt:"snatch 15¢ in one run",                  k:"coinRun",   n:15, r:10},
+  {txt:"reach STAGE 2",                          k:"stageRun",  n:2,  r:10},
+  {txt:"PULSE through danger once",              k:"pulseRun",  n:1,  r:10},
+  {txt:"ride the current once",                  k:"rideRun",   n:1,  r:10},
+  {txt:"survive a DRUM JAM",                     k:"jamRun",    n:1,  r:12},
+  {txt:"beat your pair to the vortex",           k:"pairRun",   n:1,  r:15},
+  {txt:"graze hot laundry 6 times in one run",   k:"grazeRun",  n:6,  r:15},
+  {txt:"snatch 30¢ in one run",                  k:"coinRun",   n:30, r:15},
+  {txt:"reach STAGE 3",                          k:"stageRun",  n:3,  r:15},
+  {txt:"clear a stage without a scorch",         k:"cleanRun",  n:1,  r:18},
+  {txt:"PULSE through danger 3 times in one run",k:"pulseRun",  n:3,  r:15},
+  {txt:"snatch 60¢ across all runs",             k:"coinAll",   n:60, r:15},
+  {txt:"survive 3 DRUM JAMS in one run",         k:"jamRun",    n:3,  r:18},
+  {txt:"reach STAGE 4",                          k:"stageRun",  n:4,  r:18},
+  {txt:"go HOT (fill THE CHASE past the line)",  k:"hotRun",    n:1,  r:15},
+  {txt:"grab 3 quarters in one run",             k:"qtrRun",    n:3,  r:15},
+  {txt:"beat your pair 3 times across all runs", k:"pairAll",   n:3,  r:20},
+  {txt:"reach STAGE 5",                          k:"stageRun",  n:5,  r:20},
+  {txt:"graze 10 times in one run",              k:"grazeRun",  n:10, r:20},
+  {txt:"snatch 150¢ across all runs",            k:"coinAll",   n:150,r:20},
+  {txt:"ride the current 3 times in one run",    k:"rideRun",   n:3,  r:20},
+  {txt:"reach STAGE 6",                          k:"stageRun",  n:6,  r:22},
+  {txt:"clear 2 stages without a scorch",        k:"cleanRun",  n:2,  r:25},
+  {txt:"survive 10 DRUM JAMS across all runs",   k:"jamAll",    n:10, r:22},
+  {txt:"reach STAGE 7",                          k:"stageRun",  n:7,  r:25},
+  {txt:"snatch 50¢ in one run",                  k:"coinRun",   n:50, r:25},
+  {txt:"beat your pair 8 times across all runs", k:"pairAll",   n:8,  r:28},
+  {txt:"reach STAGE 8",                          k:"stageRun",  n:8,  r:28},
+  {txt:"reach THE LAST TUMBLE",                  k:"stageRun",  n:9,  r:30}
+];
 
 /* ===== Audio (tiny) ===== */
 const PENT=[220,261.63,293.66,329.63,392,440,523.25,587.33];   // A-minor pentatonic (same ladder as the main game's Snd)
@@ -194,7 +252,7 @@ const GARM_HOT=[]; for(let k=0;k<3;k++) for(let p=0;p<PAL_HOT.length;p++) GARM_H
 const GARM_BG =[]; for(let k=0;k<3;k++) GARM_BG.push(mkGarment(k,PAL_BG[k]));
 
 /* ===== State ===== */
-let mode="ready";                          // ready | play | dead | win
+let mode="ready";                          // ready | play | clear | stage | dead | reunion | intro (win retired — clear/stage own the flow)
 let a=Math.PI/2, steer=0, cling=0, rideT=0, drumRot=0;
 let steerV=0, lastMove=0, revCd=0;         // eased steer velocity + reversal-dust bookkeeping (GQ-1)
 let hitStop=0, zoomP=0;                    // frame-freeze + camera micro-zoom punch (GQ-2)
@@ -213,13 +271,66 @@ let chaseGrace=0;                          // decay holds off briefly after any 
 let pulseT=0;                              // STATIC PULSE — brief in-place intangibility
 let deadT=0;                               // instant-restart timer on the death screen
 let hp=HP_MAX, stage=1, patchCd=12;        // health carries ACROSS stages; patches only spawn when hurt
+/* GQ-7 ceremony + P2 story state */
+let winT=0, newBest=false;                 // vortex suck-in slow ceremony on stage clear; best-run flag
+let teaseT=0, teaseDone=false, teaseAng=0; // P2 near-reunion tease (pair swings out, snatched back)
+let introT=0;                              // P2 cold-open (2s, zero exposition — Canabalt iceberg)
+let bannerT=0;                             // stage-name banner at each stage start
+let spinBanner=false;                      // SPIN CYCLE announced once per stage
+let reunionT=0;                            // C2 ending scene timeline
+let seenIntro=false, reunited=false;
+/* C1 compliance state */
+let paused=false, mutedFlag=false;
+let adClock=-999;                          // interstitial cooldown clock (3 min between midgames)
+/* C3 meta state — run counters for tally + missions */
+let runStages=0, dmgThisStage=false;
+let M={};                                  // run counters: grazeRun/coinRun/pulseRun/rideRun/jamRun/qtrRun/hotRun/cleanRun/stageRun/pairRun
+let TOT={coinAll:0,pairAll:0,jamAll:0};    // lifetime counters (persisted)
+let mSlots=[0,1,2], mNext=3, mDone=0;      // 3 visible missions + drip-feed pointer + completed count
+let mBannerT=0, mBannerTxt="";             // "MISSION DONE" banner
+let bestPts=0, tallyT=0, tallyN=0;         // points best + dead-screen tally reveal
+let teachT=0, teachKind=0;                 // GQ-8 one-time slow-time teach beats
+let taught1=false, taught2=false;
+function resetM(){ M={grazeRun:0,coinRun:0,pulseRun:0,rideRun:0,jamRun:0,qtrRun:0,hotRun:0,cleanRun:0,stageRun:1,pairRun:0}; }
+resetM();
+/* mission engine: called after any counter moves; completes at most one per call (breathing room) */
+function mCheck(){
+  for(let s2=0;s2<3;s2++){ const mi=mSlots[s2]; if(mi>=MISSIONS.length) continue;
+    const m2=MISSIONS[mi];
+    const v=(m2.k in M)?M[m2.k]:TOT[m2.k]||0;
+    if(v>=m2.n){ buttons+=m2.r; mDone++; mSlots[s2]=mNext++; saveLS();
+      mBannerT=2.2; mBannerTxt="MISSION DONE  +¢"+m2.r; Snd.orb(); return; } }
+}
+function mProg(mi){ if(mi>=MISSIONS.length) return null; const m2=MISSIONS[mi];
+  return Math.min(m2.n,(m2.k in M)?M[m2.k]:TOT[m2.k]||0); }
+function rank(){ return RANKS[Math.min(RANKS.length-1,(mDone/4)|0)]; }
 /* steering direction: SCREEN (default — right key moves the sock right when it's at the bottom;
    angle DECREASES) vs WHEEL (right = clockwise drum rotation — intuitive for some). 🔷 Mike. */
 let ctrlWheel=false;
-try{ const d=JSON.parse(localStorage.getItem("flipline.drum.proto")); if(d){ best=d.best|0; buttons=(d.change!=null?d.change:d.buttons)|0; ctrlWheel=!!d.ctrlWheel; } }catch(e){}   // old "buttons" banks migrate to change
+try{ const d=JSON.parse(localStorage.getItem("flipline.drum.proto")); if(d){ best=d.best|0; buttons=(d.change!=null?d.change:d.buttons)|0; ctrlWheel=!!d.ctrlWheel;   // old "buttons" banks migrate to change
+  seenIntro=!!d.seenIntro; reunited=!!d.reunited; mutedFlag=!!d.muted; bestPts=d.bestPts|0;
+  if(d.tot) TOT=d.tot; if(d.mSlots) mSlots=d.mSlots; mNext=d.mNext!=null?d.mNext:3; mDone=d.mDone|0;
+  taught1=!!d.t1; taught2=!!d.t2; } }catch(e){}
 let lastHaul=0;
-function bank(){ lastHaul=runBtns; buttons+=runBtns; runBtns=0; if(dist>best)best=dist; saveLS(); }
-function saveLS(){ try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,change:buttons,ctrlWheel:ctrlWheel})); }catch(e){} }
+function bank(){ lastHaul=runBtns; buttons+=runBtns; runBtns=0;
+  newBest = dist>best && best>0;                                   // GQ-7: earn the fanfare
+  if(dist>best)best=dist; saveLS(); }
+function saveLS(){ try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,change:buttons,ctrlWheel:ctrlWheel,
+  seenIntro:seenIntro?1:0,reunited:reunited?1:0,muted:mutedFlag?1:0,bestPts:bestPts|0,
+  tot:TOT,mSlots:mSlots,mNext:mNext,mDone:mDone,t1:taught1?1:0,t2:taught2?1:0})); }catch(e){} }
+/* C1: platform adapter SEAM — the CrazyGames SDK wires in here at C4 (ship wave); every call
+   site already routes through this object, so swapping in the real SDK touches ONE block.
+   Proto behavior: rewarded grants instantly, midgame is a no-op with the cooldown clock kept
+   honest so the pacing is testable now. */
+const SDKA={
+  gameplayStart(){}, gameplayStop(){}, happytime(){},
+  midgame(done){ done&&done(); },
+  rewarded(grant){ grant&&grant(); }
+};
+function tryMidgame(){ const now=performance.now()/1000;
+  if(now-adClock<180) return;                                      // CG: max one midgame per 3 min, never chained
+  adClock=now; SDKA.midgame(null); }
+if(!seenIntro) mode="intro";               // P2 cold-open, first launch only
 const CN=16, col=[]; for(let i=0;i<CN;i++) col.push({on:false,ang:0,z:0,kind:0,val:1});
 function colAlloc(){ for(const c of col) if(!c.on) return c; return null; }
 // angular clearance vs heat arcs that will arrive at the rim around the same time
@@ -239,16 +350,23 @@ function reset(){ a=Math.PI/2; steer=0; cling=0; rideT=0; zspd=zBase(); dist=0; 
   steerV=0; lastMove=0; revCd=0; hitStop=0; zoomP=0;
   chase=0; pairDist=PAIR_HEAD; gained=false;
   spinNow=DRUMSPIN; jamCd=JAM_CD_FIRST+Math.random()*3; jamTele=0; jamT=0; jamRelief=0;   // first jam lands early
-  beatT=BEAT; beatP=0; musStep=0; wantSpawn=false; hotPopT=0; chaseGrace=0; pulseT=0; deadT=0; }
-function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); mode="play"; }     // fresh journey
-function startStage(){ stage++; reset(); mode="play"; }                                     // hp + buttons carry over
+  beatT=BEAT; beatP=0; musStep=0; wantSpawn=false; hotPopT=0; chaseGrace=0; pulseT=0; deadT=0;
+  winT=0; teaseT=0; teaseDone=false; bannerT=2.4; spinBanner=false; dmgThisStage=false; }
+function start(){ Snd.ensure(); stage=1; hp=HP_MAX; runBtns=0; reset(); resetM();
+  runStages=0; newBest=false; tallyT=0; tallyN=0; mode="play"; SDKA.gameplayStart(); }      // fresh journey
+function startStage(){ stage++; M.stageRun=Math.max(M.stageRun,stage); mCheck();
+  reset(); mode="play"; SDKA.gameplayStart(); }                                             // hp + buttons carry over
 
 /* ===== Spawning — individual GARMENTS with threadable gaps between them (no connecting line).
    Fairness: intra-cluster gaps ≥0.5rad edge-to-edge (player ±0.16 threads with margin);
    rings of 5 leave ~0.78rad gaps; AV covers π in ~1s. ===== */
 function alloc(){ for(const o of obs) if(!o.on) return o; return null; }
 function garment(ang,dz){ const o=alloc(); if(!o)return; o.on=true; o.ang=ang; o.hw=GHW; o.z=Z0+(dz||0); o.kind=0; o.grz=false;
-  o.gi=((Math.random()*3)|0)*PAL_HOT.length+((Math.random()*PAL_HOT.length)|0); }   // random garment kind × hot hue
+  o.gi=((Math.random()*3)|0)*PAL_HOT.length+((Math.random()*PAL_HOT.length)|0);   // random garment kind × hot hue
+  o.zm=1;                                                                          // per-obstacle approach multiplier (zippers override)
+  // GQ-6 DRIFTING TOWEL (stage 2+): some laundry slides sideways as it comes — a re-read,
+  // still fair (0.12rad/s vs the sock's 3.0; the GQ-5 arc tracks it live)
+  o.drift = stageHas(stage,"drift")&&Math.random()<0.35 ? (Math.random()<0.5?-1:1)*0.12 : 0; }
 /* LOOT LIVES IN THE DANGER now (Mario-coin rule: currency = reward for going out of your way;
    the old colClear() placement made change decorative — safe loot is dead loot).
    Pennies (1¢) thread the pattern's gaps; a QUARTER (3¢) sits tucked right beside a garment. */
@@ -273,29 +391,52 @@ function spawnPattern(){
     const g=(Math.random()*n)|0; pennies(pa+(g+0.5)*TAU/n); }
   else { for(let k=0;k<3;k++) garment(pa+k*1.5,k*0.10);                            // spiral triplet
     quarter(pa+1.5+side*EDGE,0.10); }
+  // GQ-6 ZIPPER WHIP (stage 4+): a thin silver streak half again as fast — the read is speed,
+  // telegraphed by its own metallic tick + the GQ-5 landing arc. Rare, never in the teach zone.
+  if(stageHas(stage,"zipper") && dist>60 && Math.random()<0.22){
+    const o=alloc(); if(o){ o.on=true; o.ang=Math.random()*TAU; o.hw=ZIP_HW; o.z=Z0; o.kind=1;
+      o.grz=false; o.gi=0; o.zm=ZIP_ZM; o.drift=0; Snd.b(1400,700,0.12,"square",0.06); } }
 }
 
 /* ===== Input ===== */
 const keys={};
 addEventListener("keydown",e=>{
-  if(["ArrowLeft","ArrowRight","a","A","d","D"," ","ArrowUp"].includes(e.key)) e.preventDefault();
+  // C1 AZERTY: Q mirrors A (left), Z mirrors W-row (tap) — resolved by character, layout-safe
+  if(["ArrowLeft","ArrowRight","a","A","d","D","q","Q","z","Z"," ","ArrowUp"].includes(e.key)) e.preventDefault();
   if(e.repeat) return; keys[e.key]=true;
-  if(e.key===" "||e.key==="ArrowUp"){ if(mode==="play") tryTap(); else if(mode!=="dead"||deadT>0.4) advance(); }
+  if(e.key==="p"||e.key==="P"){ if(mode==="play"||paused){ paused=!paused; } return; }   // C1 pause
+  if(e.key==="m"||e.key==="M"){ mutedFlag=!mutedFlag; if(Snd.g) Snd.g.gain.value=mutedFlag?0:0.8; saveLS(); return; }   // C1 mute, persisted
+  if(paused){ paused=false; return; }                                                    // any input resumes
+  /* DEV:BEGIN (strip before ship — GAME_BIBLE Part 5) */
+  if(DEVON && mode==="play"){
+    if(e.key==="g"||e.key==="G"){ devGod=!devGod; return; }
+    if(e.key==="n"||e.key==="N"){ dist=LEVEL_LEN-1; return; }
+  }
+  /* DEV:END */
+  if(e.key===" "||e.key==="ArrowUp"||e.key==="z"||e.key==="Z"){ if(mode==="play") tryTap(); else if(mode!=="dead"||deadT>0.4) advance(); }
   // instant restart (Crossy Road rule: death → playing in <1s, any input) — steering keys retry too
   else if(mode==="dead" && deadT>0.4) advance();
 });
+/* DEV:BEGIN (strip before ship) */
+const DEVON=/[?&]dev=1/.test(location.search); let devGod=false;
+/* DEV:END */
 addEventListener("keyup",e=>{ keys[e.key]=false; });
 const touches={};   // id -> {x, t0, moved}
 const R_CTRL={x:VW/2-92,y:216,w:184,h:22};   // ready-screen controls toggle
 const R_MEND={x:VW/2-80,y:168,w:160,h:24};   // stage-screen mend purchase
+const R_ADMEND={x:VW/2-80,y:196,w:160,h:22}; // C1: rewarded-ad mend (seam), shown only when broke
 function inRect(p,r){ return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h; }
 function vpos(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/scale, y:(e.clientY-r.top)/scale}; }
 function tryMend(){ if(hp<HP_MAX && buttons>=MEND_COST){ buttons-=MEND_COST; hp++; saveLS(); Snd.orb(); } }
 addEventListener("pointerdown",e=>{ e.preventDefault(); Snd.ensure();
+  if(Snd.g) Snd.g.gain.value=mutedFlag?0:0.8;          // C1: persisted mute applies once audio exists
+  if(paused){ paused=false; return; }                  // C1: tap resumes
   if(mode!=="play"){
     const p=vpos(e);
     if(mode==="ready" && inRect(p,R_CTRL)){ ctrlWheel=!ctrlWheel; saveLS(); return; }
     if(mode==="stage" && inRect(p,R_MEND)){ tryMend(); return; }
+    if(mode==="stage" && hp<HP_MAX && buttons<MEND_COST && inRect(p,R_ADMEND)){   // C1: rewarded mend via the SDK seam
+      SDKA.rewarded(()=>{ if(hp<HP_MAX){ hp++; Snd.orb(); } }); return; }
     if(mode==="dead" && deadT<=0.4) return;   // brief lockout so a panic tap doesn't skip the haul
     advance(); return; }
   touches[e.pointerId]={x:e.clientX,t0:performance.now(),moved:false}; },{passive:false});
@@ -303,21 +444,49 @@ addEventListener("pointerup",e=>{ const tc=touches[e.pointerId]; delete touches[
   if(mode==='play' && tc && performance.now()-tc.t0<170 && !tc.moved) tryTap(); });
 addEventListener("pointercancel",e=>{ delete touches[e.pointerId]; });
 addEventListener("pointermove",e=>{ const tc=touches[e.pointerId]; if(tc && Math.abs(e.clientX-tc.x)>14) tc.moved=true; });
-function advance(){ if(mode==="ready"||mode==="dead") start(); else if(mode==="stage") startStage(); else if(mode==="win"){ mode="ready"; } }
-function tryLeap(){ if(cling>=1 && rideT<=0){ cling=0; rideT=RIDE_T; Snd.leap(); } }   // spend static → ride the centre current
+function advance(){
+  if(mode==="intro"){ mode="ready"; seenIntro=true; saveLS(); return; }         // cold-open is skippable
+  if(mode==="reunion"){ if(reunionT>1.4){ mode="stage"; } return; }             // linger on the payoff, then the loop goes on
+  if(mode==="ready"||mode==="dead") start(); else if(mode==="stage") startStage(); }
+function tryLeap(){ if(cling>=1 && rideT<=0){ cling=0; rideT=RIDE_T; Snd.leap();
+  M.rideRun++; mCheck();
+  if(teachT>0&&teachKind===2){ teachT=0; taught2=true; saveLS(); } } }   // spend static → ride the centre current
 function tryPulse(){ if(cling>=PULSE_COST && rideT<=0 && pulseT<=0){                    // partial bar → PULSE in place
   cling-=PULSE_COST; pulseT=PULSE_T; Snd.pulse();
+  M.pulseRun++; mCheck();
   const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
   for(let i=0;i<10;i++) emit(px,py,(Math.random()-0.5)*180,(Math.random()-0.5)*180,0.25,"#bff0ff"); } }
 function tryTap(){ if(cling>=1) tryLeap(); else tryPulse(); }                           // full = RIDE (locked), partial = PULSE
 
 /* ===== Update ===== */
+function runPts(){ return (dist|0)*10 + M.coinRun*25 + runStages*250; }   // C3: Batch-B point model ported
+let newBestP=false;
 function update(dt){
+  /* GQ-8: one-time teach beats run the world at 35% — the read is taught by TIME, not text */
+  if(teachT>0 && mode==="play") dt*=0.35;
   t+=dt;
+  /* P2 cold-open: two socks, one torn away — 2.6s, zero exposition, skippable */
+  if(mode==="intro"){ introT+=dt; if(introT>2.6){ mode="ready"; seenIntro=true; saveLS(); } }
+  /* GQ-7 ceremony: the vortex drinks the sock — slow spiral in + button confetti, then the stage screen */
+  if(mode==="clear"){ winT-=dt;
+    if(Math.random()<0.55){ const an=Math.random()*TAU, rr=RIM*(0.35+Math.random()*0.55);
+      emit(CX+Math.cos(an)*rr, CY+Math.sin(an)*rr, -Math.cos(an)*70, -Math.sin(an)*70, 0.55,
+           Math.random()<0.5?"#ffcf5c":"#e0995c"); }
+    if(winT<=0){ winT=0;
+      if(stage>=STAGES.length && !(stage>STAGES.length)){                       // stage 9 cleared → THE REUNION
+        mode="reunion"; reunionT=0; Snd.win();
+        if(!reunited){ reunited=true; saveLS(); } }
+      else mode="stage"; } }
+  if(mode==="reunion") reunionT+=dt;
   /* THE DRUM IS ALIVE — spin ramps with CHASE + stage; DRUM JAM surges spike it.
      Everything on the drum (sock, laundry, change) rides spinNow together — fair. */
   if(mode==="play"){
     let spin=DRUMSPIN*(1+chase*SPIN_CHASE+(stage-1)*SPIN_STAGE);
+    // GQ-6 UNBALANCED LOAD (stage 5+): the whole drum wobbles — world motion, never the player
+    if(stageHas(stage,"wobble")) spin*=1+WOB_AMP*Math.sin(t*1.15);
+    // GQ-6 SPIN CYCLE (stage 7+): finale gauntlet — the last stretch before every vortex runs hot
+    const finale=stageHas(stage,"spincycle") && dist>LEVEL_LEN-SPIN_FINALE;
+    if(finale){ spin*=SPINCYC_X; if(!spinBanner){ spinBanner=true; Snd.grind(); shake=Math.max(shake,4); } }
     if(jamTele>0){ jamTele-=dt; spin+=Math.sin(t*34)*0.10;             // the grind — drum shudders before it slips
       if(jamTele<=0){ jamTele=0; jamT=JAM_LEN; shake=Math.max(shake,5); } }
     else if(jamT>0){ jamT-=dt; const k=Math.min(1,(JAM_LEN-jamT)*3,jamT*2);
@@ -325,6 +494,7 @@ function update(dt){
       if(jamT<=0){ jamT=0; jamRelief=JAM_RELIEF;                       // the jam SHAKES CHANGE LOOSE — survive it, get paid
         const sa=Math.random()*TAU;
         for(let k2=0;k2<5;k2++) placeCol(sa+k2*TAU/5, Z0+0.04*k2, 0, 1);
+        M.jamRun++; TOT.jamAll++; mCheck();                            // C3 missions: jams survived
         Snd.coin(); } }
     else if(jamRelief>0){ jamRelief-=dt; if(jamRelief<0)jamRelief=0; }
     else { jamCd-=dt;
@@ -335,7 +505,9 @@ function update(dt){
   drumRot+=spinNow*dt;
   /* the dryer THUMP — metronome for spawns + music (beat-locked reads) */
   if(beatP>0){ beatP-=dt*4; if(beatP<0)beatP=0; }
-  if(mode==="dead") deadT+=dt;             // instant restart arms shortly after the sock unravels
+  if(mode==="dead"){ deadT+=dt; tallyT+=dt;                    // instant restart arms shortly after the sock unravels
+    const shown=Math.min(4,(tallyT/0.45)|0);                   // C3: tally lines land one per beat w/ a tick
+    if(shown>tallyN){ tallyN=shown; Snd.b(880,880,0.05,"square",0.05); } }
   if(hotPopT>0){ hotPopT-=dt; if(hotPopT<0)hotPopT=0; }
   if(mode==="play"){
     beatT-=dt;
@@ -360,7 +532,7 @@ function update(dt){
 
   // steer: keys + held touch halves
   steer=0;
-  if(keys["ArrowLeft"]||keys["a"]||keys["A"]) steer-=1;
+  if(keys["ArrowLeft"]||keys["a"]||keys["A"]||keys["q"]||keys["Q"]) steer-=1;   // C1 AZERTY: Q = A position
   if(keys["ArrowRight"]||keys["d"]||keys["D"]) steer+=1;
   for(const id in touches){ const tc=touches[id]; if(performance.now()-tc.t0>140||tc.moved) steer+=(tc.x<innerWidth/2?-1:1); }
   if(steer<-1)steer=-1; if(steer>1)steer=1;
@@ -387,14 +559,36 @@ function update(dt){
   else if(chase>0){ chase-=CHASE_DECAY*dt; if(chase<0)chase=0; }
   pairDist+=PAIR_MPS*(1+0.08*(stage-1))*dt;                          // the pair tumbles ahead at its own pace
 
+  if(bannerT>0){ bannerT-=dt; if(bannerT<0)bannerT=0; }
+  if(mBannerT>0){ mBannerT-=dt; if(mBannerT<0)mBannerT=0; }
+  /* P2 NEAR-REUNION TEASE (stages 3/6/9): mid-stage, your pair swings OUT of the vortex,
+     hovers almost within reach, then is snatched back. Near-miss effect (Clark 2009, Neuron):
+     almost-wins drive retries harder than wins. Draw-only — it never collides. */
+  if(stageTease(stage) && !teaseDone && dist>LEVEL_LEN*0.5){
+    teaseDone=true; teaseT=TEASE_LEN; teaseAng=a; Snd.orb(); }
+  if(teaseT>0){ teaseT-=dt;
+    if(teaseT<=0){ teaseT=0; Snd.b(520,180,0.5,"triangle",0.1); } }   // the yank — a falling note
+  /* GQ-8 teach beat 1: the first hot garment EVER approaching — slow the world, glyph the steer */
+  if(!taught1 && teachT<=0){ for(const o of obs){ if(o.on && o.z>0.5){ teachT=1.6; teachKind=1; break; } } }
+  if(teachT>0){ teachT-=dt;
+    if(teachKind===1 && steer!==0){ teachT=0; }                       // steering = lesson learned
+    if(teachT<=0){ teachT=0; if(teachKind===1){taught1=true;} else {taught2=true;} saveLS(); } }
+  /* GQ-8 teach beat 2: the first FULL static bar ever */
+  if(taught1 && !taught2 && teachT<=0 && cling>=1){ teachT=1.6; teachKind=2; }
+
   // progress + ramp (riding the current = slight speed boost; CHASE = up to +50% pace)
   const spd=zspd/ZSPD0*(rideT>0?RIDE_BOOST:1)*(1+chase*CHASE_SPD);
   dist+=MPS*spd*dt*0.55;
   zspd=Math.min(ZSPDMX*(1+0.05*(stage-1)), zBase()+dist*0.0007);
   const zeff=zspd*(1+chase*CHASE_Z);                                 // hot play also runs hotter — opt-in intensity
   if(dist>=LEVEL_LEN){ gained=pairDist<LEVEL_LEN;                    // beat your pair to the vortex?
-    if(gained) runBtns+=GAIN_BONUS;
-    mode="stage"; bank(); Snd.win(); return; }                       // stage cleared → mend shop → next drum, faster
+    if(gained){ runBtns+=GAIN_BONUS; M.pairRun=1; TOT.pairAll++; SDKA.happytime(); }
+    runStages++;
+    if(!dmgThisStage) M.cleanRun++;                                  // C3 missions: untouched stage
+    mCheck();
+    mode="clear"; winT=1.5; bank(); Snd.win(); SDKA.gameplayStop();  // GQ-7: the vortex drinks you first
+    if(runStages%3===0) tryMidgame();                                // C1: stage-break interstitial, 3-min cooldown
+    return; }
 
   // spawn cadence arms the gate; the actual spawn lands ON the next dryer thump (beat-locked reads)
   spawnCd-=dt; if(spawnCd<=0 && dist<LEVEL_LEN-40){ wantSpawn=true;
@@ -425,7 +619,9 @@ function update(dt){
       c.on=false;
       if(c.kind===0){ const hot=chase>HOTX, pay=c.val*(hot?2:1);           // HOT streak: risk pays DOUBLE, right now
         runBtns+=pay; coinPopV+=pay; coinPopT=0.8; if(hot)hotPopT=0.8; Snd.coin();
+        M.coinRun+=pay; TOT.coinAll+=pay; if(c.val>1)M.qtrRun++; mCheck();   // C3 missions: change snatched
         chase=Math.min(1,chase+(c.val>1?CHASE_QTR:CHASE_COIN)); chaseGrace=CHASE_GRACE;   // change grabbed in the laundry feeds THE CHASE
+        if(chase>HOTX && !M.hotRun){ M.hotRun=1; mCheck(); }
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
         for(let i=0;i<6;i++) emit(px,py,(Math.random()-0.5)*110,(Math.random()-0.5)*110,0.35,c.val>1?"#dfe6ee":"#e0995c"); }
       else { Snd.orb();
@@ -437,24 +633,31 @@ function update(dt){
 
   // obstacles approach the camera
   for(const o of obs){ if(!o.on) continue;
-    o.z+=zeff*dt; o.ang+=spinNow*dt;                        // they ride the tumbling drum
+    o.z+=zeff*dt*(o.zm||1); o.ang+=(spinNow+(o.drift||0))*dt;   // they ride the tumbling drum (+GQ-6 drift/zipper)
     if(o.z>1.16){ o.on=false; continue; }
     if(o.z>HITLO && o.z<HITHI && rideT<=0 && graceT<=0 && pulseT<=0){   // PULSE = intangible in place — hot cloth passes through
       const dA=Math.abs(angDiff(a,o.ang));
       if(dA>=o.hw*0.8+PHW && dA<o.hw*0.8+PHW+GRAZE_ARC && !o.grz){  // GQ-4: GRAZE — skimming hot laundry pays static + CHASE
         o.grz=true; chase=Math.min(1,chase+CHASE_GRAZE); chaseGrace=CHASE_GRACE;
+        M.grazeRun++; mCheck();                                       // C3 missions: grazes
+        if(chase>HOTX && !M.hotRun){ M.hotRun=1; mCheck(); }
         const was=cling; cling=Math.min(1,cling+GRAZE_CLING);
         if(was<1&&cling>=1) Snd.charge(); else Snd.graze();
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
         for(let i=0;i<5;i++) emit(px,py,(Math.random()-0.5)*120,(Math.random()-0.5)*120,0.22,"#ffb056"); }
       if(dA<o.hw*0.8+PHW){          // clipped by hot cloth (hitbox tighter than the visual — fair)
         const px=CX+Math.cos(a)*RIM*0.93, py=CY+Math.sin(a)*RIM*0.93;
+        /* DEV:BEGIN (strip before ship) */ if(DEVON&&devGod){ o.on=false; continue; } /* DEV:END */
         if(shieldUp){ shieldUp=false; graceT=0.8; o.on=false; shake=6; hitStop=HITSTOP_SHIELD; zoomP=1; Snd.shieldPop();   // SHIELD absorbs the hit + brief grace
           for(let i=0;i<12;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#ffd45a");
           continue; }
-        hp--; graceT=1.0; shake=8; flash=0.35; hitStop=HITSTOP_DMG; zoomP=1; Snd.shieldPop();  // take damage — the sock frays (GQ-2: hit-stop + zoom punch)
+        hp--; dmgThisStage=true; graceT=1.0; shake=8; flash=0.35; hitStop=HITSTOP_DMG; zoomP=1; Snd.shieldPop();  // take damage — the sock frays (GQ-2: hit-stop + zoom punch)
         for(let i=0;i<10;i++) emit(px,py,(Math.random()-0.5)*200,(Math.random()-0.5)*200,0.4,"#efe9db");  // loose threads fly
         if(hp<=0){ mode="dead"; deaths++; bank(); shake=12; flash=0.5; Snd.die();          // 3rd hit — DISINTEGRATE into pieces
+          SDKA.gameplayStop(); tryMidgame();                                               // C1: final-death interstitial (cooldown-gated)
+          const pts=runPts(); newBestP=pts>bestPts&&bestPts>0; if(pts>bestPts){bestPts=pts;saveLS();}
+          tallyT=0; tallyN=0;                                                              // C3: tally count-up starts
+          if(newBest||newBestP) Snd.win();                                                 // GQ-7: NEW BEST fanfare
           for(let i=0;i<26;i++) emit(px,py,(Math.random()-0.5)*300,(Math.random()-0.5)*300,0.5+Math.random()*0.4,"#efe9db");
           for(let i=0;i<10;i++) emit(px,py,(Math.random()-0.5)*220,(Math.random()-0.5)*220,0.5,"#ff6478");
           return; }
@@ -518,11 +721,26 @@ function draw(){
   // deliberately more saturated than the muted drum so danger owns the eye
   for(let i=1;i<OBN;i++){ let j=i; const v=zOrder[i];
     while(j>0 && obs[zOrder[j-1]].z>obs[v].z){ zOrder[j]=zOrder[j-1]; j--; } zOrder[j]=v; }
+  /* GQ-5: landing-arc telegraphs — once the effective approach speed crosses TELE_Z, every
+     incoming read marks the rim stretch it will land on (Tunnel Rush forewarning). The arc is
+     drawn at the obstacle's LIVE angle, so drum spin and towel drift stay truthful. */
+  if(mode==="play" && zspd*(1+chase*CHASE_Z)>TELE_Z){
+    for(const o of obs){ if(!o.on || o.z>0.72) continue;
+      ctx.strokeStyle=o.kind===1?"rgba(223,230,238,0.20)":"rgba(255,84,104,0.16)"; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(CX,CY,RIM,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); } }
   ctx.imageSmoothingEnabled=true;
   for(let i=0;i<OBN;i++){ const o=obs[zOrder[i]]; if(!o.on) continue;
     const zz=Math.min(1,o.z), r=RIM*Math.pow(zz,PERSP), th=4+13*zz*zz, fade=o.z>1?Math.max(0,1-(o.z-1)/0.16):1;
     const near=o.z>0.8?(o.z-0.8)/0.2:0;
     ctx.globalAlpha=(0.35+0.65*zz)*fade;
+    if(o.kind===1){                                                   // GQ-6 ZIPPER WHIP — thin silver streak w/ teeth
+      ctx.strokeStyle="#dfe6ee"; ctx.lineWidth=Math.max(2,th*0.5);
+      ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke();
+      ctx.strokeStyle="#8f9aa8"; ctx.lineWidth=1;
+      ctx.setLineDash([2,2]); ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); ctx.setLineDash([]);
+      const zx=CX+Math.cos(o.ang)*r, zy=CY+Math.sin(o.ang)*r;         // the pull-tab glints
+      ctx.fillStyle="#f2f6fa"; ctx.fillRect(zx-1.5,zy-3,3,6);
+      ctx.globalAlpha=1; continue; }
     const gs=Math.max(9,2*o.hw*r*1.05), gx=CX+Math.cos(o.ang)*r, gy=CY+Math.sin(o.ang)*r;
     if(near>0){ ctx.strokeStyle="rgba(255,84,104,0.32)"; ctx.lineWidth=th+8;      // heat haze under the garment at the rim
       ctx.beginPath(); ctx.arc(CX,CY,r,o.ang-o.hw,o.ang+o.hw); ctx.stroke(); }
@@ -530,6 +748,29 @@ function draw(){
     ctx.drawImage(GARM_HOT[o.gi],-gs/2,-gs/2,gs,gs); ctx.restore();
     ctx.globalAlpha=1; }
   ctx.imageSmoothingEnabled=false;
+  /* GQ-6 LINT VEIL (stage 8+): soft grey lint drifting across the opening — pressure on the
+     eye, never on the hitbox */
+  if(stageHas(stage,"lint") && (mode==="play"||mode==="clear")){
+    for(let k=0;k<5;k++){ const an=t*0.25+k*TAU/5, rr=RIM*(0.35+0.28*Math.sin(t*0.6+k*2.2));
+      const lx=CX+Math.cos(an)*rr, ly=CY+Math.sin(an)*rr, ls=10+5*Math.sin(t+k);
+      ctx.globalAlpha=0.10+0.05*Math.sin(t*1.7+k);
+      ctx.fillStyle="#b8b4ac"; ctx.beginPath(); ctx.arc(lx,ly,ls,0,TAU); ctx.fill(); }
+    ctx.globalAlpha=1; }
+  /* P2 NEAR-REUNION TEASE — the pair swings out of the vortex toward you, hovers almost in
+     reach, then is snatched back in. Pure theatre: never collidable. */
+  if(teaseT>0){
+    const k=1-teaseT/TEASE_LEN;                                       // 0→1 over the timeline
+    const out = k<0.3 ? k/0.3 : k<0.72 ? 1 : Math.max(0,1-(k-0.72)/0.2);   // out → hover → yank
+    const tz=0.06+0.56*out, tr=RIM*Math.pow(tz,PERSP);
+    const tAng=teaseAng+0.5+Math.sin(t*2.2)*0.06*out;
+    const tx2=CX+Math.cos(tAng)*tr, ty2=CY+Math.sin(tAng)*tr, ps3=6+9*out;
+    if(k>=0.72 && k<0.8){ ctx.strokeStyle="rgba(201,176,255,0.5)"; ctx.lineWidth=2;   // yank speed-lines
+      ctx.beginPath(); ctx.moveTo(tx2,ty2); ctx.lineTo(CX+(tx2-CX)*0.4,CY+(ty2-CY)*0.4); ctx.stroke(); }
+    ctx.globalAlpha=0.75+0.25*Math.sin(t*4);
+    ctx.drawImage(WARM,tx2-ps3,ty2-ps3,ps3*2,ps3*2);
+    ctx.imageSmoothingEnabled=true; ctx.save(); ctx.translate(tx2,ty2);
+    ctx.rotate(Math.sin(t*3)*0.3); ctx.drawImage(SOCK,-ps3*0.6,-ps3*0.6,ps3*1.2,ps3*1.2); ctx.restore();
+    ctx.imageSmoothingEnabled=false; ctx.globalAlpha=1; }
 
   // collectibles — buttons (gold, 4 thread holes) + buff orbs, scaling with depth; drawn over the drum
   for(const c of col){ if(!c.on) continue;
@@ -560,7 +801,12 @@ function draw(){
   // the sock on the rim (or riding the centre current) — hidden once it has disintegrated
   if(mode!=="dead"){
     const rk=rideT>0?Math.min(1,(RIDE_T-rideT)*4,rideT*4):0;        // ease in/out of the current
-    const pr=RIM*0.93*(1-rk)+26*rk, px=CX+Math.cos(a)*pr, py=CY+Math.sin(a)*pr, sc2=1-0.3*rk;
+    /* GQ-7: during the clear ceremony the sock spirals into the vortex — drawn angle + radius
+       run their own timeline; gameplay is already over so nothing here can be unfair */
+    const ck=mode==="clear"?1-winT/1.5:0;
+    const da2=a+ck*4.2;
+    const pr=(RIM*0.93*(1-rk)+26*rk)*(1-0.94*ck),
+          px=CX+Math.cos(ck>0?da2:a)*pr, py=CY+Math.sin(ck>0?da2:a)*pr, sc2=(1-0.3*rk)*(1-0.45*ck);
     if(rk>0){ ctx.strokeStyle="rgba(191,240,255,"+(0.35*rk)+")"; ctx.lineWidth=2;  // static tether crackles back to the rim
       ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(CX+Math.cos(a)*RIM*0.93,CY+Math.sin(a)*RIM*0.93); ctx.stroke();
       if(Math.random()<0.6) emit(px+(Math.random()-0.5)*10,py+(Math.random()-0.5)*10,(Math.random()-0.5)*60,(Math.random()-0.5)*60,0.2,"#bff0ff"); }
@@ -574,7 +820,7 @@ function draw(){
     if(magnetT>0){ ctx.strokeStyle="rgba(90,220,255,"+(0.1+0.12*Math.sin(t*4))+")";               // magnet field arc along the rim
       ctx.lineWidth=3; ctx.beginPath(); ctx.arc(CX,CY,RIM*0.93,a-1.3,a+1.3); ctx.stroke(); }
     const gflk=graceT>0 && (t*14|0)%2===0;   // damage-grace flicker
-    ctx.save(); ctx.translate(px,py); ctx.rotate(a-Math.PI/2+(rk>0?t*5*rk:0)); ctx.scale(sc2,sc2);
+    ctx.save(); ctx.translate(px,py); ctx.rotate(a-Math.PI/2+(rk>0?t*5*rk:0)+(ck>0?t*6*ck:0)); ctx.scale(sc2,sc2);
     if(rk<=0){ const sv=Math.abs(steerV);                  // GQ-1: lean + stretch into travel (local +x = decreasing angle)
       ctx.rotate(-lastMove*0.28); ctx.scale(1+sv*0.14,1-sv*0.09); }
     if(gflk) ctx.globalAlpha=0.35;
@@ -586,9 +832,23 @@ function draw(){
     if(dmg>=2){ ctx.fillStyle="#171210";     // threadbare holes + hanging thread
       ctx.fillRect(-2,2,3,3); ctx.fillRect(-7.5,4.5,2.6,2.6); ctx.fillRect(3,-4,2.2,2.2);
       ctx.fillStyle="#cfc9bd"; ctx.fillRect(8,6,1,4.5); ctx.fillRect(-10,1,1,3.5); }
-    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-3.4,-2.2,1.9,0,TAU); ctx.arc(0.2,-2.2,1.9,0,TAU); ctx.fill();
-    ctx.fillStyle="#14100c"; ctx.fillRect(-3.4,-2.8,1.3,1.3); ctx.fillRect(0.2,-2.8,1.3,1.3);
-    if(dmg>=2){ ctx.fillRect(-4,1,4,1.2); }  // worried stitch-mouth when one hit from unravelling
+    /* P2 EXPRESSIVE SOCK: the eyes TRACK — the vortex normally, the pair during a tease
+       (googly pupils aimed in local space; the whole face is theatre, zero mechanics) */
+    const teaseHover=teaseT>0 && teaseT<TEASE_LEN*0.7;
+    let lx2=0,ly2=0;
+    { let tx3=CX,ty3=CY;                                              // default look target: the vortex
+      if(teaseHover){ const k3=1-teaseT/TEASE_LEN;
+        const out3=k3<0.3?k3/0.3:1, tz3=0.06+0.56*out3, tr3=RIM*Math.pow(tz3,PERSP);
+        const tA3=teaseAng+0.5; tx3=CX+Math.cos(tA3)*tr3; ty3=CY+Math.sin(tA3)*tr3; }
+      const ddx=tx3-px, ddy=ty3-py, dm2=Math.hypot(ddx,ddy)||1;
+      const th2=a-Math.PI/2, cs=Math.cos(th2), sn=Math.sin(th2);
+      lx2=( ddx*cs+ddy*sn)/dm2*1.1; ly2=(-ddx*sn+ddy*cs)/dm2*1.1; }
+    const er2=teaseHover?2.4:1.9;                                     // wide-eyed at the near-reunion
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-3.4,-2.2,er2,0,TAU); ctx.arc(0.2,-2.2,er2,0,TAU); ctx.fill();
+    ctx.fillStyle="#14100c";
+    ctx.fillRect(-3.4+lx2,-2.8+ly2,1.3,1.3); ctx.fillRect(0.2+lx2,-2.8+ly2,1.3,1.3);
+    if(teaseHover){ ctx.beginPath(); ctx.arc(-1.4,1.4,1.2,0,TAU); ctx.fill(); }   // little "oh!" mouth — so close
+    else if(dmg>=2){ ctx.fillRect(-4,1,4,1.2); }  // worried stitch-mouth when one hit from unravelling
     else ctx.fillRect(-2.6,0.6,2.8,1);
     ctx.globalAlpha=1; ctx.restore();
     // static-cling sparks crawl on the sock while charged / charging
@@ -602,8 +862,25 @@ function draw(){
   for(const p of par){ if(p.life>0){ ctx.globalAlpha=Math.min(1,p.life*2.4); ctx.fillStyle=p.c; ctx.fillRect(p.x,p.y,2,2); } }
   ctx.globalAlpha=1;
 
+  // stage-name banner (C2): each drum announces itself, then gets out of the way
+  if(mode==="play" && bannerT>0){ const ba=Math.min(1,bannerT);
+    ctx.globalAlpha=ba; txt(stageName(stage),CX,86,17,"#ffcf5c",800);
+    if(stage<=STAGES.length) txt("STAGE "+stage+" of "+STAGES.length,CX,102,9,"#c9b0ff",700);
+    ctx.globalAlpha=1; }
+  // C3 mission-done banner
+  if(mBannerT>0){ ctx.globalAlpha=Math.min(1,mBannerT);
+    txt(mBannerTxt,CX,VH-40,11,"#9bf0d0",800); ctx.globalAlpha=1; }
+  // GQ-8 teach glyphs — world runs at 35% while these show; pictures, not paragraphs
+  if(teachT>0 && mode==="play"){ const fl2=0.6+0.4*Math.sin(t*6);
+    ctx.globalAlpha=fl2;
+    if(teachKind===1){ txt("◀",CX-40,CY+4,26,"#9bf0d0",800); txt("▶",CX+40,CY+4,26,"#9bf0d0",800); }
+    else { txt("⊙",CX,CY-6,26,"#bff0ff",800); txt("TAP",CX,CY+14,11,"#bff0ff",800); }
+    ctx.globalAlpha=1; }
+  // GQ-6 spin-cycle callout, once per stage
+  if(mode==="play" && spinBanner && dist>LEVEL_LEN-SPIN_FINALE && dist<LEVEL_LEN-SPIN_FINALE+40){
+    ctx.globalAlpha=0.7+0.3*Math.sin(t*10); txt("SPIN CYCLE!",CX,52,14,"#ff7a3c",800); ctx.globalAlpha=1; }
   // HUD — progress to the vortex + static meter
-  if(mode==="play"||mode==="dead"||mode==="win"){
+  if(mode==="play"||mode==="dead"||mode==="clear"){
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(90,8,300,10);
     ctx.fillStyle="#c9b0ff"; ctx.fillRect(90,8,300*prog,10);
     // your pair on the same bar — the race you're actually running
@@ -625,6 +902,7 @@ function draw(){
     else if(jamT>0){ ctx.globalAlpha=0.8;
       txt("DRUM JAM!",CX,64,15,"#ff7a3c",800); ctx.globalAlpha=1; }
     txt((dist|0)+"m",60,17,10,"#e8dcc8",700);
+    if(mode==="play") txt(runPts().toLocaleString()+" pts",60,58,8,"#c9b0ff",700);   // C3: run points, quiet under the coin pop
     txt("¢ "+(mode==="play"?buttons+runBtns:buttons),34,33,coinPopT>0?12:10,coinPopT>0?"#ffe9a8":"#e0995c",700);   // bank() folds runBtns in on death/win
     if(coinPopT>0){ ctx.globalAlpha=Math.min(1,coinPopT*1.6);
       txt("+"+coinPopV+" ¢",34,47-(0.8-coinPopT)*10,9,"#ffe08a",700); ctx.globalAlpha=1; }
@@ -634,7 +912,7 @@ function draw(){
       ctx.fillStyle=on?"#9bf0d0":"rgba(255,255,255,0.12)"; ctx.fillRect(VW-58+k*16,10,10,10);
       if(on){ ctx.strokeStyle="rgba(20,30,26,0.6)"; ctx.lineWidth=1; ctx.setLineDash([2,2]);
         ctx.strokeRect(VW-57+k*16,11,8,8); ctx.setLineDash([]); } }
-    txt("STAGE "+stage,VW-40,33,9,"#c9b0ff",700);
+    txt("STAGE "+(stage<=STAGES.length?stage+"/"+STAGES.length:stage),VW-40,33,9,"#c9b0ff",700);
     // static meter — notch marks the PULSE threshold (⅓); full bar = the ride
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(CX-70,VH-18,140,8);
     ctx.fillStyle=cling>=1?"#bff0ff":"#5b8fa8"; ctx.fillRect(CX-70,VH-18,140*cling,8);
@@ -646,22 +924,79 @@ function draw(){
   ctx.restore();
   if(flash>0){ ctx.fillStyle="#ff5468"; ctx.globalAlpha=flash; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
 
-  if(mode==="ready"){
+  if(mode==="intro"){
+    /* P2 COLD-OPEN (Canabalt iceberg): two socks together, one torn into the vortex.
+       2.6s, zero exposition, any tap skips. */
+    ctx.fillStyle="#0d0a08"; ctx.fillRect(0,0,VW,VH);
+    const k=Math.min(1,introT/2.2), pull=k<0.35?0:(k-0.35)/0.65;
+    const vs2=20+60*k;                                                 // the vortex wakes
+    ctx.globalAlpha=0.4+0.6*k; ctx.drawImage(VORTEX,VW-150-vs2,CY-vs2,vs2*2,vs2*2); ctx.globalAlpha=1;
+    ctx.imageSmoothingEnabled=true;
+    const hx2=150, hy2=CY+16;                                          // our sock, planted
+    const ppx2=hx2+26+(VW-150-hx2-26)*pull, ppy2=hy2-8*(1-pull)+ (CY-hy2+8)*pull;  // the pair, torn away
+    ctx.save(); ctx.translate(ppx2,ppy2); ctx.rotate(pull*7);
+    ctx.scale(1+pull*0.5,1-pull*0.25);                                 // stretched by the pull
+    ctx.drawImage(SOCK,-11,-11,22,22); ctx.restore();
+    ctx.save(); ctx.translate(hx2,hy2); ctx.rotate(Math.sin(t*3)*0.06);
+    ctx.drawImage(SOCK,-13,-13,26,26);
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-3.4,-2.2,pull>0?2.6:1.9,0,TAU); ctx.arc(0.6,-2.2,pull>0?2.6:1.9,0,TAU); ctx.fill();
+    ctx.fillStyle="#14100c"; ctx.fillRect(-2.6+pull*1.4,-2.8,1.4,1.4); ctx.fillRect(1.4+pull*1.4,-2.8,1.4,1.4);
+    if(pull>0.3){ ctx.beginPath(); ctx.arc(-1,2,1.5,0,TAU); ctx.fill(); }   // mouth falls open
+    ctx.restore(); ctx.imageSmoothingEnabled=false;
+    if(pull>0.2 && Math.random()<0.5) emit(ppx2,ppy2,(Math.random()-0.5)*60,(Math.random()-0.5)*60,0.3,"#c9b0ff");
+  } else if(mode==="ready"){
     ctx.fillStyle="rgba(10,8,6,0.55)"; ctx.fillRect(0,0,VW,VH);
-    txt("INSIDE THE DRYER",CX,92,26,"#ffcf5c",800);
-    txt("your PAIR just got sucked into THE LOST SOCK VORTEX — catch up before it's gone",CX,112,10,"#ffd9a8",600);
-    txt("ride the rim — dodge the hot laundry — chase your pair",CX,126,10,"#e8dcc8",600);
-    txt("← → steer   ·   slide charges STATIC   ·   tap = PULSE (phase a hit)   ·   full bar = RIDE the current",CX,140,10,"#aeb8cc",600);
-    txt("graze the heat + snatch loose change to fill THE CHASE — speed to catch your pair",CX,154,10,"#ff9a3c",600);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble",CX,176,13,"#9bf0d0",700); ctx.globalAlpha=1;
-    if(best>0) txt("best "+(best|0)+"m   ·   ¢ "+buttons,CX,200,10,"#aeb8cc",600);
+    txt("INSIDE THE DRYER",CX,66,26,"#ffcf5c",800);
+    txt("your PAIR just got sucked into THE LOST SOCK VORTEX — catch up before it's gone",CX,86,10,"#ffd9a8",600);
+    txt("← → steer   ·   slide charges STATIC   ·   tap = PULSE (phase a hit)   ·   full bar = RIDE the current",CX,100,10,"#aeb8cc",600);
+    txt(STAGES.length+" tumbles between you and your pair"+(reunited?"   ·   ENDLESS TUMBLE unlocked":""),CX,114,10,"#c9b0ff",600);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble",CX,136,13,"#9bf0d0",700); ctx.globalAlpha=1;
+    if(best>0) txt("best "+(best|0)+"m   ·   best "+bestPts.toLocaleString()+" pts   ·   ¢ "+buttons,CX,154,10,"#aeb8cc",600);
+    /* C3/P3: the 3 mission slots + rank — the reason for the NEXT run, visible before it starts */
+    txt("— "+rank()+" —",CX,172,9,"#ffcf9a",800);
+    for(let s2=0;s2<3;s2++){ const mi=mSlots[s2];
+      if(mi>=MISSIONS.length){ txt("· all missions complete ·",CX,184+s2*11,8,"#6f7a92",600); break; }
+      const m2=MISSIONS[mi], pv=mProg(mi);
+      txt(m2.txt+"   ("+pv+"/"+m2.n+")   +¢"+m2.r,CX,184+s2*11,8,pv>0?"#9bf0d0":"#8b95a8",600); }
     ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(R_CTRL.x,R_CTRL.y,R_CTRL.w,R_CTRL.h);
     txt("CONTROLS: "+(ctrlWheel?"WHEEL (→ spins drum)":"SCREEN (→ moves right)"),CX,R_CTRL.y+15,9,"#9bf0d0",700);
   } else if(mode==="dead"){
     ctx.fillStyle="rgba(10,8,6,0.45)"; ctx.fillRect(0,0,VW,VH);
-    txt("UNRAVELLED",CX,106,26,"#ff5468",800);
-    txt("stage "+stage+"   ·   "+(dist|0)+"m toward the vortex   ·   +¢ "+lastHaul+"  (¢ "+buttons+")",CX,130,11,"#e8dcc8",600);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble again",CX,164,12,"#9bf0d0",700); ctx.globalAlpha=1;
+    txt("UNRAVELLED",CX,78,26,"#ff5468",800);
+    txt("in "+stageName(stage),CX,96,10,"#c9b0ff",600);
+    /* C3: Batch-B tally port — line items count up one per beat, tap skips (deadT lockout covers it) */
+    const lines=[["tumbled",(dist|0)+"m × 10",(dist|0)*10],
+                 ["change snatched",M.coinRun+"¢ × 25",M.coinRun*25],
+                 ["stages cleared",runStages+" × 250",runStages*250]];
+    const shown=tallyN;
+    for(let i2=0;i2<Math.min(shown,3);i2++){ const y2=118+i2*15;
+      ctx.textAlign="right"; ctx.fillStyle="#aeb8cc"; ctx.font="600 10px system-ui"; ctx.fillText(lines[i2][0]+"  "+lines[i2][1],CX+40,y2);
+      ctx.textAlign="left"; ctx.fillStyle="#e8dcc8"; ctx.font="700 10px system-ui"; ctx.fillText(""+lines[i2][2].toLocaleString(),CX+52,y2); }
+    if(shown>=4){ txt("TOTAL   "+runPts().toLocaleString()+" pts",CX,170,14,"#ffcf5c",800);
+      if(newBest||newBestP){ ctx.globalAlpha=0.7+0.3*Math.sin(t*6); txt("NEW BEST",CX,188,12,"#ffd45a",800); ctx.globalAlpha=1; }
+      txt("+¢ "+lastHaul+"   (¢ "+buttons+")",CX,204,10,"#e0995c",700); }
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap to tumble again",CX,228,12,"#9bf0d0",700); ctx.globalAlpha=1;
+  } else if(mode==="reunion"){
+    /* C2/P1 THE REUNION — the payoff scene, then "laundry day happens again" */
+    ctx.fillStyle="rgba(16,10,26,0.72)"; ctx.fillRect(0,0,VW,VH);
+    const rk2=Math.min(1,reunionT/1.6);
+    const sep=60*(1-rk2), wob=Math.sin(t*3)*3*rk2;
+    ctx.globalAlpha=0.85; ctx.drawImage(WARM,CX-40,CY-40,80,80); ctx.globalAlpha=1;
+    ctx.imageSmoothingEnabled=true;
+    for(const s3 of [-1,1]){ ctx.save(); ctx.translate(CX+s3*(10+sep),CY+wob*s3);
+      ctx.rotate(s3*0.25+rk2*Math.sin(t*2)*0.2);
+      ctx.drawImage(SOCK,-13,-13,26,26);
+      ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-3.4,-2.2,2.1,0,TAU); ctx.arc(0.6,-2.2,2.1,0,TAU); ctx.fill();
+      ctx.fillStyle="#14100c"; ctx.fillRect(-3.2-s3*1,-2.8,1.3,1.3); ctx.fillRect(0.8-s3*1,-2.8,1.3,1.3);
+      ctx.beginPath(); ctx.arc(-1.2,1.6,1.6,0,Math.PI); ctx.fill();    // the biggest smile a sock can make
+      ctx.restore(); }
+    ctx.imageSmoothingEnabled=false;
+    if(rk2>=1 && Math.random()<0.4){ const an=Math.random()*TAU;
+      emit(CX+Math.cos(an)*30,CY+Math.sin(an)*30,Math.cos(an)*80,Math.sin(an)*80,0.6,Math.random()<0.5?"#ffcf5c":"#c9b0ff"); }
+    if(reunionT>1.4){
+      txt("REUNITED",CX,74,24,"#ffcf5c",800);
+      txt("…but laundry day happens again.",CX,94,11,"#c9b0ff",600);
+      ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap — the tumble goes on (ENDLESS)",CX,212,12,"#9bf0d0",700); ctx.globalAlpha=1; }
   } else if(mode==="stage"){
     ctx.fillStyle="rgba(20,12,30,0.55)"; ctx.fillRect(0,0,VW,VH);
     if(gained){ txt("STAGE "+stage+" CLEAR — YOU'RE GAINING ON YOUR PAIR!",CX,92,15,"#ffcf9a",800);
@@ -674,18 +1009,33 @@ function draw(){
     if(hp<HP_MAX){ const can=buttons>=MEND_COST;
       ctx.fillStyle=can?"rgba(155,240,208,0.16)":"rgba(255,255,255,0.05)";
       ctx.fillRect(R_MEND.x,R_MEND.y,R_MEND.w,R_MEND.h);
-      txt("MEND +1   ¢ "+MEND_COST,CX,R_MEND.y+16,11,can?"#9bf0d0":"#6f7a92",700); }
+      txt("MEND +1   ¢ "+MEND_COST,CX,R_MEND.y+16,11,can?"#9bf0d0":"#6f7a92",700);
+      if(!can){                                                     // C1: rewarded-ad mend SEAM — only offered when broke
+        ctx.fillStyle="rgba(255,212,90,0.14)"; ctx.fillRect(R_ADMEND.x,R_ADMEND.y,R_ADMEND.w,R_ADMEND.h);
+        txt("▶ FREE MEND (watch)",CX,R_ADMEND.y+15,10,"#ffd45a",700); } }
     else txt("fully mended",CX,R_MEND.y+16,10,"#6f7a92",600);
-    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap → STAGE "+(stage+1)+" (faster)",CX,212,12,"#9bf0d0",700); ctx.globalAlpha=1;
+    txt("next: "+stageName(stage+1),CX,196,10,"#ffcf9a",700);       // C2: the journey names where you're going
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); txt("tap → STAGE "+(stage+1)+" (faster)",CX,224,12,"#9bf0d0",700); ctx.globalAlpha=1;
   }
+  /* C1 pause veil — drawn over everything, resumes on any input */
+  if(paused){ ctx.fillStyle="rgba(8,6,5,0.72)"; ctx.fillRect(0,0,VW,VH);
+    txt("PAUSED",CX,CY-6,24,"#ffcf5c",800);
+    txt("tap or P to keep tumbling   ·   M mutes",CX,CY+18,10,"#aeb8cc",600); }
+  if(mutedFlag){ txt("MUTED",VW-30,VH-24,7,"#8b95a8",700); }
 }
 
 let lastT=0;
 function frame(now){ if(!lastT)lastT=now; let dt=(now-lastT)/1000; lastT=now;
   if(dt>0.033)dt=0.033;
+  if(Snd.g) Snd.g.gain.value=(mutedFlag||paused)?0:0.8;                         // C1: pause + persisted mute silence everything (incl. the rumble loop)
+  if(paused){ draw(); requestAnimationFrame(frame); return; }                   // C1: frozen under the pause veil
   if(hitStop>0){ hitStop-=dt; draw(); requestAnimationFrame(frame); return; }   // GQ-2: 60-90ms freeze-frame on shield pop/damage
   update(dt); draw(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
+/* C1: auto-pause when the tab hides OR the game's iframe loses focus (CG hosts in an iframe —
+   clicking the page around the game blurs the window without hiding the tab) */
+document.addEventListener("visibilitychange",()=>{ if(document.hidden){ lastT=0; if(mode==="play")paused=true; } });
+addEventListener("blur",()=>{ lastT=0; if(mode==="play")paused=true; });
 </script>
 </body>
 </html>
