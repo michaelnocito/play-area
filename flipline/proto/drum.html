@@ -315,7 +315,8 @@ let lastHaul=0;
 function bank(){ lastHaul=runBtns; buttons+=runBtns; runBtns=0;
   newBest = dist>best && best>0;                                   // GQ-7: earn the fanfare
   if(dist>best)best=dist; saveLS(); }
-function saveLS(){ try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,change:buttons,ctrlWheel:ctrlWheel,
+function saveLS(){ if(typeof BOT!=="undefined"&&BOT) return;   // the fairness bot never touches the real save
+  try{ localStorage.setItem("flipline.drum.proto",JSON.stringify({best:best|0,change:buttons,ctrlWheel:ctrlWheel,
   seenIntro:seenIntro?1:0,reunited:reunited?1:0,muted:mutedFlag?1:0,bestPts:bestPts|0,
   tot:TOT,mSlots:mSlots,mNext:mNext,mDone:mDone,t1:taught1?1:0,t2:taught2?1:0})); }catch(e){} }
 /* C1: platform adapter SEAM — the CrazyGames SDK wires in here at C4 (ship wave); every call
@@ -419,6 +420,32 @@ addEventListener("keydown",e=>{
 });
 /* DEV:BEGIN (strip before ship) */
 const DEVON=/[?&]dev=1/.test(location.search); let devGod=false;
+/* C2: drum bot fairness harness — ?bot=1 arms a reaction-delayed steering bot; drive runs by
+   fast-forwarding update() from the console (see dev notes). The bot NEVER touches the real
+   save (saves are skipped under BOT). Reaction model: decisions land REACT frames late, like
+   the flip-runner's sim.js tiers. */
+const BOT=/[?&]bot=1/.test(location.search);
+const REACT=(location.search.match(/react=(\d+)/)||[])[1]|0 || 12;
+const botQ=[];                                  // delayed decision pipeline
+function botThink(){
+  // gap-seeker: sample the rim, score every angle by clearance from everything incoming,
+  // steer toward the best angle reachable from here (sim players read the whole pattern,
+  // not just the nearest shirt)
+  let want=0, bestA=a, bestS=-1;
+  for(let k=0;k<64;k++){ const ca=k*TAU/64;
+    let s2=99;
+    for(const o of obs){ if(!o.on || o.z<0.42 || o.z>HITHI) continue;
+      const lead=(1-Math.min(1,o.z))*0.5;                          // where it will be, not where it is
+      const d=Math.abs(angDiff(ca,o.ang+spinNow*lead))-(o.hw*0.8+PHW);
+      if(d<s2) s2=d; }
+    s2-=Math.abs(angDiff(ca,a))*0.22;                              // prefer gaps we can actually reach
+    if(s2>bestS){ bestS=s2; bestA=ca; } }
+  const dd=angDiff(bestA,a);
+  if(Math.abs(dd)>0.06) want=dd>0?1:-1;                            // head for the gap centre
+  if(!ctrlWheel) want=-want;                                       // SCREEN mode inverts key→angle
+  botQ.push(want); if(botQ.length>REACT){ const w=botQ.shift();
+    keys["ArrowLeft"]=w<0; keys["ArrowRight"]=w>0; }
+}
 /* DEV:END */
 addEventListener("keyup",e=>{ keys[e.key]=false; });
 const touches={};   // id -> {x, t0, moved}
@@ -531,6 +558,7 @@ function update(dt){
   if(mode!=="play") return;
 
   // steer: keys + held touch halves
+  /* DEV:BEGIN (strip before ship) */ if(BOT) botThink(); /* DEV:END */
   steer=0;
   if(keys["ArrowLeft"]||keys["a"]||keys["A"]||keys["q"]||keys["Q"]) steer-=1;   // C1 AZERTY: Q = A position
   if(keys["ArrowRight"]||keys["d"]||keys["D"]) steer+=1;

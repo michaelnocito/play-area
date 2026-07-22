@@ -241,9 +241,13 @@ hem-hug coin trails; see dev notes)
   - **C3 meta**: Batch-B points port (10/m + 25/¢ + 250/stage), dead-screen line-item tally
     count-up w/ ticks + points best, P3 3-slot missions (30-mission drip list, ¢ rewards,
     named rank ladder on the ready screen).
-→ **LEFT before C4**: 🔶 Mike feel-gates the whole journey arc · drum bot-sim fairness
-  harness (fold sim.js pattern onto the drum) · sock-pattern shop port (cosmetic ¢ sink —
-  optional, ¢ already sinks into MEND) · real-device mobile pass
+→ ✅ **Drum bot fairness harness DONE 2026-07-21**: `?bot=1&react=N` gap-seeking bot inside
+  DEV markers (never touches the real save) + death-forensics escapability check. Verdict:
+  **0% unreactable across 31 hits / 10 runs** — every hit had a reachable safe angle with
+  ≥0.26rad margin 0.5s out, WITH zippers/drift/wobble live. Reaction-speed sweep (4/8/12f)
+  changed nothing → difficulty is planning-shaped, not reflex-shaped. Fair.
+→ **LEFT before C4**: 🔶 Mike feel-gates the whole journey arc · sock-pattern shop port
+  (cosmetic ¢ sink — optional, ¢ already sinks into MEND) · real-device mobile pass
 → C4 ship wave (real SDK into the SDKA seam, covers/clips/store copy in sock voice,
   🔷 name final call, CG QA tool, ONE resubmission).
 

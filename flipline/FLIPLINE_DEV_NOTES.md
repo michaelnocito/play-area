@@ -52,6 +52,19 @@ drift towel at stage 2 · wobble swings spinNow 0.270..0.448 · spin-cycle surge
 death tally reaches 4 lines w/ NEW BEST both-flavours · AZERTY q steers negative ·
 pause flag honoured. Console clean, `node` parse clean.
 
+**Bot fairness harness (same session):** `?bot=1&react=N` (default 12) arms a gap-seeking bot
+inside DEV:BEGIN/END markers — samples 64 rim angles, scores clearance vs everything incoming
+(leading each obstacle by its remaining spin), steers to the best reachable gap through an
+N-frame reaction queue; `BOT` skips saveLS so the real save is never touched. Drive it headless:
+`paused=true` freezes the rAF loop, then step `update(1/60)` by hand and `advance()` through
+screens (the JOURNEY-batch pattern). **Verdict 2026-07-21: 0% unreactable across 31 hits /
+10 runs** — death forensics (45-frame history ring; at each hp loss, check whether ANY angle
+reachable in 0.5s cleared everything in the hit window at the snapshot 30 frames back) found a
+reachable escape with ≥0.26rad margin before EVERY hit, with zippers/drift/wobble live. A
+reaction sweep (4/8/12f) changed nothing → deaths are planning failures, not reflex failures =
+skill-shaped and fair. The bot itself dies mid-stage-1-to-2, i.e. it plays like an average
+first-session player; don't read its stage ceiling as the game's.
+
 **Test steps for Mike (JB-a…JB-l):** JB-a fresh load → cold-open plays once, tap skips it.
 JB-b first run → world slows w/ ◀ ▶ glyphs at the first shirt; steering ends it.
 JB-c full static bar → ⊙ TAP glyph slow-beat once ever. JB-d stage 1 clear → sock spirals
