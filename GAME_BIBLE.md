@@ -164,6 +164,24 @@ requirement, not polish.
 - **Verify at 375px** before calling any layout done: nothing clipped, nothing
   covered, every control tappable, `prefers-reduced-motion` respected.
 
+### The user-intent standard (applies to EVERY page we build, not just games)
+
+Before building or reworking any page, name the intents of the people landing on
+it — then design for those intents in priority order. Decided 2026-07-22 on the
+Grain landing rework.
+
+- **First-time visitor**: orient them immediately. Above the fold answers three
+  questions in one glance: what this is, why it works (our learning-science
+  backing), and what they can do right now. One obvious first click.
+- **Return visitor**: get them back into their stuff in one click ("continue
+  where you left off"), and let them see their progress/stats without hunting.
+- Everything that serves neither intent (promos, dev notes, method essays) moves
+  below the working surface or into a collapsible — the working surface (tiles,
+  the game, the lesson) is the focus.
+- Low friction on every navigation choice: fewer, clearer choices beat complete
+  choices. If a banner or card doesn't change what the user does next, it is
+  noise on that page.
+
 ---
 
 ## Part 4 — Pre-submission checklist (run top to bottom before any store/portal submit)
