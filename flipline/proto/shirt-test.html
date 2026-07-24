@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ODD SOCK — Shirt Feel-Lab</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent;
+      -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  html,body { position:fixed; inset:0; height:100%; width:100%; background:#0d0b09; overflow:hidden; touch-action:none;
+              font-family:system-ui,sans-serif; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { background:#0d0b09; touch-action:none; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+"use strict";
+/* ============================================================================
+   ODD SOCK — SHIRT FEEL-LAB (🔷 Mike 2026-07-24: the "chase the rabbit" playground)
+   Mario-64 method — scaled down: nail the FALL/PARACHUTE feel against ONE obstacle
+   before building any content. A single shirt arrives every 3s on a fixed clock
+   (12 → 3 → 6 → 9, repeat). You drift the parachuting sock to dodge it. RUN INTO it
+   and you DEFLECT — both of you get thrown off trajectory (no damage; it's practice).
+   Count your dodges + streak.
+
+   Controls: ←→ / A D swing.   (R = reset)
+   ROADMAP abilities (not here yet): PARASAIL slow-fall+inflate · STATIC-CLING PULSE shove.
+   ============================================================================ */
+const VW=480, VH=270, TAU=6.28318530718;
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+let scale=1;
+function resize(){ const w=innerWidth||1,h=innerHeight||1; scale=Math.min(w/VW,h/VH);
+  const dpr=devicePixelRatio||1;
+  cv.width=VW*dpr*scale|0; cv.height=VH*dpr*scale|0;
+  cv.style.width=VW*scale+"px"; cv.style.height=VH*scale+"px";
+  ctx.setTransform(dpr*scale,0,0,dpr*scale,0,0); }
+addEventListener("resize",resize); resize();
+
+/* ===== Geometry ===== */
+const CX=240, CY=135, RIM=116;
+const PERSP=1.9, SOCK_R=0.90;
+const HITLO=0.92, HITHI=1.05;
+
+/* ===== Parachute-drift feel (the thing being tuned) ===== */
+const NUDGE_ACC=15.0;                  // angular accel from a held nudge
+const AV_MAX=3.2;                      // clamp on angular velocity
+const LAT_DRAG=2.4;                    // air-drag bleed → floaty settle (parachute drift)
+const SWAY_SPRING=42, SWAY_DAMP=7.0;   // visual pendulum under the caught air
+const CANOPY_BILLOW=0.7;               // how full the canopy reads (always open here)
+
+/* ===== The metronome ===== */
+const SPAWN_INT=3.0;                   // one shirt every 3 seconds
+const CLOCK=[-Math.PI/2, 0, Math.PI/2, Math.PI];   // 12, 3, 6, 9 o'clock (canvas angles)
+const CLOCK_LABEL=["12","3","6","9"];
+const SHIRT_TRAVEL=2.55;               // seconds for a shirt to rise from deep → the sock plane
+const SHIRT_ZSPD=1/SHIRT_TRAVEL;
+const CONTACT_ARC=0.34;                // angular overlap that counts as running into the shirt
+const CLEAR_ARC=0.34;                  // must be at least this far to score a clean dodge
+
+/* ===== Deflection (both thrown off trajectory) ===== */
+const SOCK_KICK=3.4;                   // angular knockback to the sock (rad/s)
+const SOCK_RECOIL=70;                  // radial recoil "thrown off" (px/s, springs back)
+const R_SPRING=44, R_DAMP=7.5;         // sock radial-offset spring
+const SHIRT_SPIN=7.0, SHIRT_FLY=150;   // the shirt spins + flies off after a bonk
+
+/* ===== Audio (trimmed) ===== */
+const Snd={ctx:null,g:null,
+  ensure(){ if(this.ctx)return; try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)();
+    this.g=this.ctx.createGain(); this.g.gain.value=0.8; this.g.connect(this.ctx.destination);
+    const n=this.ctx.sampleRate/2|0, b=this.ctx.createBuffer(1,n,this.ctx.sampleRate), d=b.getChannelData(0);
+    for(let i=0;i<n;i++)d[i]=Math.random()*2-1;
+    const s=this.ctx.createBufferSource(); s.buffer=b; s.loop=true;
+    const lp=this.ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=90;
+    const g2=this.ctx.createGain(); g2.gain.value=0.06; s.connect(lp); lp.connect(g2); g2.connect(this.g); s.start();
+  }catch(e){} },
+  b(f1,f2,dur,type,vol){ if(!this.ctx)return; const t=this.ctx.currentTime,o=this.ctx.createOscillator(),g=this.ctx.createGain();
+    o.type=type||"triangle"; o.frequency.setValueAtTime(f1,t); o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),t+dur);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.12,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(this.g); o.start(t); o.stop(t+dur+0.03); },
+  tick(){ this.b(1200,900,0.03,"square",0.04); },              // clock tick as a shirt launches
+  whoosh(){ this.b(300,700,0.12,"triangle",0.06); },           // a clean dodge
+  bonk(){ this.b(150,70,0.12,"sawtooth",0.13); this.b(420,180,0.14,"triangle",0.09); }, // deflection thud+boing
+  streak(f){ this.b(f,f*1.5,0.12,"triangle",0.09); }
+};
+
+/* ===== Sock sprite ===== */
+function mkCanvas(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
+let SOCK=null;
+{ const W=128, r=48, c=mkCanvas(W,W), x=c.getContext("2d");
+  x.translate(W/2,W/2);
+  const path=()=>{ x.beginPath();
+    x.moveTo(-1.05*r,-1.0*r); x.lineTo(-0.05*r,-1.0*r);
+    x.lineTo(-0.05*r,0.02*r); x.quadraticCurveTo(-0.05*r,0.2*r,0.18*r,0.2*r);
+    x.lineTo(0.72*r,0.2*r); x.quadraticCurveTo(1.14*r,0.24*r,1.08*r,0.64*r);
+    x.lineTo(0.96*r,1.0*r); x.lineTo(-0.72*r,1.0*r);
+    x.quadraticCurveTo(-1.1*r,1.0*r,-1.05*r,0.5*r); x.closePath(); };
+  path(); x.fillStyle="#efe9db"; x.fill();
+  x.save(); path(); x.clip();
+  x.fillStyle="rgba(0,0,0,0.05)"; for(let yy=-r;yy<r;yy+=7) x.fillRect(-1.2*r,yy,2.4*r,2);
+  x.fillStyle="rgba(0,0,0,0.18)";
+  x.beginPath(); x.arc(-0.72*r,0.78*r,0.42*r,0,TAU); x.fill();
+  x.beginPath(); x.arc(1.0*r,0.75*r,0.42*r,0,TAU); x.fill();
+  x.fillStyle="rgba(255,255,255,0.45)"; x.fillRect(-1.05*r,-1.0*r,1.0*r,0.2*r);
+  x.restore(); SOCK=c; }
+function glowSprite(sz,r,g,b){ const c=mkCanvas(sz,sz),x=c.getContext("2d");
+  const gr=x.createRadialGradient(sz/2,sz/2,0,sz/2,sz/2,sz/2);
+  gr.addColorStop(0,"rgba("+r+","+g+","+b+",1)"); gr.addColorStop(0.5,"rgba("+r+","+g+","+b+",0.55)");
+  gr.addColorStop(1,"rgba("+r+","+g+","+b+",0)"); x.fillStyle=gr; x.fillRect(0,0,sz,sz); return c; }
+const WARM=glowSprite(128,255,190,110);
+
+/* ===== The SHIRT (the one obstacle — a hot T-shirt) ===== */
+const PAL=[{body:"#ff4a63",rim:"#ffd0d6",dark:"#7d0f1f",fold:"#c21f38"},
+           {body:"#ff7a3c",rim:"#ffe0c2",dark:"#8a2c08",fold:"#d4531f"},
+           {body:"#ff4a8c",rim:"#ffd0e4",dark:"#7d0f3f",fold:"#c21f5e"}];
+function mkShirt(pal){ const W=72,c=mkCanvas(W,W),x=c.getContext("2d"); x.translate(W/2,W/2);
+  const body=pal.body, rim=pal.rim, dark=pal.dark, fold=pal.fold;
+  x.strokeStyle=dark; x.lineWidth=5; x.lineJoin="round";
+  const shape=()=>{ x.beginPath();
+    x.moveTo(-13,-26); x.lineTo(13,-26); x.lineTo(30,-14); x.lineTo(22,0); x.lineTo(13,-6);
+    x.lineTo(13,28); x.lineTo(-13,28); x.lineTo(-13,-6); x.lineTo(-22,0); x.lineTo(-30,-14); x.closePath(); };
+  shape(); x.stroke(); x.fillStyle=body; shape(); x.fill();
+  x.fillStyle=dark; x.beginPath(); x.arc(0,-26,8,0,Math.PI); x.fill();
+  x.fillStyle=fold; x.fillRect(-13,8,26,3); x.fillRect(-13,18,26,3);
+  x.fillStyle=rim; x.fillRect(-13,25,26,3);
+  return c; }
+const SHIRTS=PAL.map(mkShirt);
+
+/* ===== State ===== */
+let mode="ready";                       // ready | play
+let a=Math.PI/2, av=0, sway=0, swayV=0;
+let rOff=0, rOffV=0;                     // sock radial recoil offset (springs back)
+let t=0, spawnT=0, clockIdx=0, nextIdx=0;
+let dodges=0, streak=0, bestStreak=0, bonks=0;
+let shake=0, hitStop=0, flash=0, drumRot=0;
+const keys={}, touches={};
+const shirts=[]; for(let i=0;i<5;i++) shirts.push({on:false,z:0,ang:0,idx:0,counted:false,deflected:false,dav:0,dr:0,rot:0,pal:0,life:0});
+const sparks=[]; for(let i=0;i<30;i++) sparks.push({on:false,x:0,y:0,vx:0,vy:0,life:0,col:"#fff"});
+const pops=[];   for(let i=0;i<8;i++)  pops.push({on:false,x:0,y:0,txt:"",life:0,col:"#fff"});
+
+function angDiff(x,y){ let d=(x-y)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+function clamp(v,lo,hi){ return v<lo?lo:v>hi?hi:v; }
+function spark(px,py,n,col){ for(let k=0;k<n;k++){ const s=sparks.find(q=>!q.on); if(!s)return;
+  const an=Math.random()*TAU, sp=40+Math.random()*80;
+  s.on=true; s.x=px; s.y=py; s.vx=Math.cos(an)*sp; s.vy=Math.sin(an)*sp; s.life=0.35+Math.random()*0.3; s.col=col; } }
+function pop(px,py,txt,col){ const p=pops.find(q=>!q.on); if(!p)return; p.on=true; p.x=px; p.y=py; p.txt=txt; p.col=col; p.life=0.9; }
+
+function reset(){ a=Math.PI/2; av=0; sway=0; swayV=0; rOff=0; rOffV=0; t=0;
+  spawnT=0; clockIdx=0; nextIdx=0; dodges=0; streak=0; bestStreak=0; bonks=0; shake=0; hitStop=0; flash=0;
+  for(const s of shirts) s.on=false; for(const s of sparks) s.on=false; for(const p of pops) p.on=false; }
+
+function launchShirt(){ const s=shirts.find(q=>!q.on) || shirts.find(q=>q.deflected); if(!s) return;
+  s.on=true; s.z=0.05; s.ang=CLOCK[clockIdx]; s.idx=clockIdx;
+  s.counted=false; s.deflected=false; s.dav=0; s.dr=0; s.rot=0; s.pal=(Math.random()*SHIRTS.length)|0; s.life=0;
+  clockIdx=(clockIdx+1)%4; nextIdx=clockIdx; Snd.tick(); }
+function activeShirt(){ let best=null,bz=-1; for(const s of shirts){ if(s.on&&!s.deflected&&s.z>bz){best=s;bz=s.z;} } return best; }
+
+/* ===== Input ===== */
+addEventListener("keydown",e=>{ const k=e.key; keys[k]=true;
+  if((k===" "||k==="Enter")&&mode!=="play"){ Snd.ensure(); reset(); mode="play"; }
+  if((k==="r"||k==="R")){ Snd.ensure(); reset(); mode="play"; }
+  if(k===" "||k.startsWith("Arrow")) e.preventDefault();
+});
+addEventListener("keyup",e=>{ keys[e.key]=false; });
+function tpos(t){ const rc=cv.getBoundingClientRect(); return (t.clientX-rc.left)/rc.width; }
+addEventListener("touchstart",e=>{ Snd.ensure(); if(mode!=="play"){ reset(); mode="play"; e.preventDefault(); return; }
+  for(const tc of e.changedTouches) touches[tc.identifier]={x:tpos(tc)}; e.preventDefault(); },{passive:false});
+addEventListener("touchmove",e=>{ for(const tc of e.changedTouches) if(touches[tc.identifier]) touches[tc.identifier].x=tpos(tc); e.preventDefault(); },{passive:false});
+addEventListener("touchend",e=>{ for(const tc of e.changedTouches) delete touches[tc.identifier]; e.preventDefault(); },{passive:false});
+
+/* ===== Deflection — both thrown off trajectory ===== */
+function deflect(sh){ let side=angDiff(a,sh.ang); if(Math.abs(side)<0.02) side=(Math.random()<0.5?-1:1)*0.02;
+  const s=Math.sign(side);
+  av += s*SOCK_KICK;  av=clamp(av,-AV_MAX*1.5,AV_MAX*1.5);   // sock swung away
+  rOffV += SOCK_RECOIL;                                        // and bounced outward
+  sh.deflected=true; sh.counted=true; sh.dav = -s*SHIRT_SPIN; sh.dr = SHIRT_FLY; sh.life=0.7;
+  bonks++; streak=0; hitStop=0.08; shake=8; flash=0.5;
+  const zz=Math.min(1,sh.z), r=RIM*Math.pow(zz,PERSP);
+  const cx=CX+Math.cos(sh.ang)*r, cy=CY+Math.sin(sh.ang)*r;
+  spark((cx+ (CX+Math.cos(a)*RIM*SOCK_R))/2, (cy+(CY+Math.sin(a)*RIM*SOCK_R))/2, 12, "#ffd0a0");
+  pop(CX,CY-40,"BONK!","#ff9a6a"); Snd.bonk();
+}
+
+/* ===== Update ===== */
+function update(dt){
+  t+=dt; drumRot+=0.16*dt;
+  if(mode!=="play") return;
+  if(hitStop>0){ hitStop-=dt; }
+  else {
+    // --- parachute drift ---
+    let nudge=0;
+    if(keys.ArrowLeft||keys.a||keys.A||keys.q||keys.Q) nudge-=1;
+    if(keys.ArrowRight||keys.d||keys.D) nudge+=1;
+    for(const id in touches){ const x=touches[id].x; if(x<0.5) nudge-=1; else nudge+=1; }
+    av += nudge*NUDGE_ACC*dt;
+    av -= av*Math.min(1,LAT_DRAG*dt);
+    av = clamp(av,-AV_MAX*1.5,AV_MAX*1.5);
+    a = (a+av*dt+TAU)%TAU;
+    const swayTarget=-av*0.10; swayV+=((swayTarget-sway)*SWAY_SPRING - swayV*SWAY_DAMP)*dt; sway+=swayV*dt;
+    // sock radial recoil spring-back
+    rOffV += (-rOff*R_SPRING - rOffV*R_DAMP)*dt; rOff += rOffV*dt;
+
+    // --- metronome: one shirt every 3s on the clock, ALWAYS on the beat ---
+    spawnT-=dt; if(spawnT<=0){ launchShirt(); spawnT=SPAWN_INT; }
+
+    // --- each shirt rises; dodge / deflect at the plane ---
+    for(const sh of shirts){ if(!sh.on) continue;
+      if(!sh.deflected){
+        sh.z += SHIRT_ZSPD*dt;
+        if(!sh.counted && sh.z>=HITLO && sh.z<=HITHI){
+          if(Math.abs(angDiff(a,sh.ang))<CONTACT_ARC){ deflect(sh); }
+        }
+        if(!sh.counted && sh.z>HITHI){                       // sailed past clean → DODGE
+          sh.counted=true; dodges++; streak++; bestStreak=Math.max(bestStreak,streak);
+          pop(CX+Math.cos(sh.ang)*RIM*0.7, CY+Math.sin(sh.ang)*RIM*0.7, "DODGE", "#9bf0d0");
+          Snd.whoosh(); if(streak>0 && streak%5===0){ Snd.streak(520+streak*8); pop(CX,CY-40,streak+" STREAK!","#ffd45a"); }
+        }
+        if(sh.z>1.35) sh.on=false;
+      } else {                                                // deflected: spin + fly off, fade
+        sh.life-=dt; sh.rot+=sh.dav*dt; sh.ang+=sh.dav*0.15*dt;
+        sh.z += (SHIRT_ZSPD*0.4 + sh.dr*0.002)*dt; sh.dr*=(1-1.5*dt);
+        if(sh.life<=0) sh.on=false;
+      }
+    }
+  }
+  // fx
+  for(const s of sparks){ if(!s.on) continue; s.life-=dt; if(s.life<=0){s.on=false;continue;} s.x+=s.vx*dt; s.y+=s.vy*dt; s.vy+=90*dt; }
+  for(const p of pops){ if(!p.on) continue; p.life-=dt; p.y-=14*dt; if(p.life<=0) p.on=false; }
+  if(shake>0) shake=Math.max(0,shake-dt*24);
+  if(flash>0) flash=Math.max(0,flash-dt*2.4);
+}
+
+/* ===== Render ===== */
+function txt(s,x,y,sz,col,w,al){ ctx.fillStyle=col||"#fff"; ctx.font=(w||600)+" "+sz+"px system-ui,sans-serif";
+  ctx.textAlign=al||"center"; ctx.textBaseline="middle"; ctx.fillText(s,x,y); }
+
+function draw(){
+  const ox=(Math.random()-0.5)*shake, oy=(Math.random()-0.5)*shake;
+  ctx.save(); ctx.translate(ox,oy);
+  ctx.fillStyle="#100c09"; ctx.fillRect(-12,-12,VW+24,VH+24);
+  ctx.imageSmoothingEnabled=false;
+
+  // shaft wall rings (the drum you're falling down)
+  for(let ring=6;ring>=1;ring--){ const z=ring/6.4, r=RIM*Math.pow(z,PERSP);
+    ctx.strokeStyle="rgba(120,86,54,"+(0.08+z*0.20)+")"; ctx.lineWidth=1.2+z*2;
+    ctx.beginPath(); ctx.arc(CX,CY,r,0,TAU); ctx.stroke();
+    const n=10+ring*4; ctx.fillStyle="rgba(255,190,110,"+(0.04+z*0.09)+")";
+    for(let k=0;k<n;k++){ const an=drumRot*(0.4+z)+k*TAU/n; ctx.fillRect(CX+Math.cos(an)*r-1,CY+Math.sin(an)*r-1,2,2); } }
+
+  // wind streaks (the plunge read)
+  { ctx.strokeStyle="rgba(210,180,255,0.06)"; ctx.lineWidth=1;
+    for(let k=0;k<10;k++){ const an=(k*2.399+t*0.3)%TAU, zA=((t*0.5+k*0.137)%1);
+      const r0=RIM*Math.pow(zA*0.6,PERSP), r1=RIM*Math.pow(Math.min(1,zA*0.6+0.13),PERSP);
+      ctx.beginPath(); ctx.moveTo(CX+Math.cos(an)*r0,CY+Math.sin(an)*r0); ctx.lineTo(CX+Math.cos(an)*r1,CY+Math.sin(an)*r1); ctx.stroke(); } }
+
+  // CLOCK FACE on the rim — 12 / 3 / 6 / 9, the incoming lane highlighted
+  const act=activeShirt();
+  for(let i=0;i<4;i++){ const an=CLOCK[i], next=act?act.idx:nextIdx;
+    const on=(i===next), tx=CX+Math.cos(an)*(RIM+16), ty=CY+Math.sin(an)*(RIM+16);
+    ctx.strokeStyle=on?"rgba(255,120,90,0.9)":"rgba(200,150,90,0.35)"; ctx.lineWidth=on?3:2;
+    ctx.beginPath(); ctx.moveTo(CX+Math.cos(an)*(RIM+4),CY+Math.sin(an)*(RIM+4));
+    ctx.lineTo(CX+Math.cos(an)*(RIM+11),CY+Math.sin(an)*(RIM+11)); ctx.stroke();
+    txt(CLOCK_LABEL[i],tx,ty,on?11:9, on?"#ff9a6a":"rgba(200,180,150,0.55)", on?800:600);
+    // aim guide from centre to the active clock lane
+    if(on){ ctx.strokeStyle="rgba(255,120,90,0.12)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(CX,CY); ctx.lineTo(CX+Math.cos(an)*RIM,CY+Math.sin(an)*RIM); ctx.stroke(); } }
+
+  // the rim
+  ctx.strokeStyle="rgba(200,150,90,0.6)"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(CX,CY,RIM,0,TAU); ctx.stroke();
+
+  // THE SHIRTS (far → near)
+  ctx.imageSmoothingEnabled=true;
+  for(const sh of [...shirts].filter(s=>s.on).sort((p,q)=>p.z-q.z)){
+    const zz=Math.min(1,sh.z), r=RIM*Math.pow(zz,PERSP);
+    const sx=CX+Math.cos(sh.ang)*r, sy=CY+Math.sin(sh.ang)*r, gs=Math.max(12,26*zz);
+    const near=zz>0.8?(zz-0.8)/0.2:0;
+    if(near>0 && !sh.deflected){ ctx.strokeStyle="rgba(255,84,104,0.3)"; ctx.lineWidth=4+near*6;
+      ctx.beginPath(); ctx.arc(CX,CY,r,sh.ang-0.28,sh.ang+0.28); ctx.stroke(); }
+    ctx.globalAlpha=sh.deflected?Math.max(0,sh.life/0.7):(0.4+0.6*zz);
+    ctx.save(); ctx.translate(sx,sy);
+    ctx.rotate(sh.deflected?sh.rot: sh.ang+Math.PI/2+Math.sin(t*3)*0.12);
+    ctx.drawImage(SHIRTS[sh.pal],-gs/2,-gs/2,gs,gs); ctx.restore();
+    ctx.globalAlpha=1; }
+  ctx.imageSmoothingEnabled=false;
+
+  // THE SOCK — a hovering parachute
+  { const rr=RIM*SOCK_R + rOff;
+    const px=CX+Math.cos(a)*rr, py=CY+Math.sin(a)*rr;
+    const billow=CANOPY_BILLOW*(0.7+0.3*Math.sin(t*7)), cs=22*(1+0.10*billow);
+    ctx.globalAlpha=0.20; ctx.drawImage(WARM,px-cs,py-cs,cs*2,cs*2); ctx.globalAlpha=1;
+    ctx.imageSmoothingEnabled=true; ctx.save(); ctx.translate(px,py);
+    const face=Math.atan2(CY-py,CX-px)+Math.PI/2; ctx.rotate(face+sway);
+    ctx.scale(1, 1+0.16*billow);
+    const ss=30; ctx.drawImage(SOCK,-ss/2,-ss*0.62,ss,ss); ctx.restore(); ctx.imageSmoothingEnabled=false;
+    ctx.strokeStyle="rgba(180,240,255,0.10)"; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(px,py,cs*0.7,0,TAU); ctx.stroke(); }
+
+  // sparks + pops
+  for(const s of sparks){ if(!s.on) continue; ctx.globalAlpha=Math.max(0,s.life*2.4); ctx.fillStyle=s.col; ctx.fillRect(s.x-1.5,s.y-1.5,3,3); } ctx.globalAlpha=1;
+  for(const p of pops){ if(!p.on) continue; ctx.globalAlpha=Math.min(1,p.life*1.6); txt(p.txt,p.x,p.y,12,p.col,800); } ctx.globalAlpha=1;
+
+  // HUD
+  txt("DODGES",44,16,8,"rgba(255,255,255,0.5)",700,"left"); txt(""+dodges,44,32,20,"#9bf0d0",800,"left");
+  txt("STREAK",VW-44,16,8,"rgba(255,255,255,0.5)",700,"right"); txt(""+streak,VW-44,32,20,streak>=5?"#ffd45a":"#efe9db",800,"right");
+  txt("best "+bestStreak+"   bonks "+bonks, CX, VH-12, 8, "rgba(220,210,190,0.55)",600);
+  // next-shirt countdown pip
+  if(mode==="play"){ const f=1-clamp(spawnT/SPAWN_INT,0,1);
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(CX-30,VH-26,60,3);
+    ctx.fillStyle="#ff9a6a"; ctx.fillRect(CX-30,VH-26,60*f,3); }
+
+  if(flash>0){ ctx.fillStyle="rgba(255,150,90,"+(flash*0.35)+")"; ctx.fillRect(-12,-12,VW+24,VH+24); }
+  ctx.restore();
+
+  if(mode==="ready"){ ctx.fillStyle="rgba(10,8,6,0.74)"; ctx.fillRect(0,0,VW,VH);
+    txt("SHIRT FEEL-LAB",CX,72,24,"#efe9db",800);
+    txt("A shirt every 3s on the clock: 12 → 3 → 6 → 9",CX,104,10,"#d8cdb6",500);
+    txt("swing the parachuting sock clear of it",CX,120,10,"#d8cdb6",500);
+    txt("run into it and you both bounce off — no harm, just practice",CX,138,9,"#a89e88",500);
+    txt("←→  swing",CX,166,11,"#9bf0d0",700);
+    txt("press SPACE / tap to begin",CX,190,10,"#c9b0ff",700); }
+}
+
+/* ===== Loop ===== */
+let last=performance.now();
+function frame(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05; update(dt); draw(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

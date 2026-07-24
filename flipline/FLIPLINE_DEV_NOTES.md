@@ -544,3 +544,17 @@ drift weight); proper fairness harness + difficulty/tuning pass (bot is a pessim
 floor — needs multi-ring lookahead + reaction-tier sweep like the drum harness); port the run
 scaffolding (stages/tally/missions/HP-mend/chase) only AFTER the verb is locked. Tunables live at
 the top of `proto/freefall.html` (`G DRAG_OPEN/TUCK NUDGE_ACC LAT_DRAG RING_SPACING GAP_WANDER`).
+
+## 🎽 SHIRT FEEL-LAB (🔷 Mike 2026-07-24) — the "chase the rabbit" playground
+`proto/shirt-test.html`. Mario-64 method scaled down: nail the parachute-drift feel against ONE
+obstacle before any content. A single shirt launches every 3s on a fixed clock (12→3→6→9, repeat)
+with a visible clock face + next-lane highlight + countdown pip. Drift the hovering parachute-sock
+clear (←→, pendular momentum + drag-settle — same feel as freefall.html); RUN INTO a shirt and
+BOTH deflect off-trajectory (sock gets angular knockback SOCK_KICK + radial recoil SOCK_RECOIL
+spring; shirt spins + flies off) — no damage, it's practice. Counts DODGES + STREAK (+ bonks).
+
+Verified headless (audio hard-stubbed, no gesture): clock order correct; metronome stays exactly
+on the 3s beat through deflections — fixed a one-shirt-object bug where a deflected shirt's 0.7s
+fly-off skipped the next launch (now a 5-slot shirt pool). Deflection knockback genuinely throws
+the sock off its lane, so with no corrective input it drifts into later shirts (intended — the
+player steers to recover). Roadmap next: PARASAIL + STATIC-CLING PULSE (see ROADMAP §FREE-FALL REBUILD).

@@ -293,3 +293,36 @@ to the same grade in one wave.**
 one-build-everywhere rule): when the rework ships, ALL portal builds regenerate and update, even
 if the old build was approved meanwhile. If Mike wants approved builds frozen instead, flag before
 Batch D.
+
+## 🪂 FREE-FALL REBUILD (🔷 Mike 2026-07-24) — core-verb change, isolated protos
+
+Mike's call: the drum "slide around the rim" should feel like a **free fall DOWN and THROUGH**
+the shaft, the sock's cloth causing a **parachute-ish effect**. He chose the TRUE FREE-BODY
+rebuild (not a feel-layer), so the drum's 0%-unreactable fairness proof does NOT carry — a new
+harness is required. Built ISOLATED so `drum.html` (the current submission core) is untouched
+until the new verb is feel-gated and proven.
+
+- `proto/freefall.html` — the full free-body model. Gravity vs quadratic air-drag = floaty
+  terminal velocity (canopy open) or plummet on DIVE (tuck); ←→ nudges drift pendularly with
+  drag-settle; dodge kept 1-D angular (fall through each garment ring's gap). Survival PD bot
+  6/12 to the vortex, 0 deaths before depth 8 (see DEV_NOTES §THE FREE FALL).
+- `proto/shirt-test.html` — the **"chase the rabbit" FEEL-LAB** (Mario-64 method, scaled down).
+  ONE shirt every 3s on a fixed clock (12→3→6→9, repeat), visible clock face. Drift the
+  parachuting sock clear; RUN INTO it and BOTH deflect off-trajectory (no damage — practice).
+  Counts dodges + streak. Metronome verified rock-steady through deflections.
+
+### Build order (lock feel FIRST, content later — the whole point of the rabbit chase):
+1. Mike feel-gates the base drift/parachute in the shirt-lab. Tune knobs (top of the file):
+   NUDGE_ACC LAT_DRAG AV_MAX SWAY_* for drift weight; SOCK_KICK SOCK_RECOIL SHIRT_* for the
+   deflection bounce; SPAWN_INT SHIRT_TRAVEL for the metronome.
+2. Abilities (Mike 2026-07-24, "nice visuals for all") — add to the feel-lab once base feel is locked:
+   - [ ] PARASAIL — hold to slow the fall and inflate the sock like a parasail (canopy puffs out,
+     descent eases, tighter drift). Active/resourced version of the passive canopy in freefall.html.
+     Visual: sock balloons, cloth catches air, shroud shimmer, soft updraft.
+   - [ ] STATIC-CLING PULSE — discharge that shoves ALL clothing obstacles away from the sock
+     (radial knockback on every garment in range). Visual: blue static ring expands, garments
+     kicked outward + spin, crackle SFX, brief hitstop. (Drum STATIC PULSE re-verbed as a shove.)
+3. Only AFTER the verb + abilities feel right: port the run scaffolding (9 stages, tally, missions,
+   HP/mend, CHASE, ceremony) from drum.html onto the free-fall core.
+4. New fairness harness — multi-ring-lookahead gap-seeker + reaction-tier sweep — BEFORE anything
+   replaces the submission core.
