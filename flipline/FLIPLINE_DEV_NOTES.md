@@ -512,3 +512,35 @@ Tunable: `MAG_R` · `REVIVE_CD`/`GRACE` · `Music.BPM` + music submix gains · `
 - Keep the project **outside OneDrive** (`C:\Users\Mike\Projects\GAMES\`).
 - Mike pulls from git — commit + push after every change. Give labelled test steps (e.g. `F-a`, `F-b`) in plain language. Keep end-of-task replies short.
 - `_shots/` and `.claude/launch.json` are gitignored; `covers/` IS committed.
+
+## 🪂 THE FREE FALL — core-verb rebuild prototype (🔷 Mike 2026-07-24)
+Mike's call: the drum "slide around the rim" (Super Hexagon/Tunnel Rush model) should feel like
+a **free fall down and through** the shaft, with **sock physics = a parachute-ish effect**. He
+chose the TRUE FREE-BODY rebuild (not a feel-layer over the rim-orbit) — so the old drum fairness
+proof does NOT carry; a new harness is required. Built ISOLATED as `proto/freefall.html` (drum.html
+untouched) so it can be feel-gated before it goes near the ship build (roadmap "revisit core verb"
+escape hatch + the reverted-displacement lesson from E3/B1).
+
+**Model (both axes real physics, research-grounded — parachute drag + Downwell fall-control):**
+- FALL: gravity `G=1.35` accelerates the plunge, quadratic air-drag balances it into a terminal
+  velocity. Canopy OPEN (default) = high drag → floaty `≈0.43 z/s`; hold DIVE = canopy tucks →
+  low drag → plummet `≈1.08 z/s` (greed/speed = risk). Terminal Vs verified = analytic √(G/drag).
+- DRIFT: nudges apply angular accel `NUDGE_ACC=15`, air-drag `LAT_DRAG=2.4` bleeds `av` off
+  floatily (pendular settle, not a hard stop — verified av 3.2→0.74 over 0.6s), body swings under
+  the caught air (`SWAY_SPRING/DAMP` visual pendulum). Replaces the constant-velocity rim cursor.
+- Dodge space kept 1-D angular (nudge to each garment RING's gap, fall THROUGH it) so a gap-seeker
+  fairness bot is re-derivable. Wind streaks + camBob + canopy halo sell the plunge; sock IS the
+  parachute (billow stretch open, streamline on tuck).
+
+**Verified (headless, synchronous update() sims — audio hard-stubbed, no gesture so no AudioContext):**
+physics on both axes match design; collision correct (forced 180°-from-gap = −1 HP); single-threat
+geometry (spacing 0.46z vs 0.12z hit window → never 2 rings colliding at once). Added an early
+**teach ramp** (first ~16 rings wider gaps + gentler wander). Survival PD bot (0.08s reaction,
+one-ring lookahead): **6/12 reach the vortex, avg depth 22.4/26, 0 deaths before depth 8.** A human
+reading several rings ahead should beat that.
+
+**LEFT before this could replace the drum core:** 🔶 Mike feel-gates the parachute (float vs dive,
+drift weight); proper fairness harness + difficulty/tuning pass (bot is a pessimistic one-ring
+floor — needs multi-ring lookahead + reaction-tier sweep like the drum harness); port the run
+scaffolding (stages/tally/missions/HP-mend/chase) only AFTER the verb is locked. Tunables live at
+the top of `proto/freefall.html` (`G DRAG_OPEN/TUCK NUDGE_ACC LAT_DRAG RING_SPACING GAP_WANDER`).
