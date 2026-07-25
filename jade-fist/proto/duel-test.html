@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>JADE FIST — Duel Feel-Lab</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent;
+      -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  html,body { position:fixed; inset:0; height:100%; width:100%; background:#0c0a12; overflow:hidden;
+              touch-action:none; font-family:system-ui,sans-serif; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { background:#0c0a12; touch-action:none; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+"use strict";
+/* ============================================================================
+   JADE FIST — DUEL FEEL-LAB  (the "chase the rabbit" playground, Mario-64 method)
+   Same move we just made on ODD SOCK (proto/shirt-test.html): before any more
+   content, nail the CORE VERB against ONE opponent.
+
+   ONE normal foe. He never dies, you never die. He attacks on a fixed clock so
+   the rhythm is learnable, cycling the three lines the real game uses:
+
+       MID   red     -> press AWAY (back-step)
+       HIGH  amber   -> press UP   (rise / high block)
+       GRAB  purple  -> HOLD DOWN  (crouch; armored, cannot be countered)
+
+   The loop being tuned is JF-#053's: a FRESH dodge ARMS a counter (jade ring).
+   Armed, strike into his next windup and you THROW him. Unarmed, your strike is
+   a chip that doesn't stop the swing. Late in the windup = PERFECT.
+
+   Controls:  <- ->  strike / back-step    ^ high    v (hold) crouch
+              SPACE start   R reset   [ ] telegraph length   - = attack interval
+   ============================================================================ */
+
+const W = 960, H = 540, GROUND_Y = 420;
+const cv = document.getElementById('c'), cx = cv.getContext('2d');
+let scale = 1;
+function resize(){ const w = innerWidth || 1, h = innerHeight || 1;
+  scale = Math.min(w / W, h / H);
+  const dpr = devicePixelRatio || 1;
+  cv.width = W * dpr * scale | 0; cv.height = H * dpr * scale | 0;
+  cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px';
+  cx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0); }
+addEventListener('resize', resize); resize();
+
+/* ===== The numbers under test — all lifted from the shipped game ===== */
+const REACH      = 92;    // your strike range from centre
+const RESOLVE    = 106;   // max(REACH, his reach) + 14 — where his blow lands
+const STANDOFF   = 100;   // where he settles to trade
+// JF-#053 counter window a fresh dodge buys you. SHIPPED VALUE IS 110 — and 110
+// does NOT close the loop one-on-one: dodging his blow costs ~7f of his strike +
+// 30f recover + GAP before the next telegraph even starts, and it has to ripen
+// (~35f) on top. In the full game you dodge one foe and counter ANOTHER's live
+// windup, so nobody noticed. Alone with one man, the ring is dead before he
+// cocks his fist. Lab default 150 so the verb is playable; tune with , and .
+let   READY_DUR  = 150;
+const BACK_DUR   = 20;    // back-step evade
+const RISE_DUR   = 32;    // high rise
+const DUCK_DUR   = 30;    // tap-crouch (holding tops it up)
+const FRESH      = 20;    // a dodge older than this is "lazy" — no arm, no reward
+const PERF_TH    = 0.66;  // final third of the windup = PERFECT
+const WIND_FLOOR = 18;    // JF-#061 Capcom pass: below this it's a memory test
+const HS_LIGHT = 8, HS_MED = 12, HS_HEAVY = 16;   // hit-stop tiers, verbatim
+const WHIFF      = 16;    // striking air locks you out briefly
+let   WINDUP     = 52;    // <-- tunable ([ ])
+// GAP is the squeeze: dodging his blow arms you for READY_DUR, and his NEXT
+// windup has to ripen inside that window or the loop can't close in a 1v1
+// (in the full game you dodge one foe and counter another). RECOVER 30 + GAP 40
+// = 70f to the next telegraph, so an early counter is comfortable and a PERFECT
+// one (final third, ~35f in) lands with the jade ring almost empty.
+let   GAP        = 40;    // <-- tunable (-=) idle frames between attacks
+const STRIKE_DUR = 10, RECOVER = 30, STAGGER = 34, THROWN = 70;
+
+/* ===== Palette ===== */
+const OUT = '#181220';
+const COL_MID = '#e05a5a', COL_HIGH = '#e8a83a', COL_GRAB = '#a878e8';
+const LINE_COL = { mid: COL_MID, high: COL_HIGH, grab: COL_GRAB };
+const JADE = '#3fae7c';
+
+/* ===== Audio (trimmed to the tiers) ===== */
+const Snd = { ctx:null, g:null,
+  ensure(){ if (this.ctx) return; try { this.ctx = new (window.AudioContext||window.webkitAudioContext)();
+    this.g = this.ctx.createGain(); this.g.gain.value = 0.7; this.g.connect(this.ctx.destination); } catch(e){} },
+  b(f1, f2, dur, type, vol){ if (!this.ctx) return;
+    const t0 = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type || 'triangle';
+    o.frequency.setValueAtTime(f1, t0); o.frequency.exponentialRampToValueAtTime(Math.max(1, f2), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol || 0.1, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(this.g); o.start(t0); o.stop(t0 + dur + 0.03); },
+  windup(f){ this.b(320, 520, f / 60, 'sine', 0.10); },
+  whoosh(){ this.b(300, 700, 0.11, 'triangle', 0.06); },
+  chip(){ this.b(190, 150, 0.07, 'square', 0.05); },       // dull — it bounced
+  hit(){ this.b(220, 90, 0.13, 'sawtooth', 0.12); },        // full + pitch drop
+  counter(){ this.b(440, 880, 0.20, 'triangle', 0.11); },   // RISING octave = its signature
+  arm(){ this.b(700, 980, 0.08, 'sine', 0.05); }
+};
+
+/* ===== State ===== */
+let mode = 'ready';            // ready | play
+let t = 0, hitStop = 0, slowMo = 0, shake = 0, flash = 0, flashCol = '#fff';
+let readyT = 0;                // the armed-counter window
+let counters = 0, perfects = 0, streak = 0, bestStreak = 0, taken = 0, chips = 0, dodged = 0;
+let cycle = 0;                 // which line comes next (fixed rotation = learnable)
+const ORDER = ['mid', 'high', 'grab'];
+
+const P = { x: 420, face: 1, punchT: 0, riseT: 0, duckT: 0, duckAge: 99, backT: 0, backDir: -1,
+            whiffT: 0, hurtT: 0, ctrT: 0, ctrX: 0, ctrY: 0 };
+const E_WALK = 0, E_WINDUP = 1, E_STRIKE = 2, E_RECOVER = 3, E_STAGGER = 4, E_THROWN = 5;
+const E = { x: 760, st: E_WALK, stT: 0, atk: 'mid', wind: WINDUP, hitDone: false, lean: 0, rot: 0, vx: 0 };
+
+const pops = [], parts = [], shapes = [];   // shapes = JF-#061 wordless O / X / implode
+
+function pop(x, y, txt, col, big){ pops.push({ x, y, txt, col, life: 52, big: !!big }); }
+function burst(x, y, n, col){ for (let i = 0; i < n; i++){ const a = Math.random() * 7;
+  parts.push({ x, y, vx: Math.cos(a) * (1.5 + Math.random() * 3.5), vy: Math.sin(a) * (1.5 + Math.random() * 3.5) - 1,
+               life: 16 + Math.random() * 14, col, sz: 1.8 + Math.random() * 2.2 }); } }
+function shape(kind, x, y, col){ shapes.push({ kind, x, y, col, life: 20 }); }
+
+function reset(){
+  t = 0; hitStop = 0; slowMo = 0; shake = 0; flash = 0; readyT = 0;
+  counters = perfects = streak = bestStreak = taken = chips = dodged = 0; cycle = 0;
+  P.x = 420; P.punchT = P.riseT = P.duckT = P.backT = P.whiffT = P.hurtT = P.ctrT = 0; P.duckAge = 99;
+  E.x = 760; E.st = E_WALK; E.stT = 0; E.atk = 'mid'; E.wind = WINDUP; E.hitDone = false; E.lean = 0; E.rot = 0; E.vx = 0;
+  pops.length = 0; parts.length = 0; shapes.length = 0;
+}
+
+/* ===== Player verbs — same shapes as the real game ===== */
+function armFromDodge(age){
+  // JF-#047 freshness gate: only a READ arms the counter. Camping in a crouch
+  // slips the blow but buys you nothing, which is what keeps turtling honest.
+  if (age > FRESH) return false;
+  readyT = READY_DUR; Snd.arm(); return true;
+}
+function armRise(){
+  if (P.duckT > 0 || P.riseT > 0) return false;
+  P.riseT = RISE_DUR; Snd.whoosh(); return true;
+}
+function crouch(hold){
+  if (P.riseT > 0) return false;
+  if (P.duckT <= 0) P.duckAge = 0;      // fresh crouch
+  P.duckT = DUCK_DUR; return true;
+}
+function highAction(){
+  if (!armRise()) return;
+  // A rise against a live HIGH windup is the ONLY thing that turns it into a
+  // counter. A plain forward strike into a high windup just bounces.
+  if (E.st === E_WINDUP && E.atk === 'high' && inRange()){
+    if (readyT > 0) return doCounter();
+    return doChip();
+  }
+}
+function inRange(){ return Math.abs(E.x - P.x) <= RESOLVE + 20; }
+
+function strike(dir){
+  if (P.whiffT > 0 || P.punchT > 0) return;
+  // JF-#042: pressing AWAY while a mid threat is live is an evade, not a punch.
+  const away = Math.sign(P.x - E.x);
+  const midThreat = (E.st === E_WINDUP && E.atk === 'mid') || (E.st === E_STRIKE && !E.hitDone);
+  if (dir === away && midThreat && P.backT <= 0){
+    P.backT = BACK_DUR; P.backDir = dir; Snd.whoosh(); return;
+  }
+  P.face = Math.sign(E.x - P.x) || 1;
+  P.punchT = 12;
+  if (!inRange()){ P.whiffT = WHIFF; Snd.chip(); return; }
+  if (E.st === E_WINDUP){
+    if (E.atk === 'grab'){ return doGrabbed(); }        // ARMORED: strikes lose
+    if (E.atk === 'high'){ return doChip(); }           // wrong answer — bounces
+    if (readyT > 0) return doCounter();
+    return doChip();
+  }
+  if (E.st === E_WALK || E.st === E_RECOVER || E.st === E_STAGGER){
+    // free poke — shoves him, no counter value. Keeps mashing unrewarding.
+    E.st = E_STAGGER; E.stT = 0; E.lean = 12; E.vx = 3.4;
+    hitStop = HS_LIGHT; shake = 5; Snd.chip();
+    shape('x', E.x, GROUND_Y - 70, '#cfd6e4');
+  }
+}
+
+function doCounter(){
+  const perfect = E.stT / E.wind > PERF_TH;
+  counters++; if (perfect) perfects++;
+  streak++; bestStreak = Math.max(bestStreak, streak);
+  readyT = 0;                                   // one counter per dodge
+  hitStop = HS_HEAVY; slowMo = 26; shake = 12; flash = 0.5; flashCol = perfect ? '#e8c76a' : '#7ce8a8';
+  P.ctrT = 16; P.ctrX = E.x; P.ctrY = GROUND_Y - 70;
+  E.st = E_THROWN; E.stT = 0; E.vx = 9; E.rot = 0;
+  shape('implode', E.x, GROUND_Y - 70, perfect ? '#e8c76a' : '#7ce8a8');
+  burst(E.x, GROUND_Y - 70, 16, perfect ? '#ffe9a8' : '#9bf0d0');
+  pop(E.x, GROUND_Y - 150, perfect ? 'PERFECT' : 'COUNTER', perfect ? '#e8c76a' : '#7ce8a8', true);
+  Snd.counter();
+}
+function doChip(){
+  // JF-#053: an unarmed strike into a windup is a 1hp chip that does NOT
+  // interrupt the swing. Dodge first — that is the whole lesson.
+  chips++;
+  hitStop = HS_LIGHT; shake = 4;
+  shape('x', E.x, GROUND_Y - 70, '#cfd6e4');
+  pop(E.x, GROUND_Y - 130, 'chip', 'rgba(210,214,228,0.8)');
+  Snd.chip();
+}
+function doGrabbed(){
+  P.hurtT = 26; taken++; streak = 0; readyT = 0;
+  hitStop = HS_MED; shake = 10; flash = 0.4; flashCol = COL_GRAB;
+  E.st = E_RECOVER; E.stT = 0; E.hitDone = true;
+  shape('o', P.x, GROUND_Y - 70, COL_GRAB);
+  pop(P.x, GROUND_Y - 150, 'GRABBED', COL_GRAB, true);
+  Snd.hit();
+}
+
+/* ===== Input ===== */
+const keys = {};
+addEventListener('keydown', e => {
+  const k = e.key;
+  if (k === ' ' || k.startsWith('Arrow')) e.preventDefault();
+  if ((k === ' ' || k === 'Enter') && mode !== 'play'){ Snd.ensure(); reset(); mode = 'play'; return; }
+  if (k === 'r' || k === 'R'){ Snd.ensure(); reset(); mode = 'play'; return; }
+  if (k === '[') { WINDUP = Math.max(WIND_FLOOR, WINDUP - 4); return; }
+  if (k === ']') { WINDUP = Math.min(120, WINDUP + 4); return; }
+  if (k === '-') { GAP = Math.max(20, GAP - 6); return; }
+  if (k === '=') { GAP = Math.min(180, GAP + 6); return; }
+  if (k === ',') { READY_DUR = Math.max(40, READY_DUR - 10); return; }
+  if (k === '.') { READY_DUR = Math.min(260, READY_DUR + 10); return; }
+  if (keys[k]) return;                    // JF-#050: no hold-to-machine-gun
+  keys[k] = true;
+  if (mode !== 'play') return;
+  if (k === 'ArrowLeft'  || k === 'a' || k === 'A' || k === 'q' || k === 'Q') strike(-1);
+  if (k === 'ArrowRight' || k === 'd' || k === 'D') strike(1);
+  if (k === 'ArrowUp'    || k === 'w' || k === 'W' || k === 'z' || k === 'Z') highAction();
+});
+addEventListener('keyup', e => { keys[e.key] = false; });
+addEventListener('pointerdown', () => { Snd.ensure(); if (mode !== 'play'){ reset(); mode = 'play'; } });
+
+/* ===== Update ===== */
+function update(){
+  t++;
+  if (mode !== 'play') return;
+  if (hitStop > 0){ hitStop--; return; }        // freeze the world, keep drawing
+
+  // --- held crouch (JF-#047 NES Kung Fu stance) ---
+  const down = keys.ArrowDown || keys.s || keys.S;
+  if (down) crouch(true);
+  if (P.duckT > 0){ P.duckT--; P.duckAge++; if (!down && P.duckAge > 6) P.duckT = Math.min(P.duckT, 4); }
+  if (P.riseT > 0) P.riseT--;
+  if (P.backT > 0) P.backT--;
+  if (P.punchT > 0) P.punchT--;
+  if (P.whiffT > 0) P.whiffT--;
+  if (P.hurtT > 0) P.hurtT--;
+  if (P.ctrT > 0) P.ctrT--;
+  if (readyT > 0) readyT--;
+  if (slowMo > 0) slowMo--;
+
+  // --- the one foe, on his clock ---
+  E.stT++;
+  E.x += E.vx; E.vx *= 0.88;
+  if (E.lean > 0) E.lean--;
+  switch (E.st){
+    case E_WALK: {
+      const d = E.x - P.x;
+      if (d > STANDOFF) E.x -= 1.5;
+      else if (E.stT > GAP){                     // fixed metronome = learnable rhythm
+        E.atk = ORDER[cycle % ORDER.length]; cycle++;
+        E.wind = Math.max(WIND_FLOOR, E.atk === 'grab' ? Math.max(WINDUP, 36) : WINDUP);
+        E.st = E_WINDUP; E.stT = 0; E.hitDone = false;
+        Snd.windup(E.wind);
+      }
+      break; }
+    case E_WINDUP:
+      if (E.stT >= E.wind){ E.st = E_STRIKE; E.stT = 0; }
+      break;
+    case E_STRIKE:
+      if (!E.hitDone && E.stT >= 3){ resolveHit(); E.hitDone = true; }
+      if (E.stT >= STRIKE_DUR){ E.st = E_RECOVER; E.stT = 0; }
+      break;
+    case E_RECOVER:
+      if (E.stT >= RECOVER){ E.st = E_WALK; E.stT = 0; }
+      break;
+    case E_STAGGER:
+      if (E.stT >= STAGGER){ E.st = E_WALK; E.stT = 0; }
+      break;
+    case E_THROWN:
+      E.rot += 0.14;
+      if (E.stT >= THROWN){                       // he gets back up. Nobody dies here.
+        E.st = E_WALK; E.stT = 0; E.rot = 0; E.x = Math.min(900, P.x + 260);
+      }
+      break;
+  }
+
+  // fx decay
+  for (let i = pops.length - 1; i >= 0; i--){ const p = pops[i]; p.life--; p.y -= 0.7; if (p.life <= 0) pops.splice(i, 1); }
+  for (let i = parts.length - 1; i >= 0; i--){ const p = parts[i]; p.life--; p.x += p.vx; p.y += p.vy; p.vy += 0.22; if (p.life <= 0) parts.splice(i, 1); }
+  for (let i = shapes.length - 1; i >= 0; i--){ if (--shapes[i].life <= 0) shapes.splice(i, 1); }
+  if (shake > 0) shake = Math.max(0, shake - 0.6);
+  if (flash > 0) flash = Math.max(0, flash - 0.04);
+}
+
+/* ===== Did the blow land? — one right answer per line ===== */
+function resolveHit(){
+  if (Math.abs(E.x - P.x) > RESOLVE + 20){ return; }   // he swung at air
+  const atk = E.atk;
+  const age = atk === 'high' ? RISE_DUR - P.riseT
+            : atk === 'grab' ? P.duckAge
+            : BACK_DUR - P.backT;
+  const slipped = atk === 'high' ? P.riseT > 0
+                : atk === 'grab' ? P.duckT > 0
+                : P.backT > 0;
+  if (slipped){
+    dodged++;
+    const fresh = age <= FRESH;
+    if (fresh){ streak++; bestStreak = Math.max(bestStreak, streak); armFromDodge(age); slowMo = 18; }
+    shape('x', P.x, GROUND_Y - (atk === 'high' ? 96 : atk === 'grab' ? 40 : 70), fresh ? JADE : '#8d94a6');
+    pop(P.x, GROUND_Y - 150, fresh ? (age <= 8 ? 'PERFECT READ' : 'ARMED') : 'under it',
+        fresh ? JADE : 'rgba(160,168,186,0.85)');
+    hitStop = HS_LIGHT; Snd.whoosh();
+    E.vx = 6;                                    // JF-#050: he carries past you
+    return;
+  }
+  // clean hit — no damage in the lab, just the sting and a broken streak
+  taken++; streak = 0; readyT = 0; P.hurtT = 26;
+  hitStop = HS_MED; shake = 11; flash = 0.45; flashCol = LINE_COL[atk];
+  shape('o', P.x, GROUND_Y - (atk === 'high' ? 96 : atk === 'grab' ? 50 : 70), LINE_COL[atk]);
+  burst(P.x, GROUND_Y - 70, 10, LINE_COL[atk]);
+  pop(P.x, GROUND_Y - 150, atk === 'high' ? 'HIGH — RISE' : atk === 'grab' ? 'GRAB — CROUCH' : 'MID — STEP BACK',
+      LINE_COL[atk], true);
+  Snd.hit();
+}
+
+/* ===== Fighter art — ported from the shipped game so the read is identical ===== */
+function fighter(x, y, face, opts){
+  const o = opts || {};
+  cx.save(); cx.translate(x, y);
+  if (o.rot) cx.rotate(o.rot);
+  const sq = o.squash || 0;
+  cx.scale(face * (1 + 0.16 * sq), 1 - 0.16 * sq);
+  const punch = o.punch || 0, c = o.col || '#e8dcc0';
+  const pose = o.pose || '', line = o.line || '', phase = o.phase || '';
+  const winding = phase === 'wind', striking = phase === 'strike';
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
+  const legStroke = segs => {
+    cx.strokeStyle = OUT; cx.lineWidth = 9; cx.beginPath(); segs(); cx.stroke();
+    cx.strokeStyle = c;   cx.lineWidth = 5.5; cx.beginPath(); segs(); cx.stroke(); };
+  const foot = (fx, fy) => { cx.fillStyle = OUT; cx.beginPath(); cx.ellipse(fx, fy, 6, 4, 0, 0, 7); cx.fill(); };
+  let torsoDrop = 0;
+  if (pose === 'duck'){
+    legStroke(() => { cx.moveTo(-3, -13); cx.lineTo(-19, -11); cx.lineTo(-25, 0);
+                      cx.moveTo(3, -13);  cx.lineTo(19, -11);  cx.lineTo(25, -1); });
+    foot(-26, 1); foot(26, 0); torsoDrop = 30;
+  } else if ((winding || striking) && line === 'high'){
+    legStroke(() => { cx.moveTo(0, -32); cx.lineTo(-13, -1); cx.moveTo(0, -32); cx.lineTo(15, -9); });
+    foot(-14, 1); foot(17, -10); torsoDrop = -8;
+  } else if (winding && line === 'mid'){
+    legStroke(() => { cx.moveTo(0, -30); cx.lineTo(-19, -9); cx.lineTo(-22, 0); cx.moveTo(0, -30); cx.lineTo(16, -2); });
+    foot(-23, 1); foot(17, -1); torsoDrop = 6;
+  } else {
+    legStroke(() => { cx.moveTo(0, -30); cx.lineTo(-15, 0); cx.moveTo(0, -30); cx.lineTo(17, -3); });
+    foot(-16, 1); foot(18, -2);
+  }
+  cx.save(); cx.translate(0, torsoDrop);
+  cx.beginPath();
+  cx.moveTo(-16, -28);
+  cx.quadraticCurveTo(0, -20 + Math.sin(t * 0.12) * 1.5, 16, -28);
+  cx.quadraticCurveTo(13, -52, 9, -66);
+  cx.quadraticCurveTo(0, -73, -9, -66);
+  cx.quadraticCurveTo(-13, -52, -16, -28);
+  cx.closePath();
+  cx.fillStyle = c; cx.fill(); cx.strokeStyle = OUT; cx.lineWidth = 3; cx.stroke();
+  cx.strokeStyle = o.sash || JADE; cx.lineWidth = 5;
+  cx.beginPath(); cx.moveTo(-12, -44); cx.quadraticCurveTo(0, -40, 12, -48); cx.stroke();
+  cx.fillStyle = c; cx.beginPath(); cx.arc(0, -84, 15, 0, 7); cx.fill();
+  cx.strokeStyle = OUT; cx.lineWidth = 3; cx.stroke();
+  cx.strokeStyle = o.sash || JADE; cx.lineWidth = 4;
+  cx.beginPath(); cx.moveTo(-14, -89); cx.lineTo(14, -89); cx.stroke();
+  cx.beginPath(); cx.moveTo(-13, -89); cx.quadraticCurveTo(-27, -87 + Math.sin(t * 0.15) * 4, -33, -78); cx.stroke();
+  const eyes = o.eyes || 'idle';
+  if (eyes === 'x'){
+    cx.strokeStyle = OUT; cx.lineWidth = 2.5;
+    for (const ex of [4.5, 11]){ cx.beginPath();
+      cx.moveTo(ex - 2.5, -87); cx.lineTo(ex + 2.5, -81.5);
+      cx.moveTo(ex + 2.5, -87); cx.lineTo(ex - 2.5, -81.5); cx.stroke(); }
+  } else {
+    cx.fillStyle = '#fff';
+    cx.beginPath(); cx.arc(5, -84, 4, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(11.5, -84, 4, 0, 7); cx.fill();
+    cx.fillStyle = OUT;
+    const pp = eyes === 'dizzy' ? Math.sin(t * 0.35) * 2 : 1.6;
+    cx.beginPath(); cx.arc(5 + pp, -84, 1.9, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(11.5 + pp, -84, 1.9, 0, 7); cx.fill();
+    if (eyes === 'angry'){ cx.strokeStyle = OUT; cx.lineWidth = 2.5;
+      cx.beginPath(); cx.moveTo(0.5, -90.5); cx.lineTo(8, -87.5); cx.moveTo(15.5, -90.5); cx.lineTo(9, -87.5); cx.stroke(); }
+  }
+  const arm = (x1, y1, x2, y2) => {
+    cx.strokeStyle = OUT; cx.lineWidth = 9; cx.beginPath(); cx.moveTo(x1, y1); cx.lineTo(x2, y2); cx.stroke();
+    cx.strokeStyle = c;   cx.lineWidth = 5.5; cx.beginPath(); cx.moveTo(x1, y1); cx.lineTo(x2, y2); cx.stroke();
+    cx.fillStyle = c; cx.beginPath(); cx.arc(x2, y2, 6, 0, 7); cx.fill();
+    cx.strokeStyle = OUT; cx.lineWidth = 2.5; cx.stroke(); };
+  const ext = punch > 0 ? 34 + punch * 3 : 15;
+  if (pose === 'duck'){ arm(-8, -58, -15, -46); arm(8, -58, 8 + ext * 0.8, -52 - (punch > 0 ? 2 : -4)); }
+  else if (line === 'grab' && winding){ arm(-6, -62, 14, -56); arm(6, -64, 22, -62); }
+  else if (line === 'high'){
+    arm(-7, -62, -18, -50);
+    if (winding){ arm(5, -66, 12, -94); arm(12, -94, -4, -106); }
+    else { arm(5, -66, 5 + ext * 1.35, -84); }
+  } else if (line === 'mid' && winding){ arm(-7, -62, -16, -52); arm(7, -60, -8, -44); }
+  else { arm(-7, -62, -18, -50); arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7)); }
+  if (punch > 8) star(7 + ext + 7, -62, 10 + (12 - punch) * 2, '#ffe9a8', t * 0.3);
+  cx.restore(); cx.restore();
+}
+function star(x, y, r, col, rot){
+  cx.save(); cx.translate(x, y); cx.rotate(rot || 0); cx.fillStyle = col; cx.beginPath();
+  for (let i = 0; i < 8; i++){ const a = i * Math.PI / 4, rr = i % 2 ? r * 0.42 : r;
+    const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+    i ? cx.lineTo(px, py) : cx.moveTo(px, py); }
+  cx.closePath(); cx.fill(); cx.restore();
+}
+
+/* ===== Render ===== */
+function txt(s, x, y, sz, col, w, al){
+  cx.fillStyle = col || '#fff'; cx.font = (w || 600) + ' ' + sz + 'px system-ui,sans-serif';
+  cx.textAlign = al || 'center'; cx.textBaseline = 'middle'; cx.fillText(s, x, y);
+}
+
+function draw(){
+  const ox = (Math.random() - 0.5) * shake, oy = (Math.random() - 0.5) * shake;
+  cx.save(); cx.translate(ox, oy);
+
+  // courtyard: flat night sky, moon, tiled ground
+  const g = cx.createLinearGradient(0, 0, 0, GROUND_Y);
+  g.addColorStop(0, '#171228'); g.addColorStop(1, '#2a2038');
+  cx.fillStyle = g; cx.fillRect(-16, -16, W + 32, GROUND_Y + 16);
+  cx.fillStyle = 'rgba(240,236,210,0.14)'; cx.beginPath(); cx.arc(800, 96, 44, 0, 7); cx.fill();
+  cx.fillStyle = '#241c30'; cx.fillRect(-16, GROUND_Y, W + 32, H - GROUND_Y + 16);
+  cx.strokeStyle = 'rgba(255,255,255,0.05)'; cx.lineWidth = 2;
+  for (let i = 0; i <= 12; i++){ const x = i * 80; cx.beginPath(); cx.moveTo(x, GROUND_Y); cx.lineTo(x - 60, H); cx.stroke(); }
+  cx.strokeStyle = 'rgba(255,255,255,0.10)'; cx.beginPath(); cx.moveTo(-16, GROUND_Y); cx.lineTo(W + 16, GROUND_Y); cx.stroke();
+
+  // --- his telegraph: dashed threat line to the body part it's aimed at ---
+  if (E.st === E_WINDUP){
+    const col = LINE_COL[E.atk], prog = E.stT / E.wind;
+    const ty = E.atk === 'high' ? GROUND_Y - 84 : E.atk === 'grab' ? GROUND_Y - 56 : GROUND_Y - 48;
+    cx.strokeStyle = col; cx.globalAlpha = 0.3 + prog * 0.5; cx.lineWidth = 2;
+    cx.setLineDash([9, 9]); cx.lineDashOffset = -E.stT * 2;
+    cx.beginPath(); cx.moveTo(E.x - 20, ty); cx.lineTo(P.x + 22, ty); cx.stroke();
+    cx.setLineDash([]);
+    // ring tightening on the threatened part — ripe = final third
+    const r = 44 - prog * 26;
+    cx.lineWidth = prog > PERF_TH ? 5 : 3;
+    cx.globalAlpha = prog > PERF_TH ? 0.55 + Math.sin(t * 0.5) * 0.3 : 0.4;
+    cx.beginPath(); cx.arc(P.x, ty, r, 0, 7); cx.stroke();
+    cx.globalAlpha = 1;
+  }
+
+  // shadows
+  cx.fillStyle = 'rgba(8,10,14,0.32)';
+  cx.beginPath(); cx.ellipse(P.x, GROUND_Y + 4, P.duckT > 0 ? 34 : 22, 6, 0, 0, 7); cx.fill();
+  cx.beginPath(); cx.ellipse(E.x, GROUND_Y + 4, 22, 6, 0, 0, 7); cx.fill();
+
+  // --- the foe ---
+  {
+    const atkActive = E.st === E_WINDUP || E.st === E_STRIKE;
+    let col = '#c86a6a', eyes = 'idle', squash = 0, rot = E.rot;
+    if (atkActive) { col = LINE_COL[E.atk]; eyes = 'angry'; }
+    if (E.st === E_THROWN){ eyes = 'x'; squash = -0.5; }
+    if (E.st === E_STAGGER){ eyes = 'dizzy'; rot += 0.2; }
+    if (E.lean > 0) rot += 0.3 * (E.lean / 12);
+    fighter(E.x, GROUND_Y - (E.st === E_THROWN ? Math.sin(Math.min(1, E.stT / 40) * Math.PI) * 40 : 0),
+      -1, { col, eyes, squash, rot, sash: '#a04848',
+            punch: E.st === E_STRIKE ? Math.max(0, 12 - E.stT) : 0,
+            pose: '', line: atkActive ? E.atk : null,
+            phase: E.st === E_WINDUP ? 'wind' : E.st === E_STRIKE ? 'strike' : '' });
+  }
+
+  // --- you ---
+  {
+    const backP = P.backT > 0 ? Math.sin((P.backT / BACK_DUR) * Math.PI) : 0;
+    const pcol = P.hurtT > 0 && (P.hurtT & 2) ? '#e86a6a' : '#e8dcc0';
+    fighter(P.x + P.backDir * backP * 26, GROUND_Y, 1,
+      { col: pcol, sash: JADE, punch: P.punchT, pose: P.duckT > 0 ? 'duck' : '',
+        rot: P.backDir * backP * 0.22,
+        line: P.riseT > 0 ? 'high' : null, phase: P.riseT > 0 ? 'strike' : '',
+        eyes: P.punchT > 0 || P.hurtT > 0 ? 'angry' : 'idle' });
+    // ARMED: the jade ring — the whole loop's one persistent cue
+    if (readyT > 0){
+      const p = readyT / READY_DUR;
+      cx.strokeStyle = JADE; cx.globalAlpha = 0.35 + p * 0.45; cx.lineWidth = 3;
+      cx.beginPath(); cx.arc(P.x, GROUND_Y - 56, 52 + Math.sin(t * 0.2) * 3, 0, 7); cx.stroke();
+      cx.globalAlpha = 0.9; cx.lineWidth = 4;
+      cx.beginPath(); cx.arc(P.x, GROUND_Y - 56, 52, -1.5708, -1.5708 + 6.2832 * p); cx.stroke();
+      cx.globalAlpha = 1;
+    }
+  }
+
+  // counter flourish: expanding double ring + speed lines
+  if (P.ctrT > 0){
+    const p = P.ctrT / 16, r0 = (1 - p) * 90 + 18;
+    cx.strokeStyle = '#e8c76a'; cx.globalAlpha = p * 0.9; cx.lineWidth = 4;
+    cx.beginPath(); cx.arc(P.ctrX, P.ctrY, r0, 0, 7); cx.stroke();
+    cx.globalAlpha = p * 0.5; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(P.ctrX, P.ctrY, r0 * 0.62, 0, 7); cx.stroke();
+    for (let i = 0; i < 8; i++){ const a = i * 0.7854 + p;
+      cx.beginPath(); cx.moveTo(P.ctrX + Math.cos(a) * r0, P.ctrY + Math.sin(a) * r0);
+      cx.lineTo(P.ctrX + Math.cos(a) * (r0 + 26), P.ctrY + Math.sin(a) * (r0 + 26)); cx.stroke(); }
+    cx.globalAlpha = 1;
+  }
+
+  // JF-#061 shape language — O hit / X deflected-or-right-read / implode counter
+  for (const s of shapes){
+    const p = s.life / 20; cx.globalAlpha = p; cx.strokeStyle = s.col; cx.lineWidth = 5;
+    if (s.kind === 'o'){ cx.beginPath(); cx.arc(s.x, s.y, 22 + (1 - p) * 22, 0, 7); cx.stroke(); }
+    else if (s.kind === 'x'){ const r = 16 + (1 - p) * 10;
+      cx.beginPath(); cx.moveTo(s.x - r, s.y - r); cx.lineTo(s.x + r, s.y + r);
+      cx.moveTo(s.x + r, s.y - r); cx.lineTo(s.x - r, s.y + r); cx.stroke(); }
+    else { const r = 8 + p * 54; cx.lineWidth = 3 + (1 - p) * 4;
+      cx.beginPath(); cx.arc(s.x, s.y, r, 0, 7); cx.stroke(); }
+    cx.globalAlpha = 1;
+  }
+
+  for (const p of parts){ cx.globalAlpha = Math.min(1, p.life / 15); cx.fillStyle = p.col;
+    cx.beginPath(); cx.arc(p.x, p.y, p.sz, 0, 7); cx.fill(); }
+  cx.globalAlpha = 1;
+  for (const p of pops){ cx.globalAlpha = Math.min(1, p.life / 26);
+    txt(p.txt, p.x, p.y, p.big ? 26 : 16, p.col, 800); }
+  cx.globalAlpha = 1;
+
+  // ===== HUD =====
+  txt('COUNTERS', 40, 30, 12, 'rgba(255,255,255,0.45)', 700, 'left');
+  txt('' + counters, 40, 58, 34, '#7ce8a8', 800, 'left');
+  txt('perfect ' + perfects, 40, 84, 12, 'rgba(232,199,106,0.8)', 600, 'left');
+  txt('STREAK', W - 40, 30, 12, 'rgba(255,255,255,0.45)', 700, 'right');
+  txt('' + streak, W - 40, 58, 34, streak >= 5 ? '#e8c76a' : '#e8dcc0', 800, 'right');
+  txt('best ' + bestStreak, W - 40, 84, 12, 'rgba(255,255,255,0.45)', 600, 'right');
+  txt('dodged ' + dodged + '   hit ' + taken + '   chips ' + chips, W / 2, H - 46, 13, 'rgba(220,214,196,0.55)', 600);
+  txt('windup ' + WINDUP + 'f  [ ]      gap ' + GAP + 'f  - =      arm ' + READY_DUR +
+      'f  , .  (shipped 110)      R reset',
+      W / 2, H - 24, 12, 'rgba(180,174,160,0.45)', 600);
+
+  // next-attack countdown + which line is coming
+  if (E.st === E_WALK){
+    const f = Math.min(1, E.stT / GAP);
+    cx.fillStyle = 'rgba(255,255,255,0.10)'; cx.fillRect(W / 2 - 90, 34, 180, 5);
+    cx.fillStyle = LINE_COL[ORDER[cycle % ORDER.length]]; cx.fillRect(W / 2 - 90, 34, 180 * f, 5);
+    txt(ORDER[cycle % ORDER.length].toUpperCase() + ' NEXT', W / 2, 18, 12,
+        LINE_COL[ORDER[cycle % ORDER.length]], 800);
+  } else if (E.st === E_WINDUP){
+    const ripe = E.stT / E.wind > PERF_TH;
+    txt(E.atk === 'high' ? '▲  RISE' : E.atk === 'grab' ? '▼  CROUCH' : '◀  STEP BACK',
+        W / 2, 24, ripe ? 22 : 18, LINE_COL[E.atk], 800);
+  }
+
+  if (flash > 0){ cx.fillStyle = flashCol; cx.globalAlpha = flash * 0.28; cx.fillRect(-16, -16, W + 32, H + 32); cx.globalAlpha = 1; }
+  cx.restore();
+
+  if (mode === 'ready'){
+    cx.fillStyle = 'rgba(8,6,14,0.80)'; cx.fillRect(0, 0, W, H);
+    txt('DUEL FEEL-LAB', W / 2, 130, 44, '#e8dcc0', 800);
+    txt('one normal foe, on a clock. nobody dies. get the verb down.', W / 2, 176, 16, '#b8b0a0', 500);
+    txt('MID', W / 2 - 220, 250, 22, COL_MID, 800);   txt('press AWAY', W / 2 - 220, 280, 15, '#d8cdb6', 600);
+    txt('HIGH', W / 2, 250, 22, COL_HIGH, 800);       txt('press UP', W / 2, 280, 15, '#d8cdb6', 600);
+    txt('GRAB', W / 2 + 220, 250, 22, COL_GRAB, 800); txt('hold DOWN', W / 2 + 220, 280, 15, '#d8cdb6', 600);
+    txt('a FRESH dodge arms the jade ring — strike his next windup to THROW him',
+        W / 2, 344, 16, JADE, 700);
+    txt('unarmed, your strike is a chip that will not stop the swing', W / 2, 370, 14, '#8d94a6', 500);
+    txt('SPACE to begin', W / 2, 430, 18, '#c9b0ff', 700);
+  }
+}
+
+/* ===== Loop — fixed 60Hz steps, slow-mo stretches them ===== */
+let last = performance.now(), acc = 0;
+function frame(now){
+  let dt = now - last; last = now; if (dt > 100) dt = 100;
+  acc += dt;
+  const step = slowMo > 0 ? 16.6667 * 2.6 : 16.6667;   // bullet time on a clean read
+  let guard = 0;
+  while (acc >= step && guard++ < 5){ acc -= step; update(); }
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

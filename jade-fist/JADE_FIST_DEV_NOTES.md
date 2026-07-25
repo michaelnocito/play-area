@@ -1193,3 +1193,46 @@ title redesign — the returning-player menu is untouched).
   margin) — all inside 960×540. No overflow/overlap defect found, so nothing was force-changed.
 - Verified headless: `draw()` at `save.kills=0` and `=5` both render without throwing; JF-#062
   tutorial still graduates. The "does it FEEL clean" call is Mike's on the live URL.
+
+## JF-#065 — DUEL FEEL-LAB (`proto/duel-test.html`), 2026-07-25
+
+Same move we just made on ODD SOCK (`flipline/proto/shirt-test.html`): Mario-64
+"chase the rabbit" method — before any more content, nail the CORE VERB against
+ONE opponent. Standalone single file, not wired into the game.
+
+**What it is.** One normal foe, on a fixed clock, cycling MID → HIGH → GRAB so the
+rhythm is learnable. Nobody dies: he's thrown and gets back up, you're hit and
+just lose your streak. Real shipped numbers throughout (REACH 92, resolve 106,
+BACK_DUR 20, RISE_DUR 32, DUCK_DUR 30, freshness gate 20f, PERF_TH 0.66, windup
+floor 18f, hit-stop 8/12/16, whiff 16), the `fighter()` art ported verbatim so the
+silhouette read is identical, and JF-#061's wordless shape language (O hit /
+X deflected-or-right-read / implode counter).
+
+**Live tuning while playing:** `[ ]` windup · `- =` gap between attacks ·
+`, .` the armed-counter window · `R` reset. HUD shows all three.
+
+**⚠️ FINDING — the dodge→counter loop does not close one-on-one at shipped
+numbers.** A fresh dodge arms `readyT` for **110f** (JF-#053). Dodging his blow
+costs the rest of his strike (~7f) + RECOVER 30f + the idle gap before the next
+telegraph even *starts*, and it then has to ripen (~35f to reach the PERFECT
+third). At GAP 40 that's ~112f — the ring is dead before he cocks his fist.
+Nobody caught it because in the real game you dodge one foe and counter a
+DIFFERENT foe's live windup; the arm was never asked to span a full cycle.
+Lab default is 150f so the verb is playable. **Open question for Mike: raise
+READY_DUR in the shipped game, shorten enemy recovery, or accept that the loop is
+crowd-only and 1v1 duels need their own answer.**
+
+Headless verification (drive `update()` directly, stub `Snd`):
+- T1 mid back-step at impact → dodged, arms the ring at full duration ✅
+- T2 armed → counter his next windup in the ripe third → PERFECT, he's thrown ✅
+  (this is the test that FAILED at 110f and passes at 150f)
+- T3 grab answered by a held crouch → slipped, arms the ring ✅
+- T4 striking a grab windup → grabbed (armored, as designed) ✅
+- T5 unarmed strike into a mid windup → chip that does NOT stop the swing ✅
+- 3 full dodge→counter cycles across all three lines, zero console errors ✅
+
+Test steps for Mike: **DL-a** each line answered correctly feels distinct ·
+**DL-b** the jade ring reads as "you may counter now" without text ·
+**DL-c** a PERFECT counter (final third) feels different from an early one ·
+**DL-d** the fixed MID→HIGH→GRAB rotation is learnable, not boring ·
+**DL-e** find the windup/gap/arm numbers that feel right and tell me the three.
