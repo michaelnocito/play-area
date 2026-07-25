@@ -1236,3 +1236,71 @@ Test steps for Mike: **DL-a** each line answered correctly feels distinct ·
 **DL-c** a PERFECT counter (final third) feels different from an early one ·
 **DL-d** the fixed MID→HIGH→GRAB rotation is learnable, not boring ·
 **DL-e** find the windup/gap/arm numbers that feel right and tell me the three.
+
+### JF-#066 — telegraph speed researched + GRAB replaced by a LEG SWEEP (2026-07-25)
+
+Mike, after playing the lab: "the visual indicators of impending attack prior to
+actually attacking is too long and makes the user jump early... grab is not a
+great animation or description, make it a clear leg sweep attempt."
+
+**1. Telegraph length: 52f → 28f (867ms → 467ms).** Researched rather than
+guessed. Two numbers matter and they are not the same number:
+
+- Capcom's own SF Seminar, Hour 1 (`game.capcom.com/cfn/sfv/column/112424`):
+  pure reaction to a screen flash is **"at least 10 frames,"** and in a real
+  match you are processing more than a flash, so it is slower. That 10F floor
+  assumes you already know which button you are about to press.
+- Ours is a **choice** reaction — three lines, three different answers. Choice
+  RT is a different measure: Balakrishnan G, Uppinakudru G, Singh GG, Bangera S,
+  Raghavendra AD, Thangavel D, "A Comparative Study on Visual Choice Reaction
+  Time for Different Colors in Females," *Neurology Research International*
+  2014, DOI 10.1155/2014/301473. Simple visual RT sits near 250ms; adding
+  options pushes choice RT into the **350–400ms** band = **21–24 frames** @60Hz.
+
+The early-jump bug falls straight out of that gap. Your dodge only COVERS 20f
+(BACK_DUR). At a 52f windup you recognise the line at ~23f and then have to sit
+on your hands for ~9 more frames or your dodge expires before impact. Waiting is
+unnatural, so you press early and eat it. **A telegraph should be about
+(choice RT) + (a few frames)** so reacting as fast as you can naturally lands
+inside the dodge window and there is nothing to wait for. 28f does that: read at
+~23f, press, impact at 28f, covered. Guess at frame 4 and you are still punished.
+**Floor is now 22f, not Capcom's 10F** — 10F is single-response.
+
+Second finding from the same paper, and it's actionable: **red and green stimuli
+were reacted to significantly faster than yellow** (P<0.0001 and P=0.0002). Our
+HIGH line is amber, the slowest colour on the board, so it carries +2 frames
+(`LINE_WIND`) and the cocked-elbow silhouette stays the primary read.
+
+**This also fixed the JF-#065 finding.** The 1v1 dodge→counter budget is his
+strike tail (~7f) + RECOVER 30 + GAP + the windup ripening to its PERFECT third.
+At 52f that was ~112f against a 110f arm — dead ring. At 28f it's ~96f and the
+**shipped READY_DUR 110 closes the loop with room.** One number was wrong, not
+two; READY_DUR is back to the shipped value.
+
+**2. GRAB → LEG SWEEP.** Purple grab is gone. The third line is now a low sweep
+in the game's existing LOW cyan: he drops into a real squat, cocks the back leg
+up and behind him (visible, clear of the robe — the legs ARE the read), then
+whips it flat along the floor with a ground-level swipe streak. Threat line and
+impact ring aim at your shins. Silhouettes are now four distinct shapes: idle
+upright / mid coiled / high tall-with-elbow-overhead / sweep low-and-wide.
+
+**⚠️ The answer to it is a decision Mike should confirm.** With NO JUMPING locked
+(JF-#059) there is no third movement axis left, so the sweep is answered by
+**holding DOWN as a low guard** — the crouch now draws a shin-height bracer and
+the sweep visibly checks off it, rather than reading as "ducking under a leg."
+This is how Street Fighter blocks sweeps, and it keeps the three-input surface
+intact. The alternative is reopening a hop, which contradicts the no-jump call.
+Punching into a sweep still loses (armored — he is under your fist).
+
+**`proto/duel-harness.js`** — headless regression, run `node duel-harness.js`.
+Stubs the DOM, runs the real `update()`/`strike()`/`highAction()`. 10/10 pass:
+each line dodgeable at a 23f choice reaction and right up to the impact frame,
+guessing at frame 4 loses, sweep armored, unarmed strike chips without stopping
+the swing, dodge→counter closes at the shipped 110f. Note when writing tests:
+if you are ARMED, the same input becomes a counter and no dodge is recorded —
+zero `readyT` first when measuring the dodge budget.
+
+Test steps: **DL-f** the telegraph no longer makes you jump early ·
+**DL-g** the sweep reads as a leg from the silhouette alone ·
+**DL-h** low guard vs sweep feels like a check, not a hide ·
+**DL-i** confirm the low-guard answer, or say you want the hop back.

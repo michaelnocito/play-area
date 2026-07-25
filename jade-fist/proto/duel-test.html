@@ -25,9 +25,9 @@
    ONE normal foe. He never dies, you never die. He attacks on a fixed clock so
    the rhythm is learnable, cycling the three lines the real game uses:
 
-       MID   red     -> press AWAY (back-step)
-       HIGH  amber   -> press UP   (rise / high block)
-       GRAB  purple  -> HOLD DOWN  (crouch; armored, cannot be countered)
+       MID    red    -> press AWAY (back-step)
+       HIGH   amber  -> press UP   (rise / high block)
+       SWEEP  cyan   -> HOLD DOWN  (low guard; armored, cannot be countered)
 
    The loop being tuned is JF-#053's: a FRESH dodge ARMS a counter (jade ring).
    Armed, strike into his next windup and you THROW him. Unarmed, your strike is
@@ -52,22 +52,56 @@ addEventListener('resize', resize); resize();
 const REACH      = 92;    // your strike range from centre
 const RESOLVE    = 106;   // max(REACH, his reach) + 14 — where his blow lands
 const STANDOFF   = 100;   // where he settles to trade
-// JF-#053 counter window a fresh dodge buys you. SHIPPED VALUE IS 110 — and 110
-// does NOT close the loop one-on-one: dodging his blow costs ~7f of his strike +
-// 30f recover + GAP before the next telegraph even starts, and it has to ripen
-// (~35f) on top. In the full game you dodge one foe and counter ANOTHER's live
-// windup, so nobody noticed. Alone with one man, the ring is dead before he
-// cocks his fist. Lab default 150 so the verb is playable; tune with , and .
-let   READY_DUR  = 150;
+// JF-#053 counter window a fresh dodge buys you. SHIPPED VALUE 110 — and the
+// shortened telegraph FIXED the 1v1 problem this lab first found at 52f. The
+// budget from your dodge to a ripe next windup is: his strike tail (~7f) +
+// RECOVER 30f + GAP + the windup ripening to its PERFECT third. At 52f that was
+// ~112f and the ring died before he cocked his fist; at 28f it's ~96f and the
+// shipped 110 closes the loop with room. One number was wrong, not two.
+let   READY_DUR  = 110;   // tune with , .
 const BACK_DUR   = 20;    // back-step evade
 const RISE_DUR   = 32;    // high rise
 const DUCK_DUR   = 30;    // tap-crouch (holding tops it up)
 const FRESH      = 20;    // a dodge older than this is "lazy" — no arm, no reward
 const PERF_TH    = 0.66;  // final third of the windup = PERFECT
-const WIND_FLOOR = 18;    // JF-#061 Capcom pass: below this it's a memory test
+/* ---------------------------------------------------------------------------
+   TELEGRAPH LENGTH — researched 2026-07-25 after Mike: "too long, makes you
+   jump early." He was right, and the old 52f (867ms) was wrong for a reason
+   worth writing down.
+
+   1. Capcom's own SF Seminar (Hour 1, game.capcom.com/cfn/sfv/column/112424):
+      pure reaction to a screen flash is "at least 10 frames," and in a real
+      game you're processing more than a flash, so it's slower. 10F is the
+      FLOOR for a known, single response.
+   2. But this isn't one response — you're choosing between three lines, and
+      choice reaction time is a different animal. Balakrishnan et al., "A
+      Comparative Study on Visual Choice Reaction Time for Different Colors in
+      Females," Neurology Research International 2014 (DOI 10.1155/2014/301473)
+      measures visual CHOICE RT; the literature consensus puts simple visual RT
+      near 250ms and choice RT in the 350-400ms band once you add options.
+      350-400ms = ~21-24 frames at 60Hz.
+
+   The early-jump bug falls straight out of that. Your dodge only COVERS 20f
+   (BACK_DUR). With a 52f windup you recognise the line at ~23f and then have
+   to sit on your hands for another ~9f before pressing, or your dodge expires
+   before the blow lands. Waiting is unnatural, so you press early and eat it.
+
+   Fix: make the windup roughly (choice RT) + (a few frames), so reacting AS
+   FAST AS YOU CAN naturally lands inside the dodge window and there is nothing
+   to wait for. 28f = 467ms: read it at ~23f, press, impact at 28f, covered.
+   Guess at 8f and your dodge is long gone by impact — anticipation still loses.
+   Floor for a 3-way choice is 22f, NOT Capcom's 10F: 10F assumes you already
+   know which button you're pressing.
+   --------------------------------------------------------------------------- */
+const WIND_FLOOR = 22;    // 3-way choice floor (Capcom's 10F is single-response)
+// Same paper's other finding, and it's actionable: red and green stimuli were
+// reacted to significantly FASTER than yellow (P<0.0001 and P=0.0002). Our HIGH
+// line is amber — the slowest colour on the board — so it gets +2 frames to pay
+// for its colour, and the cocked-elbow silhouette stays the primary read.
+const LINE_WIND = { mid: 0, high: 2, sweep: -1 };   // per-line offset from WINDUP
 const HS_LIGHT = 8, HS_MED = 12, HS_HEAVY = 16;   // hit-stop tiers, verbatim
 const WHIFF      = 16;    // striking air locks you out briefly
-let   WINDUP     = 52;    // <-- tunable ([ ])
+let   WINDUP     = 28;    // <-- tunable ([ ]) — see the research block above
 // GAP is the squeeze: dodging his blow arms you for READY_DUR, and his NEXT
 // windup has to ripen inside that window or the loop can't close in a 1v1
 // (in the full game you dodge one foe and counter another). RECOVER 30 + GAP 40
@@ -78,8 +112,10 @@ const STRIKE_DUR = 10, RECOVER = 30, STAGGER = 34, THROWN = 70;
 
 /* ===== Palette ===== */
 const OUT = '#181220';
-const COL_MID = '#e05a5a', COL_HIGH = '#e8a83a', COL_GRAB = '#a878e8';
-const LINE_COL = { mid: COL_MID, high: COL_HIGH, grab: COL_GRAB };
+// Sweep takes the game's existing LOW colour (cyan, JF-#028) rather than the old
+// grab purple — and cyan sits on the fast side of the choice-RT colour finding.
+const COL_MID = '#e05a5a', COL_HIGH = '#e8a83a', COL_SWEEP = '#3ad0e0';
+const LINE_COL = { mid: COL_MID, high: COL_HIGH, sweep: COL_SWEEP };
 const JADE = '#3fae7c';
 
 /* ===== Audio (trimmed to the tiers) ===== */
@@ -107,7 +143,7 @@ let t = 0, hitStop = 0, slowMo = 0, shake = 0, flash = 0, flashCol = '#fff';
 let readyT = 0;                // the armed-counter window
 let counters = 0, perfects = 0, streak = 0, bestStreak = 0, taken = 0, chips = 0, dodged = 0;
 let cycle = 0;                 // which line comes next (fixed rotation = learnable)
-const ORDER = ['mid', 'high', 'grab'];
+const ORDER = ['mid', 'high', 'sweep'];
 
 const P = { x: 420, face: 1, punchT: 0, riseT: 0, duckT: 0, duckAge: 99, backT: 0, backDir: -1,
             whiffT: 0, hurtT: 0, ctrT: 0, ctrX: 0, ctrY: 0 };
@@ -169,7 +205,7 @@ function strike(dir){
   P.punchT = 12;
   if (!inRange()){ P.whiffT = WHIFF; Snd.chip(); return; }
   if (E.st === E_WINDUP){
-    if (E.atk === 'grab'){ return doGrabbed(); }        // ARMORED: strikes lose
+    if (E.atk === 'sweep'){ return doSwept(); }         // ARMORED: he's under your fist
     if (E.atk === 'high'){ return doChip(); }           // wrong answer — bounces
     if (readyT > 0) return doCounter();
     return doChip();
@@ -204,12 +240,15 @@ function doChip(){
   pop(E.x, GROUND_Y - 130, 'chip', 'rgba(210,214,228,0.8)');
   Snd.chip();
 }
-function doGrabbed(){
+// Punching down into a leg sweep is the classic bad trade: he is already below
+// your fist. You go over on your back and he keeps the initiative.
+function doSwept(){
   P.hurtT = 26; taken++; streak = 0; readyT = 0;
-  hitStop = HS_MED; shake = 10; flash = 0.4; flashCol = COL_GRAB;
+  hitStop = HS_MED; shake = 12; flash = 0.4; flashCol = COL_SWEEP;
   E.st = E_RECOVER; E.stT = 0; E.hitDone = true;
-  shape('o', P.x, GROUND_Y - 70, COL_GRAB);
-  pop(P.x, GROUND_Y - 150, 'GRABBED', COL_GRAB, true);
+  shape('o', P.x, GROUND_Y - 24, COL_SWEEP);
+  burst(P.x, GROUND_Y - 12, 10, COL_SWEEP);
+  pop(P.x, GROUND_Y - 150, 'SWEPT', COL_SWEEP, true);
   Snd.hit();
 }
 
@@ -265,7 +304,7 @@ function update(){
       if (d > STANDOFF) E.x -= 1.5;
       else if (E.stT > GAP){                     // fixed metronome = learnable rhythm
         E.atk = ORDER[cycle % ORDER.length]; cycle++;
-        E.wind = Math.max(WIND_FLOOR, E.atk === 'grab' ? Math.max(WINDUP, 36) : WINDUP);
+        E.wind = Math.max(WIND_FLOOR, WINDUP + LINE_WIND[E.atk]);
         E.st = E_WINDUP; E.stT = 0; E.hitDone = false;
         Snd.windup(E.wind);
       }
@@ -304,28 +343,34 @@ function resolveHit(){
   if (Math.abs(E.x - P.x) > RESOLVE + 20){ return; }   // he swung at air
   const atk = E.atk;
   const age = atk === 'high' ? RISE_DUR - P.riseT
-            : atk === 'grab' ? P.duckAge
+            : atk === 'sweep' ? P.duckAge
             : BACK_DUR - P.backT;
   const slipped = atk === 'high' ? P.riseT > 0
-                : atk === 'grab' ? P.duckT > 0
+                : atk === 'sweep' ? P.duckT > 0
                 : P.backT > 0;
+  // Height the read happens at: head for high, shin for the sweep, torso for mid.
+  const hy = atk === 'high' ? 96 : atk === 'sweep' ? 22 : 70;
   if (slipped){
     dodged++;
     const fresh = age <= FRESH;
     if (fresh){ streak++; bestStreak = Math.max(bestStreak, streak); armFromDodge(age); slowMo = 18; }
-    shape('x', P.x, GROUND_Y - (atk === 'high' ? 96 : atk === 'grab' ? 40 : 70), fresh ? JADE : '#8d94a6');
-    pop(P.x, GROUND_Y - 150, fresh ? (age <= 8 ? 'PERFECT READ' : 'ARMED') : 'under it',
+    shape('x', P.x, GROUND_Y - hy, fresh ? JADE : '#8d94a6');
+    pop(P.x, GROUND_Y - 150,
+        fresh ? (age <= 8 ? 'PERFECT READ' : 'ARMED') : (atk === 'sweep' ? 'checked it' : 'under it'),
         fresh ? JADE : 'rgba(160,168,186,0.85)');
     hitStop = HS_LIGHT; Snd.whoosh();
-    E.vx = 6;                                    // JF-#050: he carries past you
+    // A checked sweep stops dead against your shin instead of carrying through.
+    E.vx = atk === 'sweep' ? -2 : 6;              // JF-#050: he carries past you
+    if (atk === 'sweep'){ E.lean = 12; burst(P.x - 26, GROUND_Y - 16, 6, '#cfe0f8'); }
     return;
   }
   // clean hit — no damage in the lab, just the sting and a broken streak
   taken++; streak = 0; readyT = 0; P.hurtT = 26;
   hitStop = HS_MED; shake = 11; flash = 0.45; flashCol = LINE_COL[atk];
-  shape('o', P.x, GROUND_Y - (atk === 'high' ? 96 : atk === 'grab' ? 50 : 70), LINE_COL[atk]);
-  burst(P.x, GROUND_Y - 70, 10, LINE_COL[atk]);
-  pop(P.x, GROUND_Y - 150, atk === 'high' ? 'HIGH — RISE' : atk === 'grab' ? 'GRAB — CROUCH' : 'MID — STEP BACK',
+  shape('o', P.x, GROUND_Y - hy, LINE_COL[atk]);
+  burst(P.x, GROUND_Y - (atk === 'sweep' ? 14 : 70), 10, LINE_COL[atk]);
+  pop(P.x, GROUND_Y - 150,
+      atk === 'high' ? 'HIGH — RISE' : atk === 'sweep' ? 'SWEPT — GUARD LOW' : 'MID — STEP BACK',
       LINE_COL[atk], true);
   Snd.hit();
 }
@@ -346,7 +391,33 @@ function fighter(x, y, face, opts){
     cx.strokeStyle = c;   cx.lineWidth = 5.5; cx.beginPath(); segs(); cx.stroke(); };
   const foot = (fx, fy) => { cx.fillStyle = OUT; cx.beginPath(); cx.ellipse(fx, fy, 6, 4, 0, 0, 7); cx.fill(); };
   let torsoDrop = 0;
-  if (pose === 'duck'){
+  if (line === 'sweep' && (winding || striking)){
+    // THE LEG SWEEP — it has to be legible as a LEG, at ankle height, from the
+    // silhouette alone. Windup: he drops into a deep squat and coils the back
+    // leg behind him, hands planted. Strike: that leg whips out flat along the
+    // floor. Nothing about this shape is confusable with a punch.
+    const ext = striking ? 52 + (punch > 0 ? punch * 1.6 : 0) : 0;
+    if (striking){
+      cx.strokeStyle = 'rgba(255,255,255,0.30)'; cx.lineWidth = 8;   // floor-level swipe streak
+      cx.beginPath(); cx.arc(-6, -7, 52, -0.5, 0.55); cx.stroke();
+    } else {
+      // windup: a low arc BEHIND him showing where the leg is loaded from
+      cx.strokeStyle = 'rgba(58,208,224,0.45)'; cx.lineWidth = 7;
+      cx.beginPath(); cx.arc(-6, -10, 46, Math.PI - 0.75, Math.PI + 0.35); cx.stroke();
+    }
+    legStroke(() => {
+      // support leg: knee out wide, foot planted under him — a real squat, not a sit
+      cx.moveTo(0, -24); cx.lineTo(-16, -14); cx.lineTo(-13, -1);
+      // the sweeping leg: cocked back behind the hip, then whipped flat along the floor
+      cx.moveTo(0, -24);
+      if (striking){ cx.lineTo(20, -12); cx.lineTo(20 + ext, -5); }
+      else { cx.lineTo(-24, -14); cx.lineTo(-50, -30); }   // cocked BACK and lifted clear
+    });
+    foot(-13, 0);
+    foot(striking ? 22 + ext : -52, striking ? -5 : -32);
+    // Sink him, but not so far the robe eats the legs — the legs ARE the read.
+    torsoDrop = 18;
+  } else if (pose === 'duck'){
     legStroke(() => { cx.moveTo(-3, -13); cx.lineTo(-19, -11); cx.lineTo(-25, 0);
                       cx.moveTo(3, -13);  cx.lineTo(19, -11);  cx.lineTo(25, -1); });
     foot(-26, 1); foot(26, 0); torsoDrop = 30;
@@ -399,8 +470,11 @@ function fighter(x, y, face, opts){
     cx.fillStyle = c; cx.beginPath(); cx.arc(x2, y2, 6, 0, 7); cx.fill();
     cx.strokeStyle = OUT; cx.lineWidth = 2.5; cx.stroke(); };
   const ext = punch > 0 ? 34 + punch * 3 : 15;
-  if (pose === 'duck'){ arm(-8, -58, -15, -46); arm(8, -58, 8 + ext * 0.8, -52 - (punch > 0 ? 2 : -4)); }
-  else if (line === 'grab' && winding){ arm(-6, -62, 14, -56); arm(6, -64, 22, -62); }
+  if (line === 'sweep' && (winding || striking)){
+    // hands planted for balance — the low, wide, three-point shape of a real sweep
+    arm(-8, -56, -26, -34); arm(8, -56, 22, -38);
+  }
+  else if (pose === 'duck'){ arm(-8, -58, -15, -46); arm(8, -58, 8 + ext * 0.8, -52 - (punch > 0 ? 2 : -4)); }
   else if (line === 'high'){
     arm(-7, -62, -18, -50);
     if (winding){ arm(5, -66, 12, -94); arm(12, -94, -4, -106); }
@@ -408,6 +482,15 @@ function fighter(x, y, face, opts){
   } else if (line === 'mid' && winding){ arm(-7, -62, -16, -52); arm(7, -60, -8, -44); }
   else { arm(-7, -62, -18, -50); arm(7, -62, 7 + ext, -60 - (punch > 0 ? 4 : -7)); }
   if (punch > 8) star(7 + ext + 7, -62, 10 + (12 - punch) * 2, '#ffe9a8', t * 0.3);
+  // LOW GUARD bracer — the answer to a sweep is a checked shin, not a duck. The
+  // arc sits at shin height so the crouch reads as "blocking low", which is what
+  // it is (SF blocks sweeps crouching). Without this the pose says "hiding".
+  if (o.guardLow){
+    cx.strokeStyle = OUT; cx.lineWidth = 7;
+    cx.beginPath(); cx.arc(20, -18, 15, -1.2, 1.2); cx.stroke();
+    cx.strokeStyle = '#cfe0f8'; cx.lineWidth = 4;
+    cx.beginPath(); cx.arc(20, -18, 15, -1.2, 1.2); cx.stroke();
+  }
   cx.restore(); cx.restore();
 }
 function star(x, y, r, col, rot){
@@ -441,7 +524,8 @@ function draw(){
   // --- his telegraph: dashed threat line to the body part it's aimed at ---
   if (E.st === E_WINDUP){
     const col = LINE_COL[E.atk], prog = E.stT / E.wind;
-    const ty = E.atk === 'high' ? GROUND_Y - 84 : E.atk === 'grab' ? GROUND_Y - 56 : GROUND_Y - 48;
+    // aim the threat line at the part it will actually hit — shins for a sweep
+    const ty = E.atk === 'high' ? GROUND_Y - 84 : E.atk === 'sweep' ? GROUND_Y - 12 : GROUND_Y - 48;
     cx.strokeStyle = col; cx.globalAlpha = 0.3 + prog * 0.5; cx.lineWidth = 2;
     cx.setLineDash([9, 9]); cx.lineDashOffset = -E.stT * 2;
     cx.beginPath(); cx.moveTo(E.x - 20, ty); cx.lineTo(P.x + 22, ty); cx.stroke();
@@ -480,6 +564,7 @@ function draw(){
     const pcol = P.hurtT > 0 && (P.hurtT & 2) ? '#e86a6a' : '#e8dcc0';
     fighter(P.x + P.backDir * backP * 26, GROUND_Y, 1,
       { col: pcol, sash: JADE, punch: P.punchT, pose: P.duckT > 0 ? 'duck' : '',
+        guardLow: P.duckT > 0,
         rot: P.backDir * backP * 0.22,
         line: P.riseT > 0 ? 'high' : null, phase: P.riseT > 0 ? 'strike' : '',
         eyes: P.punchT > 0 || P.hurtT > 0 ? 'angry' : 'idle' });
@@ -547,7 +632,7 @@ function draw(){
         LINE_COL[ORDER[cycle % ORDER.length]], 800);
   } else if (E.st === E_WINDUP){
     const ripe = E.stT / E.wind > PERF_TH;
-    txt(E.atk === 'high' ? '▲  RISE' : E.atk === 'grab' ? '▼  CROUCH' : '◀  STEP BACK',
+    txt(E.atk === 'high' ? '▲  RISE' : E.atk === 'sweep' ? '▼  GUARD LOW' : '◀  STEP BACK',
         W / 2, 24, ripe ? 22 : 18, LINE_COL[E.atk], 800);
   }
 
@@ -560,7 +645,7 @@ function draw(){
     txt('one normal foe, on a clock. nobody dies. get the verb down.', W / 2, 176, 16, '#b8b0a0', 500);
     txt('MID', W / 2 - 220, 250, 22, COL_MID, 800);   txt('press AWAY', W / 2 - 220, 280, 15, '#d8cdb6', 600);
     txt('HIGH', W / 2, 250, 22, COL_HIGH, 800);       txt('press UP', W / 2, 280, 15, '#d8cdb6', 600);
-    txt('GRAB', W / 2 + 220, 250, 22, COL_GRAB, 800); txt('hold DOWN', W / 2 + 220, 280, 15, '#d8cdb6', 600);
+    txt('SWEEP', W / 2 + 220, 250, 22, COL_SWEEP, 800); txt('hold DOWN — guard low', W / 2 + 220, 280, 15, '#d8cdb6', 600);
     txt('a FRESH dodge arms the jade ring — strike his next windup to THROW him',
         W / 2, 344, 16, JADE, 700);
     txt('unarmed, your strike is a chip that will not stop the swing', W / 2, 370, 14, '#8d94a6', 500);
