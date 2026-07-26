@@ -1,9 +1,9 @@
 ---
 title: "Test the Verb, Not the Progress"
-subtitle: "Miyamoto spent an hour climbing trees instead of playing Zelda. He was running an experiment."
+subtitle: "Miyamoto spent an hour climbing trees instead of playing Zelda. He was running an experiment, and it works on apps too."
 slug: test-the-verb-not-the-progress
 cover: verb-vs-progress-1200x630.png
-tags: [gamedev, productivity, learning, design]
+tags: [gamedev, design, product, learning]
 canonical: https://michaelnocito.github.io/guides/test-the-verb-not-the-progress/
 ---
 
@@ -11,119 +11,103 @@ canonical: https://michaelnocito.github.io/guides/test-the-verb-not-the-progress
 
 Everyone in the room agreed the build felt good.
 
-They had played it the way a player would. They started at the beginning, cleared the first area, watched a bar fill, unlocked the next thing, and came away saying the same sentence people always say: yeah, that felt good. Six weeks later the same build went out to real players and the average session was ninety seconds.
+They had played it the way a player would. Started at the beginning, cleared the first area, watched a bar fill, unlocked the next thing, and came away saying the sentence people always say: yeah, that felt good. Six weeks later it went out to real players and the average session was ninety seconds.
 
 Nothing was wrong with the test. The problem is what was being measured. That session had two systems in it, they got graded together, and only one of them was capable of failing.
 
-**The one-sentence version: every experience bundles a verb, the thing you physically do a thousand times, with a progress structure, the levels and scores and bars that pull you forward. Progress is close to failure-proof, so it always feels like something, which means it hides a weak verb instead of exposing it. To find out whether the verb is any good, remove the progress and do only the verb for an hour.**
+**The one-sentence version: everything you build bundles a verb, the thing someone physically does a thousand times, with a progress structure, the levels and scores and bars and onboarding flows that pull them forward. Progress is close to failure-proof, so it always feels like something, which means it hides a weak verb instead of exposing it. To find out whether the verb is any good, remove the progress and do only the verb for an hour.**
 
-![A side by side comparison. On the left, a normal playtest: a bar showing the good feeling split between a small verb portion and a large progress portion, verdict inconclusive. On the right, a verb test with no score or unlocks: the entire good feeling comes from the verb, verdict usable.](verb-vs-progress-1200x630.png)
+![A side by side comparison. On the left, a normal playtest: the good feeling splits into a small verb portion and a large progress portion, verdict inconclusive. On the right, a verb test with no score or unlocks: the whole good feeling comes from the verb, verdict usable.](verb-vs-progress-1200x630.png)
 
-## The designer who does this on purpose
+## An hour in the trees
 
-In March 2017, Breath of the Wild director Hidemaro Fujibayashi told Jason Schreier at Kotaku how the team first pitched their open world internally. They built a prototype to prove the idea that you could do anything, made a small starting field with a handful of trees, and hid rupees around it in the spots they guessed their two most important playtesters would wander toward.
+In March 2017, Breath of the Wild director Hidemaro Fujibayashi told Jason Schreier at Kotaku how his team first pitched their open world internally. They built a prototype to prove you could do anything in it: a small starting field with a handful of trees, with rupees hidden in the exact spots they guessed their two most important playtesters would wander toward.
 
 Then they handed the controller to Shigeru Miyamoto.
 
 > "When we first presented this to Mr. Miyamoto, he spent about an hour just climbing trees."
 
-Fujibayashi adds the detail that turns this from a funny story into a method: Miyamoto stayed inside a radius of roughly 25 to 50 metres. The rupees were right there. The rupees were the entire progress structure, carefully placed by people who wanted him to see the world. He ignored them and spent an hour on the climb.
+Then comes the detail that turns a funny story into a method. Miyamoto stayed inside a radius of roughly 25 to 50 metres. The rupees were right there, carefully placed by people who wanted him to see the world. He ignored every one of them and spent the hour on the climb.
 
-He has done this his whole career.
+He has always worked this way. Twenty-one years earlier, before Super Mario 64 had a single course, it had a test room made of lego-like blocks where Mario could run, climb slopes and jump, and Miyamoto says half the project's time and energy went into that basic system, with the courses and enemies arriving at the very end. In 2025, Donkey Kong Bananza's director said Miyamoto checked their build by ignoring the game entirely and staying in one spot, smashing and digging.
 
-Twenty-one years earlier, before Super Mario 64 had a single course, it had a test room. In the developer roundtable printed in the 1996 Japanese strategy guide, Miyamoto describes it without ceremony: a room made of simple lego-like blocks where Mario and Luigi could run around, climb slopes and jump. What is striking is not the room, it is the budget behind it.
+Three teams, three consoles, twenty-nine years, one behaviour.
 
-> "We spent about half our time and energy designing the basic system that we talked about. As for the courses and enemies, those actually came at the very end."
+## Why progress hides a bad verb
 
-Half the schedule on how it feels to move. The content, which is what customers thought they were buying, went last.
+Look at what a progress structure actually is. A number that goes up. A bar that fills. A door that opens because you did the required amount of something. These feel good almost independently of what you did to earn them, which is exactly why we build them. They are reliable, and that reliability is the problem when you are trying to evaluate.
 
-And in July 2025, Donkey Kong Bananza director Kenta Motokura told The Guardian what happened when Miyamoto checked their build:
+Test the normal way and progress quietly supplies most of the good feeling while the verb takes the credit. Everyone leaves agreeing it felt good, and nobody can tell you how much was the action and how much was the bar.
 
-> "We had Miyamoto-san check the game occasionally, but instead of progressing through the game, he just stuck to one point, smashing and digging around a lot."
+Miyamoto refusing the rupees is not eccentricity. It is removing the confound. What is left in the trees is climbing, alone, with nothing else to enjoy. If an hour of that is pleasant, the verb can carry a sixty hour game. If it is not, no amount of world design will rescue it, and you learned that at prototype cost instead of at launch.
 
-Motokura read it as encouraging rather than strange. It proved there were things in the game worth being curious about with nobody leading you anywhere.
+## In a game: one character, one enemy
 
-Three teams, three consoles, twenty-nine years, one behaviour. That is a method, not a quirk.
+The test is a build you would never ship. One player character. One enemy. No score, no upgrades, no levels, no death. He attacks, you answer, he gets back up, repeat. You do that for an hour.
 
-## Why progress is an anaesthetic
+Compare what you learn.
 
-Think about what a progress structure actually is. A number that goes up. A bar that fills. A door that opens because you did the required amount of something. These are satisfying almost independently of what you did to earn them, which is exactly why they are used: they are reliable.
+**From a normal playtest:** solid, combat feels decent, the tally screen is satisfying, second area drags a bit. Every sentence there is contaminated. Did combat feel decent, or did clearing the area feel decent? Does the second area drag, or has the novelty of the verb worn off, which would be devastating to learn and is currently disguised as a level design note?
 
-That reliability is the problem when you are trying to evaluate.
+**From a verb test:** the dodge window is too tight. The telegraph is so long you commit early and get punished for reacting like a human. The counter is satisfying the first thirty times and mechanical by the hundredth.
 
-When you test the normal way, progress is quietly supplying a large share of the good feeling, and the verb gets credit for all of it. Everyone leaves agreeing it felt good, and nobody in the room can tell you how much of that was the action and how much was the bar. You have run an experiment with an uncontrolled variable sitting in the middle of it.
+Those are three things you can fix on Monday. When I built this for a brawler of my own it found two real problems in a week: a counter window that could not physically close in a one on one fight, and a telegraph running at nearly twice human reaction time. Both had been in the game for months, played hundreds of times, invisible the whole time because there was always a wave to clear.
 
-Miyamoto refusing the rupees is not eccentricity. It is removing the confound. What is left in the trees is climbing, by itself, with nothing else to enjoy. If an hour of that is genuinely pleasant, the verb can carry a sixty hour game. If it is not, no amount of world design will rescue it, and the team has learned that at prototype cost rather than at launch.
+The rule for adding the second enemy is worth stealing too. In Super Mario Bros. the Koopa Troopa was the only basic enemy for most of development, and playtesters found it too tricky to open with, so the Goomba was created last and placed first: an enemy invented purely to teach the stomp. The Koopa then asks a different question, because its shell says this one will not squash. **Each enemy asks a new question of the same verb.** More health and faster timings is a difficulty slider, not an enemy.
 
-## Before and after, same build
+## In an app: the user is the player character
 
-Here is the same afternoon spent two ways.
+This is the same test, and the translation is almost one to one.
 
-**A normal playtest.** You load the current build. You fight through the first area, die once, come back, clear it, see the tally screen, buy an upgrade, start the second area. You stop after forty minutes because you have to. You report: solid, combat feels decent, the tally screen is satisfying, second area drags a bit.
+| In a game | In your app |
+|---|---|
+| The player character | The user |
+| The verb | The one action a feature is made of |
+| One enemy | One feature |
+| Waves, levels, districts | The rest of the product |
+| The boss | The flagship feature everything builds toward |
+| Score, unlocks, the bar filling | Onboarding, the demo happy path, the checklist, the roadmap |
 
-That report contains almost nothing you can act on. Every sentence in it is contaminated. Did combat feel decent, or did clearing the area feel decent? Was the tally satisfying because of the tally, or because of the twelve minutes of effort it summarised? Does the second area drag, or has the novelty of the verb worn off, which would be a devastating thing to know and is currently disguised as a level design note?
+Your demo is a progress structure. It has a narrative, a happy path and an ending, and it will feel fine in front of a room of people even when the core interaction is poor. So build the app equivalent of one character and one enemy: **one screen, one feature, real data, no task to complete.** Then watch one person do that feature's single most repeated action forty times with nothing to finish. Not a scripted flow, no goal, just the action.
 
-**A verb test.** You load a stripped build: one enemy, no score, no upgrades, no death. He attacks, you answer, he gets back up, repeat. You do that for an hour.
+If it is only tolerable in service of completing a task, you have built a chore with good signposting, and every feature stacked on top inherits that. If someone does it forty times and keeps going, that feature can carry the product.
 
-Now every observation is clean. The dodge window is too tight. The telegraph is so long you commit early and get punished for reacting like a human. The counter is satisfying the first thirty times and mechanical by the hundredth. None of those could have surfaced in the first test, because in the first test the tally screen kept handing you a reward every few minutes and your brain filed it under "combat feels decent".
+This is also the honest version of dogfooding. Using your own app to get work done tests the progress. Using the one screen you built forty times in a row tests the verb.
 
-When I built exactly this for a small brawler of my own, the isolated version found two real problems in a week. The counter window could not physically close in a one on one fight, and the attack telegraph ran at nearly twice human choice reaction time, which made me commit early and eat the hit. Both had been in the game for months, played hundreds of times, invisible the entire time because there was always a wave to clear.
+Then ladder it exactly like the enemy roster. **One feature at a time, polished until it stands on its own, before the next one is built.** Start with the feature that asks the core question most purely, usually the simplest rather than the flashiest. Give every feature after it a different question to ask, because a second feature that is the first one with more options is a settings screen. Put two in front of a user together before adding a third, because features that are individually clear and confusing side by side is a real failure, and you want to know which addition caused it.
 
-## When not to do this
+The flagship feature is the boss, and it should be built from questions the user already learned to answer.
 
-The method has real limits and it is worth naming them.
+## Why this works
 
-**Some experiences genuinely are the progress.** A puzzle game where each level is a single insight has no repeated verb worth isolating. Strategy games are largely about the shape of a long decision chain. If the thousandth repetition is not the point of your thing, this test tells you less.
+Isolating a component and drilling it is not a Nintendo invention. It is called part-task training. Wightman and Lintern reviewed the field in 1985, defining it as practice on some components of the whole task as a prelude to performing the whole task, and across the four segmentation studies they examined the isolated version beat whole-task practice in three.
 
-**An hour of anything is unpleasant if it has no variation, and that is not always the verb's fault.** The honest version of the question is not "was this hour fun", it is "did I want to stop, and when". Watch for the moment your hand relaxes.
+*Wightman, D. C., and Lintern, G. (1985). Part-task training for tracking and manual control. Human Factors, 27(3), 267 to 283. DOI 10.1177/001872088502700304*
 
-**It cannot tell you about pacing, structure or story,** because you deliberately removed all three. It answers one question well. Use a different test for the others.
-
-**You can pass it and still make a bad product,** because a fun verb attached to a bad progression is a very common and very fixable failure. A bad verb attached to good progression is neither.
-
-## Why this works, beyond one designer's habit
-
-Isolating a component and drilling it has a name outside games, and it was studied long before anyone tuned a dodge window.
-
-It is called part-task training. Wightman and Lintern reviewed the field in 1985, defining it as practice on some components of the whole task as a prelude to performing the whole task, and separating the ways you can cut a task up: segmentation, fractionation, and simplification. Across the four segmentation studies they examined, part-task training beat whole-task training in three, and all three of those used backward chaining (Wightman, D. C., and Lintern, G., 1985, *Part-task training for tracking and manual control*, Human Factors, 27(3), 267 to 283, DOI 10.1177/001872088502700304).
-
-The broader claim, that expertise comes from focused practice on specific sub-skills with immediate feedback rather than from time served, is the deliberate practice literature, beginning with Ericsson, Krampe and Tesch-Römer in 1993 (*The role of deliberate practice in the acquisition of expert performance*, Psychological Review, 100(3), 363 to 406. I have left the DOI off because I could not verify it from a source I read directly, and a guessed identifier is worse than none).
-
-That 1993 paper deserves its caveat. A 2019 re-examination in Royal Society Open Science found deliberate practice explains less of the variance in expert performance than the original claimed (Macnamara, B. N., and Maitra, M., 2019, Royal Society Open Science, 6(8), 190327, DOI 10.1098/rsos.190327). That challenge does not touch the argument here, because the claim in this article is narrower than the one being contested. I am not saying focused practice is sufficient for mastery. I am saying that isolating a component gives you cleaner feedback about that component, which is a measurement claim, and it survives.
-
-## Where else this holds
-
-The general form: whenever the thing you are evaluating is bundled with something that always feels like success, you are measuring the bundle. Find the rupees and take them away.
-
-**Software and product work.** A demo is a progress structure. It has a narrative, a happy path and an ending, and it will feel fine even when the core interaction is poor. Watch one person perform the single most repeated action in your product forty times with no goal attached. If that action is only tolerable in service of finishing a task, you have built a chore with good signposting. This is also the honest version of dogfooding: using your own product to get work done tests the progress, using the one screen you built forty times in a row tests the verb.
-
-**Learning a craft.** Finishing a course is progress. It feels like learning and it is nearly failure-proof, which is precisely what makes it a poor measure of whether you learned. The verb test is to take one component, a single query pattern, a single scale, a single brush stroke, and do it for an hour with feedback and nothing to complete. If an hour of the component is unbearable, that is genuine information about the path, and week one is a much better time to have it than year two.
-
-**Choosing work.** Titles, promotions and salary bands are a progress structure laid over a set of daily verbs. A role can look excellent on the ladder and be miserable by the hour, and the ladder will keep supplying the good feeling for years while the hours quietly do not. The verb test asks a plainer question: what are the actions I will repeat a thousand times in this job, and would I want to do those for an hour with nothing to reach for?
+The mechanism is the same one Miyamoto is using in the trees. When you remove everything except the component, the feedback you get is about the component.
 
 ## How to run one
 
 1. **Name the verb in one sentence.** One action. If it takes two sentences you have named a system and you need to go narrower.
-2. **Strip the progress.** No score, no unlocks, no levels, no completion, no death. In a game that means one opponent and a reset. In a product it means one screen and no task.
-3. **Keep the real numbers.** A test on approximated values tunes something that is not your product. Port the actual constants across.
-4. **Instrument it.** You are converting a feeling into a number, so put every value you might change on a key, display it on screen, and give yourself a way to print the current settings the moment something feels right. Findings that live only in your head do not survive the session.
+2. **Strip the progress.** No score, no unlocks, no levels, no completion. In a game that is one enemy and a reset. In an app it is one screen and no task.
+3. **Keep the real numbers and the real data.** A test on approximations tunes something that is not your product.
+4. **Instrument it.** You are turning a feeling into a number, so put every value you might change on a key, show it on screen, and give yourself a way to print the current settings the moment something feels right.
 5. **Do it for an hour** and notice when your hand relaxes.
-6. **Say the verdict out loud before you add anything.** The verb is good, or it is not.
+6. **Say the verdict out loud before you add anything else.** The verb is good, or it is not.
 
-A warning about retrofitting: doing this to a finished project is genuinely unpleasant. You will strip out systems you spent months on to isolate something you already shipped, and there is a real chance the answer comes back as "the core is thin", which is the most expensive sentence in development. Do it anyway, and do it before the next content push rather than after, because the honest version of the alternative is paying to build more of something that was not working.
+One warning. Doing this to a finished project is unpleasant, because you strip out systems you spent months on and there is a real chance the answer is "the core is thin". Do it before the next feature push rather than after, because the alternative is paying to build more of something that was not working.
 
 ## Cheat sheet
 
 | | Progress test (the default) | Verb test |
 |---|---|---|
 | **What you do** | Play or use it normally | One action, on repeat |
-| **What is present** | Levels, score, unlocks, goals | Nothing but the action |
+| **What is present** | Levels, score, onboarding, goals | Nothing but the action |
 | **What it measures** | The bundle | The action alone |
 | **Can it fail?** | Rarely, progress props it up | Yes, and quickly |
-| **Best question** | "Does the shape of this work?" | "Is this good on its own?" |
-| **Answers in** | A session | About an hour |
-| **The tell** | "Yeah, that felt good" | "I did not want to stop" |
-| **Miyamoto's version** | Not what he does | An hour in the trees |
+| **In a game** | A full run | One character, one enemy |
+| **In an app** | The demo | One screen, one feature |
+| **The tell** | "That felt good" | "I did not want to stop" |
 
 ## The one habit to keep
 
@@ -133,7 +117,7 @@ An hour in the trees, with the rupees left on the ground.
 
 ## A question for you
 
-I am curious about the limits of this rather than the agreements. What is something you would defend as genuinely good where the verb, the repeated action itself, is honestly dull, and the structure around it is doing all the work? I can think of a couple and they make me less sure of the whole argument, which is why I want to hear yours.
+What is something you would defend as genuinely good where the verb, the repeated action itself, is honestly dull, and the structure around it is doing all the work? I can think of a couple and they make me less sure of my own argument, which is why I want to hear yours.
 
 ---
 
