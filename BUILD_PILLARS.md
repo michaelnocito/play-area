@@ -148,6 +148,84 @@ split where the first ten minutes teach and the rest just repeat.
 
 ---
 
+## Pillar 1, in detail: the two things people get wrong
+
+### A. The dev cockpit — you cannot tune what you cannot see
+
+A feel-lab without instrumentation is just a small game. The point of the lab is to turn
+"this feels off" into a number, so **every lab and every game ships a dev cockpit**, wrapped in
+`DEV:BEGIN` / `DEV:END` strip markers (GAME_BIBLE Part 5) so it never reaches players.
+
+Miyamoto's own testing looks like this, incidentally: he spent an hour of a Breath of the Wild
+playtest *just climbing trees*, and tested Donkey Kong Bananza by staying in one spot "smashing
+and digging". The director tests the verb, not the progress. Your cockpit has to make that
+possible ([GamesRadar](https://www.gamesradar.com/games/donkey-kong/nintendo-icon-shigeru-miyamoto-spent-his-time-testing-donkey-kong-bananza-smashing-and-digging-in-one-spot-which-tracks-following-his-hour-long-breath-of-the-wild-playtesting-stint-just-climbing-trees/)).
+
+**The standard set. Every one of these earns its place from a pillar:**
+
+| Control | Why (pillar) |
+|---|---|
+| **Every feel number bound to a key, and shown on screen** | Pillar 1. Numbers you can't see are numbers you can't report back. |
+| **A one-key NUMBERS DUMP** that prints the current tuning as one pasteable line | Pillar 1. This is the handoff from Mike's hands to the next chat. Without it, tuning findings die in the session. |
+| **Force-spawn any single enemy / trigger any single state** | Pillar 1. You cannot practise one thing if you have to play through content to reach it. |
+| **Freeze + single-frame step** | Pillar 1. Feel lives at frame resolution; 3 frames is the difference between fair and unfair. |
+| **Slow-motion multiplier** | Pillar 1. Reads what the eye missed at speed, without changing the numbers. |
+| **A reaction readout** — frames from telegraph start to your input, and whether it landed in the window | Pillar 1. Turns "too long / too fast" into evidence. This is the control that found the Jade Fist telegraph bug. |
+| **No-fail toggle** | Pillar 1. The lab is reps, not runs. |
+| **Instant reset to the rep** | Pillar 1. Time-to-retry is the real budget in a feel session. |
+| **Hitbox / window / telegraph overlay** | Pillar 2. Shows whether a problem is one wrong number or a genuinely missing idea. |
+| **A headless harness hook** (`node <thing>-harness.js`) | Ours, not Nintendo's. An agent must be able to prove a change kept the budget without asking a human to play. |
+
+The cockpit is not a debug afterthought. It is the instrument panel that makes Pillar 1
+possible, and it is built **with** the lab, not after it.
+
+### B. More than one enemy — the ladder, and how Nintendo actually did it
+
+Mike's instinct was: nail the weakest enemy, then work up to the boss. That is close, and the
+sources sharpen it in three ways.
+
+**1. Start with the enemy that asks the core question most purely, which is not always the
+weakest.** In Super Mario Bros. the only basic enemy for most of development was the Koopa
+Troopa. Playtesters found it too tricky as a first encounter, so the **Goomba was created last
+and placed first** — an enemy that dies to a single stomp, invented specifically to teach the
+verb. ([Super Mario Wiki](https://www.mariowiki.com/Goomba))
+
+The lesson is not "build weakest first". It is: **the teaching enemy is a deliberate design
+object, and you may have to invent it after the fact.** If your weakest existing enemy still
+asks a compound question, build a simpler one whose whole job is to teach the verb cleanly.
+Jade Fist's lab foe is exactly this: strike-only, no feints, no guard.
+
+**2. Every additional enemy must ask a DIFFERENT question, not the same one louder.** The
+Goomba teaches the stomp; the Koopa's shell says *this one will not squash*, and stomping it
+gives you a projectile instead. Different question, same verb. Punch-Out!! is the same idea at
+scale: an opponent's appearance and behaviour are the cue to their fighting style, and every
+tell is different, so no fight can be beaten on the last fight's knowledge alone.
+
+This is Pillar 2 applied to enemies: **more HP and faster timings is a difficulty slider, not
+a new enemy.** If you cannot state the new question in one sentence, you have a variant, and
+variants belong in a wave table rather than in the roster.
+
+**3. The boss is the exam, not a wall.** Under Pillar 3 the boss is `ketsu`: it asks every
+question the district already taught, together. A boss that introduces a brand-new read at the
+end of a district is a design failure dressed as difficulty.
+
+**The ladder, then:**
+
+```
+1. ONE teaching enemy in the lab  ->  the verb is fun            [Mike gates]
+2. Add the SECOND enemy to the SAME lab. Play both together
+   before adding a third. Enemies that are individually clear
+   and illegible in a pair is the failure mode this catches
+   (Jade Fist's pincer problem lived here).
+3. Repeat one at a time. New question per enemy, or it is a variant.
+4. Boss last, and only from questions already taught.
+```
+
+Never add two enemies at once. The whole method is that when something feels wrong you know
+exactly which addition caused it.
+
+---
+
 ## How the three run together
 
 ```

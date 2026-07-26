@@ -1,5 +1,46 @@
 # FLIPLINE → ODD SOCK — Roadmap to CrazyGames-grade
 
+> # ⛩️ FIRST: BRING THIS GAME IN LINE WITH THE BUILD PILLARS
+>
+> **Before any roadmap item below is picked up, read `BUILD_PILLARS.md` at the repo root and
+> do the Pillar 1 pass on this game.** This block outranks everything under it. When Mike says
+> "look at the roadmap", the answer starts here, not at the backlog.
+>
+> **Pillar 1 — THE GARDEN.** Strip to ONE thing and play it until it is genuinely fun before
+> any more content gets built. For this game that means a committed feel-lab at
+> `flipline/proto/shirt-test.html` containing:
+>
+> - **ONE player character** and **ONE opponent/obstacle**. Not a wave. Not a level.
+> - The **real shipped numbers**, not approximations, so tuning transfers straight back.
+> - **No fail state.** The lab is reps, not runs; a mistake resets the rep, nothing else.
+> - The **dev cockpit** (see BUILD_PILLARS "the two things people get wrong"): every feel
+>   number on a key and on screen, a one-key NUMBERS DUMP that prints the current tuning as
+>   one pasteable line, force-spawn any single enemy/state, freeze + single-frame step,
+>   slow-motion, a reaction readout in frames, no-fail toggle, instant reset, hitbox/window
+>   overlay. All inside `DEV:BEGIN` / `DEV:END` strip markers.
+> - A **headless harness** (`node shirt-harness.js`) that drives the real update loop and asserts the
+>   feel budget in frames, so an agent can prove a change without a human playing.
+>
+> ****Status here: the lab EXISTS** (`proto/shirt-test.html`, commit `3095ca4`) - one shirt every 3s on a fixed clock, deflect instead of die. This is the game the method came from. Its cockpit is thin: no live tuning keys, no NUMBERS DUMP, no freeze/frame-step, no headless harness of its own (the main build's `?bot=1` harness is separate). Bring it up to the standard above before the roadmap resumes. For a dodger the 'one enemy' is one obstacle type, and the ladder is the same: each new garment/hazard must ask a different question, not the same gap at a higher speed.**
+>
+> **Pillar 1 exits only when Mike says the one thing is fun.** An agent never certifies feel.
+>
+> **Adding enemies after that (BUILD_PILLARS section B):** the teaching enemy is a deliberate
+> design object and may have to be invented after the fact (the Goomba was built last and
+> placed first). Each new enemy must ask a **different question**, not the same one with more
+> HP — that is a difficulty slider, not an enemy. Add them **one at a time to the same lab**
+> and play each new pair before adding a third. The boss is the exam, built only from
+> questions already taught.
+>
+> **Pillar 2 — ONE IDEA, MANY PROBLEMS.** Every item below gets this filter before it is
+> built: name the two-plus problems it solves. One problem is a patch. A new input is the
+> loudest admission of failing this test.
+>
+> **Pillar 3 — THE FOUR-STEP TEACH.** Once the verb is fun, each mechanic gets four beats:
+> introduce, develop, twist, conclude. The twist is a new angle, not a difficulty spike.
+
+---
+
 Dev-owned backlog. Standard: **is this genuinely fun and polished by small-game best practices,
 and does it clear CrazyGames' quality guidelines?** North star changed 2026-07-02 (Mike's call,
 same as Rooftop Sprint): no more speed-to-portals — ONE quality bar, ONE build everywhere.

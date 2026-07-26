@@ -11,6 +11,10 @@ what to pick up next; wait for the user to choose roadmap item IDs before buildi
 **Prime rule: before building ANY feature, check it against Part 1 and Part 2. If a game
 fails Part 2, no amount of Part 1 compliance saves it.**
 
+**Every game's roadmap/handoff now opens with a PILLAR 1 block.** When a chat starts with
+"look at the roadmap", the first job is that block — bringing the game down to one player
+character, one enemy, a dev cockpit and a headless harness — not the backlog under it.
+
 **Read `BUILD_PILLARS.md` alongside this.** This file is the floor a build must clear.
 BUILD_PILLARS is the ORDER the work happens in — one enemy (or one app feature) played until
 it is fun before any content, every addition filtered for solving two problems not one, then
