@@ -17,7 +17,7 @@ The map from games to apps is close to one for one. **One enemy is one feature.*
 
 The word for "feels right" is where the two split. In a game you are chasing **perfect feel**: the timing lands, the hit connects, the dodge is fair. In an app you are chasing **polished**, and that word is vague, so here is what it means. A feature is polished when it does what you expected the first time you tried it, when you never wait on it, when you do not have to stop and work out how to use it, and when doing it the fortieth time is no more annoying than the first. If any of those four is missing, the feature is not done, and no amount of design around it will fix that.
 
-![A side by side comparison. On the left, a normal playtest: the good feeling splits into a small verb portion and a large progress portion, verdict inconclusive. On the right, a verb test with no score or unlocks: the whole good feeling comes from the verb, verdict usable.](verb-vs-progress-1200x630.png)
+![Two bars. The top one, labelled normal test, is split into a small verb block and a large progress block, with the progress block crossed out and a question mark beside it. The bottom one, labelled verb test, has the verb block alone and a tick beside it.](verb-vs-progress-1200x630.png)
 
 ## Why you need it: progress hides a bad verb
 
