@@ -6,6 +6,10 @@
 <title>FLIPLINE</title>
 <!-- Verify against current CrazyGames SDK docs before submitting -->
 <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+<!-- DEV:BEGIN — shared dev cockpit (GAME_BIBLE Part 5). Strip this tag with the
+     DEV block at the foot of the game script before submission. -->
+<script src="../dev-cockpit.js"></script>
+<!-- DEV:END -->
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent;
       -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
@@ -185,12 +189,12 @@ const TOPY   = WALL;          // ceiling inner surface
 const BOTY   = VH-WALL;       // floor inner surface
 const PX     = 96;            // player fixed x
 const PS     = 16;            // player size
-const GRAV   = 4200;          // gravity px/s^2
-const FLIPKICK = 240;         // instant velocity on flip (crisp snap off the surface)
+let   GRAV   = 4200;          // gravity px/s^2
+let   FLIPKICK = 240;         // instant velocity on flip (crisp snap off the surface)
 const MAXVY  = 1300;          // terminal vertical speed
-const SPEED0 = 170;           // starting scroll speed px/s
+let   SPEED0 = 170;           // starting scroll speed px/s
 const SPEEDMX= 360;           // max scroll speed px/s
-const RAMP   = 0.30;          // speed gained per metre — RESTORED from 0.15 (🔷 Mike 2026-07-11: the 0.15 drop was for the cut two-line design; downline-only at 0.15 meant most players never reached top speed → bland). Top speed now lands ~630m.
+let   RAMP   = 0.30;          // speed gained per metre — RESTORED from 0.15 (🔷 Mike 2026-07-11: the 0.15 drop was for the cut two-line design; downline-only at 0.15 meant most players never reached top speed → bland). Top speed now lands ~630m.
 const GAP0   = 200;           // starting world spacing between obstacles
 const GAPMIN = 120;           // tightest spacing
 const HMIN   = 66, HMAX=118;  // obstacle jut height range
@@ -204,8 +208,8 @@ const SEG_LEN  = 250;         // metres per segment before the world flips mode
 const SKY_GRAV = 2900;        // FALL gravity once a glide is canceled (2nd tap) → a deliberate drop to land precisely
 const SKY_JUMP = 880;         // (parked — upline now glides, not hops)
 // UPLINE glide: 1st tap launches a floaty glide; weak gravity + capped descent = a long gentle float; 2nd tap cancels → drop
-const GLIDE_LIFT = 375;       // gentle launch into the glide (apex ~85px)
-const GLIDE_GRAV = 825;       // gravity WHILE gliding — lower = floatier (raised for a less-floaty feel)
+let   GLIDE_LIFT = 375;       // gentle launch into the glide (apex ~85px)
+let   GLIDE_GRAV = 825;       // gravity WHILE gliding — lower = floatier (raised for a less-floaty feel)
 const GLIDE_VMAX = 300;       // capped descent speed while gliding — lower = floatier (raised for a less-floaty fall)
 const SKY_GAP0 = 270, SKY_GAPMIN=230;   // jut spacing — GAPMIN > max jump reach (~219px@cap) so you never land ON a jut
 const SKY_HMIN = 28, SKY_HMAX=56;       // floor-jut height range (all clearable by the fixed arc)
@@ -552,6 +556,7 @@ function shopAction(){ const c=shopCat, i=sel[c], list=catList(c), own=catOwned(
 
 /* ===== State ===== */
 let mode="ready";            // ready | play | dead
+let devNoFail=false;         // dev cockpit no-fail toggle; never true in a shipped build
 let py, vy, gdir, sq;        // player y, vel, gravity dir(1 down/-1 up), squash
 let speed, worldX, dist, best=0, spawnCd, nextAd, adPending=false;
 let shake=0, flash=0, flashCol="#ff5468", freeze=0, t=0, lastMile=0;
@@ -627,6 +632,9 @@ function skyJump(){   // UPLINE glide: 1st tap (grounded) launches a floaty glid
 }
 // A crash: juice always; then branch — free revive (1st) → ad-revive offer (2nd) → real death.
 function onCrash(){
+  // Dev cockpit no-fail. devNoFail is a plain false in a shipped build, so this
+  // is dead code once the DEV block is stripped (GAME_BIBLE Part 5).
+  if(devNoFail){ BT[1]=Math.max(BT[1],GRACE); return; }
   shake=10; flash=0.5; flashCol="#ff5468"; freeze=0.05; burst(PX+PS/2,py+PS/2); Snd.die();
   Music.flow=false; Music.applyMute();
   lightR=26; lightTarget=26;   // snuff the light to a spark
@@ -1459,6 +1467,51 @@ function boot(){
   Ads.init(()=>{ ready(); }); setTimeout(ready,700);
   requestAnimationFrame(frame);
 }
+/* DEV:BEGIN — dev cockpit ====================================================
+   The standard eleven controls (BUILD_PILLARS "A. The dev cockpit", GAME_BIBLE
+   Part 5) come from the shared ../dev-cockpit.js. This block only declares Odd
+   Sock's own feel numbers: the flip, the glide, and the speed ramp under them.
+   Nothing here is load-bearing — every knob writes to a value the game already
+   reads, and no-fail defaults to off. Strip this block and the <script src> tag
+   before submission.
+   ========================================================================= */
+if(DevCockpit.on){
+  const DC = DevCockpit.mount({
+    game: 'odd-sock',
+    knobs: [
+      { key:'grav',      label:'gravity',            min:1500, max:8000, step:50, get:()=>GRAV,       set:v=>GRAV=v },
+      { key:'flipkick',  label:'flip kick',          min:80,   max:600,  step:10, get:()=>FLIPKICK,   set:v=>FLIPKICK=v },
+      { key:'speed0',    label:'start scroll speed', min:90,   max:320,  step:5,  get:()=>SPEED0,     set:v=>SPEED0=v },
+      { key:'ramp',      label:'speed per metre',    min:0.05, max:0.9,  step:0.01, get:()=>RAMP,     set:v=>RAMP=v },
+      { key:'glideLift', label:'glide lift',         min:150,  max:700,  step:5,  get:()=>GLIDE_LIFT, set:v=>GLIDE_LIFT=v },
+      { key:'glideGrav', label:'glide gravity',      min:300,  max:1800, step:25, get:()=>GLIDE_GRAV, set:v=>GLIDE_GRAV=v },
+    ],
+    toggles: [
+      { key:'nofail', label:'No-fail (the lab is reps, not runs)', get:()=>devNoFail, set:v=>devNoFail=v },
+    ],
+    // Control 3: force the thing you want to practise instead of running to it.
+    actions: [
+      { label:'force an obstacle below',  run:()=>devObs(0,0) },
+      { label:'force an obstacle above',  run:()=>devObs(1,0) },
+      { label:'force a stompable critter',run:()=>devObs(0,1) },
+      { label:'clear the field',          run:()=>{ for(const o of obs) o.on=false; } },
+      { label:'jump to the next segment', run:()=>{ nextSeg = dist + 5; } },
+    ],
+    reset: ()=>{ reset(); mode='play'; },
+  });
+  window.DC = DC;
+
+  // One jut, placed about a second ahead so it is still a read.
+  window.devObs = (side, kind)=>{
+    const o = obs.find(x=>!x.on); if(!o) return;
+    o.on=true; o.side=side; o.k=kind; o.style=0;
+    o.w = kind ? 26 : 34;
+    o.h = kind ? ENEMY_HMIN : HMIN;
+    o.x = PX + Math.max(160, speed);
+  };
+}
+/* DEV:END ================================================================= */
+
 boot();
 </script>
 </body>

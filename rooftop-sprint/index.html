@@ -21,6 +21,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- Verify against current CrazyGames SDK docs before submitting -->
 <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+<!-- RS-#080 DEV:BEGIN — shared dev cockpit (GAME_BIBLE Part 5). Strip this tag
+     with the DEV block at the foot of the game script before submission. -->
+<script src="../dev-cockpit.js"></script>
+<!-- RS-#080 DEV:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -614,6 +618,7 @@
 
   // ---------- World state ----------
   let state = 'menu'; // menu | playing | paused | resuming | dead
+  let devNoFail = false;   // RS-#080: dev cockpit no-fail toggle; never true in a shipped build
   let speed = 0, baseSpeed = 1.95;
   let distance = 0;
   let feathers = 0; // internal name kept; player-facing label is "Light"
@@ -760,12 +765,12 @@
     strikeFlash: 0,
     dead: false, runT: 0,
   };
-  const GRAVITY = 0.34;
-  const JUMP_V = -7.2;
+  let   GRAVITY = 0.34;   // RS-#080: let, so the dev cockpit can tune it live
+  let   JUMP_V = -7.2;    // RS-#080: let, for the dev cockpit
   const JUMP_CUT = -2.6;   // release early → rise is cut here: tap = short hop, hold = full leap
   const COYOTE_FRAMES = 5; // ~80ms forgiveness after running off a roof edge
   const BUFFER_FRAMES = 6; // ~100ms early jump press fires the instant you land
-  const SLIDE_FRAMES = 32;
+  let   SLIDE_FRAMES = 32; // RS-#080: let, for the dev cockpit
   const SLIDE_H = 14;      // sliding hitbox height (standing = player.h 28)
   const LOWBAR_BOT = 17, LOWBAR_TOP = 46; // hazard band above the roof (slide fits under 17; a full 76px leap clears 46)
   const STRIKE_RANGE_Y = 30;
@@ -1902,6 +1907,9 @@
     else { player.y = GROUND_Y; player.vy = 0; player.onGround = true; }
   }
   function die(cause) {
+    // RS-#080: dev cockpit no-fail. devNoFail is a plain false in a shipped
+    // build, so this is dead code once the DEV block is stripped.
+    if (devNoFail) { graceT = 50; return; }
     // Warding Charm buff: absorbs one hit before anything else is spent
     if (runBuff === 'ward' && !wardUsed && cause !== 'gap') {
       wardUsed = true;
@@ -2600,6 +2608,56 @@
   document.querySelectorAll('#overlay p')[0].innerHTML = save.seenStory
     ? 'Relight the districts. Climb the ranks. Unlock the endless Night Shift.'
     : 'The wardens snuffed every lamp and hoard the light.<br>You carry the last living flame.<br>Relight six districts. Reach the Great Beacon.';
+  /* RS-#080 DEV:BEGIN — dev cockpit ==========================================
+     The standard eleven controls (BUILD_PILLARS "A. The dev cockpit",
+     GAME_BIBLE Part 5) come from the shared ../dev-cockpit.js. This block only
+     declares Rooftop Sprint's own numbers. Nothing here is load-bearing: every
+     knob writes to a value the game already reads, and no-fail defaults to off.
+     Strip this block and the <script src> tag before submission.
+     ====================================================================== */
+  if (DevCockpit.on) {
+    const DC = DevCockpit.mount({
+      game: 'rooftop-sprint',
+      knobs: [
+        { key:'baseSpeed', label:'base run speed', min:1.0, max:4.0, step:0.05, get:()=>baseSpeed, set:v=>baseSpeed=v },
+        { key:'gravity',   label:'gravity',        min:0.15,max:0.7, step:0.01, get:()=>GRAVITY,   set:v=>GRAVITY=v },
+        { key:'jump',      label:'jump velocity',  min:-12, max:-4,  step:0.1,  get:()=>JUMP_V,    set:v=>JUMP_V=v },
+        { key:'slide',     label:'slide frames',   min:12,  max:60,  step:1,    get:()=>SLIDE_FRAMES, set:v=>SLIDE_FRAMES=v },
+      ],
+      toggles: [
+        { key:'nofail', label:'No-fail (the lab is reps, not runs)', get:()=>devNoFail, set:v=>devNoFail=v },
+      ],
+      // Control 3: practise one read without playing up to the roof that has it.
+      actions: [
+        { label:'force a clothesline ahead', run:()=>devHazard(0) },
+        { label:'force a beam ahead',        run:()=>devHazard(1) },
+        { label:'force a sign ahead',        run:()=>devHazard(2) },
+        { label:'force a warden ahead',      run:()=>devGuard() },
+        { label:'clear every hazard',        run:()=>{ for (const o of lowObs) o.active = false; } },
+        { label:'clear every warden',        run:()=>{ for (const g of guards) { g.active = false; g.alive = false; } } },
+      ],
+      reset: ()=>{ resetWorld(); while (nextSpawnX < W + 500 && spawnSegment(false)); state = 'playing'; },
+    });
+    window.DC = DC;
+
+    // Place one hazard just far enough ahead to still be a read, not a trap:
+    // roughly a second of running at the current speed.
+    window.devHazard = (kind)=>{
+      const o = lowObs.find(x => !x.active); if (!o) return;
+      o.active = true; o.kind = kind; o.w = 26;
+      o.x = player.x + Math.max(180, speed * 60);
+      o.y = player.y + player.h;
+    };
+    window.devGuard = ()=>{
+      const g = guards.find(x => !x.active); if (!g) return;
+      g.active = true; g.alive = true; g.alerted = false; g.deathT = 0;
+      g.x = player.x + Math.max(200, speed * 70);
+      g.y = player.y + player.h - g.h;
+      g.patrolMin = g.x - 20; g.patrolMax = g.x + 20; g.patrolDir = -1;
+    };
+  }
+  /* RS-#080 DEV:END ======================================================= */
+
   requestAnimationFrame(loop);
   // SDK call order still matters: game.* calls only fire after init() resolves (sdkLive).
   CG.init(() => {

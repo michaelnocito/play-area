@@ -15,6 +15,9 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
+<!-- DEV:BEGIN — shared dev cockpit -->
+<script src="../../dev-cockpit.js"></script>
+<!-- DEV:END -->
 <script>
 "use strict";
 /* ============================================================================
@@ -44,20 +47,20 @@ const PERSP=1.9, SOCK_R=0.90;
 const HITLO=0.92, HITHI=1.05;
 
 /* ===== Parachute-drift feel (the thing being tuned) ===== */
-const NUDGE_ACC=15.0;                  // angular accel from a held nudge
-const AV_MAX=3.2;                      // clamp on angular velocity
-const LAT_DRAG=2.4;                    // air-drag bleed → floaty settle (parachute drift)
+let   NUDGE_ACC=15.0;                  // angular accel from a held nudge
+let   AV_MAX=3.2;                      // clamp on angular velocity
+let   LAT_DRAG=2.4;                    // air-drag bleed → floaty settle (parachute drift)
 const SWAY_SPRING=42, SWAY_DAMP=7.0;   // visual pendulum under the caught air
 const CANOPY_BILLOW=0.7;               // how full the canopy reads (always open here)
 
 /* ===== The metronome ===== */
-const SPAWN_INT=3.0;                   // one shirt every 3 seconds
+let   SPAWN_INT=3.0;                   // one shirt every 3 seconds
 const CLOCK=[-Math.PI/2, 0, Math.PI/2, Math.PI];   // 12, 3, 6, 9 o'clock (canvas angles)
 const CLOCK_LABEL=["12","3","6","9"];
-const SHIRT_TRAVEL=2.55;               // seconds for a shirt to rise from deep → the sock plane
-const SHIRT_ZSPD=1/SHIRT_TRAVEL;
+let   SHIRT_TRAVEL=2.55;               // seconds for a shirt to rise from deep → the sock plane
+let   SHIRT_ZSPD=1/SHIRT_TRAVEL;
 const CONTACT_ARC=0.34;                // angular overlap that counts as running into the shirt
-const CLEAR_ARC=0.34;                  // must be at least this far to score a clean dodge
+let   CLEAR_ARC=0.34;                  // must be at least this far to score a clean dodge
 
 /* ===== Deflection (both thrown off trajectory) ===== */
 const SOCK_KICK=3.4;                   // angular knockback to the sock (rad/s)
@@ -152,6 +155,7 @@ function reset(){ a=Math.PI/2; av=0; sway=0; swayV=0; rOff=0; rOffV=0; t=0;
 
 function launchShirt(){ const s=shirts.find(q=>!q.on) || shirts.find(q=>q.deflected); if(!s) return;
   s.on=true; s.z=0.05; s.ang=CLOCK[clockIdx]; s.idx=clockIdx;
+  if(window.DC) DC.telegraph('shirt@'+CLOCK_LABEL[clockIdx]);   // reaction readout: the rise IS the telegraph
   s.counted=false; s.deflected=false; s.dav=0; s.dr=0; s.rot=0; s.pal=(Math.random()*SHIRTS.length)|0; s.life=0;
   clockIdx=(clockIdx+1)%4; nextIdx=clockIdx; Snd.tick(); }
 function activeShirt(){ let best=null,bz=-1; for(const s of shirts){ if(s.on&&!s.deflected&&s.z>bz){best=s;bz=s.z;} } return best; }
@@ -176,6 +180,7 @@ function deflect(sh){ let side=angDiff(a,sh.ang); if(Math.abs(side)<0.02) side=(
   rOffV += SOCK_RECOIL;                                        // and bounced outward
   sh.deflected=true; sh.counted=true; sh.dav = -s*SHIRT_SPIN; sh.dr = SHIRT_FLY; sh.life=0.7;
   bonks++; streak=0; hitStop=0.08; shake=8; flash=0.5;
+  if(window.DC) DC.input('shirt', false);   // reaction readout: the swing did not beat it
   const zz=Math.min(1,sh.z), r=RIM*Math.pow(zz,PERSP);
   const cx=CX+Math.cos(sh.ang)*r, cy=CY+Math.sin(sh.ang)*r;
   spark((cx+ (CX+Math.cos(a)*RIM*SOCK_R))/2, (cy+(CY+Math.sin(a)*RIM*SOCK_R))/2, 12, "#ffd0a0");
@@ -213,6 +218,7 @@ function update(dt){
         }
         if(!sh.counted && sh.z>HITHI){                       // sailed past clean → DODGE
           sh.counted=true; dodges++; streak++; bestStreak=Math.max(bestStreak,streak);
+          if(window.DC) DC.input('shirt@'+CLOCK_LABEL[sh.idx], true);   // reaction readout
           pop(CX+Math.cos(sh.ang)*RIM*0.7, CY+Math.sin(sh.ang)*RIM*0.7, "DODGE", "#9bf0d0");
           Snd.whoosh(); if(streak>0 && streak%5===0){ Snd.streak(520+streak*8); pop(CX,CY-40,streak+" STREAK!","#ffd45a"); }
         }
@@ -321,8 +327,46 @@ function draw(){
 }
 
 /* ===== Loop ===== */
-let last=performance.now();
-function frame(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05; update(dt); draw(); requestAnimationFrame(frame); }
+// dt comes from the rAF timestamp, not performance.now(), so the dev cockpit's
+// freeze / frame-step / slow-motion apply to this lab for free.
+let last=0;
+function frame(now){ if(!last){ last=now; requestAnimationFrame(frame); return; }
+  let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05; update(dt); draw(); requestAnimationFrame(frame); }
+
+/* DEV:BEGIN — dev cockpit for the shirt feel-lab ==============================
+   A feel-lab without instrumentation is just a small game (BUILD_PILLARS "A").
+   The shirt's rise time IS the telegraph here, so the reaction readout is the
+   control that matters: it says how many frames you actually took to swing
+   clear, and whether the swing beat the shirt.
+   ========================================================================= */
+const DC = DevCockpit.mount({
+  game: 'odd-sock-shirt-lab',
+  knobs: [
+    { key:'nudge',  label:'swing accel',        min:4,   max:40,  step:0.5,  get:()=>NUDGE_ACC,   set:v=>NUDGE_ACC=v },
+    { key:'avmax',  label:'max swing speed',    min:1,   max:8,   step:0.1,  get:()=>AV_MAX,      set:v=>AV_MAX=v },
+    { key:'drag',   label:'air drag',           min:0.4, max:8,   step:0.1,  get:()=>LAT_DRAG,    set:v=>LAT_DRAG=v },
+    { key:'travel', label:'shirt rise (s)',     min:0.8, max:5,   step:0.05, get:()=>SHIRT_TRAVEL,set:v=>{ SHIRT_TRAVEL=v; SHIRT_ZSPD=1/v; } },
+    { key:'spawn',  label:'seconds per shirt',  min:0.8, max:6,   step:0.1,  get:()=>SPAWN_INT,   set:v=>SPAWN_INT=v },
+    { key:'clear',  label:'clean-dodge arc',    min:0.1, max:1.2, step:0.02, get:()=>CLEAR_ARC,   set:v=>CLEAR_ARC=v },
+  ],
+  actions: [
+    { label:'send a shirt to 12', run:()=>devShirt(0) },
+    { label:'send a shirt to 3',  run:()=>devShirt(1) },
+    { label:'send a shirt to 6',  run:()=>devShirt(2) },
+    { label:'send a shirt to 9',  run:()=>devShirt(3) },
+    { label:'clear the air',      run:()=>{ for(const sh of shirts) sh.on=false; } },
+  ],
+  reset: ()=>{ reset(); mode='play'; },
+});
+window.DC = DC;
+window.devShirt = (idx)=>{
+  const sh = shirts.find(x=>!x.on); if(!sh) return;
+  sh.on=true; sh.z=0; sh.idx=idx; sh.ang=CLOCK[idx]; sh.counted=false; sh.deflected=false;
+  sh.dav=0; sh.dr=0; sh.rot=0; sh.pal=idx%PAL.length; sh.life=0;
+  DC.telegraph('shirt@'+CLOCK_LABEL[idx]);
+};
+/* DEV:END ================================================================= */
+
 requestAnimationFrame(frame);
 </script>
 </body>

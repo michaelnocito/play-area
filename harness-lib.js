@@ -85,7 +85,11 @@ function load(file, opt) {
   const sandbox = Object.assign({
     document: {
       getElementById: () => el, createElement: () => makeCanvas(W, H),
-      querySelector: () => el, querySelectorAll: () => [],
+      querySelector: () => el,
+      // A real page returns nodes here, and boot code indexes straight into the
+      // result (`querySelectorAll('#overlay p')[0].innerHTML = ...`). An empty
+      // array throws before a single test runs, so hand back stubs.
+      querySelectorAll: () => Array.from({ length: 8 }, () => makeCanvas(W, H)),
       addEventListener: noop, removeEventListener: noop,
       body: { appendChild: noop, style: {} },
       documentElement: { style: {}, clientWidth: W, clientHeight: H },
