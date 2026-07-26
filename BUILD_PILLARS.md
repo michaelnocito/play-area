@@ -179,6 +179,65 @@ possible ([GamesRadar](https://www.gamesradar.com/games/donkey-kong/nintendo-ico
 The cockpit is not a debug afterthought. It is the instrument panel that makes Pillar 1
 possible, and it is built **with** the lab, not after it.
 
+#### It is written once, not per project
+
+Two files, kept in step with each other:
+
+| File | For |
+|---|---|
+| `dev-cockpit.js` (play-area root) | every browser game and feel-lab |
+| `harness-lib.js` (play-area root) | the headless half — DOM stubs, `<script src>` loading, the lexical-scope bridge, a pass/fail reporter |
+| `scripts/dev_cockpit.gd` | the Godot twin, copied byte-identical into each Godot project |
+
+A game declares only its own knobs. Everything else — the panel, freeze and frame-step,
+slow-motion, the numbers dump, the reaction readout, the harness hook — comes from the
+shared file. Wiring a new game is a `<script src>` tag and one `DevCockpit.mount({...})`
+call inside `DEV:BEGIN` / `DEV:END` markers.
+
+**Freeze, frame-step and slow-motion work by wrapping `requestAnimationFrame`.** Two things
+follow from that. A loop must take its `dt` from the rAF timestamp rather than calling
+`performance.now()` itself, or slow-motion will not reach it. And the wrapper carries a
+re-entrancy guard, because the usual `function frame(t){ rAF(frame); ... }` shape
+re-registers from inside its own callback — without the guard, 4x speed means 4ⁿ callbacks.
+
+#### The numbers dump, and what it is for
+
+`D` writes one pasteable line plus a `<game>-tuning.txt` file:
+
+```
+TUNING jade-fist-duel | windup=28 | arm=110 | gap=40 | perf=0.66
+# reaction readout (frames from telegraph to input)
+#   sweep: 24f LANDED
+#   high: 31f missed
+```
+
+That file **is the handoff**. Paste it into the next chat and the session starts from the
+numbers that felt right, rather than from a memory of them. Without it, a tuning session's
+findings die with the tab.
+
+### This applies to apps too, not only games
+
+Every new app starts the same way: the cockpit is day-one work, not something added once
+the thing is hard to tune. The controls translate straight across, because the underlying
+question is identical — *can I exercise this one piece, repeatedly, without playing through
+everything around it?*
+
+| In a game | In an app |
+|---|---|
+| Force-spawn one enemy | Jump straight to one screen, one state, one record — no clicking through a flow to reach it |
+| No-fail toggle | Bypass auth, quotas, rate limits, paywalls while testing |
+| Freeze + frame-step | Pause an animation, a timer, a queue, a polling loop, and advance it one tick |
+| Slow-motion | Slow transitions and network timing so what the eye missed becomes visible |
+| Reaction readout | Real latency numbers — time to first paint, time to a response landing |
+| Instant reset to the rep | Reset to a known seeded state in one keystroke, no re-seeding by hand |
+| Hitbox / window overlay | Layout, focus-order and hit-target overlays |
+| Every feel number on a slider | Every timing, threshold and limit the app's feel depends on |
+| Numbers dump | The same pasteable line, same purpose: hand the tuning to the next session |
+| Headless harness | The same rule — an agent proves a change without asking a human to click |
+
+Same gate (`?dev=1`, auto-on for localhost), same `DEV:BEGIN` / `DEV:END` strip markers,
+same rule that nothing inside is load-bearing.
+
 ### B. More than one enemy — the ladder, and how Nintendo actually did it
 
 Mike's instinct was: nail the weakest enemy, then work up to the boss. That is close, and the

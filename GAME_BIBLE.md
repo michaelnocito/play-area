@@ -205,12 +205,19 @@ Grain landing rework.
 - [ ] Audio levels consistent; mute persists
 - [ ] Original name + thumbnail; PEGI 12; honest description
 - [ ] No cross-promo links, no external links
-- [ ] **DEV MENU stripped** (see Part 5) — no `DEV:BEGIN..END` block in the submitted build
+- [ ] **DEV COCKPIT stripped** (see Part 5) — no `DEV:BEGIN..END` block AND no
+      `<script src="../dev-cockpit.js">` tag in the submitted build
+- [ ] `node <game>-harness.js` green before submitting
 - [ ] Full playthrough QA on the live URL, desktop + mobile
 
 ---
 
-## Part 5 — Dev menu (every game must have one; strip it before launch)
+## Part 5 — Dev cockpit (every game and every app gets one on day one; strip it before launch)
+
+> The full control list and the reasoning behind each control live in
+> `BUILD_PILLARS.md`, section **"A. The dev cockpit"** — including the app-applicable
+> version of the same eleven controls. This part is the compliance floor: how it is
+> gated, how it is marked, and how it comes out before submission.
 
 **The term.** What we're building is an in-game **debug menu** (a.k.a. dev menu / cheat
 menu). The values it exposes for live tweaking are **tunables** or **cvars** ("console
@@ -245,4 +252,37 @@ set; add game-specific tunables on top):**
 - **Per-system tunables** — the sliders specific to this game (e.g. Deadroot: warden fire
   rate / damage / range)
 
-Reference implementation: `deadroot/index.html`, `DR-#019 DEV:BEGIN..END`.
+**The implementation is shared — do not write another one.** `dev-cockpit.js` at the
+play-area root carries all eleven controls; a game supplies only its knob list:
+
+```html
+<!-- DEV:BEGIN -->
+<script src="../dev-cockpit.js"></script>
+<!-- DEV:END -->
+```
+```js
+if (DevCockpit.on) {
+  const DC = DevCockpit.mount({
+    game: 'my-game',
+    knobs:   [{ key:'grav', label:'gravity', min:0.1, max:1, step:0.01,
+                get:()=>GRAVITY, set:v=>GRAVITY=v }],
+    toggles: [{ key:'nofail', label:'No-fail', get:()=>devNoFail, set:v=>devNoFail=v }],
+    actions: [{ label:'spawn a foe', run:()=>spawnEnemy('foe') }],
+    reset:   ()=>newRun(),
+  });
+}
+```
+
+Keys: **`** panel · **P** freeze · **.** frame-step · **R** reset · **D** numbers dump.
+
+Stripping for submission means removing BOTH the `<script src>` tag and the `DEV` block —
+they carry matching markers so a single pass over `DEV:BEGIN..END` gets both.
+
+Godot projects use `scripts/dev_cockpit.gd`, the same panel on F1. Copies live in each
+project and are kept byte-identical.
+
+Every game also gets `node <game>-harness.js` built on `harness-lib.js` — the headless half
+of the same instrument, so a change can be proved without asking a human to play.
+
+Reference implementations: `deadroot/index.html` (`DR-#055 DEV:BEGIN..END`) and
+`jade-fist/proto/duel-test.html` for a feel-lab with the reaction readout wired.
