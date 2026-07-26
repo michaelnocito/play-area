@@ -21,13 +21,19 @@ The word for "feels right" is where the two split. In a game you are chasing **p
 
 ## Why you need it: progress hides a bad verb
 
-Look at what a progress structure actually is. A number that goes up. A bar that fills. A door that opens because you did enough of something. These feel good almost no matter what you did to earn them. That is why we build them. They are reliable.
+A progress structure is anything that keeps score of how far along someone is. A level number. A bar that fills. A door that opens once you have done enough. An onboarding checklist showing four of seven done.
 
-That reliability is the problem when you are trying to judge your own work.
+It does three jobs, and this is the part that matters: **none of the three depend on the action being any good.**
 
-Test the normal way and the progress is doing most of the work. It supplies the good feeling, and the action gets the credit. Everyone in the room agrees it felt good, and nobody can tell you how much was the action and how much was the bar. Then it ships, and the people who did not care about your bar leave in ninety seconds.
+- **It pays out on a schedule.** You get the tick for doing enough of the thing, not for doing something that felt good. Twenty dull swings fill the bar exactly as fast as twenty great ones.
+- **It gives you a reason to continue that is not enjoyment.** Nearly there is its own pull. People finish things they stopped liking an hour ago.
+- **It tells you afterwards that the time was well spent.** You have a number to point at, so the session gets filed as good.
 
-Take the progress away and there is nothing else to like. That is the whole trick. If an hour of the bare action is pleasant, that action can carry a sixty hour game, or an app someone opens every day. If it is not, more content will not save it, and you found that out at prototype cost instead of at launch.
+Now put that next to the action you are trying to judge. At the end of a session you have one good feeling and two possible causes. The action was enjoyable, or you got to the end of something. From the inside those feel identical, and the action takes the credit for both.
+
+That is what "it felt good" is actually reporting, and it is why the report cannot be acted on. Then it ships, and the people who were never going to care about your bar leave in ninety seconds.
+
+Take the progress away and only one of the two causes is left. That is the whole trick. If an hour of the bare action is pleasant, that action can carry a sixty hour game, or an app someone opens every day. If it is not, more content will not save it, and you found that out at prototype cost instead of at launch.
 
 ## In a game: one character, one enemy
 
