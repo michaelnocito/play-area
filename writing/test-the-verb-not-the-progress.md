@@ -1,6 +1,6 @@
 ---
 title: "Test the Verb, Not the Progress"
-subtitle: "Miyamoto spent an hour climbing trees instead of playing Zelda. He was running an experiment, and it works on apps too."
+subtitle: "A one-hour test that tells you whether the core of your game or app is any good, before you build anything on top of it."
 slug: test-the-verb-not-the-progress
 cover: verb-vs-progress-1200x630.png
 tags: [gamedev, design, product, learning]
@@ -9,41 +9,25 @@ canonical: https://michaelnocito.github.io/guides/test-the-verb-not-the-progress
 
 # Test the Verb, Not the Progress
 
-Everyone in the room agreed the build felt good.
+Here is a test that takes an hour and tells you something no normal playtest or demo can: whether the thing at the centre of your game or app is any good on its own.
 
-They had played it the way a player would. Started at the beginning, cleared the first area, watched a bar fill, unlocked the next thing, and came away saying the sentence people always say: yeah, that felt good. Six weeks later it went out to real players and the average session was ninety seconds.
-
-Nothing was wrong with the test. The problem is what was being measured. That session had two systems in it, they got graded together, and only one of them was capable of failing.
+You strip everything away except the single action people repeat a thousand times. One character, one enemy. One screen, one feature. No score, no levels, no onboarding, nothing to finish. Then you do only that, for an hour, and watch for the moment your hand relaxes.
 
 **The one-sentence version: everything you build bundles a verb, the thing someone physically does a thousand times, with a progress structure, the levels and scores and bars and onboarding flows that pull them forward. Progress is close to failure-proof, so it always feels like something, which means it hides a weak verb instead of exposing it. To find out whether the verb is any good, remove the progress and do only the verb for an hour.**
 
 ![A side by side comparison. On the left, a normal playtest: the good feeling splits into a small verb portion and a large progress portion, verdict inconclusive. On the right, a verb test with no score or unlocks: the whole good feeling comes from the verb, verdict usable.](verb-vs-progress-1200x630.png)
 
-## An hour in the trees
-
-In March 2017, Breath of the Wild director Hidemaro Fujibayashi told Jason Schreier at Kotaku how his team first pitched their open world internally. They built a prototype to prove you could do anything in it: a small starting field with a handful of trees, with rupees hidden in the exact spots they guessed their two most important playtesters would wander toward.
-
-Then they handed the controller to Shigeru Miyamoto.
-
-> "When we first presented this to Mr. Miyamoto, he spent about an hour just climbing trees."
-
-Then comes the detail that turns a funny story into a method. Miyamoto stayed inside a radius of roughly 25 to 50 metres. The rupees were right there, carefully placed by people who wanted him to see the world. He ignored every one of them and spent the hour on the climb.
-
-He has always worked this way. Twenty-one years earlier, before Super Mario 64 had a single course, it had a test room made of lego-like blocks where Mario could run, climb slopes and jump, and Miyamoto says half the project's time and energy went into that basic system, with the courses and enemies arriving at the very end. In 2025, Donkey Kong Bananza's director said Miyamoto checked their build by ignoring the game entirely and staying in one spot, smashing and digging.
-
-Three teams, three consoles, twenty-nine years, one behaviour.
-
-## Why progress hides a bad verb
+## Why you need it: progress hides a bad verb
 
 Look at what a progress structure actually is. A number that goes up. A bar that fills. A door that opens because you did the required amount of something. These feel good almost independently of what you did to earn them, which is exactly why we build them. They are reliable, and that reliability is the problem when you are trying to evaluate.
 
-Test the normal way and progress quietly supplies most of the good feeling while the verb takes the credit. Everyone leaves agreeing it felt good, and nobody can tell you how much was the action and how much was the bar.
+Test the normal way and progress quietly supplies most of the good feeling while the verb takes the credit. Everyone in the room agrees it felt good, and nobody can tell you how much was the action and how much was the bar. Then it ships, and the players who did not care about your bar leave in ninety seconds.
 
-Miyamoto refusing the rupees is not eccentricity. It is removing the confound. What is left in the trees is climbing, alone, with nothing else to enjoy. If an hour of that is pleasant, the verb can carry a sixty hour game. If it is not, no amount of world design will rescue it, and you learned that at prototype cost instead of at launch.
+Remove the progress and there is nothing else to like. That is the whole trick. If an hour of the bare action is pleasant, the verb can carry a sixty hour game, or a product someone opens daily. If it is not, no amount of content or polish will rescue it, and you learned that at prototype cost instead of at launch.
 
 ## In a game: one character, one enemy
 
-The test is a build you would never ship. One player character. One enemy. No score, no upgrades, no levels, no death. He attacks, you answer, he gets back up, repeat. You do that for an hour.
+The test is a build you would never ship. One player character. One enemy. No score, no upgrades, no levels, no death. He attacks, you answer, he gets back up, repeat.
 
 Compare what you learn.
 
@@ -57,7 +41,7 @@ The rule for adding the second enemy is worth stealing too. In Super Mario Bros.
 
 ## In an app: the user is the player character
 
-This is the same test, and the translation is almost one to one.
+Same test, and the translation is almost one to one.
 
 | In a game | In your app |
 |---|---|
@@ -78,14 +62,6 @@ Then ladder it exactly like the enemy roster. **One feature at a time, polished 
 
 The flagship feature is the boss, and it should be built from questions the user already learned to answer.
 
-## Why this works
-
-Isolating a component and drilling it is not a Nintendo invention. It is called part-task training. Wightman and Lintern reviewed the field in 1985, defining it as practice on some components of the whole task as a prelude to performing the whole task, and across the four segmentation studies they examined the isolated version beat whole-task practice in three.
-
-*Wightman, D. C., and Lintern, G. (1985). Part-task training for tracking and manual control. Human Factors, 27(3), 267 to 283. DOI 10.1177/001872088502700304*
-
-The mechanism is the same one Miyamoto is using in the trees. When you remove everything except the component, the feedback you get is about the component.
-
 ## How to run one
 
 1. **Name the verb in one sentence.** One action. If it takes two sentences you have named a system and you need to go narrower.
@@ -96,6 +72,28 @@ The mechanism is the same one Miyamoto is using in the trees. When you remove ev
 6. **Say the verdict out loud before you add anything else.** The verb is good, or it is not.
 
 One warning. Doing this to a finished project is unpleasant, because you strip out systems you spent months on and there is a real chance the answer is "the core is thin". Do it before the next feature push rather than after, because the alternative is paying to build more of something that was not working.
+
+## Where this comes from: an hour in the trees
+
+In March 2017, Breath of the Wild director Hidemaro Fujibayashi told Jason Schreier at Kotaku how his team first pitched their open world internally. They built a prototype to prove you could do anything in it: a small starting field with a handful of trees, with rupees hidden in the exact spots they guessed their two most important playtesters would wander toward.
+
+Then they handed the controller to Shigeru Miyamoto.
+
+> "When we first presented this to Mr. Miyamoto, he spent about an hour just climbing trees."
+
+Then comes the detail that turns a funny story into a method. Miyamoto stayed inside a radius of roughly 25 to 50 metres. The rupees were right there, carefully placed by people who wanted him to see the world. He ignored every one of them and spent the hour on the climb. He was not being eccentric. He was removing the confound.
+
+He has always worked this way. Twenty-one years earlier, before Super Mario 64 had a single course, it had a test room made of lego-like blocks where Mario could run, climb slopes and jump, and Miyamoto says half the project's time and energy went into that basic system, with the courses and enemies arriving at the very end. In 2025, Donkey Kong Bananza's director said Miyamoto checked their build by ignoring the game entirely and staying in one spot, smashing and digging.
+
+Three teams, three consoles, twenty-nine years, one behaviour.
+
+## Why it works
+
+Isolating a component and drilling it is not a Nintendo invention. It is called part-task training. Wightman and Lintern reviewed the field in 1985, defining it as practice on some components of the whole task as a prelude to performing the whole task, and across the four segmentation studies they examined the isolated version beat whole-task practice in three.
+
+*Wightman, D. C., and Lintern, G. (1985). Part-task training for tracking and manual control. Human Factors, 27(3), 267 to 283. DOI 10.1177/001872088502700304*
+
+When you remove everything except the component, the feedback you get is about the component. That is all Miyamoto is doing in the trees.
 
 ## Cheat sheet
 
@@ -121,4 +119,4 @@ What is something you would defend as genuinely good where the verb, the repeate
 
 ---
 
-*Sources: Miyamoto's Super Mario 64 comments come from the 1996 developer roundtable printed in the Japanese strategy guide, translated at shmuplations.com/mario64. The Breath of the Wild account is Hidemaro Fujibayashi speaking to Jason Schreier, Kotaku, 6 March 2017. The Donkey Kong Bananza account is Kenta Motokura speaking to The Guardian, July 2025.*
+*Sources: the Breath of the Wild account is Hidemaro Fujibayashi speaking to Jason Schreier, Kotaku, 6 March 2017. Miyamoto's Super Mario 64 comments come from the 1996 developer roundtable printed in the Japanese strategy guide, translated at shmuplations.com/mario64. The Donkey Kong Bananza account is Kenta Motokura speaking to The Guardian, July 2025.*
