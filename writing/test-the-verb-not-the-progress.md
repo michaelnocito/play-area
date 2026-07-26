@@ -1,6 +1,6 @@
 ---
 title: "Test the Verb, Not the Progress"
-subtitle: "A one-hour test that tells you whether the core of your game or app is any good, before you build anything on top of it."
+subtitle: "Shigeru Miyamoto, who made Super Mario 64, tests a game by ignoring the game. Here is the idea, why it works, and how to run the same test on a game or an app of your own."
 slug: test-the-verb-not-the-progress
 cover: verb-vs-progress-1200x630.png
 tags: [gamedev, design, product, learning]
@@ -67,7 +67,7 @@ Then work through your features the way a game works through its enemies. **One 
 
 The flagship feature is the boss. Build it out of questions the user already learned to answer.
 
-## How to run one
+## How to run a verb test
 
 1. **Name the action in one sentence.** One action. If it takes two sentences you have named a system, and you need to go smaller.
 2. **Strip the progress.** No score, no unlocks, no levels, nothing to complete. In a game that is one enemy and a reset. In an app it is one screen and no task.
@@ -92,7 +92,7 @@ He has always worked this way. Twenty-one years earlier, before Super Mario 64 h
 
 Three teams, three consoles, twenty-nine years, one habit.
 
-## Why it works
+## Why isolating one piece works
 
 Isolating one part of a task and drilling it is not a Nintendo invention. It is called part-task training. Wightman and Lintern reviewed the research in 1985. They define it as practising some pieces of a task before you attempt the whole thing, and in four studies where the task was split into parts, the isolated version beat whole-task practice in three of them.
 
@@ -100,7 +100,7 @@ Isolating one part of a task and drilling it is not a Nintendo invention. It is 
 
 When you take away everything except the piece you care about, the feedback you get is about that piece. That is all Miyamoto is doing in the trees.
 
-## Cheat sheet
+## Cheat sheet: the two tests side by side
 
 | | Progress test (the default) | Verb test |
 |---|---|---|
