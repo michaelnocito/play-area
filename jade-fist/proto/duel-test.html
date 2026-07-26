@@ -15,6 +15,9 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
+<!-- JF-#067 DEV:BEGIN — shared dev cockpit -->
+<script src="../../dev-cockpit.js"></script>
+<!-- JF-#067 DEV:END -->
 <script>
 "use strict";
 /* ============================================================================
@@ -63,7 +66,7 @@ const BACK_DUR   = 20;    // back-step evade
 const RISE_DUR   = 32;    // high rise
 const DUCK_DUR   = 30;    // tap-crouch (holding tops it up)
 const FRESH      = 20;    // a dodge older than this is "lazy" — no arm, no reward
-const PERF_TH    = 0.66;  // final third of the windup = PERFECT
+let   PERF_TH    = 0.66;  // final third of the windup = PERFECT
 /* ---------------------------------------------------------------------------
    TELEGRAPH LENGTH — researched 2026-07-25 after Mike: "too long, makes you
    jump early." He was right, and the old 52f (867ms) was wrong for a reason
@@ -258,13 +261,9 @@ addEventListener('keydown', e => {
   const k = e.key;
   if (k === ' ' || k.startsWith('Arrow')) e.preventDefault();
   if ((k === ' ' || k === 'Enter') && mode !== 'play'){ Snd.ensure(); reset(); mode = 'play'; return; }
-  if (k === 'r' || k === 'R'){ Snd.ensure(); reset(); mode = 'play'; return; }
-  if (k === '[') { WINDUP = Math.max(WIND_FLOOR, WINDUP - 4); return; }
-  if (k === ']') { WINDUP = Math.min(120, WINDUP + 4); return; }
-  if (k === '-') { GAP = Math.max(20, GAP - 6); return; }
-  if (k === '=') { GAP = Math.min(180, GAP + 6); return; }
-  if (k === ',') { READY_DUR = Math.max(40, READY_DUR - 10); return; }
-  if (k === '.') { READY_DUR = Math.min(260, READY_DUR + 10); return; }
+  if (k === 'r'){ Snd.ensure(); reset(); mode = 'play'; return; }
+  // JF-#067: the ad-hoc tuning keys ([ ] - = , .) are gone. The dev cockpit owns
+  // the numbers now — one instrument panel, not two, and `.` is frame-step.
   if (keys[k]) return;                    // JF-#050: no hold-to-machine-gun
   keys[k] = true;
   if (mode !== 'play') return;
@@ -306,6 +305,7 @@ function update(){
         E.atk = ORDER[cycle % ORDER.length]; cycle++;
         E.wind = Math.max(WIND_FLOOR, WINDUP + LINE_WIND[E.atk]);
         E.st = E_WINDUP; E.stT = 0; E.hitDone = false;
+        if (window.DC) DC.telegraph(E.atk);   // JF-#067: reaction readout
         Snd.windup(E.wind);
       }
       break; }
@@ -352,6 +352,7 @@ function resolveHit(){
   const hy = atk === 'high' ? 96 : atk === 'sweep' ? 22 : 70;
   if (slipped){
     dodged++;
+    if (window.DC) DC.input(E.atk, true);   // JF-#067: the read landed
     const fresh = age <= FRESH;
     if (fresh){ streak++; bestStreak = Math.max(bestStreak, streak); armFromDodge(age); slowMo = 18; }
     shape('x', P.x, GROUND_Y - hy, fresh ? JADE : '#8d94a6');
@@ -366,6 +367,7 @@ function resolveHit(){
   }
   // clean hit — no damage in the lab, just the sting and a broken streak
   taken++; streak = 0; readyT = 0; P.hurtT = 26;
+  if (window.DC) DC.input(E.atk, false);   // JF-#067: the read missed
   hitStop = HS_MED; shake = 11; flash = 0.45; flashCol = LINE_COL[atk];
   shape('o', P.x, GROUND_Y - hy, LINE_COL[atk]);
   burst(P.x, GROUND_Y - (atk === 'sweep' ? 14 : 70), 10, LINE_COL[atk]);
@@ -654,8 +656,11 @@ function draw(){
 }
 
 /* ===== Loop — fixed 60Hz steps, slow-mo stretches them ===== */
-let last = performance.now(), acc = 0;
+// JF-#067: dt comes from the rAF timestamp, not performance.now(), so the dev
+// cockpit's freeze / frame-step / slow-motion apply to this loop for free.
+let last = 0, acc = 0;
 function frame(now){
+  if (!last){ last = now; requestAnimationFrame(frame); return; }
   let dt = now - last; last = now; if (dt > 100) dt = 100;
   acc += dt;
   const step = slowMo > 0 ? 16.6667 * 2.6 : 16.6667;   // bullet time on a clean read
@@ -664,6 +669,32 @@ function frame(now){
   draw();
   requestAnimationFrame(frame);
 }
+/* JF-#067 DEV:BEGIN — dev cockpit for the duel lab ===========================
+   A feel-lab without instrumentation is just a small game (BUILD_PILLARS "A").
+   The panel, freeze/frame-step, slow-motion, numbers dump and harness hook come
+   from ../../dev-cockpit.js; this only declares the lab's own numbers.
+   The reaction readout matters most here: it is the control that found the
+   JF-#065 telegraph bug.
+   ========================================================================== */
+const DC = DevCockpit.mount({
+  game: 'jade-fist-duel',
+  knobs: [
+    { key:'windup', label:'WINDUP (telegraph f)', min:WIND_FLOOR, max:120, step:1, get:()=>WINDUP,    set:v=>WINDUP=v },
+    { key:'arm',    label:'READY_DUR (arm f)',    min:40,  max:260, step:5, get:()=>READY_DUR, set:v=>READY_DUR=v },
+    { key:'gap',    label:'GAP (idle f)',         min:20,  max:180, step:2, get:()=>GAP,       set:v=>GAP=v },
+    { key:'perf',   label:'PERFECT threshold',    min:0.3, max:0.95,step:0.01, get:()=>PERF_TH, set:v=>PERF_TH=v },
+  ],
+  actions: [
+    { label:'force MID next',   run:()=>{ cycle = ORDER.indexOf('mid'); } },
+    { label:'force HIGH next',  run:()=>{ cycle = ORDER.indexOf('high'); } },
+    { label:'force SWEEP next', run:()=>{ cycle = ORDER.indexOf('sweep'); } },
+    { label:'arm the ring now', run:()=>{ readyT = READY_DUR; } },
+  ],
+  reset: ()=>{ reset(); mode = 'play'; },
+});
+window.DC = DC;
+/* JF-#067 DEV:END ========================================================= */
+
 requestAnimationFrame(frame);
 </script>
 </body>

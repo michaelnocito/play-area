@@ -15,6 +15,10 @@
 <!-- JF-#013: CrazyGames SDK v3 (verify against current docs before submitting) -->
 <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <!-- SDK:HEAD:END -->
+<!-- JF-#067 DEV:BEGIN — shared dev cockpit (GAME_BIBLE Part 5). Strip this tag
+     together with the DEV block in the game script before submission. -->
+<script src="../dev-cockpit.js"></script>
+<!-- JF-#067 DEV:END -->
 <style>
   html,body{margin:0;padding:0;background:#0a0d12;height:100%;overflow:hidden;touch-action:none;
     -webkit-user-select:none;user-select:none;font-family:Georgia,'Times New Roman',serif}
@@ -367,39 +371,67 @@ const DEBUG = BOTQ.has('debug');
 // default; QA-only (never reachable from normal play, CG-safe).
 const DEVMODE = BOTQ.has('dev');
 const TUNE = { spd: 1, wind: 1, hpD: 0, heartsD: 0, diffD: 0 };
-// JF-#063 DEV:BEGIN — ?dev=1 live tuning panel. STRIP this block before submission
-// (GAME_BIBLE Part 5). Nothing here is load-bearing: it only writes to the TUNE object
-// above, whose neutral defaults (spd/wind 1, others 0) remain when the block is removed.
-if (DEVMODE) addEventListener('DOMContentLoaded', () => {
-  const KNOBS = [
-    ['spd',     'enemy speed ×',          0.4, 2.2, 0.05],
-    ['wind',    'telegraph time ×',       0.4, 2.2, 0.05],
-    ['hpD',     'enemy hp +',             -2,  4,   1],
-    ['heartsD', 'player hearts +',        -2,  6,   1],
-    ['diffD',   'difficulty +',           -4,  8,   0.5]
-  ];
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;right:8px;top:8px;z-index:99;background:rgba(10,13,18,0.92);' +
-    'border:1px solid #2a3242;border-radius:10px;padding:10px 12px;font:12px monospace;color:#c8bfa8;width:212px';
-  wrap.innerHTML = '<b style="color:#7ce8a8">DEV TUNING</b>' +
-    '<span id="devReset" style="float:right;cursor:pointer;color:#e8c76a">reset</span>' +
-    KNOBS.map(([k, lab]) =>
-      `<label style="display:block;margin-top:7px">${lab} <span id="devV_${k}" style="color:#e8dcc0">${TUNE[k]}</span><br>` +
-      `<input id="dev_${k}" type="range" style="width:100%"></label>`).join('') +
-    '<div style="margin-top:6px;color:#8a94a6">speed / telegraph / hp apply to new spawns · hearts &amp; difficulty at next run</div>';
-  document.body.appendChild(wrap);
-  KNOBS.forEach(([k, _lab, mn, mx, st]) => {
-    const el = document.getElementById('dev_' + k);
-    el.min = mn; el.max = mx; el.step = st; el.value = TUNE[k];
-    el.oninput = () => { TUNE[k] = +el.value; document.getElementById('devV_' + k).textContent = el.value; };
+let devNoFail = false;   // JF-#067: dev cockpit no-fail toggle; never true in a shipped build
+// JF-#067: reaction-readout hooks — frames from a telegraph to your answer, and
+// whether it landed. No-ops here; the DEV block swaps in the real ones. This is
+// the control that found the JF-#065 telegraph bug, so it lives in the game too,
+// not only in the duel lab.
+let devTell = () => {}, devAnswer = () => {};
+// JF-#067 DEV:BEGIN — dev cockpit. The panel, freeze/frame-step, slow-motion,
+// numbers dump, reaction readout and harness hook all live in the shared
+// ../dev-cockpit.js (BUILD_PILLARS "A. The dev cockpit", GAME_BIBLE Part 5).
+// This block only declares Jade Fist's knobs. STRIP it, the <script src> tag in
+// the head, and nothing else, before submission — every knob writes to TUNE or
+// a dev flag whose neutral default (spd/wind 1, deltas 0, noFail false) is what
+// the shipped build runs with.
+if (DEVMODE || DevCockpit.on) {   // ?dev=1, or automatically on localhost/file://
+  const DC = DevCockpit.mount({
+    game: 'jade-fist',
+    knobs: [
+      { key:'spd',     label:'enemy speed ×',    min:0.4, max:2.2, step:0.05, get:()=>TUNE.spd,  set:v=>TUNE.spd=v },
+      { key:'wind',    label:'telegraph time ×', min:0.4, max:2.2, step:0.05, get:()=>TUNE.wind, set:v=>TUNE.wind=v },
+      { key:'hpD',     label:'enemy hp +',        min:-2,  max:4,   step:1,    get:()=>TUNE.hpD,  set:v=>TUNE.hpD=v },
+      { key:'heartsD', label:'player hearts +',   min:-2,  max:6,   step:1,    get:()=>TUNE.heartsD, set:v=>TUNE.heartsD=v },
+      { key:'diffD',   label:'difficulty +',      min:-4,  max:8,   step:0.5,  get:()=>TUNE.diffD,set:v=>TUNE.diffD=v },
+    ],
+    toggles: [
+      { key:'nofail', label:'No-fail (the lab is reps, not runs)', get:()=>devNoFail, set:v=>devNoFail=v },
+    ],
+    // Control 3: force ANY single foe, so a read can be practised without
+    // playing up to the wave that spawns it.
+    actions: [
+      { label:'force a viper (fast)',   run:()=>devForce(T_FAST) },
+      { label:'force a brute',          run:()=>devForce(T_BRUTE) },
+      { label:'force a spearman',       run:()=>devForce(T_SPEAR) },
+      { label:'force a normal foe',     run:()=>devForce(T_NORM) },
+      { label:'clear the street',       run:()=>{ enemies.length = 0; } },
+      { label:'+1 wave of difficulty',  run:()=>{ difficulty = Math.min(15, difficulty + 1); } },
+    ],
+    reset: ()=>{ startRun(); },
   });
-  document.getElementById('devReset').onclick = () => KNOBS.forEach(([k]) => {
-    TUNE[k] = (k === 'spd' || k === 'wind') ? 1 : 0;
-    const el = document.getElementById('dev_' + k);
-    el.value = TUNE[k]; document.getElementById('devV_' + k).textContent = TUNE[k];
-  });
-});
-// JF-#063 DEV:END
+  window.DC = DC;
+
+  // Reaction readout: a windup starts the clock, a dodge stops it. "Landed"
+  // means the dodge was fresh enough to still cover the blow.
+  devTell   = (e)=>{ DC.telegraph(e.atk || 'strike'); };
+  devAnswer = (what)=>{
+    const live = enemies.find(e => e.st === E_WINDUP);
+    DC.input(live ? (live.atk || 'strike') : what, !!live && live.stT < live.windup);
+  };
+
+  // Force-spawn helper: spawn normally, then overwrite the type so any foe can
+  // be summoned at will. Dev-only, so it lives inside the markers.
+  window.devForce = (type)=>{
+    if (state !== S_PLAY) return;
+    spawnEnemy();
+    const e = enemies[enemies.length - 1];
+    if (!e) return;
+    e.type = type;
+    e.willThrow = (type === T_SPEAR);
+    e.reach = (type === T_SPEAR ? REACH + 70 : REACH);
+  };
+}
+// JF-#067 DEV:END
 function botThink(){
   // JF-#059: survival first — answer an incoming projectile by its height.
   // low -> duck (kick back), mid -> back-step (sidestep), high -> rise (catch).
@@ -803,6 +835,7 @@ function armRise(){
   if (state !== S_PLAY || scrollOffer) return false;
   if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return false;   // one dodge at a time
   P.riseT = RISE_DUR; Snd.whoosh();
+  devAnswer('rise');   // JF-#067: reaction readout
   return true;
 }
 function duck(){
@@ -810,6 +843,7 @@ function duck(){
   if (state !== S_PLAY || scrollOffer) return;
   if (P.riseT > 0 || P.duckT > 0 || P.backT > 0 || grapple) return;
   P.duckT = DUCK_DUR; P.duckAge = 0; Snd.whoosh();   // JF-#047: fresh crouch
+  devAnswer('duck');   // JF-#067: reaction readout
 }
 // JF-#059: UP is dual-purpose — arms the rise-block window AND throws a high
 // attack at the nearest reachable foe (either side), same press. If nothing's
@@ -1574,6 +1608,9 @@ function resolveEnemyHit(e){
 
 function hurtPlayer(){
   if (tut.active){ hurtFlash = 8; shake = Math.max(shake, 4); return; }   // JF-#062: no damage while learning — a whiffed dodge just costs the exchange
+  // JF-#067: dev no-fail. devNoFail is a plain false in the shipped build, so
+  // this line is dead code once the DEV block is stripped (GAME_BIBLE Part 5).
+  if (devNoFail){ hurtFlash = 8; combo = 0; perfChain = 0; return; }
   hearts--; hurtFlash = 18; combo = 0; perfChain = 0; hitsWave++;
   shake = 12; Snd.hurt();
   burst(P.x, P.y - 50, '#e86a6a', 16, 4);
@@ -2176,6 +2213,7 @@ function update(){
           if (otherThreat){ e.x = P.x + Math.sign(e.x - P.x) * (e.reach + 4); break; }
           if (e.feint){ e.st = E_FEINT; e.stT = 0; break; }   // fake-out: no windup audio
           e.st = E_WINDUP; e.stT = 0;
+          devTell(e);   // JF-#067: reaction readout — no-op when the DEV block is stripped
           // JF-#040: pick this swing's attack + keep non-red swings reactable.
           // High/low/grab must clear the reaction+dodge budget (~react 12 + 30f
           // dodge), so they floor higher than a countered strike can.

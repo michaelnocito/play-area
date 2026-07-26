@@ -30,6 +30,10 @@ if (location.hostname === 'michaelnocito.github.io') {
 </head>
 <body>
 <canvas id="c" role="img" aria-label="Deadroot — corpse-mutation tower defense gameplay"></canvas>
+<!-- DR-#055 DEV:BEGIN — shared dev cockpit (GAME_BIBLE Part 5). Strip this tag
+     with the DEV block at the foot of the game script before submission. -->
+<script src="../dev-cockpit.js"></script>
+<!-- DR-#055 DEV:END -->
 <script>
 "use strict";
 /* ================================================================
@@ -3775,72 +3779,60 @@ function frame(t){
 genDecor();
 CG.init(()=>{});
 
-/* DR-#019 DEV:BEGIN =========================================================
-   In-game DEV / TUNING MENU (industry: "debug menu" + live "tunables"/"cvars").
-   Gated behind ?dev=1 (players never see it). The whole block is comment-marked
-   so the pre-launch build strips it; the dev version stays in git. Adding knobs?
-   Keep the mapping to CFG/flags so nothing here is load-bearing for real play.
+/* DR-#055 DEV:BEGIN =========================================================
+   DEV COCKPIT — the standard eleven-control instrument panel, shared across
+   every play-area game (../dev-cockpit.js, BUILD_PILLARS "A. The dev cockpit"
+   + GAME_BIBLE Part 5). This block only declares Deadroot's knobs; the panel,
+   the freeze/frame-step, the slow-motion, the numbers dump and the harness hook
+   all live in the shared file.
+
+   Gated behind ?dev=1 (auto-on for localhost/file://). Nothing here is
+   load-bearing: every knob writes to CFG or a flag the game already reads, so
+   deleting DEV:BEGIN..END leaves play identical. Strip before submission.
    ========================================================================== */
 if(DEV){
-  // DR-#033: playtest tunables for the DR-#025→#032 mechanics — dial the feel live, then tell me the numbers.
-  const knobs = [
-    { label:'Grabber slow %',   min:0,  max:0.9,step:0.05,get:()=>CFG.towers.grabber.slow, set:v=>CFG.towers.grabber.slow=v },
-    { label:'Grabber range',    min:1,  max:4,  step:0.1, get:()=>CFG.towers.grabber.range,set:v=>CFG.towers.grabber.range=v },
-    { label:'Grabber cost',     min:10, max:90, step:5,   get:()=>CFG.towers.grabber.cost, set:v=>CFG.towers.grabber.cost=v },
-    { label:'Zombie cost',      min:10, max:90, step:5,   get:()=>CFG.towers.spitter.cost, set:v=>CFG.towers.spitter.cost=v },
-    { label:'Hedge cost',       min:1,  max:20, step:1,   get:()=>CFG.hedgeCost, set:v=>CFG.hedgeCost=v },
-    { label:'Kill bounty',      min:1,  max:20, step:1,   get:()=>CFG.killBounty, set:v=>CFG.killBounty=v },
-    { label:'Reabsorb secs',    min:0,  max:12, step:0.5, get:()=>CFG.reabsorbTime, set:v=>CFG.reabsorbTime=v },
-    // DR-#040: GLOBAL enemy tuning — slider rescales enemies already on the field, not just future spawns
-    { label:'Enemy HP ×',       min:0.2,max:4,  step:0.1, get:()=>devEnemyHpMult,
-      set:v=>{ const f=v/devEnemyHpMult; devEnemyHpMult=v; for(const e of enemies){ e.hp*=f; e.max*=f; } } },
-    { label:'Enemy attack ×',   min:0,  max:4,  step:0.1, get:()=>devEnemyDmgMult,
-      set:v=>{ devEnemyDmgMult=v; for(const e of enemies){ e.dmg=CFG.enemies[e.type].dmg*v; } } },
-    { label:'Enemy sprite size',min:3,  max:12, step:0.2, get:()=>enemySpriteScale, set:v=>enemySpriteScale=v },
-    { label:'Tower sprite size',min:48, max:180,step:2,   get:()=>towerSpriteScale, set:v=>towerSpriteScale=v },
-  ];
-  const kdec = st => st<0.1?2 : st<1?1 : 0; // slider label precision from step
-  const wrap = document.createElement('div');
-  wrap.id = 'devMenu';
-  wrap.style.cssText = 'position:fixed;top:8px;left:8px;z-index:9999;font:12px/1.4 ui-monospace,Menlo,monospace;color:#dfeada;background:rgba(16,20,16,0.92);border:1px solid #4a6a42;border-radius:8px;padding:10px 12px;width:230px;max-height:92vh;overflow-y:auto;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)';
-  const btn = document.createElement('button');
-  btn.textContent = '⚙ DEV';
-  btn.style.cssText = 'position:fixed;top:8px;left:8px;z-index:10000;font:bold 12px ui-monospace,monospace;color:#dfeada;background:rgba(16,20,16,0.85);border:1px solid #4a6a42;border-radius:8px;padding:6px 10px;cursor:pointer';
-  const bs = 'display:block;width:100%;margin:3px 0;padding:6px;font:11px ui-monospace,monospace;color:#dfeada;background:#20301c;border:1px solid #4a6a42;border-radius:6px;cursor:pointer;text-align:left';
-  let html = '<div style="font-weight:bold;letter-spacing:1px;color:#c8e0a8;margin-bottom:6px">DEV MENU  <span style="float:right;opacity:.6;font-weight:normal">` toggle</span></div>';
-  knobs.forEach((k,i)=>{ html += `<label style="display:block;margin:6px 0 2px">${k.label}: <b id="kv${i}"></b></label><input type="range" id="ks${i}" min="${k.min}" max="${k.max}" step="${k.step}" style="width:100%">`; });
-  html += '<div style="margin:8px 0 3px;color:#c8e0a8">Game speed</div><div id="spd"></div>';
-  html += `<label style="display:block;margin:8px 0 2px"><input type="checkbox" id="god"> Hive god mode</label>`;
-  html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="rng"> Show tower ranges</label>`;
-  html += `<label style="display:block;margin:2px 0"><input type="checkbox" id="spr"> Spitter zombie sprite (vs procedural)</label>`;
-  html += `<button id="dBio" style="${bs}">+100 biomass</button>`;
-  html += `<button id="dSpawn" style="${bs}">spawn a scav</button>`;
-  html += `<button id="dTroop" style="${bs}">spawn a troop (tanky)</button>`;
-  html += `<button id="dSkip" style="${bs}">skip wave (clear enemies)</button>`;
-  html += `<button id="dKill" style="${bs}">kill all enemies</button>`;
-  wrap.innerHTML = html;
-  document.body.appendChild(btn); document.body.appendChild(wrap);
-  const toggle = ()=>{ const open = wrap.style.display==='none'; wrap.style.display=open?'block':'none'; btn.style.display=open?'none':'block'; if(open) refresh(); };
-  btn.onclick = toggle;
-  addEventListener('keydown', e=>{ if(e.key==='`'||e.key==='~'){ e.preventDefault(); toggle(); } });
-  function refresh(){
-    knobs.forEach((k,i)=>{ const s=wrap.querySelector('#ks'+i), v=wrap.querySelector('#kv'+i); s.value=k.get(); v.textContent=(+k.get()).toFixed(kdec(k.step)); });
-    wrap.querySelector('#god').checked=godMode; wrap.querySelector('#rng').checked=showRanges; wrap.querySelector('#spr').checked=useSprites;
-    const spd=wrap.querySelector('#spd'); spd.innerHTML='';
-    [1,2,4].forEach(mult=>{ const b=document.createElement('button'); b.textContent=mult+'x'; b.style.cssText='padding:5px 12px;margin-right:5px;font:11px ui-monospace,monospace;border-radius:6px;cursor:pointer;border:1px solid #4a6a42;color:#dfeada;background:'+(gameSpeed===mult?'#3a6a30':'#20301c'); b.onclick=()=>{ gameSpeed=mult; refresh(); }; spd.appendChild(b); });
-  }
-  knobs.forEach((k,i)=>{ wrap.querySelector('#ks'+i).oninput=e=>{ k.set(+e.target.value); wrap.querySelector('#kv'+i).textContent=(+e.target.value).toFixed(kdec(k.step)); }; });
-  wrap.querySelector('#god').onchange=e=>godMode=e.target.checked;
-  wrap.querySelector('#rng').onchange=e=>showRanges=e.target.checked;
-  wrap.querySelector('#spr').onchange=e=>useSprites=e.target.checked;
-  const inGame = ()=> mode==='play' || mode==='prep';
-  wrap.querySelector('#dBio').onclick=()=>{ if(inGame()) biomass+=100; };
-  wrap.querySelector('#dSpawn').onclick=()=>{ if(mode==='play') spawnEnemy('scav'); };
-  wrap.querySelector('#dTroop').onclick=()=>{ if(mode==='play') spawnEnemy('troop'); };
-  wrap.querySelector('#dSkip').onclick=()=>{ if(inGame()){ enemies.length=0; spawnQ.length=0; } };
-  wrap.querySelector('#dKill').onclick=()=>{ if(inGame()) enemies.length=0; };
+  const DC = DevCockpit.mount({
+    game: 'deadroot',
+    knobs: [
+      { key:'grabSlow',  label:'Grabber slow %',   min:0,  max:0.9,step:0.05,get:()=>CFG.towers.grabber.slow, set:v=>CFG.towers.grabber.slow=v },
+      { key:'grabRange', label:'Grabber range',    min:1,  max:4,  step:0.1, get:()=>CFG.towers.grabber.range,set:v=>CFG.towers.grabber.range=v },
+      { key:'grabCost',  label:'Grabber cost',     min:10, max:90, step:5,   get:()=>CFG.towers.grabber.cost, set:v=>CFG.towers.grabber.cost=v },
+      { key:'zombCost',  label:'Zombie cost',      min:10, max:90, step:5,   get:()=>CFG.towers.spitter.cost, set:v=>CFG.towers.spitter.cost=v },
+      { key:'hedgeCost', label:'Hedge cost',       min:1,  max:20, step:1,   get:()=>CFG.hedgeCost,    set:v=>CFG.hedgeCost=v },
+      { key:'bounty',    label:'Kill bounty',      min:1,  max:20, step:1,   get:()=>CFG.killBounty,   set:v=>CFG.killBounty=v },
+      { key:'reabsorb',  label:'Reabsorb secs',    min:0,  max:12, step:0.5, get:()=>CFG.reabsorbTime, set:v=>CFG.reabsorbTime=v },
+      // DR-#040: GLOBAL enemy tuning — rescales enemies already on the field, not just future spawns
+      { key:'enemyHp',   label:'Enemy HP ×',  min:0.2,max:4,  step:0.1, get:()=>devEnemyHpMult,
+        set:v=>{ const f=v/devEnemyHpMult; devEnemyHpMult=v; for(const e of enemies){ e.hp*=f; e.max*=f; } } },
+      { key:'enemyDmg',  label:'Enemy attack ×',min:0,max:4,  step:0.1, get:()=>devEnemyDmgMult,
+        set:v=>{ devEnemyDmgMult=v; for(const e of enemies){ e.dmg=CFG.enemies[e.type].dmg*v; } } },
+      { key:'eSprite',   label:'Enemy sprite size',min:3,  max:12, step:0.2, get:()=>enemySpriteScale, set:v=>enemySpriteScale=v },
+      { key:'tSprite',   label:'Tower sprite size',min:48, max:180,step:2,   get:()=>towerSpriteScale, set:v=>towerSpriteScale=v },
+    ],
+    toggles: [
+      { key:'god',     label:'Hive god mode',        get:()=>godMode,    set:v=>godMode=v },
+      { key:'ranges',  label:'Show tower ranges',    get:()=>showRanges, set:v=>showRanges=v },
+      { key:'sprites', label:'Spitter sprite (vs procedural)', get:()=>useSprites, set:v=>useSprites=v },
+    ],
+    // Control 3 is "force-spawn ANY single enemy", so the buttons are generated
+    // from CFG.enemies — a new enemy type gets its button for free.
+    actions: [
+      { label:'+100 biomass', run:()=>{ if(mode==='play'||mode==='prep') biomass+=100; } },
+    ].concat(Object.keys(CFG.enemies).map(t=>({
+      label:'spawn a '+t, run:()=>{ if(mode==='play') spawnEnemy(t); }
+    }))).concat([
+      { label:'skip wave (clear queue)', run:()=>{ if(mode==='play'||mode==='prep'){ enemies.length=0; spawnQ.length=0; } } },
+      { label:'kill all enemies',        run:()=>{ if(mode==='play'||mode==='prep') enemies.length=0; } },
+    ]),
+    // "Instant reset to the rep" — time-to-retry is the real budget in a feel session.
+    reset: ()=>{ newRun(); },
+    // Deadroot already fast-forwards by ticking update() N times, so hand the
+    // speed row to the game's own knob rather than letting the cockpit tick it.
+    speed: { get:()=>gameSpeed, set:v=>{ gameSpeed = v>=1 ? Math.round(v) : 1; } },
+  });
+  window.DC = DC;   // so the overlay draw and the console can reach it
 }
-/* DR-#019 DEV:END ========================================================= */
+/* DR-#055 DEV:END ========================================================= */
 
 requestAnimationFrame(frame);
 </script>

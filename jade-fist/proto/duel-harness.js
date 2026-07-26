@@ -1,52 +1,21 @@
-/* Headless harness for jade-fist/proto/duel-test.html — stub the DOM, run the
-   real update()/strike()/highAction() logic, assert the reaction budget. */
-const fs = require('fs'), vm = require('vm'), path = require('path');
-const FILE = path.join(__dirname, 'duel-test.html');
-const html = fs.readFileSync(FILE, 'utf8');
-const m = html.match(/<script>([\s\S]*?)<\/script>/);
-if (!m) { console.error('no script block'); process.exit(1); }
+/* JADE FIST duel lab — headless feel harness.  `node duel-harness.js`
+   JF-#067: rebuilt on the shared ../../harness-lib.js so every game's harness
+   boots the same way (and loads the dev cockpit, so __DEV is reachable here).
+   The assertions are unchanged from the JF-#065 pass. */
+'use strict';
+const path = require('path');
+const { load, suite } = require('../../harness-lib');
 
+const S = load(path.join(__dirname, 'duel-test.html'), {
+  expose: ['Snd', 'P', 'E', 'mode', 'keys', 'hitStop', 'dodged', 'taken', 'chips',
+           'counters', 'perfects', 'readyT', 'WINDUP', 'WIND_FLOOR', 'READY_DUR',
+           'GAP', 'ORDER', 'update', 'reset', 'strike', 'highAction']
+});
 const noop = () => {};
-const ctxStub = new Proxy({}, { get: (t, k) => {
-  if (k === 'createLinearGradient' || k === 'createRadialGradient')
-    return () => ({ addColorStop: noop });
-  if (k === 'measureText') return () => ({ width: 10 });
-  return typeof k === 'string' ? noop : undefined;
-}, set: () => true });
-const canvasStub = { width: 0, height: 0, style: {}, getContext: () => ctxStub,
-                     getBoundingClientRect: () => ({ left: 0, top: 0, width: 960, height: 540 }) };
-const sandbox = {
-  document: { getElementById: () => canvasStub, createElement: () => canvasStub },
-  addEventListener: noop, removeEventListener: noop,
-  innerWidth: 960, innerHeight: 540, devicePixelRatio: 1,
-  requestAnimationFrame: noop, performance: { now: () => 0 },
-  console, Math, JSON, Date,
-};
-sandbox.window = sandbox;
-vm.createContext(sandbox);
-vm.runInContext(m[1], sandbox, { filename: 'duel-test.html' });
-
-// top-level let/const live in the context's global LEXICAL scope, not on the
-// sandbox object — a second script in the same context can still see them, so
-// expose live bindings through getters.
-vm.runInContext(`globalThis.__api = {
-  get Snd(){return Snd}, get P(){return P}, get E(){return E},
-  get mode(){return mode}, set mode(v){mode=v},
-  get keys(){return keys}, get hitStop(){return hitStop},
-  get dodged(){return dodged}, get taken(){return taken}, get chips(){return chips},
-  get counters(){return counters}, get perfects(){return perfects},
-  get readyT(){return readyT}, set readyT(v){readyT=v},
-  get WINDUP(){return WINDUP}, get WIND_FLOOR(){return WIND_FLOOR},
-  get READY_DUR(){return READY_DUR}, set READY_DUR(v){READY_DUR=v},
-  get GAP(){return GAP}, get ORDER(){return ORDER},
-  update, reset, strike, highAction
-};`, sandbox);
-const S = sandbox.__api;
 S.Snd.ensure = noop; S.Snd.b = noop;
 
-let pass = 0, fail = 0;
-const ok = (name, cond, extra) => { (cond ? pass++ : fail++);
-  console.log((cond ? '  PASS  ' : '  FAIL  ') + name + (extra ? '   [' + extra + ']' : '')); };
+const t = suite('jade fist duel lab');
+const ok = (n, c, e) => t.ok(n, c, e);
 
 const run = () => S.update();
 const settle = () => { let g = 0; while (S.hitStop > 0 && g++ < 60) run(); };
@@ -70,9 +39,8 @@ function toWindup(line, maxG){
   return false;
 }
 
-console.log('\nJADE FIST duel-test — headless regression');
-console.log('windup=' + S.WINDUP + '  floor=' + S.WIND_FLOOR + '  arm=' + S.READY_DUR +
-            '  gap=' + S.GAP + '  order=' + S.ORDER.join('/') + '\n');
+t.note('windup=' + S.WINDUP + '  floor=' + S.WIND_FLOOR + '  arm=' + S.READY_DUR +
+       '  gap=' + S.GAP + '  order=' + S.ORDER.join('/'));
 
 // --- 1. every line is dodgeable at a 23-frame (≈380ms) CHOICE reaction ---
 const RT = 23;
@@ -151,5 +119,15 @@ while (g++ < 8000 && cyc < 6){
 ok('dodge->counter closes at the shipped 110f arm', closed >= 2,
    closed + ' counters landed over ' + cyc + ' attacks; taken=' + S.taken);
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
-process.exit(fail ? 1 : 0);
+// --- 7. JF-#067: the cockpit is wired and non-load-bearing ---
+const DEV = S.__sandbox.__DEV;
+ok('dev cockpit mounted with the lab numbers on knobs', !!DEV && DEV.knobs.length >= 4);
+if (DEV){
+  const before = S.WINDUP;
+  DEV.set('windup', S.WIND_FLOOR + 6);
+  ok('a cockpit knob writes straight through to the real number', S.WINDUP === S.WIND_FLOOR + 6);
+  DEV.set('windup', before);
+  ok('the numbers dump is one pasteable line', /^TUNING jade-fist-duel \|/.test(DEV.dump()));
+}
+
+t.done();
