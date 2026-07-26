@@ -1,3 +1,6 @@
 
 flipline/builds/*.zip
 deadroot/assets/raw/
+
+# generated audio, too big for the repo
+writing/*.wav
