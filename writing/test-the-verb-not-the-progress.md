@@ -9,7 +9,7 @@ canonical: https://michaelnocito.github.io/guides/test-the-verb-not-the-progress
 
 # Test the Verb, Not the Progress
 
-Here is a test that takes an hour. It tells you something a normal playtest or demo cannot: whether the thing at the centre of your game or app is any good on its own.
+Here is a test that takes an hour. It tells you whether the thing at the centre of your game or app is any good on its own.
 
 You strip everything away except the one action people repeat a thousand times. In a game, that is one character and one enemy. In an app, one screen and one feature. No score, no levels, no onboarding, nothing to finish. Then you do only that, for an hour, and you watch for the moment your hand relaxes.
 
@@ -35,7 +35,7 @@ The test is a build you would never ship. One player character. One enemy. No sc
 
 Compare what you learn.
 
-**From a normal playtest:** solid, combat feels decent, the tally screen is satisfying, second area drags a bit. You cannot act on any of that. Did the combat feel decent, or did clearing the area feel decent? Does the second area really drag, or has the action stopped being fun and you are blaming the level for it?
+**From a normal playtest:** solid, combat feels decent, the tally screen is satisfying, second area drags a bit. There is nothing in there you can act on, because each line could have two causes. Did the combat feel decent, or did clearing the area feel decent? Does the second area really drag, or has the action stopped being fun and you are blaming the level for it?
 
 **From a verb test:** the dodge window is too tight. The telegraph is so long that you commit early and get punished for reacting like a human. The counter is satisfying the first thirty times and boring by the hundredth.
 
@@ -61,7 +61,7 @@ Your demo is a progress structure. It has a story, a happy path and an ending, a
 
 If it is only bearable because it gets them closer to finishing a task, you have built a chore with good signposting, and every feature you stack on top inherits that. If they do it forty times and keep going, that feature can carry the product.
 
-This is also the honest version of dogfooding. Using your own app to get work done tests the progress. Using the one screen you built forty times in a row tests the action.
+This is dogfooding aimed at the action rather than the outcome. Using your own app to get work done tells you about the workflow. Using the one screen you built forty times in a row tells you about the action.
 
 Then work through your features the way a game works through its enemies. **One feature at a time, polished until it stands on its own, before the next one gets built.** Start with the feature that asks the core question most plainly, which is usually the simplest one rather than the flashiest. Give every feature after it a different question to ask, because a second feature that is the first one with more options is a settings screen. Put two in front of a user together before you add a third, because two features that are clear on their own and confusing side by side is a real failure, and you want to know which one caused it.
 
