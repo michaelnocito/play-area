@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- DRAFT: not indexed, so it cannot compete with the canonical version later -->
 <meta name="robots" content="noindex, nofollow">
 <meta name="description" content="Shigeru Miyamoto, who made Super Mario 64, tests a game by ignoring the game. The idea, why it works, and how to run the same test on a game or an app of your own.">
 <meta name="theme-color" content="#09090B">
@@ -34,7 +33,18 @@
   #bar { position: fixed; top: 0; left: 0; height: 2px; width: 0%;
          background: var(--sky); z-index: 50; }
 
+  /* Line length, not window width, decides readability. The measure stays in the
+     45-75 character band at every size; what changes with the viewport is the
+     type size, so a large screen does not read like a phone page stretched. */
   .wrap { max-width: 34rem; margin: 0 auto; padding: 0 1.25rem; }
+  @media (min-width: 900px) {
+    body { font-size: 20px; }
+    .wrap { max-width: 38rem; padding: 0 1.5rem; }
+  }
+  @media (min-width: 1400px) {
+    body { font-size: 21px; }
+    .wrap { max-width: 40rem; }
+  }
 
   header { padding: 3.5rem 0 1.75rem; }
   .eyebrow { font-family: var(--sans); font-size: .72rem; font-weight: 700;
