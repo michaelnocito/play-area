@@ -11,6 +11,11 @@ what to pick up next; wait for the user to choose roadmap item IDs before buildi
 **Prime rule: before building ANY feature, check it against Part 1 and Part 2. If a game
 fails Part 2, no amount of Part 1 compliance saves it.**
 
+**Read `BUILD_PILLARS.md` alongside this.** This file is the floor a build must clear.
+BUILD_PILLARS is the ORDER the work happens in — one enemy (or one app feature) played until
+it is fun before any content, every addition filtered for solving two problems not one, then
+four-beat teaching per mechanic. It applies to apps as well as games.
+
 ---
 
 ## Part 1 — Platform requirements (CrazyGames, the strictest bar we target)
