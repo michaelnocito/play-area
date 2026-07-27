@@ -169,7 +169,7 @@ possible ([GamesRadar](https://www.gamesradar.com/games/donkey-kong/nintendo-ico
 | **A one-key NUMBERS DUMP** that prints the current tuning as one pasteable line | Pillar 1. This is the handoff from Mike's hands to the next chat. Without it, tuning findings die in the session. |
 | **Force-spawn any single enemy / trigger any single state** | Pillar 1. You cannot practise one thing if you have to play through content to reach it. |
 | **Freeze + single-frame step** | Pillar 1. Feel lives at frame resolution; 3 frames is the difference between fair and unfair. |
-| **Slow-motion multiplier** | Pillar 1. Reads what the eye missed at speed, without changing the numbers. |
+| **ACTION SPEED — one continuous slider, 0.05x to 3x, plus `[` and `]`** | Pillar 1. Reads what the eye missed at speed, without changing the numbers. |
 | **A reaction readout** — frames from telegraph start to your input, and whether it landed in the window | Pillar 1. Turns "too long / too fast" into evidence. This is the control that found the Jade Fist telegraph bug. |
 | **No-fail toggle** | Pillar 1. The lab is reps, not runs. |
 | **Instant reset to the rep** | Pillar 1. Time-to-retry is the real budget in a feel session. |

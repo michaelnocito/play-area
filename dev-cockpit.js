@@ -29,13 +29,13 @@
     2. One-key NUMBERS DUMP — pasteable line + a downloadable file     `D`
     3. Force-spawn any enemy / force any state                         `actions`
     4. Freeze + single-frame step                                      `P` / `.`
-    5. Slow-motion multiplier                                          speed row
+     5. Slow-motion — the same slider, below 1x                        speed row
     6. Reaction readout — telegraph→input in frames, hit or miss       `DC.telegraph()`
     7. No-fail toggle                                                  `toggles`
     8. Instant reset to the rep                                        `R` / `reset`
     9. Hitbox / window / telegraph overlay                             `DC.flags.boxes`
    10. Headless harness hook                                           `window.__DEV`
-   11. Game speed 0.1x .. 4x                                           speed row
+   11. ACTION SPEED — a live 0.05x..3x slider, plus [ and ]            speed row
 
    RULES (GAME_BIBLE Part 5, restated because they are easy to break)
    ------------------------------------------------------------------
@@ -62,7 +62,7 @@
   var rafReal = global.requestAnimationFrame ? global.requestAnimationFrame.bind(global) : null;
   var frozen = false;      // P
   var stepOnce = 0;        // . — release exactly one frame
-  var speed = 1;           // 0.1 .. 4
+  var speed = 1;           // 0.05 .. 3, the ACTION SPEED slider
   var frameNo = 0;         // monotonic frame counter, the unit of the reaction readout
   var virtualNow = 0;      // scaled clock handed to games that read the rAF timestamp
   var lastReal = null;
@@ -219,14 +219,21 @@
 
     var html = '<div style="font-weight:bold;letter-spacing:1px;color:#7ce8a8;margin-bottom:2px">DEV COCKPIT' +
       '<span style="float:right;opacity:.55;font-weight:normal">` close</span></div>' +
-      '<div style="opacity:.5;font-size:10px;margin-bottom:7px">P freeze · . step · R reset · D dump</div>';
+      '<div style="opacity:.5;font-size:10px;margin-bottom:7px">P freeze · . step · [ ] speed · R reset · D dump</div>';
 
     knobs.forEach(function (k, i) {
       html += '<label style="display:block;margin:6px 0 1px">' + k.label + ': <b id="dcv' + i + '"></b></label>' +
         '<input type="range" id="dck' + i + '" min="' + k.min + '" max="' + k.max + '" step="' + k.step + '" style="width:100%">';
     });
 
-    html += '<div style="margin:9px 0 3px;color:#7ce8a8">Speed</div><div id="dcSpeed"></div>';
+    // ACTION SPEED is a continuous slider first, presets second. The presets jump
+    // between known points; the slider does the actual job, which is creeping a
+    // fight down until you can see what it is doing. It scales time, not the
+    // numbers underneath, so nothing about the tuning changes while you look.
+    html += '<div style="margin:9px 0 3px;color:#7ce8a8">Action speed: <b id="dcSpeedV">1.00x</b></div>' +
+      '<input type="range" id="dcSpeedS" min="0.05" max="3" step="0.05" value="1" style="width:100%">' +
+      '<div id="dcSpeed"></div>' +
+      '<div style="opacity:.5;font-size:10px">[ and ] nudge it a notch either way</div>';
     html += '<div id="dcFreeze" style="margin:6px 0;opacity:.75"></div>';
     html += '<label style="display:block;margin:7px 0 2px"><input type="checkbox" id="dcBoxes"> Hitbox / window overlay</label>';
     toggles.forEach(function (t, i) {
@@ -265,9 +272,12 @@
         (frozen ? '<span style="color:#e8c76a">FROZEN — . steps one frame</span>' : 'running');
     }
     function paintSpeed() {
+      var sv = doc.getElementById('dcSpeedV'), ss = doc.getElementById('dcSpeedS');
+      if (sv) sv.textContent = speed.toFixed(2) + 'x';
+      if (ss && Math.abs(+ss.value - speed) > 1e-6) ss.value = speed;
       var row = doc.getElementById('dcSpeed'); if (!row) return;
       row.innerHTML = '';
-      [0.1, 0.25, 0.5, 1, 2, 4].forEach(function (m) {
+      [0.1, 0.25, 0.5, 1, 2].forEach(function (m) {
         var b = doc.createElement('button');
         b.textContent = m + 'x';
         b.style.cssText = 'padding:4px 7px;margin:0 4px 4px 0;font:11px ui-monospace,monospace;border-radius:5px;' +
@@ -277,7 +287,7 @@
       });
     }
     function setSpeed(m) {
-      speed = m;
+      speed = Math.max(0.05, Math.min(3, Math.round(m * 100) / 100));
       if (cfg.speed && cfg.speed.set) cfg.speed.set(m);   // let the game drive it if it can
       paintSpeed();
     }
@@ -304,6 +314,7 @@
     actions.forEach(function (a, i) {
       doc.getElementById('dca' + i).onclick = function () { a.run(); };
     });
+    doc.getElementById('dcSpeedS').oninput = function (e) { setSpeed(+e.target.value); };
     doc.getElementById('dcBoxes').onchange = function (e) { api.flags.boxes = e.target.checked; };
     doc.getElementById('dcDump').onclick = function () { api.dump(); };
     doc.getElementById('dcReset').onclick = function () { api.reset(); flash('reset'); };
@@ -329,6 +340,10 @@
       if (k === '.' || k === '>') { if (frozen) { stepOnce++; flash('step'); } e.preventDefault(); return; }
       if (k === 'R') { api.reset(); flash('reset'); e.preventDefault(); return; }
       if (k === 'D') { api.dump(); e.preventDefault(); return; }
+      // [ and ] dial the action speed without opening the panel — the control
+      // you reach for most, so it should not cost a click.
+      if (k === '[') { setSpeed(speed - 0.05); flash('speed ' + speed.toFixed(2) + 'x'); e.preventDefault(); return; }
+      if (k === ']') { setSpeed(speed + 0.05); flash('speed ' + speed.toFixed(2) + 'x'); e.preventDefault(); return; }
     }, true);
 
     // Harness hook — a node/headless run drives the game through this.
