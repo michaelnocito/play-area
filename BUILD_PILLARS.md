@@ -200,6 +200,31 @@ follow from that. A loop must take its `dt` from the rAF timestamp rather than c
 re-entrancy guard, because the usual `function frame(t){ rAF(frame); ... }` shape
 re-registers from inside its own callback — without the guard, 4x speed means 4ⁿ callbacks.
 
+#### Driving a Godot game headless — the four things that cost a session to learn
+
+The browser harnesses call the game's functions directly. A Godot harness can do better and
+boot the real scene, but only if it knows these:
+
+1. **`Input.parse_input_event()` does not propagate in headless mode**
+   ([godotengine/godot#73557](https://github.com/godotengine/godot/issues/73557)). Anything
+   read through `_input()` / `_unhandled_input()` cannot be driven that way.
+2. **`Input.action_press()` works.** It writes the action state that `is_action_pressed`
+   reads, which never goes through event propagation. So anything HELD is drivable.
+3. **`is_action_just_pressed` does not.** It compares against an input frame counter that
+   nothing advances when no real events arrive, so every TAP has to be called directly. Say
+   which half a result came from — a harness that quietly reaches past the input layer is not
+   simulating a player any more.
+4. **`Engine.get_frames_drawn()` stays at 0** — nothing is drawn. Keep your own frame clock,
+   and pass `--fixed-fps 60` for a deterministic delta.
+
+Two more, learned the same afternoon: a paused tree pins `Engine.time_scale` at 0 and makes
+every input a silent no-op, so put the game back in a playable state before measuring
+anything about playing it — and if the project has a juice/hitstop autoload that writes
+`Engine.time_scale` every frame, the cockpit's ACTION SPEED must go through it rather than
+fight it, or the slider moves and the game does not.
+
+Reference implementation: `matrix-construct/tools/ux_harness.gd`.
+
 #### The numbers dump, and what it is for
 
 `D` writes one pasteable line plus a `<game>-tuning.txt` file:
