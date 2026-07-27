@@ -56,6 +56,34 @@ until then. If the one enemy is boring, twelve of them are boring twelve times.
   long as human choice-reaction time. Neither was visible inside the full game. Expect the
   lab to embarrass the build. That is what it is for.
 
+**The app version of the feel-lab: a Chicken Hour.**
+
+A game's progress systems are obvious, so they are easy to strip. An app's are disguised as
+helpfulness, which makes them far more dangerous. Lesson numbering, a path position, a
+completion screen and a clear "what's next" are all good design, and all four will make a
+dull action feel fine for as long as you are moving toward the end of something. If the
+action is only bearable because it gets someone closer to finishing, you have built a chore
+with good signposting, and every feature stacked on top inherits that.
+
+So the lab strips more than feels comfortable:
+
+- **Strip:** lesson numbering, progress bar, XP, streaks, unit boundaries, the next-lesson
+  button, any completion screen. The directive and the position on the path go too. Signposting
+  is the thing under test, not the thing you keep.
+- **Keep:** real question content, real data, real error messages, real correction text. The
+  numbers rule from the feel-lab applies unchanged.
+- **Run:** an endless stream of prompts with nothing at the end. Forty reps minimum, one
+  sitting, on a phone and on a desktop.
+
+**The verdict is overrun, and nothing else.** You stop at forty and it is a chore. You look up
+at sixty without being told to and that action can carry the product. Time-to-first-input,
+verdict latency, reread rate, whether a miss is recoverable in one sentence, and rep 40 versus
+rep 1 are worth recording, but they only ever explain the result. They cannot produce it.
+
+Name the action in one sentence first. If it takes two, you have named a system, and the
+usual mistake is naming the container: completing a lesson is progress, answering and finding
+out is the verb.
+
 **Failure it prevents.** Shipping a large amount of content built on a verb that was never
 fun. This is the most expensive mistake available to us, because content is the part AI
 agents generate fastest, so we can bury a bad core in polish at record speed.
