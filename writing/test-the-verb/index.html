@@ -100,6 +100,19 @@
 
   .closer { font-style: italic; color: var(--muted); }
 
+  /* One CTA, placed after the reader already has the whole method. */
+  .cta { background: var(--panel); border: 1px solid var(--border);
+         border-left: 3px solid var(--amber); border-radius: 4px;
+         padding: 1.15rem 1.2rem; margin: .5rem 0; }
+  .cta p { margin-top: .5rem; font-size: .98rem; }
+  .cta .btn { display: inline-block; margin-top: .9rem; font-family: var(--sans);
+              font-size: .85rem; font-weight: 700; text-decoration: none;
+              color: var(--bg); background: var(--sky);
+              padding: .55rem 1rem; border-radius: 4px; }
+  .cta .btn:hover { opacity: .9; }
+  .morelinks { font-family: var(--sans); font-size: .8rem; line-height: 1.7;
+               color: var(--muted); margin-bottom: 1rem; }
+
   footer { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--rule);
            font-family: var(--sans); font-size: .8rem; color: var(--muted); line-height: 1.6; }
 
@@ -141,13 +154,14 @@
     <p>Compare what you learn.</p>
     <p><strong>From a normal playtest:</strong> solid, combat feels decent, the tally screen is satisfying, second area drags a bit. There is nothing in there you can act on, because each line could have two causes. Did the combat feel decent, or did clearing the area feel decent? Does the second area really drag, or has the action stopped being fun and you are blaming the level for it?</p>
     <p><strong>From a verb test:</strong> the dodge window is too tight. The telegraph is so long that you commit early and get punished for reacting like a human. The counter is satisfying the first thirty times and boring by the hundredth.</p>
-    <p>Those are three things you can fix on Monday. When I built this for a brawler of my own it found two real problems in a week. The counter window could not physically close in a one on one fight, and the telegraph ran at nearly twice human reaction time. Both had been in the game for months and I had played them hundreds of times without seeing either, because there was always another wave to clear.</p>
+    <p>Those are three things you can fix on Monday. When I built this for <a href="../../jade-fist/">a brawler of my own</a> it found two real problems in a week. The counter window could not physically close in a one on one fight, and the telegraph ran at nearly twice human reaction time. Both had been in the game for months and I had played them hundreds of times without seeing either, because there was always another wave to clear.</p>
     <p>The rule for adding the second enemy is worth stealing too. In Super Mario Bros. the Koopa Troopa was the only basic enemy for most of development, and testers found it too tricky to open with. So the Goomba was built last and put first: an enemy invented purely to teach the stomp. The Koopa then asks a different question, because its shell tells you this one will not squash. <strong>Each enemy asks a new question about the same action.</strong> More health and faster timings is a difficulty slider, not an enemy.</p>
     <h2>In an app: the user is the player character</h2>
     <p>Same test. Here is the full map.</p>
     <div class="scroller"><table><thead><tr><th>In a game</th><th>In your app</th></tr></thead><tbody><tr><td>The player character</td><td>The user</td></tr><tr><td>The verb</td><td>The one action a feature is made of</td></tr><tr><td>One enemy</td><td>One feature</td></tr><tr><td>Perfect feel</td><td>Polished: expected, fast, obvious, still fine on the fortieth go</td></tr><tr><td>Waves, levels, districts</td><td>The rest of the product</td></tr><tr><td>The boss</td><td>The flagship feature everything builds toward</td></tr><tr><td>Score, unlocks, the bar filling</td><td>Onboarding, the demo happy path, the checklist, the roadmap</td></tr></tbody></table></div>
     <p>Your demo is a progress structure. It has a story, a happy path and an ending, and it will feel fine in front of a room of people even when the thing at the centre is poor. So build the app version of one character and one enemy: <strong>one screen, one feature, real data, nothing to finish.</strong> Then watch one person do that feature's most repeated action forty times with no goal attached. Not a scripted walkthrough. Just the action.</p>
     <p>If it is only bearable because it gets them closer to finishing a task, you have built a chore with good signposting, and every feature you stack on top inherits that. If they do it forty times and keep going, that feature can carry the product.</p>
+    <p>Here is my own app version of it. I build <a href="https://michaelnocito.github.io/analyst-prep-kit/">study kits for data analysts</a>, and they all rest on one action: read a prompt, commit to an answer, and find out straight away whether you were right. Everything else is scaffolding. So the test is forty of those in a row with the lesson path, the progress bar and the streak taken away. The <a href="https://michaelnocito.github.io/analyst-prep-kit/sql/">SQL kit</a> is where that action is hardest to fake, because you type a real query and real rows come back.</p>
     <p>This is dogfooding aimed at the action rather than the outcome. Using your own app to get work done tells you about the workflow. Using the one screen you built forty times in a row tells you about the action.</p>
     <p>Then work through your features the way a game works through its enemies. <strong>One feature at a time, polished until it stands on its own, before the next one gets built.</strong> Start with the feature that asks the core question most plainly, which is usually the simplest one rather than the flashiest. Give every feature after it a different question to ask, because a second feature that is the first one with more options is a settings screen. Put two in front of a user together before you add a third, because two features that are clear on their own and confusing side by side is a real failure, and you want to know which one caused it.</p>
     <p>The flagship feature is the boss. Build it out of questions the user already learned to answer.</p>
@@ -172,9 +186,22 @@
     <p class="closer">An hour in the trees, with the rupees left on the ground.</p>
     <h2>A question for you</h2>
     <p>What is something you would defend as genuinely good where the action itself is honestly dull, and everything around it is doing the work? I can think of a couple, and they make me less sure of my own argument, which is why I want to hear yours.</p>
+
+    <div class="cta">
+      <strong>See the test applied to something you can use.</strong>
+      <p>The Analyst Prep Kit is a set of study kits built around one action: read a prompt, answer it, find out immediately whether you were right. Each kit runs in the browser, with real datasets rather than made-up values. The <a href="https://michaelnocito.github.io/analyst-prep-kit/sql/">SQL kit</a> runs SQLite in the page, so you write a query and the rows come back. The <a href="https://michaelnocito.github.io/analyst-prep-kit/excel/">Excel kit</a>, <a href="https://michaelnocito.github.io/analyst-prep-kit/python/">Python kit</a> and <a href="https://michaelnocito.github.io/analyst-prep-kit/powerbi/">Power BI kit</a> follow the same shape.</p>
+      <a class="btn" href="https://michaelnocito.github.io/analyst-prep-kit/" onclick="if(window.gtag)gtag('event','kit_click',{kit:'article-test-the-verb'})">Open the Analyst Prep Kit &rarr;</a>
+    </div>
+
+    <div class="cta">
+      <strong>Or play the games this came out of.</strong>
+      <p>Every one of these was built one thing at a time, with the core action tuned on its own before anything was stacked on it. <a href="../../jade-fist/">Jade Fist</a> is the brawler whose counter window this test caught. <a href="../../deadroot/">Deadroot</a> and <a href="../../flipline/">Flipline</a> were built the same way.</p>
+      <a class="btn" href="../../">Open the game shelf &rarr;</a>
+    </div>
   </main>
 
   <footer>
+    <p class="morelinks"><a href="../../">Game shelf</a> &middot; <a href="../../jade-fist/">Jade Fist</a> &middot; <a href="../../deadroot/">Deadroot</a> &middot; <a href="../../flipline/">Flipline</a> &middot; <a href="../../rooftop-sprint/">Rooftop Sprint</a> &middot; <a href="https://michaelnocito.github.io/analyst-prep-kit/">Analyst Prep Kit</a> &middot; <a href="https://michaelnocito.github.io/analyst-prep-kit/sql/">SQL kit</a> &middot; <a href="https://michaelnocito.github.io/analyst-prep-kit/excel/">Excel kit</a> &middot; <a href="https://michaelnocito.github.io/analyst-prep-kit/python/">Python kit</a> &middot; <a href="https://michaelnocito.github.io/analyst-prep-kit/powerbi/">Power BI kit</a> &middot; <a href="https://michaelnocito.github.io/analyst-prep-kit/guides/">All guides</a></p>
     <p>Sources: the Breath of the Wild account is Hidemaro Fujibayashi speaking to Jason Schreier, Kotaku, 6 March 2017. Miyamoto&rsquo;s Super Mario 64 comments come from the 1996 developer roundtable printed in the Japanese strategy guide, translated at shmuplations.com/mario64. The Donkey Kong Bananza account is Kenta Motokura speaking to The Guardian, July 2025.</p>
   </footer>
 </div>
