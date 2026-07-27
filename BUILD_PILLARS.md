@@ -369,3 +369,48 @@ adjustments follow from that, and they are ours, not Nintendo's:
    reaction budget. It cannot prove the dodge feels good. Every Pillar 1 exit and every
    `ten` twist needs a human to say yes. Agents produce, measure, and report. The person
    decides whether it is fun.
+
+---
+
+## Pillar 3, in detail: the teach only works if the learner produces something
+
+Added 2026-07-27, after Mike listened to the guides on his phone: *"great information, and
+we're getting better at breaking it down, but they're not engaging — it's not prompting me
+to think or visualize."*
+
+The four-step teach says how to SEQUENCE a lesson. It does not say what the learner is
+doing during it, and the honest answer for most of our teaching surfaces today is
+*receiving*. A player or reader who only receives keeps very little.
+
+The research name is **generative learning** (Fiorella & Mayer, *Educational Psychology
+Review* 28(4), 2016, doi:10.1007/s10648-015-9348-9). Four of their eight strategies survive
+contact with a screen: **prequestion** (ask before you answer, g = 0.66 on the asked idea),
+**self-explanation** (make them say why, g = 0.55), **imagination** (make them picture it,
+and the effect grows as the material gets harder), **drawing** (g = 0.69, strongest and by
+far the most expensive to ask for).
+
+**Where they attach to the four beats.**
+
+| Beat | What the learner produces |
+|---|---|
+| **ki** — introduce it safely | A guess. The prequestion goes here, before the mechanic is explained. |
+| **shō** — develop it | An account. "Why did that work the second time and not the first?" |
+| **ten** — the twist | A prediction, made BEFORE the twist resolves. This is the cheapest and best-placed prompt in the whole structure. |
+| **ketsu** — demonstrate mastery | Nothing extra. Performance is already generative; do not talk over it. |
+
+**The constraint that stops this becoming noise.** Every prompt spends working memory.
+Asking someone to imagine or draw a thing they do not yet understand leaves them worse off,
+because they have nothing to imagine with. **Explain first, prompt second**, and cap it at
+four or five per lesson. Past that people skip prompts as a habit, and the skipping
+generalises to the ones that mattered.
+
+**In a game this is mostly not text.** A prediction beat is a moment where the outcome is
+withheld half a second longer than it needs to be. A self-explanation beat is a death that
+shows you the thing you missed rather than a tip that names it. Reach for the text version
+only where there is already text.
+
+**Same rule as the articles:** it has to work spoken. Anything phrased as "look at the box
+above" fails for anyone using read-aloud. Canon for the writing side is section 2b of
+`analyst-prep-kit/marketing/ARTICLE_STANDARD.md`; canon for the kits is the Generative
+prompting standing rule in `analyst-prep-kit/CURRICULUM_STANDARD.md`. All three say the
+same thing.
