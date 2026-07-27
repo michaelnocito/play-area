@@ -414,3 +414,21 @@ above" fails for anyone using read-aloud. Canon for the writing side is section 
 `analyst-prep-kit/marketing/ARTICLE_STANDARD.md`; canon for the kits is the Generative
 prompting standing rule in `analyst-prep-kit/CURRICULUM_STANDARD.md`. All three say the
 same thing.
+
+---
+
+## Listen — every page we publish reads itself aloud
+
+Added 2026-07-27. Canon lives in one file and only one file:
+`analyst-prep-kit/LISTEN_STANDARD.md`. Placement, what is read, what is replaced with a
+spoken marker, and the platform rules that fail silently if someone tidies the code.
+Updated in the same commit as any change to the feature. Do not restate it here.
+
+**Why it belongs in the pillars.** Pillar 3 says the teach only works if the learner
+produces something. Listening is how a growing share of that teaching is actually
+received, and a prompt phrased "look at the box above" produces nothing in someone who
+is walking. **What you read and what you hear are the same thing** — that is the same
+rule as the no-visual-marking decision on generative prompts.
+
+**Status: on hold for Mike's review.** Live on `writing/test-the-verb/` and one guide.
+No further rollout until he has listened and said go.
