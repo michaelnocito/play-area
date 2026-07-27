@@ -58,6 +58,15 @@ until then. If the one enemy is boring, twelve of them are boring twelve times.
 
 **The app version of the feel-lab: a Chicken Hour.**
 
+**Say it this way first, every time, before any of the detail below.** A Chicken Hour is one
+page with nothing on it but the thing you actually do. No score, no progress bar, no lesson
+number, no finish line. You do that one thing over and over, at least forty times. The only
+question it answers is whether you keep going. If you stop at rep six, the feature is not
+ready, and no amount of polish on the rest of the app will fix it.
+
+That is the whole idea, and it takes four sentences. Anything longer than that is the reason
+it did not land the first time it came up.
+
 A game's progress systems are obvious, so they are easy to strip. An app's are disguised as
 helpfulness, which makes them far more dangerous. Lesson numbering, a path position, a
 completion screen and a clear "what's next" are all good design, and all four will make a
