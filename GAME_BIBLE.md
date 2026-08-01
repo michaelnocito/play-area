@@ -101,10 +101,41 @@ the Jade Fist rebuild:
 11. **Retention hooks are layered, never gating**: daily return bonus + streak, daily
     trials, one-time bounty milestones, rank ladder, unlockable modes. All bonus, no walls.
 12. **Design for broad appeal** — art-first, inclusive, calm-confident tone. Never pander.
+13. **The first 30 seconds are the whole pitch. Chase the rabbit.** A new player decides
+    inside the first few seconds whether there is a game here. So the opening is designed
+    first and separately from the rest, to a fixed budget:
+    - **0-3s: the verb is on screen and under their thumb.** No logo wait, no menu wall,
+      no text block. One press, one visible reaction. Movement must feel good with nothing
+      else in the scene — the Mario 64 story (Miyamoto's team tuning Mario alone in a bare
+      garden long before there was a level) is the method, not a slogan. Build the empty
+      room first.
+    - **3-10s: first win.** One clean success at the core verb, unmissable, with a reward
+      beat (sound + visual + points). Not "survived" — *did the thing on purpose*.
+    - **10-30s: first real read.** One deliberate choice with a right answer they can see
+      coming, so competence stops being luck. This is where they decide to keep playing.
+    - **Nothing else may occupy that window.** Ads, story, shops, upgrade offers, mode
+      pickers, multi-hit enemies, and any mechanic that needs a paragraph get pushed past
+      0:30. If it can't be learned by pressing the button, it isn't in the first 30 seconds.
+    - **Test it as its own build.** Record 30 seconds. Watch with the sound off. If you
+      can't name the exact second of first-press, first-win, and first-read, it fails.
+
+    Why (primary lit, not blog posts): the first-session experience is where voluntary
+    play is won or lost, and *intrigue* counts equally with *information* in that window
+    (Cheung, Zimmermann & Nagappan, CHI PLAY 2014, pp. 57-66, DOI 10.1145/2658537.2658540). Explaining
+    it does not substitute for playing it — across ~45,000 players, tutorials raised play
+    time only in the most complex game and did nothing in simpler ones, so mechanics that
+    can be discovered by experimentation should be (Andersen et al., CHI 2012,
+    DOI 10.1145/2207676.2207687). What actually buys the next run is felt **competence**
+    and **autonomy**, which track directly to intuitive controls (Ryan, Rigby & Przybylski,
+    *Motivation and Emotion* 30(4):344-360, 2006, DOI 10.1007/s11031-006-9051-8). And the
+    signal is early enough to be worth optimizing at this resolution: a single day of play
+    data predicts churn a week out (Hadiji et al., IEEE CIG 2014,
+    DOI 10.1109/CIG.2014.6932876).
 
 ### The critical test (run it on every build before calling it done)
 Ask brutally: Why play a 4th run? What changes between runs? What does rank N unlock?
-Where's the ending? What's the one-line pitch a player tells a friend? If any answer is
+Where's the ending? What's the one-line pitch a player tells a friend? **In the first 30
+seconds, what second do they first press, first win, and first read?** If any answer is
 "nothing" or "score," the design isn't done.
 
 ---
