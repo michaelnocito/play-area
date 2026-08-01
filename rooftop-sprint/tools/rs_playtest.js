@@ -28,6 +28,7 @@ const HOOK = `
     get player(){ return player; }, get segments(){ return segments; }, get guards(){ return guards; },
     get lowObs(){ return lowObs; }, get feathers(){ return feathers; }, get arrows(){ return arrows; },
     get distance(){ return distance; }, get speed(){ return speed; }, get deathCause(){ return deathCause; },
+    get lampLight(){ return lampLight; }, // RS-#090: the bot must read its own charge to pick strike-vs-jump
     update, draw, beginGame, jumpPress, jumpRelease, tryAction, segmentAt,
   };
 `;
@@ -114,6 +115,15 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
         if (feintBlock === null || dx < feintBlock) feintBlock = dx;
         continue;
       }
+      // RS-#090 light check: a warden the lamp can't pay for cannot be struck down, so he is a
+      // LEAP read exactly like a shielded feint. A bot that kept swinging here would bounce off,
+      // ward him, and then die to him — and the suite would report that as a game fairness
+      // failure when it is really the bot refusing to read the aura the player can plainly see.
+      const cost = (gu.need || 1) * 0.25; // PIP
+      if (gu.warded || g.lampLight < cost - 1e-6) {
+        if (feintBlock === null || dx < feintBlock) feintBlock = dx;
+        continue;
+      }
       if (guardAhead === null || dx < guardAhead) guardAhead = dx;
     }
     let obAhead = null;
@@ -159,6 +169,8 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
       if (!go) for (const gu of g.guards) {
         if (!gu.active || !gu.alive) continue;
         const dx = gu.x - px, dy = Math.abs(gu.y - p.y);
+        const cost = (gu.need || 1) * 0.25; // RS-#090: never swing at a warden the lamp can't pay for
+        if (gu.warded || g.lampLight < cost - 1e-6) continue;
         if (dx > -14 && dx < reach && dy < 30 && !(gu.feint && (gu.shT % 150) < 60)) { go = true; break; }
       }
       if (!go) for (const a of g.arrows) {
