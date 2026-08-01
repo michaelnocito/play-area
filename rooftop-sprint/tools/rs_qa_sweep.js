@@ -92,6 +92,10 @@ function runSweep({ label, seed, tier, mode, maxFrames }) {
   const poolPeak = { segments: 0, guards: 0, lowObs: 0, braziers: 0, arrows: 0 };
   const timingTiers = { clean: 0, heavy: 0, perfect: 0, domino: 0, captain: 0 };
   const feintEncounters = { blocked: 0, open: 0 };
+  // RS-#091: sweeps are a distinct read (jump-only, slide-proof), so the sweep counts belong in
+  // the sweep report. A run that never fires an arc isn't exercising the mechanic at all.
+  const sweepStats = { seen: 0, arcs: 0, sweptDeaths: 0 };
+  const sweepPhasePrev = new Map();
   let arrowsSeenEver = false, braziersLitEver = false, boonEntries = 0, boonResolved = 0;
   let pendingJump = -1, releaseAt = -1, pendingAction = -1;
   const reactionFrames = tier === 'perfect' ? 2 : tier === 'sharp' ? 6 : 10;
@@ -111,12 +115,22 @@ function runSweep({ label, seed, tier, mode, maxFrames }) {
       if (!next || next.x1 > seg.x2 + 2) gapAhead = seg.x2 - px;
       else if (next && next.y < seg.y - 8) gapAhead = seg.x2 - px;
     }
-    let guardAhead = null, feintBlock = null;
+    let guardAhead = null, feintBlock = null, leapBlock = null, sweepBlock = null;
+    for (const gu of g.guards) { // sweep telemetry (counts arcs actually fired, not just spawns)
+      if (!gu.active || !gu.sweeper) continue;
+      if (!sweepPhasePrev.has(gu)) sweepStats.seen++;
+      if (sweepPhasePrev.get(gu) !== 2 && gu.swPhase === 2) sweepStats.arcs++;
+      sweepPhasePrev.set(gu, gu.swPhase);
+    }
     for (const gu of g.guards) {
       if (!gu.active || !gu.alive) continue;
       const dx = gu.x - px;
       if (dx <= -10 || dx >= 180) continue;
       if (gu.feint && (gu.shT % 150) < 60) { if (feintBlock === null || dx < feintBlock) feintBlock = dx; continue; }
+      // RS-#090/#091: match the fairness bot's reads or this sweep measures a bot that plays a
+      // different game than the one shipping — dark wardens are leaps, live sweeps are timed leaps.
+      if (gu.sweeper && (gu.swPhase === 1 || gu.swPhase === 2)) { if (sweepBlock === null || dx < sweepBlock) sweepBlock = dx; continue; }
+      if (gu.warded || g.lampLight < (gu.need || 1) * 0.25 - 1e-6) { if (leapBlock === null || dx < leapBlock) leapBlock = dx; continue; }
       if (guardAhead === null || dx < guardAhead) guardAhead = dx;
     }
     let obAhead = null;
@@ -128,6 +142,8 @@ function runSweep({ label, seed, tier, mode, maxFrames }) {
 
     if (gapAhead !== null && gapAhead < spd * (5 + reactionFrames * 2) + 6 && pendingJump < 0 && p.onGround) pendingJump = f + reactionFrames;
     if (feintBlock !== null && feintBlock < spd * (12 + reactionFrames) && pendingJump < 0 && p.onGround) pendingJump = f + reactionFrames;
+    if (leapBlock !== null && leapBlock < spd * (20 + reactionFrames * 2) + 14 && pendingJump < 0 && p.onGround) pendingJump = f + reactionFrames;
+    if (sweepBlock !== null && sweepBlock < 46 + spd * (4 + reactionFrames) && pendingJump < 0 && p.onGround) pendingJump = f + reactionFrames;
     if (guardAhead !== null && guardAhead < 36 + spd * 14 && pendingAction < 0) pendingAction = f + reactionFrames;
     if (obAhead !== null && obAhead < 6 + spd * (10 + reactionFrames) && pendingAction < 0 && !p.sliding) pendingAction = f + reactionFrames;
     if (arrowAhead !== null && arrowAhead < 30 + spd * 10 && pendingAction < 0) pendingAction = f + Math.min(reactionFrames, 4);
@@ -209,7 +225,7 @@ function runSweep({ label, seed, tier, mode, maxFrames }) {
 
   return {
     label, seed, tier, mode, framesRun: f, dist: g.distance | 0, deathCause: g.deathCause || 'survived-cap',
-    modIdxSeen: g.modIdx, violations, poolPeak, timingTiers, feintEncounters, arrowsSeenEver, braziersLitEver,
+    modIdxSeen: g.modIdx, violations, poolPeak, timingTiers, feintEncounters, sweepStats, arrowsSeenEver, braziersLitEver,
     boonEntries, boonResolved, save: g.save,
   };
 }
@@ -238,6 +254,7 @@ for (const r of results) {
   console.log(`  pool peaks: seg ${r.poolPeak.segments}/${POOL_MAX.segments} guards ${r.poolPeak.guards}/${POOL_MAX.guards} lowObs ${r.poolPeak.lowObs}/${POOL_MAX.lowObs} braziers ${r.poolPeak.braziers}/${POOL_MAX.braziers} arrows ${r.poolPeak.arrows}/${POOL_MAX.arrows}`);
   console.log(`  timing tiers: CLEAN ${r.timingTiers.clean} HEAVY ${r.timingTiers.heavy} PERFECT ${r.timingTiers.perfect} DOMINO ${r.timingTiers.domino} CAPTAIN ${r.timingTiers.captain}`);
   console.log(`  feint encounters: blocked ${r.feintEncounters.blocked} open ${r.feintEncounters.open} | arrows fired: ${r.arrowsSeenEver} | brazier lit: ${r.braziersLitEver} | boons: ${r.boonEntries} entries / ${r.boonResolved} resolved`);
+  console.log(`  sweepers: ${r.sweepStats.seen} seen / ${r.sweepStats.arcs} arcs fired`);
   if (vCount > 0) {
     console.log(`  !! VIOLATIONS (${vCount}):`);
     for (const [kind, arr] of Object.entries(r.violations)) if (arr.length) console.log(`     ${kind}: ${arr.length} — first at`, JSON.stringify(arr[0]));

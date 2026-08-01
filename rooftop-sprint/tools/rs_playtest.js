@@ -106,7 +106,7 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
       if (!next || next.x1 > seg.x2 + 2) gapAhead = seg.x2 - px;
       else if (next && next.y < seg.y - 8) gapAhead = seg.x2 - px; // step up also needs a jump
     }
-    let guardAhead = null, feintBlock = null;
+    let guardAhead = null, feintBlock = null, leapBlock = null, sweepBlock = null;
     for (const gu of g.guards) {
       if (!gu.active || !gu.alive) continue;
       const dx = gu.x - px;
@@ -115,13 +115,28 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
         if (feintBlock === null || dx < feintBlock) feintBlock = dx;
         continue;
       }
+      // RS-#091 low sweep: the ONLY answer is to leave the ground. Sliding puts you into it and
+      // the staff can't touch him mid-arc, so it routes to the same LEAP channel as a feint.
+      // A sweep is timed, not anticipated. The windup runs 38 frames while the player is being
+      // carried forward, so leaping the moment the tell appears means landing again before the
+      // arc is even live — then walking straight into it. The jump has to be committed close, so
+      // the arc passes underneath. This is the same read a human makes: the tell says "get ready",
+      // the arc says "now".
+      if (gu.sweeper && (gu.swPhase === 1 || gu.swPhase === 2)) {
+        if (sweepBlock === null || dx < sweepBlock) sweepBlock = dx;
+        continue;
+      }
       // RS-#090 light check: a warden the lamp can't pay for cannot be struck down, so he is a
       // LEAP read exactly like a shielded feint. A bot that kept swinging here would bounce off,
       // ward him, and then die to him — and the suite would report that as a game fairness
       // failure when it is really the bot refusing to read the aura the player can plainly see.
+      // NOTE this goes to leapBlock, not feintBlock: clearing a warden's BODY needs 22px of
+      // height (GUARD_CLEAR_DY), where a feint only needs spacing. Reusing the feint lead made
+      // the bot press late and clip the torso by a pixel or two — the game gives a ~35-frame
+      // clearance window out of a 39-frame arc, so the encounter is fair and the bot was wrong.
       const cost = (gu.need || 1) * 0.25; // PIP
       if (gu.warded || g.lampLight < cost - 1e-6) {
-        if (feintBlock === null || dx < feintBlock) feintBlock = dx;
+        if (leapBlock === null || dx < leapBlock) leapBlock = dx;
         continue;
       }
       if (guardAhead === null || dx < guardAhead) guardAhead = dx;
@@ -150,6 +165,14 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
       pendingJump = f + reactionFrames;
     if (feintBlock !== null && feintBlock < spd * (12 + reactionFrames) && pendingJump < 0 && p.onGround)
       pendingJump = f + reactionFrames; // leap the shielded feint like a hazard (needs a full-arc lead, not a last-instant hop)
+    // Dark wardens and live sweeps: commit earlier. The press has to land far enough out that the
+    // 3-frame climb to 22px of clearance completes BEFORE the body/arc hitbox arrives.
+    if (leapBlock !== null && leapBlock < spd * (20 + reactionFrames * 2) + 14 && pendingJump < 0 && p.onGround)
+      pendingJump = f + reactionFrames;
+    // SWEEP_REACH is 46, so the arc's leading edge is 46px out. Commit just before that and the
+    // whole 39-frame arc carries the player over it.
+    if (sweepBlock !== null && sweepBlock < 46 + spd * (4 + reactionFrames) && pendingJump < 0 && p.onGround)
+      pendingJump = f + reactionFrames;
     if (guardAhead !== null && guardAhead < 36 + spd * 14 && pendingAction < 0)
       pendingAction = f + reactionFrames;
     // slide press: anticipated like gaps (obstacles are visible far ahead — reaction delay
@@ -171,6 +194,7 @@ function runBot({ reactionFrames, lookahead, maxFrames = 60 * 300 }) {
         const dx = gu.x - px, dy = Math.abs(gu.y - p.y);
         const cost = (gu.need || 1) * 0.25; // RS-#090: never swing at a warden the lamp can't pay for
         if (gu.warded || g.lampLight < cost - 1e-6) continue;
+        if (gu.sweeper && (gu.swPhase === 1 || gu.swPhase === 2)) continue; // RS-#091: mid-sweep, the staff does nothing
         if (dx > -14 && dx < reach && dy < 30 && !(gu.feint && (gu.shT % 150) < 60)) { go = true; break; }
       }
       if (!go) for (const a of g.arrows) {

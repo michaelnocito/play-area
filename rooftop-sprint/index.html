@@ -751,12 +751,15 @@
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0,alley:false,dist:0,gapBefore:0}));
   const MAX_GUARDS = 15; // RS-#054: qa sweep peaked this at 11/12 across runs — one heavy formation
   // beat away from the same silent-drop risk the brazier pool had; matching headroom fix.
-  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false,lunge:0,lungeT:0,need:1,warded:false})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only); lunge = RS-#044 aggression (see strike())
+  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false,lunge:0,lungeT:0,need:1,warded:false,sweeper:false,swPhase:0,swT:0,shoveCd:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only); lunge = RS-#044 aggression (see strike())
   // feint wardens block behind a raised shield (read: wait for the opening);
   // archers hold far roofs and fire deflectable arrows (read: timed strike, or slide/leap)
   // Shield up 60 / open 90 of a 150-frame cycle: in an auto-runner you can't stop and wait, so
   // steel X = leap over him, gold diamond = strike. Both answers always live on the same button set.
   function shieldUp(g) { return g.feint && (g.shT % 150) < 60; }
+  // RS-#091: a warden mid-sweep can't be answered with the staff. Both the windup and the arc
+  // are covered, so committing to the strike early doesn't sneak past the read either.
+  function sweepUp(g) { return g.sweeper && (g.swPhase === 1 || g.swPhase === 2); }
   const MAX_ARROWS = 6; // RS-#059: headroom parity with the other pool fixes this session
   const arrows = Array.from({length: MAX_ARROWS}, () => ({active:false,x:0,y:0,vx:0}));
   const MAX_BRAZIERS = 9; // RS-#051: qa sweep flagged the old cap of 6 sitting at peak (6/6) during
@@ -797,6 +800,19 @@
   const BUFFER_FRAMES = 6; // ~100ms early jump press fires the instant you land
   let   SLIDE_FRAMES = 32; // RS-#080: let, for the dev cockpit
   const SLIDE_H = 14;      // sliding hitbox height (standing = player.h 28)
+  // ---------- RS-#091: slide shove + LOW SWEEP ----------
+  // Sliding into a warden used to simply kill you, which made the slide a pure hazard-dodge with
+  // no offensive use. It now SHOVES him and buys a beat, the same shape as the too-dark
+  // knockback: you come out of it with time to strike him or leap him. It does NOT ward him —
+  // the whole point is that the shove creates the opening, so felling him stays on the table.
+  const SHOVE_CD = 40;       // per-warden, so you can't ride one guard down the roof on repeat slides
+  // LOW SWEEP: the answer to "the slide shouldn't beat everything". A sweeper whips his pole
+  // along the shingles at ankle height. Sliding puts you INTO it. The only answer is to leave
+  // the ground. Windup is deliberately long (38f ≈ 630ms): this is a single-response read, and
+  // the floor for a fair one is human reaction time, not memorisation.
+  const SWEEP_WINDUP = 38, SWEEP_ACTIVE = 20, SWEEP_RECOVER = 26;
+  const SWEEP_REACH = 46;    // how far the pole reaches toward the player during the active arc
+  const SWEEP_CLEAR_DY = 22; // clear the shingles by this much and the sweep passes under you
   const LOWBAR_BOT = 17, LOWBAR_TOP = 46; // hazard band above the roof (slide fits under 17; a full 76px leap clears 46)
   const STRIKE_RANGE_Y = 30;
   const GUARD_HIT_DX = 15, GUARD_CLEAR_DY = 22; // feet must be this far above guard.y to jump clear
@@ -826,6 +842,10 @@
 
   let nextSpawnX = 0;
   let lastRoofHadLow = false; // no low hazards on consecutive roofs — a slide ends with no time to start the next one
+  // RS-#091: a sweeper counts as a low threat for SPACING too. Leaping a sweep commits you to a
+  // full arc, so a hazard on the very next roof lands you with no ground time to start a slide.
+  // The bot suite found exactly this as elite low-hazard deaths — an unfair pairing, not bot noise.
+  let lastRoofHadSweep = false;
   let lastGapEndX = 0;        // landing edge of the most recent gap — hazards must sit beyond any jump-arc landing
   let winAt = -1;             // beacon lit → short breath → ending screen
   let lastSegHadGap = false;  // anti-streak: one roof of recovery between gaps, always
@@ -861,7 +881,7 @@
     player.x = 80; player.y = GROUND_Y; player.vy = 0;
     player.onGround = true; player.coyoteT = 0; player.jumpBufT = 0; player.jumpHeld = false;
     player.sliding = false; player.slideT = 0; player.dead = false; player.strikeFlash=0;
-    nextSpawnX = 0; lastRoofHadLow = false; lastGapEndX = 0; lastSegHadGap = false;
+    nextSpawnX = 0; lastRoofHadLow = false; lastRoofHadSweep = false; lastGapEndX = 0; lastSegHadGap = false;
     lastHazKinds = []; lastEnemyKinds = [];
     spawnSegment(true);
   }
@@ -955,6 +975,7 @@
         // 1 pip keeps the rally rhythm (hit costs 0.25, his guttering lamp returns 0.18, so you
         // still have to gather between blows) without ever stranding the player at the gate.
         cslot.need=1; cslot.warded=false;
+        cslot.sweeper=false; cslot.swPhase=0; cslot.swT=0; cslot.shoveCd=0; // the gate fight is the light check, not a sweep read
         nextCaptainD += DISTRICT_LEN;
         placedCap = true;
       }
@@ -963,7 +984,7 @@
     // One occupant per roof — a guard OR a low hazard, never both (a guard in strike range would
     // steal the context button right when the player needs it to slide). Captains own their roof.
     const occRoll = rnd();
-    let placedLow = false;
+    let placedLow = false, placedSweeper = false;
     if (!first && !placedCap && !restZone && len > 90 && occRoll < guardP) {
       const gx = x1 + len * (0.4 + rnd()*0.35);
       const gslot = guards.find(g => !g.active);
@@ -984,10 +1005,38 @@
         const vRoll = rnd();
         // RS-#043: slightly raised variant odds (0.28→0.32, feint entry 0.14→0.16) — a bit more
         // feint/archer variety without pushing past what the anti-streak/formation logic was tuned for.
-        let vKind = dI >= 2 && vRoll < 0.32 ? (vRoll < 0.16 ? 1 : 2) : dI === 1 && vRoll < 0.16 ? 1 : 0; // 0 guard, 1 feint, 2 archer
+        // 0 guard, 1 feint, 2 archer, 3 SWEEPER (RS-#091 low attack — the one read the slide
+        // cannot answer). Sweepers enter with feints in district 1: the slide is taught in
+        // district 0 against static hazards, so the counter-lesson lands one district later,
+        // once the habit exists to be broken.
+        // Sweeper share raised after the QA sweep measured 0-3 arcs across a whole campaign, with
+        // most runs firing none at all — too rare to be a read the player ever learns. The
+        // sweepSafe gate below also rejects a share of them, so the roll has to be generous.
+        let vKind = dI >= 2 && vRoll < 0.54 ? (vRoll < 0.14 ? 1 : vRoll < 0.38 ? 3 : 2)
+                  : dI === 1 && vRoll < 0.40 ? (vRoll < 0.14 ? 1 : 3) : 0;
         if (vKind !== 0 && lastEnemyKinds.length === 2 && lastEnemyKinds[0] === vKind && lastEnemyKinds[1] === vKind) vKind = 0;
         lastEnemyKinds.push(vKind); if (lastEnemyKinds.length > 2) lastEnemyKinds.shift();
         gslot.feint = vKind === 1; gslot.archer = vKind === 2;
+        // A sweep must be answered with a jump, so it needs the same protection low hazards
+        // already get: never right after a gap. Landing from a forced gap-jump leaves too little
+        // ground time to commit a second one, and the arc catches you mid-descent. (Found by the
+        // suite: an elite bot cleared a 58px gap and met an arc 94px later, 5px short of the
+        // clearance height.) Demoted to a plain warden rather than moved, so density is unchanged.
+        // Leading edge: never right after a gap — landing from a forced jump leaves no ground
+        // time to commit the leap the arc demands.
+        const sweepSafe = gap === 0 && x1 - lastGapEndX > 46 * (speed + 0.6);
+        gslot.sweeper = vKind === 3 && sweepSafe;
+        gslot.swPhase = 0; gslot.swT = 0; gslot.shoveCd = 0;
+        // Trailing edge is handled by PLACEMENT, not rejection. A distance rule strict enough to
+        // guarantee room after the arc rejected literally every sweeper (roofs are 110-240px and
+        // the leap covers ~140px at speed), so instead a sweeper stands in the front third of his
+        // roof. That leaves the rest of the roof to land and set up for whatever follows, and it
+        // keeps sweepers in the world instead of tuning them out of existence.
+        if (gslot.sweeper) {
+          gslot.x = x1 + len * 0.3;
+          gslot.patrolMin = gslot.x; gslot.patrolMax = gslot.x; // holds his post, like an archer
+        }
+        placedSweeper = gslot.sweeper;
         gslot.shT = (rnd() * 150) | 0; gslot.bowT = 90;
         if (gslot.archer) { gslot.patrolMin = gslot.patrolMax = gx; gslot.patrolDir = -1; } // archers hold their spot, facing you
         // gauntlet formation — feeds domino jackpots; showcase beat before a gate goes 3-wide.
@@ -1009,13 +1058,14 @@
             Object.assign(g2, { active:true, alive:true, x:lx, y, patrolDir:gslot.patrolDir,
               patrolMin:lx, patrolMax:lx, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
               cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0, silly:rnd()<0.08, lunge:0, lungeT:0,
-              need:gslot.need, warded:false }); // a formation reads as one unit: same light cost across the line
+              need:gslot.need, warded:false, // a formation reads as one unit: same light cost across the line
+              sweeper:false, swPhase:0, swT:0, shoveCd:0 }); // and no sweeps inside a line — three overlapping arcs is unreadable
             prevX = lx;
           }
           if (prevX > gx) { gslot.patrolMin = gx; gslot.patrolMax = gx; } // leader holds its post too
         }
       }
-    } else if (!first && !placedCap && !restZone && distance > 220 && gap === 0 && !lastRoofHadLow && len > 110 && occRoll < hazP) {
+    } else if (!first && !placedCap && !restZone && distance > 220 && gap === 0 && !lastRoofHadLow && !lastRoofHadSweep && len > 110 && occRoll < hazP) {
       // Absolute floor (restored — the district rewrite briefly dropped it): no hazard within
       // the first 220m of ANY fresh run, on top of the district-0 restZone. A checkpoint start
       // mid-campaign already has distance > 220 trivially, so this only guards a true run 1 start.
@@ -1050,6 +1100,7 @@
       if (bz) { bz.active = true; bz.lit = false; bz.x = x1 + len * 0.2; bz.y = y; }
     }
     lastRoofHadLow = placedLow;
+    lastRoofHadSweep = placedSweeper;
     // ---- Law 13 scripted opening (run 1 only, first roof) ----------------------------------
     // The old opening asked the player for nothing for 150m: no gap, no guard, no hazard, and
     // every mote sat 36-66px up — reachable ONLY by jumping, which nothing yet gave a reason to
@@ -1232,6 +1283,14 @@
     // for light it never spends. Detect that case here and let it fall through untouched.
     const willBrace = nearest && !nearest.cap && nearest.lunge !== 1 &&
       (nearest.x - (player.x + player.w/2)) > strikeWindows().mid;
+    if (nearest && sweepUp(nearest)) { // the low arc is a LEAP read, not a press
+      strikeCd = 20;
+      player.strikeFlash = 8;
+      spawnMessage(nearest.x, nearest.y - 50, 'LOW — LEAP IT', 34, '#7fd4e8');
+      spawnBurst(nearest.x - 10, nearest.y - 6, 6, '#7fd4e8');
+      Snd.deny();
+      return;
+    }
     if (nearest && !shieldUp(nearest) && !willBrace) {
       const cost = nearest.need * PIP;
       if (nearest.warded || lampLight < cost - 1e-6) {
@@ -1673,6 +1732,23 @@
         g.x += g.patrolDir * 0.55;
         if (g.x < g.patrolMin || g.x > g.patrolMax) g.patrolDir *= -1;
       }
+      if (g.shoveCd > 0) g.shoveCd--;
+      if (g.sweeper) { // RS-#091 low sweep: windup -> arc along the shingles -> recover
+        const srange = g.x - (player.x + player.w/2);
+        if (g.swPhase === 0) {
+          // only start winding up once you're close enough that the tell is on screen and
+          // unmissable — a sweep telegraphed off-screen is just an ambush
+          if (srange > 40 && srange < 150 + speed * 12) { g.swPhase = 1; g.swT = SWEEP_WINDUP; Snd.brace(); }
+        } else {
+          g.swT--;
+          if (g.swT <= 0) {
+            if (g.swPhase === 1) { g.swPhase = 2; g.swT = SWEEP_ACTIVE; Snd.swing(); }
+            else if (g.swPhase === 2) { g.swPhase = 3; g.swT = SWEEP_RECOVER; }
+            else { g.swPhase = 0; g.swT = 0; }
+          }
+          if (g.swPhase === 1 && (g.swT & 5) === 0) spawnParticle(g.x - 6, g.y - 3, -0.6, -0.2, 9, '#7fd4e8');
+        }
+      }
       if (g.feint) g.shT++; // shield cycle: up 80 frames, open 70 — the read is patience
       if (g.archer) { // archer: holds his roof, looses a deflectable arrow when you close in
         const range = g.x - (player.x + player.w/2);
@@ -1695,8 +1771,44 @@
         spawnMessage(g.x - 10, g.y - 58, 'STRIKE — OR LEAP OVER', 150);
         tutSlowT = 2400; // give the player time to orient, read, and get ready
       }
+      // RS-#091 LOW SWEEP hitbox: a wide, ankle-height arc that a slide puts you directly into.
+      // Checked BEFORE the body collision, and deliberately ignores player.sliding — leaving the
+      // ground is the only answer. graceT still carries you through (revive / Light Burst).
+      if (g.swPhase === 2 && graceT <= 0 && g.stunT <= 0) {
+        const reachL = g.x - SWEEP_REACH, reachR = g.x + 10;
+        const pxs = player.x + player.w/2;
+        if (pxs > reachL && pxs < reachR && player.y > g.y - SWEEP_CLEAR_DY) { die('low'); return; }
+      }
       const dx = Math.abs(sdx);
-      if (graceT <= 0 && g.stunT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) { die('guard'); return; }
+      // A warden mid-sweep is crouched low behind his own pole, so his BODY stops killing for the
+      // duration. Without this he has two overlapping hitboxes with different clearance heights,
+      // and "jump the sweep" stops being reliably true — the bots died clearing the arc and
+      // clipping the torso. One threat, one answer, one clearance.
+      const bodyLive = !sweepUp(g);
+      if (bodyLive && graceT <= 0 && g.stunT <= 0 && dx < GUARD_HIT_DX && player.y > g.y - GUARD_CLEAR_DY) {
+        // RS-#091 SLIDE SHOVE: barrelling into a warden low no longer kills you. You knock him
+        // back and come out of it with a beat to strike him or leap him. He is NOT warded — the
+        // shove exists to create the opening, not to close it off.
+        if (player.sliding && g.shoveCd <= 0 && !g.cap) {
+          g.shoveCd = SHOVE_CD;
+          const sSeg = segments.find(s => s.active && g.x >= s.x1 - 4 && g.x <= s.x2 + 4);
+          g.x = sSeg ? Math.min(g.x + 34 + speed * 5, sSeg.x2 - 16) : g.x + 34 + speed * 5;
+          g.lunge = 0; g.lungeT = 0;
+          if (g.sweeper) { g.swPhase = 3; g.swT = SWEEP_RECOVER; } // a shoved sweeper loses the arc
+          // The slide is NOT cancelled. Cancelling it stood the player up mid-hazard: if the
+          // warden happened to be inside a low bar's span, the shove yanked you out of the duck
+          // and into the bar, and 10 frames of grace ran out before you were clear. The bot
+          // suite caught it as a low-hazard regression across three of five seeds. Your slide is
+          // yours — the shove moves HIM, not you. Jump still cancels it, as it always did.
+          graceT = 10; strikeCd = 0; // no recovery lock: the whole point is that you can act now
+          spawnBurst(g.x, g.y - 16, 9, '#cfd6e6');
+          spawnMessage(g.x, g.y - 46, 'SHOVED', 24, '#cfe4ff');
+          addShake(4);
+          Snd.brace();
+          continue;
+        }
+        die('guard'); return;
+      }
     }
     if (graceT > 0) graceT--;
     if (strikeCd > 0) strikeCd--;
@@ -2348,6 +2460,26 @@
       if (g.warded) { // struck and shrugged it off: a hard bar through the pips
         ctx.fillStyle = '#ff8a72';
         ctx.fillRect(-3 - (g.need - 1) * 4, -58.5, g.need * 8 - 3, 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // RS-#091 SWEEP TELL. Drawn at ankle height and reaching TOWARD the player, so the shape
+    // itself says "low, and coming for your feet" — the read is in the silhouette, not in text.
+    // Windup pulses a charging line along the shingles; the active arc is a solid whipping bar.
+    if (g.alive && g.swPhase > 0) {
+      const t = g.swPhase === 1 ? 1 - g.swT / SWEEP_WINDUP : 1;
+      if (g.swPhase === 1) {
+        ctx.globalAlpha = 0.35 + t * 0.5;
+        ctx.fillStyle = '#7fd4e8';
+        ctx.fillRect(-SWEEP_REACH * t, -5, SWEEP_REACH * t, 3);      // charging line
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(-6, -9, 4, 8);                                   // pole cocked low
+      } else if (g.swPhase === 2) {
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = '#aeeaf6';
+        ctx.fillRect(-SWEEP_REACH, -6, SWEEP_REACH + 10, 5);          // the arc itself
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(-SWEEP_REACH, -11, SWEEP_REACH + 10, 4);         // motion smear above it
       }
       ctx.globalAlpha = 1;
     }
