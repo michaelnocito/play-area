@@ -634,30 +634,8 @@
   function addShake(v) { shake = Math.min(SHAKE_CAP, Math.max(shake, v * SHAKE_MULT * (reduceMotion ? 0.25 : 1))); }
   // Lamplighter run-state: 0→1, fed by lamp-light streamed from killed wardens.
   // Drives the weapon glow radius + rekindled windows now; music layers key off it in Batch 3.
-  // ---------- CHARGE: Light is fuel, not decoration (RS-#090) ----------
-  // lampLight (0-1) was a display value fed by kills. It is now the spine of the game: motes
-  // charge it, the staff spends it, and the jump scales off it. That closes the loop the
-  // opening pass exposed — collecting Light finally DOES something in the moment.
-  //
-  // Wardens carry a LIGHT COST in quarter-lamp pips (need 1/2/3 = 0.25/0.5/0.75; captains 3).
-  //   charge >= cost  -> GOLD aura: the staff can fell him. Striking SPENDS the cost.
-  //   charge <  cost  -> RED aura: the staff only knocks him back. Jump him instead.
-  // Spending is what keeps the read alive. If charge only ever rose, every warden would be gold
-  // within about 30 seconds and the whole choice would evaporate after the first district.
-  // Tuned against the bot suite, which failed hard at the first numbers (everyone died to guards
-  // around 350-440m). The economy has to make a 1-pip warden roughly self-financing, or the
-  // player spirals dark, every aura turns red, and the game becomes jump-only.
-  const LIGHT_PER_MOTE = 0.14;  // 2 motes buys a 1-pip warden
-  const PIP = 0.25;             // one pip of charge
-  // Jump scales UP with charge and never below the stock arc. This direction is deliberate:
-  // every gap in the game is tuned against the stock JUMP_V, so the baseline stays the floor
-  // and no existing gap can become uncleariable because the player is running dark.
-  const JUMP_LIGHT_BONUS = 0.16; // full lamp = 16% more launch velocity
   let lampLight = 0;
-  // RS-#090: raised 0.12 -> 0.22 so felling a 1-pip warden very nearly repays its own 0.25 cost.
-  // Fantasy-correct as well as balance-correct: you are taking his lamp. Heavier wardens (2-3
-  // pips) still cost real light, which is what makes them a decision instead of a formality.
-  const LAMP_PER_KILL = 0.22;
+  const LAMP_PER_KILL = 0.12;
   // ---------- Campaign (GAME_BIBLE Law 1: something to beat) ----------
   // The run is a journey: six named districts, a Warden Captain at each gate, the Great
   // Beacon at the end. Endless ("Night Shift") is a post-game unlock, not the core game.
@@ -751,7 +729,7 @@
   const segments = Array.from({length: MAX_SEGMENTS}, () => ({active:false,x1:0,x2:0,y:0,alley:false,dist:0,gapBefore:0}));
   const MAX_GUARDS = 15; // RS-#054: qa sweep peaked this at 11/12 across runs — one heavy formation
   // beat away from the same silent-drop risk the brazier pool had; matching headroom fix.
-  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false,lunge:0,lungeT:0,need:1,warded:false})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only); lunge = RS-#044 aggression (see strike())
+  const guards = Array.from({length: MAX_GUARDS}, () => ({active:false,alive:false,x:0,y:0,w:16,h:26,patrolDir:1,patrolMin:0,patrolMax:0,alerted:false,deathT:0,vx:0,vy:0,spin:0,fly:0,silly:false,lunge:0,lungeT:0})); // fly: 0=fade, 1=tumble (mid hit), 2=missile (perfect hit); silly = rare party-hat variant (cosmetic only); lunge = RS-#044 aggression (see strike())
   // feint wardens block behind a raised shield (read: wait for the opening);
   // archers hold far roofs and fire deflectable arrows (read: timed strike, or slide/leap)
   // Shield up 60 / open 90 of a 150-frame cycle: in an auto-runner you can't stop and wait, so
@@ -943,18 +921,6 @@
         cslot.alerted=false; cslot.deathT=0; cslot.fly=0; cslot.vx=0; cslot.vy=0; cslot.spin=0; cslot.chain=0; cslot.stunT=0;
         cslot.cap=true; cslot.hp=3; cslot.capD=Math.round(nextCaptainD / DISTRICT_LEN) - 1;
         cslot.feint=false; cslot.archer=false; cslot.shT=0; cslot.bowT=0; cslot.silly=false; cslot.lunge=0; cslot.lungeT=0;
-        // 2 pips per hit, three hits. NOT 3 pips: the lamp caps at 1.0 (4 pips), so a 3-pip
-        // captain would need 0.75 charge three times over with no way to bank it — unpayable by
-        // construction. At 2 pips he becomes the rally fight: hit him, lose the charge, gather
-        // light while he's driven back, hit him again. That is the answer to "no way to rally
-        // battle enemies that need multiple hits" — the force-scroll stops being the problem and
-        // starts being the clock you're working against.
-        // Settled at 1 pip PER HIT (three hits) after the suite found the treadmill: at 2 pips a
-        // captain was usually unaffordable, so he got skipped — and a skipped captain respawns 60m
-        // later, so the run became an endless captain queue that eventually killed every tier.
-        // 1 pip keeps the rally rhythm (hit costs 0.25, his guttering lamp returns 0.18, so you
-        // still have to gather between blows) without ever stranding the player at the gate.
-        cslot.need=1; cslot.warded=false;
         nextCaptainD += DISTRICT_LEN;
         placedCap = true;
       }
@@ -973,10 +939,6 @@
         gslot.patrolMin = x1+16; gslot.patrolMax = x2-16; gslot.alerted=false; gslot.deathT=0;
         gslot.fly=0; gslot.vx=0; gslot.vy=0; gslot.spin=0; gslot.chain=0; gslot.cap=false; gslot.hp=1; gslot.stunT=0;
         gslot.lunge=0; gslot.lungeT=0;
-        // RS-#090 light cost, in pips. Ramps by district so the read stays live as the player's
-        // charge ceiling grows: district 0 is all 1-pip (learnable), heavier wardens appear later.
-        gslot.need = 1 + (dI >= 1 && rnd() < 0.30 ? 1 : 0) + (dI >= 3 && rnd() < 0.18 ? 1 : 0);
-        gslot.warded = false; // set once an underpowered strike bounces off him: now jump-only
         gslot.silly = rnd() < 0.08; // rare party-hat warden — cosmetic only, same stats/hitbox
         // enemy variants (Law 7: new reads, same buttons) — feints from district 2, archers from 3;
         // anti-streak keeps three of the same read from landing back to back (falls back to a
@@ -1008,8 +970,7 @@
             if (!g2) break;
             Object.assign(g2, { active:true, alive:true, x:lx, y, patrolDir:gslot.patrolDir,
               patrolMin:lx, patrolMax:lx, alerted:false, deathT:0, fly:0, vx:0, vy:0, spin:0, chain:0,
-              cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0, silly:rnd()<0.08, lunge:0, lungeT:0,
-              need:gslot.need, warded:false }); // a formation reads as one unit: same light cost across the line
+              cap:false, hp:1, stunT:0, feint:false, archer:false, shT:0, bowT:0, silly:rnd()<0.08, lunge:0, lungeT:0 });
             prevX = lx;
           }
           if (prevX > gx) { gslot.patrolMin = gx; gslot.patrolMax = gx; } // leader holds its post too
@@ -1031,16 +992,6 @@
         oslot.kind = pickVaried(rnd(), 3, lastHazKinds); // anti-streak: never 3 identical hazards running
         oslot.w = ow; oslot.x = ox; oslot.y = y;
         placedLow = true;
-      }
-    }
-    // RS-#090: fuel line on the gate approach. A captain fight you cannot pay for isn't a fight,
-    // it's a wall, so the run-up to every gate now guarantees light. It also teaches the habit
-    // the whole system wants — top the lamp up before the big one.
-    if (!first && showcase && !placedCap) {
-      for (let i = 0; i < 3; i++) {
-        const fs = featherList.find(f => !f.active);
-        if (fs) { fs.active=true; fs.taken=false; fs.fancy=false; fs.bob=i;
-          fs.x = x1 + len * (0.25 + i * 0.22); fs.y = y - 30 - (i === 1 ? 16 : 0); }
       }
     }
     // Signature pre-gate brazier: strike it on the way to the Captain — a small ready-beat, not
@@ -1113,8 +1064,7 @@
 
   // ---------- Input ----------
   function doJump() {
-    // Charge makes you lighter. Bonus only, never a penalty (see JUMP_LIGHT_BONUS).
-    player.vy = JUMP_V * (1 + lampLight * JUMP_LIGHT_BONUS); player.onGround = false;
+    player.vy = JUMP_V; player.onGround = false;
     player.coyoteT = 0; player.jumpBufT = 0;
     player.sliding = false; player.slideT = 0; // jump cancels a slide
     spawnBurst(player.x+player.w/2, player.y, 3, '#cfd6e6');
@@ -1147,30 +1097,14 @@
       }
       return;
     }
-    // RS-#090: a warden the lamp can't pay for must NOT win the context press over a slide.
-    // The 2-button contract says "a guard in staff reach always wins the press", which was right
-    // when every guard was killable — but a red warden can't be dealt with by pressing, so
-    // letting him swallow the button hands the player a hazard they were never allowed to slide
-    // under. (The bot suite caught this as elite low-hazard deaths, which is exactly the kind of
-    // unfair death it exists to find.) Affordable wardens are picked first; a dark one is only
-    // used as a target once nothing else needs the button.
-    let nearest = null, nearestDist = Infinity, darkNearest = null, darkDist = Infinity;
+    let nearest = null, nearestDist = Infinity;
     for (const g of guards) {
       if (!g.active || !g.alive) continue;
       const dx = g.x - (player.x + player.w/2), dy = g.y - player.y;
       if (dx > -14 && dx < strikeRangeX() && Math.abs(dy) < STRIKE_RANGE_Y) {
         const d = Math.hypot(dx,dy);
-        const payable = !g.warded && lampLight >= g.need * PIP - 1e-6;
-        if (payable) { if (d < nearestDist) { nearestDist = d; nearest = g; } }
-        else if (d < darkDist) { darkDist = d; darkNearest = g; }
+        if (d < nearestDist) { nearestDist = d; nearest = g; }
       }
-    }
-    if (!nearest && darkNearest) {
-      const pxd = player.x + player.w/2;
-      for (const o of lowObs) { // a hazard in the slide window outranks a warden you can't hurt
-        if (o.active && o.x + o.w > pxd - 6 && o.x - pxd < 10 + speed*12) { startSlide(); return; }
-      }
-      nearest = darkNearest; // nothing else wants the button: give the TOO DARK read
     }
     if (!nearest) {
       const px = player.x + player.w/2;
@@ -1224,30 +1158,6 @@
       addShake(4);
       return;
     }
-    // RS-#090 LIGHT CHECK — the core read, applied before any strike resolves (captains included).
-    // Underpowered = a knockback that WARDS him: he can never be felled this run, so the answer
-    // permanently becomes JUMP. That's the lesson Mike specified — you get one shove, then the
-    // encounter changes shape and you have to solve it the other way.
-    // A far-range press becomes a BRACE, not a kill (RS-#044), so it must not bill the player
-    // for light it never spends. Detect that case here and let it fall through untouched.
-    const willBrace = nearest && !nearest.cap && nearest.lunge !== 1 &&
-      (nearest.x - (player.x + player.w/2)) > strikeWindows().mid;
-    if (nearest && !shieldUp(nearest) && !willBrace) {
-      const cost = nearest.need * PIP;
-      if (nearest.warded || lampLight < cost - 1e-6) {
-        nearest.warded = true;
-        const kSeg = segments.find(s => s.active && nearest.x >= s.x1 - 4 && nearest.x <= s.x2 + 4);
-        nearest.x = kSeg ? Math.min(nearest.x + 26 + speed * 4, kSeg.x2 - 16) : nearest.x + 26 + speed * 4;
-        strikeCd = 20;
-        player.strikeFlash = 8;
-        spawnBurst(nearest.x, nearest.y - 18, 8, '#e05a4a');
-        spawnMessage(nearest.x, nearest.y - 46, 'TOO DARK — JUMP HIM', 34, '#ff8a72');
-        addShake(5);
-        Snd.deny();
-        return;
-      }
-      lampLight = Math.max(0, lampLight - cost); // the staff burns what it spends
-    }
     if (nearest && nearest.cap) {
       // Warden Captain: three strikes — stagger, break, fell. No lunge-through; he holds his gate.
       graceT = 16;
@@ -1257,10 +1167,6 @@
         // unclamped shove at high speed could push him clean off the edge into gap airspace)
         const capSeg = segments.find(s => s.active && nearest.x >= s.x1 - 4 && nearest.x <= s.x2 + 4);
         nearest.x = capSeg ? Math.min(nearest.x + 30 + speed * 6, capSeg.x2 - 16) : nearest.x + 30 + speed * 6;
-        // his lamp gutters and part of it comes to you — a partial refund so the NEXT blow is
-        // reachable after a mote or two, instead of stranding the player mid-fight with no path
-        lampLight = Math.min(1, lampLight + 0.18);
-        spawnStream(nearest.x, nearest.y - 44, 4);
         spawnBurst(nearest.x, nearest.y-18, 10, '#f0a04a');
         spawnMessage(nearest.x, nearest.y-56, nearest.hp === 2 ? 'STAGGERED' : 'GUARD BROKEN', 28, '#f0a04a');
         spawnMessage(nearest.x, nearest.y-70, CAPTAIN_QUIPS[nearest.hp === 2 ? 0 : 1][(rnd()*3)|0], 34); // silly seasoning — flavor only
@@ -1755,15 +1661,6 @@
         let gain = (boonFlags.motes2 || modIdx === 2) ? 2 : 1; // GLEAMING MOTES boon / BRIGHT MOTES night
         if (f.fancy) gain *= 2; // rare top-hat mote — doubly dapper, doubly generous
         feathers += gain;
-        // RS-#090: a mote is now FUEL as well as currency. This is the moment the premise
-        // ("take the light back") starts paying the player in the same breath it's stated.
-        const wasShort = lampLight;
-        lampLight = Math.min(1, lampLight + LIGHT_PER_MOTE * gain);
-        // crossing a pip is the beat that matters — it's what flips a red warden gold
-        if (Math.floor(lampLight / PIP) > Math.floor(wasShort / PIP)) {
-          Snd.chime(Math.round(lampLight * 8));
-          spawnBurst(f.x, f.y, 8, '#ffd98c');
-        }
         spawnBurst(f.x, f.y, 6, f.fancy ? '#ffe97a' : '#f1e3c6');
         spawnMessage(f.x, f.y-10, (f.fancy ? 'FANCY MOTE +' : '+') + PTS_LIGHT * gain, f.fancy ? 30 : 20);
         Snd.sparkle();
@@ -2323,34 +2220,6 @@
       if (g.fly > 0) { ctx.globalAlpha = Math.max(1 - g.deathT/80, 0); ctx.rotate(g.deathT * g.spin); } // airborne corpse spins as it flies
       else { const t=Math.min(g.deathT/12,1); ctx.globalAlpha=1-t; ctx.rotate(t*1.3); ctx.translate(0,t*20); }
     }
-    // RS-#090 LIGHT-COST TELL (Law 9: every mechanic has a visible tell, taught by encounter).
-    // Drawn UNDER the body so it reads as light cast on the roof, not as UI stuck to a sprite.
-    //   gold pool  = your charge covers him, the staff will fell him
-    //   red pool   = you're too dark, jump him
-    //   red + bar  = warded (you already bounced off him): jump is now the ONLY answer
-    // Cost is drawn as pips, so "this one needs more light" is legible without a number.
-    if (g.alive && !g.stunT) {
-      const cost = g.need * PIP;
-      const canFell = !g.warded && lampLight >= cost - 1e-6;
-      const pulse = 0.72 + Math.sin(drawT * 0.16) * 0.14;
-      ctx.globalAlpha = (canFell ? 0.5 : 0.42) * pulse;
-      ctx.fillStyle = canFell ? '#ffc65a' : '#e0503c';
-      // elliptical pool at his feet — cheap (no gradient, perf contract)
-      ctx.beginPath(); ctx.ellipse(0, -2, 19, 5.5, 0, 0, 6.2832); ctx.fill();
-      ctx.globalAlpha = (canFell ? 0.3 : 0.24) * pulse;
-      ctx.beginPath(); ctx.ellipse(0, -2, 27, 8, 0, 0, 6.2832); ctx.fill();
-      // cost pips above the lamp
-      ctx.globalAlpha = 0.95;
-      for (let p = 0; p < g.need; p++) {
-        ctx.fillStyle = canFell ? '#ffe9b0' : '#ff9b86';
-        ctx.fillRect(-3 - (g.need - 1) * 4 + p * 8, -60, 5, 5);
-      }
-      if (g.warded) { // struck and shrugged it off: a hard bar through the pips
-        ctx.fillStyle = '#ff8a72';
-        ctx.fillRect(-3 - (g.need - 1) * 4, -58.5, g.need * 8 - 3, 2);
-      }
-      ctx.globalAlpha = 1;
-    }
     const bob = g.alive ? Math.sin(g.x*0.4)*0.8 : 0;
     ctx.save(); ctx.translate(0, bob); ctx.scale(g.patrolDir >= 0 ? 1 : -1, 1);
     if (g.cap) ctx.scale(1.28, 1.28); // Warden Captain: bigger silhouette, red plume, hp pips
@@ -2550,23 +2419,6 @@
     if (sf > 0) { // arc trail behind the sweep
       ctx.strokeStyle = 'rgba(232,200,120,'+(sf/8*0.8)+')'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(5,-h+11,len-3,ang-0.7,ang+0.1); ctx.stroke();
-    }
-    // RS-#090: the player's charge, in the SAME pip units the wardens' cost is drawn in, right
-    // above the hood. Deliberately not in the HUD — the read is "my pips vs his pips", and that
-    // comparison only works if both are in the play area where the eye already is.
-    {
-      const full = Math.floor(lampLight / PIP + 1e-6);
-      const frac = (lampLight - full * PIP) / PIP;
-      for (let p = 0; p < 4; p++) {
-        const bx = -14 + p * 8, by = -h - 20;
-        ctx.fillStyle = 'rgba(255,255,255,0.16)';
-        ctx.fillRect(bx, by, 5, 5);
-        if (p < full) { ctx.fillStyle = '#ffd98c'; ctx.fillRect(bx, by, 5, 5); }
-        else if (p === full && frac > 0.02) { // partial pip fills bottom-up
-          ctx.fillStyle = 'rgba(255,217,140,0.75)';
-          ctx.fillRect(bx, by + 5 - 5 * frac, 5, 5 * frac);
-        }
-      }
     }
     ctx.restore();
   }
