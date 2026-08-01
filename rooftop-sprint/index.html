@@ -181,7 +181,10 @@
     <p>Run the rooftops. Take back the light.</p>
     <!-- RS-#061: M/P were fully working but never listed anywhere on the start screen — a
          desktop player had no way to discover them short of guessing or reading dev notes. -->
-    <p id="controlsLine"><span class="key">SPACE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X</span> strike / slide &nbsp;&middot;&nbsp; <span class="key">M</span> mute &nbsp;&middot;&nbsp; <span class="key">P</span> pause</p>
+    <!-- "You run automatically" is not flavor: a first-run tester pressed LEFT six times, got
+         total silence, and concluded the controls were broken. Nothing on any screen said the
+         run was automatic, so the wrong belief survived the whole run. -->
+    <p id="controlsLine">You run automatically &nbsp;&middot;&nbsp; <span class="key">SPACE</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">X</span> strike / slide &nbsp;&middot;&nbsp; <span class="key">M</span> mute &nbsp;&middot;&nbsp; <span class="key">P</span> pause</p>
     <div id="scoreLine"></div>
     <div id="tally"></div>
     <div id="newBest">&#10022; NEW BEST &#10022;</div>
@@ -790,7 +793,12 @@
   }
   let graceT = 0;        // brief invulnerability after a lunge-kill so chained guards can't cheap-kill
   let strikeCd = 0;      // whiff recovery (Law 6): a swing into air costs a beat — spam can't win
-  let taughtGuard = false, taughtGap = false, taughtSlide = false;
+  let taughtGuard = false, taughtGap = false, taughtSlide = false, taughtMote = false;
+  // Law 13 (GAME_BIBLE Part 2): the opening 30s is its own designed build. openingRun is true
+  // only for a true run-1 start (not a mid-campaign checkpoint), and it scripts the first three
+  // beats: a free mote you collect by simply running (0-3s), a mote arc you must JUMP for
+  // (3-10s, the first earned win), then the normal world with its first guard inside 30s.
+  let openingRun = false;
   let deathCause = '';   // 'gap' | 'guard' | 'low' — picks the death-screen tip (and feeds the bot harness)
   let tutSlowT = 0;      // real ms — tutorial slow-time so teach prompts can be read (see loop)
 
@@ -877,7 +885,13 @@
     const dMid = distAtX(x1 + len / 2);
     const dI = districtIdx(Math.max(0, dMid));
     const dPos = ((dMid % DISTRICT_LEN) + DISTRICT_LEN) % DISTRICT_LEN;
-    const restZone = dPos < (dI === 0 && mode === 'campaign' && distanceSeed < DISTRICT_LEN ? 150 : 40);
+    // Law 13: this was 150 on a run-1 start — 150m of guaranteed nothing, straddling the entire
+    // window where a portal player decides. Cut to the standard 40 so the first guard (with its
+    // existing slow-time STRIKE-OR-LEAP teach) lands inside the first 30 seconds. The 220m
+    // absolute hazard floor below is untouched: hazards stay the THIRD lesson, not the first.
+    // 70 on a run-1 start (not the old 150) so the three opening beats stay in order and don't
+    // collide: free mote ~1s, jump arc ~4s, first guard ~8-10s. Everywhere else stays 40.
+    const restZone = dPos < (dI === 0 && openingRun ? 70 : 40);
     const pressure = dPos > 110 && dPos < 190;
     // Lantern Alley: the rest beat right after every gate gets its own identity — denser
     // lanterns + pickups instead of just "fewer enemies" (Law 2: named milestones, not silence).
@@ -987,6 +1001,26 @@
       if (bz) { bz.active = true; bz.lit = false; bz.x = x1 + len * 0.2; bz.y = y; }
     }
     lastRoofHadLow = placedLow;
+    // ---- Law 13 scripted opening (run 1 only, first roof) ----------------------------------
+    // The old opening asked the player for nothing for 150m: no gap, no guard, no hazard, and
+    // every mote sat 36-66px up — reachable ONLY by jumping, which nothing yet gave a reason to
+    // do. So Light (the premise noun AND the shop currency) read 0 through the whole decision
+    // window. A real first-run tester quit at 15m. These three beats fix that, in order:
+    //   0-3s  free mote at collect height (dy < 18 of player.y-16 while grounded) — the counter
+    //         moves before the player has done anything, so the stated goal is confirmed real.
+    //   3-10s a 3-mote arc at jump height — the first win they EARN with a press. Missing it
+    //         costs nothing, so the teach is safe.
+    //   ~30s  first guard, via the restZone cut below.
+    if (first && openingRun) {
+      const openMotes = [
+        [x1 + 230, y - 28], [x1 + 300, y - 28],            // free: grabbed at a run
+        [x1 + 430, y - 48], [x1 + 470, y - 60], [x1 + 510, y - 48], // arc: requires a jump
+      ];
+      for (const [mx, my] of openMotes) {
+        const fslot = featherList.find(f => !f.active);
+        if (fslot) { fslot.active=true; fslot.taken=false; fslot.x=mx; fslot.y=my; fslot.bob=0; fslot.fancy=false; }
+      }
+    }
     if (!placedLow && rnd() < (lanternAlley ? 0.85 : 0.5)) { // no feathers on hazard roofs — a high feather would bait a jump into the band; the Alley is generous
       const fx = gap>0 ? lastX2+gap/2 : x1 + len*rnd();
       const fy = y - 36 - rnd()*30;
@@ -1321,7 +1355,7 @@
   if (!isTouch) touchControls.style.display = 'none';
   else {
     const cl = document.getElementById('controlsLine');
-    if (cl) cl.innerHTML = '<span class="key">LEFT</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">RIGHT</span> strike / slide';
+    if (cl) cl.innerHTML = 'You run automatically &nbsp;&middot;&nbsp; <span class="key">LEFT</span> hold to jump higher &nbsp;&middot;&nbsp; <span class="key">RIGHT</span> strike / slide';
   }
 
   function beginGame() {
@@ -1362,6 +1396,8 @@
     distanceSeed = mode === 'daily' ? 0
       : (mode === 'campaign' ? startDistrict * DISTRICT_LEN : 0) + Math.min(save.wick, 2) * 50 // wick T3 is the revive, not more meters
         + (runBuff === 'head' ? 200 : 0);
+    // Law 13: set BEFORE resetWorld — resetWorld spawns the first roof, which reads this flag.
+    openingRun = mode === 'campaign' && distanceSeed < DISTRICT_LEN;
     resetWorld();
     distance = distanceSeed;
     curD = districtIdx(distance);
@@ -1382,7 +1418,11 @@
     while (nextSpawnX < W + 500 && spawnSegment(false));
     state = 'playing';
     if (modIdx >= 0) showBanner((mode === 'daily' ? 'DAILY TRIAL — ' : 'NIGHT SHIFT — ') + NIGHT_MODS[modIdx].n, 180);
-    if (dailyX2) spawnMessage(player.x + 200, 78, 'FIRST RUN TODAY — ALL LIGHT ×2', 200);
+    // Law 13: this used to run 200 frames in the largest type on screen, parked over the exact
+    // space where the first obstacle is read — advertising a bonus on a currency the player had
+    // no way to earn yet. Short, high, and out of the play line now; the ×2 is still itemised in
+    // full on the tally, which is where it actually means something.
+    if (dailyX2) spawnMessage(player.x + 200, 40, 'FIRST RUN TODAY — LIGHT ×2', 70);
     overlay.classList.add('hidden');
     CG.gameplayStart();
   }
@@ -1415,6 +1455,22 @@
     }
     for (const f of featherList) if (f.active && f.x < player.x - 260) f.active = false;
     for (const o of lowObs) if (o.active && o.x < player.x - 260) o.active = false;
+
+    // Law 13 first-press teach: the opening mote arc is the first thing that ever asks for an
+    // input. Prompt it the same way the gap and slide are taught, but WITHOUT slow-time — this
+    // beat lands at ~4s and a time-dilation hitch that early reads as the game stuttering.
+    if (!taughtMote && openingRun) {
+      const cx = player.x + player.w/2;
+      for (const f of featherList) {
+        if (!f.active || f.taken || f.y > GROUND_Y - 40) continue; // only the high arc, not the free pair
+        const fdx = f.x - cx;
+        if (fdx > 0 && fdx < 150) {
+          taughtMote = true;
+          spawnMessage(f.x, f.y - 34, 'JUMP FOR THE LIGHT', 140);
+          break;
+        }
+      }
+    }
 
     // first-gap teach: spot the first upcoming gap early, slow time, show the prompt
     if (!taughtGap) {
@@ -1508,7 +1564,14 @@
         // RS-#044: braced after an early swing — surges toward the player instead of patrolling.
         // Closes fast enough to matter but stays inside a jumpable/strikeable reaction window;
         // expires back to a normal patrol read if it never actually reaches the player.
-        g.x -= 1.6;
+        // Clamped to his OWN roof. This was unclamped: 26 frames x 1.6px = up to 42px of surge
+        // with no bounds check, so a guard braced near his roof's left edge walked out into gap
+        // airspace and hung there — a target floating over a hole the player must jump. Same bug
+        // class the deep QA sweep already fixed for captain knockback and formation lines; the
+        // lunge was the one mover still missed. Latent at HEAD (the QA sweep only surfaced it
+        // once an unrelated change reshuffled the RNG stream into the right roof layout).
+        const lSeg = segments.find(s => s.active && g.x >= s.x1 - 4 && g.x <= s.x2 + 4);
+        g.x = lSeg ? Math.max(lSeg.x1 + 8, g.x - 1.6) : g.x - 1.6;
         g.lungeT--;
         if ((g.lungeT & 3) === 0) spawnParticle(g.x + 8, g.y - 20, 0.4, -0.3, 8, '#8fb4d8');
         if (g.lungeT <= 0) g.lunge = 0;
@@ -2494,11 +2557,20 @@
     if (bannerT > 0) { // district / relit banner
       bannerT--;
       ctx.textAlign = 'center';
-      ctx.globalAlpha = Math.min(1, bannerT / 30, (150 - bannerT) / 12 + 0.2);
+      const bAlpha = Math.min(1, bannerT / 30, (150 - bannerT) / 12 + 0.2);
+      ctx.globalAlpha = bAlpha;
       ctx.font = 'bold 17px Georgia'; ctx.fillStyle = bannerCol;
-      ctx.shadowColor = 'rgba(255,190,110,0.8)'; ctx.shadowBlur = 14;
+      // Perf contract: NO shadowBlur per frame. This ran 14px of blur for 150 straight frames on
+      // every district banner and captain fell — i.e. a guaranteed hitch on the game's biggest
+      // moments, which is the reported stutter's most likely source. Faked with cheap offset
+      // passes instead: same warm halo, no filter.
+      ctx.globalAlpha = bAlpha * 0.28;
+      ctx.fillStyle = 'rgba(255,190,110,1)';
+      ctx.fillText(bannerText, W/2 - 1, 61); ctx.fillText(bannerText, W/2 + 1, 63);
+      ctx.globalAlpha = bAlpha;
+      ctx.fillStyle = bannerCol;
       ctx.fillText(bannerText, W/2, 62);
-      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1;
     }
     if (buffUsedMsgT > 0) { // RS-#045: small, separate line so it never collides with the district/mode banner
       buffUsedMsgT--;
@@ -2573,12 +2645,18 @@
   // Score is pure distance traveled (never wall-clock), so slow-mo can't cost the player anything.
   const STEP = 1000 / 60;
   const SLOWMO_MS = 620;
-  let lastT = 0, acc = 0, slowmoT = 0;
+  let lastT = 0, acc = 0, slowmoT = 0, tsShown = 1;
   function loop(now) {
     if (!lastT) lastT = now;
     const dt = Math.min(now - lastT, 100); // cap dt: background-tab return can't fast-forward the sim
     lastT = now;
-    const tsImpact = slowmoT > 0 ? Math.max(0.26, 1 - (slowmoT / SLOWMO_MS) * 0.74) : 1;
+    // Slow-mo used to SNAP: a captain hit set slowmoT and time fell 1x -> ~0.40x in a single
+    // frame, and stacked events (domino + captain) re-snapped it via Math.max. An instantaneous
+    // timescale discontinuity is indistinguishable from a dropped frame — it reads as stutter,
+    // not as cinema. tsShown now chases the target so entry is eased and exit stays as-is.
+    const tsTarget = slowmoT > 0 ? Math.max(0.26, 1 - (slowmoT / SLOWMO_MS) * 0.74) : 1;
+    tsShown += (tsTarget - tsShown) * (tsTarget < tsShown ? 0.22 : 0.12); // ease down fast, back up gently
+    const tsImpact = Math.abs(tsShown - tsTarget) < 0.01 ? tsTarget : tsShown;
     // tutorial slow: steady 0.35× while the prompt is up, easing back over the last 400ms
     const tsTut = tutSlowT > 400 ? 0.35 : tutSlowT > 0 ? 0.35 + 0.65 * (1 - tutSlowT/400) : 1;
     const ts = Math.min(tsImpact, tsTut);

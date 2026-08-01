@@ -73,6 +73,11 @@ sandbox.document = {
 };
 sandbox.innerWidth = 960; sandbox.innerHeight = 540;
 sandbox.addEventListener = noop;
+// DevCockpit lives in the repo-root dev-cockpit.js <script>, which the vm never loads — the
+// game's `if (DevCockpit.on)` guard then threw a ReferenceError and the whole suite died at
+// boot. (This broke when the cockpit landed and went unnoticed because nobody re-ran the
+// suite since.) Stub it off: the cockpit is dev-only and stripped before submission anyway.
+sandbox.DevCockpit = { on: false, register: noop, set: noop, log: noop };
 vm.createContext(sandbox);
 vm.runInContext(script, sandbox);
 const g = sandbox.__g;

@@ -66,6 +66,9 @@ function newGame(seed) {
   };
   sandbox.innerWidth = 960; sandbox.innerHeight = 540;
   sandbox.addEventListener = noop;
+  // See rs_playtest.js: the repo-root dev-cockpit.js never loads in the vm, so the game's
+  // `if (DevCockpit.on)` guard threw at boot and killed the sweep. Stub it off.
+  sandbox.DevCockpit = { on: false, register: noop, set: noop, log: noop };
   vm.createContext(sandbox);
   vm.runInContext(script, sandbox);
   return sandbox.__g;
