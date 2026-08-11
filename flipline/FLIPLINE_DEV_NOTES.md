@@ -562,6 +562,59 @@ player steers to recover). Roadmap next: PARASAIL + STATIC-CLING PULSE (see ROAD
 **⚠️ The DODGES + STREAK objective above is superseded — see §STATIC KICK below. The feel it was
 built to test (drift weight, knockback recovery, the 3s metronome) is untouched; only the goal flipped.**
 
+## 💥 SHRAPNEL + THE RING LADDER (🔷 Mike 2026-08-11) — §shrapnel
+Mike, same day, on top of §lint-breaker: **"you have to dodge the shrapnel from breaking the brick;
+if it hits you it knocks you back a ring, that way it gets harder as the rings get smaller."**
+Two changes, and the second is the one that made the first work.
+
+**1. The rings genuinely shrink now.** `RING_R=[0.84,0.74,0.64,0.54,0.44]` of RIM — a real ladder of
+five orbits (97 → 51px). The old dive slid the *world* outward and kept the sock's screen radius, so
+every ring looked identical; that read was wrong for what Mike is describing. A dive now animates
+`ringNow` inward and the sock visibly ends up on a tighter circle. **Your ANGLE is still never taken
+from you** — the E3 lesson survives, because only the radius moves.
+- **Everything that can touch you is measured in PIXELS** (`SOCK_PX 9`, `LINT_PX 7`, `SHRAP_PX 4.5`,
+  `CONTACT_PX 33`) and converted to radians per ring. Same sock, same debris, tighter circle: a shard
+  eats **1.91× more of ring 5 than of ring 1**. That is the entire difficulty curve — no hidden knob.
+  It cuts both ways honestly: your boot also reaches further round a small ring.
+- **The warning shrinks out of the geometry too.** A tighter ring is a shorter climb for a rising
+  shirt: `warn()` = 2.55s on ring 1 → 1.81s on ring 5, floored at `RISE_MIN` 1.10s. `DEPTH_RAMP` is
+  deleted; it was a made-up number doing a job the shape of the shaft now does for real.
+- The drawn shaft rings ARE the ladder (plus two dead ones below, so the bottom still reads as a
+  shaft). Clearing ring 5 wraps to ring 1 with a "THE BOTTOM" pop.
+
+**2. Breaking a clump throws it at you.** Each `knockLint()` spawns a shard at the wall band that
+falls inward at `SHRAP_VR` (22px/s) while running along the ring at `SHRAP_AV` (1.6 rad/s) **in the
+sweep's direction**. So the wreckage of your own shot runs ahead of your ball, and the read is
+**move against your sweep** — the english now picks which way the ball goes AND which way you flee.
+Crossing your orbit is the only moment it can hit; past that it is scenery (drawn dimmer).
+- **Hit = knocked back a ring, and that ring's wall is back up** (`rise()`, KNOCK_T 0.42s — quicker
+  than the dive, because it is a shove, not a ceremony). On ring 1 there is nowhere to go, so the hit
+  regrows the wall you were stripping instead. There is still no death in this lab.
+- Shards are the **only** red thing that can hurt you now, which quietly settles the colour worry
+  logged in §lint-breaker: the shirts are the ball, the shrapnel is the danger.
+
+**Verified — `node shirt-lab-harness.js` 28/28**, rewritten again for the risk layer. The gate that
+matters: **standing directly under a shard on the TIGHTEST ring, a swing from a standing start covers
+2.39 rad in the 0.73s of warning, against a 0.26 rad danger arc** — a 9× margin, so deep rings are
+hard because there is more to dodge, never because a shard was unfair. Also proved: a shard is thrown
+the way the ball went (both directions), standing in one costs a ring, the knockback restores the
+wall, the dive lands on a genuinely tighter ring, and the warning shrinks but never breaks the floor.
+Plus a `draw()` smoke run — 600 frames at ring 1 and ring 5 with the ready screen, no throw.
+
+**⚠️ NOT visually checked this round.** The browser pane stopped compositing mid-session
+(`document.hidden` stuck true → rAF frozen → screenshots time out), so §lint-breaker's live pass is
+the last one with eyes on it. Everything since (ring ladder, shrapnel rendering, the RING n/5 HUD) is
+proved by harness + draw smoke test only. **First thing to do next session: open it and look.**
+
+**Test steps** (`proto/shirt-test.html`, `?dev=1` for the cockpit):
+- **SH-a** Break one clump and watch the shard. Can you tell where it is going to cross?
+- **SH-b** Take one on purpose. Does the knock back up a ring land as a real loss?
+- **SH-c** Kick a big edge hit, then stand still. Does the shower punish you for admiring it?
+- **SH-d** Play ring 1, then cockpit → `dive a ring now` ×4 to ring 5. Is the squeeze obvious?
+- **SH-e** Cockpit → `shrapnel run-ahead` at 0 vs 1.6 vs 4. Does "move against your sweep" hold up?
+- **SH-f** Cockpit → `shrapnel fall (px/s)` at 12 vs 22 vs 50. Where does the warning stop being fair?
+- **SH-g** Get knocked back twice in a row. Does it feel like a setback or a spiral?
+
 ## 🧱 LINT BREAKER — brick breaker wrapped around the drum (🔷 Mike 2026-08-11) — §lint-breaker
 `proto/shirt-test.html`. Mike's call, same day, on top of §static-kick below: **"it should be like
 brick breaker — sock hits cloths to next ring, knocks off the lint on the ring, it can move to the
