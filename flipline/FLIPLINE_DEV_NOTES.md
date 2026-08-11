@@ -562,7 +562,62 @@ player steers to recover). Roadmap next: PARASAIL + STATIC-CLING PULSE (see ROAD
 **⚠️ The DODGES + STREAK objective above is superseded — see §STATIC KICK below. The feel it was
 built to test (drift weight, knockback recovery, the 3s metronome) is untouched; only the goal flipped.**
 
-## ⚡ STATIC KICK — the lab's new objective (🔷 Mike 2026-08-11) — §static-kick
+## 🧱 LINT BREAKER — brick breaker wrapped around the drum (🔷 Mike 2026-08-11) — §lint-breaker
+`proto/shirt-test.html`. Mike's call, same day, on top of §static-kick below: **"it should be like
+brick breaker — sock hits cloths to next ring, knocks off the lint on the ring, it can move to the
+next ring."** So the 3-kicks-in-a-row static gate is **superseded**: the gate is now the wall.
+
+    the sock is the PADDLE · the shirt is the BALL · the ring's LINT is the WALL
+
+**Shape of it:**
+- **The wall.** `seedLint()` spreads `LINT_N` (9) clumps evenly at a random phase around a band at
+  `LINT_R = SOCK_R+0.07` — deliberately **just outside** the sock's own orbit, so the paddle never
+  stands among its own bricks. It creeps at `LINT_DRIFT` with the drum, so a shot needs a lead.
+  Each ring down reseeds with `+LINT_PER_RING` more (pool capped at `LINT_MAX` 26).
+- **The english is the whole skill.** `kick()` reads `side = angDiff(a, sh.ang)` — where on your
+  swing the shirt landed. The SIGN throws the shirt the other way; the SIZE is the power:
+  `swLeft = SWEEP_BASE + edge×SWEEP_EDGE` (1.05 → 2.5 rad). A dead-centre hit pops it out for a
+  short sweep, catching it at the edge of the swing throws it most of the way round. Measured:
+  **centre hit clears 2 clumps, edge hit clears 4 of 9.**
+- **The sweep.** A kicked shirt stops rising, snaps out to the wall band (`z = LINT_Z`) and runs
+  along the ring at `SWEEP_SPD`, tearing off every clump within `LINT_HW`, each one a rung up a
+  brick-breaker ping ladder. Arc spent → it tumbles off. A *rising* shirt passes straight through
+  the band without touching lint: only a kick throws it hard enough to break anything.
+- **Clear the ring → the way down opens.** Last clump fires the same dive as before (world moves,
+  never the player), and the new ring arrives already seeded. Ring 1 strips in **7 balls of centre
+  hits, 4 with edge hits** — the aiming skill is worth roughly half your time.
+- **A miss is just a wasted ball.** No damage, no drain, nothing to recover; the metronome hands
+  you another in three seconds. The old `chain` counter is gone; `bestSweep` (most clumps off one
+  kick) replaces it in the HUD, because that is the number that now measures skill.
+- **HUD moved to the dead corners** — RING (wall stripped, one notch per clump) bottom-left, NEXT
+  (ball timer) bottom-right. The sock rides the bottom of the drum and was sitting under the old
+  centred bar; [[feedback_action_always_visible]] says the thing you steer is never covered.
+- **Cockpit** 14 knobs: added `lint on ring 1` (reseeds live), `+lint per ring`, `sweep: centre hit`,
+  `sweep: edge bonus`, `sweep speed`, `wall drift`; action `reseed the wall`.
+
+**Verified — `node shirt-lab-harness.js` 22/22**, all against the real `update()` at fixed dt: the
+wall seeds spread not stacked; a kick throws the shirt onto the band; the sweep strips lint; an edge
+hit clears strictly more than a centre hit but never a whole ring; the throw mirrors when you catch
+the shirt on the other side; the ring can be stripped, the last clump opens the way down, the dive
+lands one ring deeper in 0.57s of a 3s beat and reseeds thicker; a rising shirt cannot strip the
+wall; the ramp floors at 1.10s; half a drum still crosses in 0.83s. Live pass in the browser (audio
+stubbed before any input): no console errors, wall → sweep → RING CLEAR → dive all read on screen.
+
+**🔶 Open for Mike, not decided by me:** (1) the dive is **automatic** on clear — "it can move to the
+next ring" could equally mean it unlocks and you choose when to drop; (2) there is no **rally** — one
+kick is one ball and the metronome feeds the next, rather than the ball coming back at you the way a
+real Breakout ball does. Both are small changes; both change the game a lot.
+
+**Test steps** (`proto/shirt-test.html`, `?dev=1` for the cockpit):
+- **LB-a** Read the ready screen. Is "paddle / ball / wall" the right mental model before you play?
+- **LB-b** Kick one dead centre, then one caught at the edge of the swing. Is the difference obvious?
+- **LB-c** Watch a sweep tear off 3 or 4 clumps. Does the ping ladder land, or is it noise?
+- **LB-d** Strip a whole ring. Does the clear feel earned, or like admin?
+- **LB-e** Ride to ring 4+. Does more lint per ring read as harder, or just longer?
+- **LB-f** Cockpit → `wall drift` at 0, 0.08, 0.3. Does leading the shot add or annoy?
+- **LB-g** Cockpit → `sweep: edge bonus` at 0 vs 1.45. Does removing the english make it dull?
+
+## ⚡ STATIC KICK — superseded by §lint-breaker, kept for the reasoning (🔷 Mike 2026-08-11) — §static-kick
 `proto/shirt-test.html`, same one-shirt playground. **You now KICK the laundry instead of dodging it.**
 Every kick builds STATIC; `KICKS_PER_RING` (3) **in a row** is enough charge to DIVE to the next
 interior ring. Miss a shirt and the static drains to nothing — no damage, still practice.

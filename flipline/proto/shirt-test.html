@@ -26,11 +26,20 @@
    before building any content. A single shirt arrives every 3s on a fixed clock
    (12 → 3 → 6 → 9, repeat) and you swing the parachuting sock to meet it.
 
-   🔷 THE STATIC KICK PATTERN (Mike 2026-08-11) — the objective is now the opposite
-   of a dodge drill: you KICK the laundry. Every kick builds STATIC, and KICKS_PER_RING
-   (3) in a row is enough charge to DIVE to the next interior ring — the walls sweep
-   outward past you and the shaft gets one ring tighter. Miss a shirt and the static
-   drains; nothing else is lost, it is still practice.
+   🔷 THE LINT BREAKER PATTERN (Mike 2026-08-11) — brick breaker, wrapped around a drum:
+
+       the sock is the PADDLE · the shirt is the BALL · the ring's LINT is the WALL
+
+   You kick each arriving shirt into the lint band hugging the wall just outside your
+   orbit. The punted shirt SWEEPS along the ring and tears off every clump it passes.
+   Clear the ring and the way down opens — you DIVE to the next interior ring, which
+   comes seeded with more lint. Miss a shirt and you have simply wasted a ball; the
+   metronome hands you another in three seconds. Nothing here can kill you.
+
+   WHERE you meet the shirt is the whole skill, exactly as paddle english is in Breakout:
+   meeting it dead centre pops it out for a short sweep, catching it at the edge of your
+   swing throws it hard the other way and clears half the ring in one shot.
+
    The dive moves the WORLD, never the player (the E3 lesson from drum.html): the sock
    holds its screen radius while the rings rush out and the next one arrives under it.
 
@@ -75,8 +84,21 @@ const SOCK_RECOIL=70;                  // radial recoil "thrown off" (px/s, spri
 const R_SPRING=44, R_DAMP=7.5;         // sock radial-offset spring
 const SHIRT_SPIN=7.0, SHIRT_FLY=150;   // the shirt spins + flies off once it is punted
 
-/* ===== STATIC → the dive (the new objective) ===== */
-let   KICKS_PER_RING=3;                // kicks in a row that charge one ring's worth of static
+/* ===== THE WALL — lint clumps riding the ring band just outside your orbit ===== */
+let   LINT_N=9;                        // clumps seeded on ring 1…
+let   LINT_PER_RING=1;                 // …plus this many more for every ring you drop
+const LINT_MAX=26;                     // pool size, so a deep ring cannot outgrow its array
+const LINT_HW=0.13;                    // half-width of one clump, in radians
+let   LINT_DRIFT=0.08;                 // the wall creeps with the drum, so a shot needs a lead
+const LINT_R=SOCK_R+0.07;              // …and rides just OUTSIDE the sock, the way a wall should
+const LINT_Z=Math.pow(LINT_R,1/PERSP);
+
+/* ===== The kicked shirt sweeps that wall (the ball leaving the paddle) ===== */
+let   SWEEP_SPD=2.8;                   // rad/s a punted shirt travels along the ring
+let   SWEEP_BASE=1.05;                 // arc a dead-centre hit is worth…
+let   SWEEP_EDGE=1.45;                 // …plus this much for catching it at the edge of the swing
+
+/* ===== The dive ===== */
 const DIVE_T=0.55;                     // seconds the drop to the next interior ring takes
 let   DEPTH_RAMP=0.94;                 // shirt rise time × this per ring — deeper = less warning
 const RISE_MIN=1.10;                   // …floored here, so the ramp can never outrun a swing
@@ -98,9 +120,11 @@ const Snd={ctx:null,g:null,
     o.connect(g); g.connect(this.g); o.start(t); o.stop(t+dur+0.03); },
   tick(){ this.b(1200,900,0.03,"square",0.04); },              // clock tick as a shirt launches
   whoosh(){ this.b(300,700,0.12,"triangle",0.06); },
-  kick(n){ this.b(150,70,0.12,"sawtooth",0.13);                // the boot: thud…
-           this.b(760+n*220,1500+n*260,0.13,"triangle",0.10); },  // …then static crackling up the chain
-  miss(){ this.b(260,150,0.16,"sine",0.07); },                 // it sailed past — the charge leaks away
+  kick(e){ this.b(150,70,0.12,"sawtooth",0.13);                // the boot: thud…
+           this.b(700+e*420,1400+e*500,0.11,"triangle",0.10); },  // …brighter the harder you caught it
+  lint(n){ this.b(620+n*130,900+n*150,0.06,"square",0.07); },  // the brick-breaker ladder, one rung per clump
+  miss(){ this.b(260,150,0.16,"sine",0.07); },                 // it sailed past — a wasted ball
+  clear(){ this.b(700,1400,0.10,"triangle",0.11); this.b(1050,2100,0.16,"triangle",0.08); }, // ring stripped
   dive(){ this.b(760,180,0.5,"triangle",0.11); this.b(180,60,0.5,"sawtooth",0.07); }, // dropping a ring
   streak(f){ this.b(f,f*1.5,0.12,"triangle",0.09); }
 };
@@ -147,16 +171,29 @@ function mkShirt(pal){ const W=72,c=mkCanvas(W,W),x=c.getContext("2d"); x.transl
   return c; }
 const SHIRTS=PAL.map(mkShirt);
 
+/* ===== A LINT CLUMP (the brick) — baked once, drawn per clump ===== */
+const LINT_SPR=(()=>{ const W=32,c=mkCanvas(W,W),x=c.getContext("2d"); x.translate(W/2,W/2);
+  x.strokeStyle="rgba(198,184,156,0.75)"; x.lineWidth=1;              // stray fibres first, under the body
+  for(let k=0;k<7;k++){ const an=k*0.9; x.beginPath(); x.moveTo(Math.cos(an)*3,Math.sin(an)*2.4);
+    x.lineTo(Math.cos(an)*9,Math.sin(an)*7.5); x.stroke(); }
+  x.fillStyle="#cdbfa4";
+  for(let k=0;k<7;k++){ const an=k*0.92; x.beginPath(); x.arc(Math.cos(an)*3.4,Math.sin(an)*2.4,2.2+(k%3)*1.4,0,TAU); x.fill(); }
+  x.fillStyle="rgba(255,248,232,0.5)"; x.beginPath(); x.arc(-2,-2.2,2.1,0,TAU); x.fill();
+  return c; })();
+
 /* ===== State ===== */
 let mode="ready";                       // ready | play
 let a=Math.PI/2, av=0, sway=0, swayV=0;
 let rOff=0, rOffV=0;                     // sock radial recoil offset (springs back)
 let t=0, spawnT=0, clockIdx=0, nextIdx=0;
-let kicks=0, chain=0, bestChain=0, missed=0;
+let kicks=0, bestSweep=0, missed=0;
+let lintLeft=0, lintTotal=0;                // the wall on THIS ring
 let depth=0, ringPh=0, diveT=0, stShow=0;   // depth = rings dropped · ringPh = the walls sweeping out
 let shake=0, hitStop=0, flash=0, flashCol=0, drumRot=0;   // flashCol 0 = warm miss, 1 = static blue
 const keys={}, touches={};
-const shirts=[]; for(let i=0;i<5;i++) shirts.push({on:false,z:0,zs:0.4,ang:0,idx:0,counted:false,deflected:false,dav:0,dr:0,rot:0,pal:0,life:0});
+const shirts=[]; for(let i=0;i<5;i++) shirts.push({on:false,z:0,zs:0.4,ang:0,idx:0,counted:false,deflected:false,
+  sweeping:false,swDir:1,swLeft:0,swHits:0,dav:0,dr:0,rot:0,pal:0,life:0});
+const lint=[]; for(let i=0;i<LINT_MAX;i++) lint.push({on:false,ang:0,fuzz:0,pop:0});
 const sparks=[]; for(let i=0;i<30;i++) sparks.push({on:false,x:0,y:0,vx:0,vy:0,life:0,col:"#fff"});
 const pops=[];   for(let i=0;i<8;i++)  pops.push({on:false,x:0,y:0,txt:"",life:0,col:"#fff"});
 
@@ -167,15 +204,24 @@ function spark(px,py,n,col){ for(let k=0;k<n;k++){ const s=sparks.find(q=>!q.on)
   s.on=true; s.x=px; s.y=py; s.vx=Math.cos(an)*sp; s.vy=Math.sin(an)*sp; s.life=0.35+Math.random()*0.3; s.col=col; } }
 function pop(px,py,txt,col){ const p=pops.find(q=>!q.on); if(!p)return; p.on=true; p.x=px; p.y=py; p.txt=txt; p.col=col; p.life=0.9; }
 
+/* Seed this ring's wall. Evenly spaced with a random phase, so every ring is the same
+   job at a different offset — no ring is a lucky one. */
+function seedLint(){ const n=Math.min(LINT_MAX, LINT_N + depth*LINT_PER_RING), ph=Math.random()*TAU;
+  for(let i=0;i<lint.length;i++){ const L=lint[i];
+    L.on = i<n; L.ang = (ph + i*TAU/n)%TAU; L.fuzz = 0.6+Math.random()*0.8; L.pop=0; }
+  lintTotal=n; lintLeft=n; }
+
 function reset(){ a=Math.PI/2; av=0; sway=0; swayV=0; rOff=0; rOffV=0; t=0;
-  spawnT=0; clockIdx=0; nextIdx=0; kicks=0; chain=0; bestChain=0; missed=0;
+  spawnT=0; clockIdx=0; nextIdx=0; kicks=0; bestSweep=0; missed=0;
   depth=0; ringPh=0; diveT=0; stShow=0; shake=0; hitStop=0; flash=0; flashCol=0;
-  for(const s of shirts) s.on=false; for(const s of sparks) s.on=false; for(const p of pops) p.on=false; }
+  for(const s of shirts) s.on=false; for(const s of sparks) s.on=false; for(const p of pops) p.on=false;
+  seedLint(); }
 
 function launchShirt(){ const s=shirts.find(q=>!q.on) || shirts.find(q=>q.deflected); if(!s) return;
   s.on=true; s.z=0.05; s.ang=CLOCK[clockIdx]; s.idx=clockIdx; s.zs=1/riseTime();
   if(window.DC) DC.telegraph('shirt@'+CLOCK_LABEL[clockIdx]);   // reaction readout: the rise IS the telegraph
-  s.counted=false; s.deflected=false; s.dav=0; s.dr=0; s.rot=0; s.pal=(Math.random()*SHIRTS.length)|0; s.life=0;
+  s.counted=false; s.deflected=false; s.sweeping=false; s.swLeft=0; s.swHits=0;
+  s.dav=0; s.dr=0; s.rot=0; s.pal=(Math.random()*SHIRTS.length)|0; s.life=0;
   clockIdx = SHUFFLE ? (Math.random()*4)|0 : (clockIdx+1)%4;
   nextIdx=clockIdx; Snd.tick(); }
 function activeShirt(){ let best=null,bz=-1; for(const s of shirts){ if(s.on&&!s.deflected&&s.z>bz){best=s;bz=s.z;} } return best; }
@@ -193,40 +239,48 @@ addEventListener("touchstart",e=>{ Snd.ensure(); if(mode!=="play"){ reset(); mod
 addEventListener("touchmove",e=>{ for(const tc of e.changedTouches) if(touches[tc.identifier]) touches[tc.identifier].x=tpos(tc); e.preventDefault(); },{passive:false});
 addEventListener("touchend",e=>{ for(const tc of e.changedTouches) delete touches[tc.identifier]; e.preventDefault(); },{passive:false});
 
-/* ===== THE KICK — you meet the shirt, both get thrown, the static builds ===== */
+/* ===== THE KICK — the paddle meets the ball =====
+   `side` is where on your swing the shirt landed. Its SIGN throws the shirt the other
+   way (Newton, and the reason a kick shoves you off your own lane); its SIZE is the
+   english — catch one at the edge of the swing and it sweeps most of the ring. */
 function kick(sh){ let side=angDiff(a,sh.ang); if(Math.abs(side)<0.02) side=(Math.random()<0.5?-1:1)*0.02;
-  const s=Math.sign(side);
+  const s=Math.sign(side), edge=clamp(Math.abs(side)/CONTACT_ARC,0,1);
   av += s*SOCK_KICK;  av=clamp(av,-AV_MAX*1.5,AV_MAX*1.5);   // the boot swings you off your lane…
   rOffV += SOCK_RECOIL;                                        // …and bounces you outward
-  sh.deflected=true; sh.counted=true; sh.dav = -s*SHIRT_SPIN; sh.dr = SHIRT_FLY; sh.life=0.7;
-  kicks++; chain++; bestChain=Math.max(bestChain,chain);
-  hitStop=0.08; shake=8; flash=0.45; flashCol=1;
+  sh.counted=true; sh.sweeping=true; sh.swDir=-s; sh.swHits=0;
+  sh.swLeft = SWEEP_BASE + edge*SWEEP_EDGE;                    // the english
+  sh.z = LINT_Z; sh.dav = -s*SHIRT_SPIN; sh.life=1;            // thrown out onto the wall band
+  kicks++; hitStop=0.08; shake=8; flash=0.45; flashCol=1;
   if(window.DC) DC.input('shirt@'+CLOCK_LABEL[sh.idx], true);  // reaction readout: the swing reached it
-  const zz=Math.min(1,sh.z), r=RIM*Math.pow(zz,PERSP);
-  const cx=CX+Math.cos(sh.ang)*r, cy=CY+Math.sin(sh.ang)*r;
   const px=CX+Math.cos(a)*RIM*SOCK_R, py=CY+Math.sin(a)*RIM*SOCK_R;
-  spark((cx+px)/2,(cy+py)/2, 14, "#bff0ff");
-  Snd.kick(Math.min(chain,KICKS_PER_RING));
-  if(chain>=KICKS_PER_RING) dive();
-  else pop(CX,CY-40,"KICK  "+chain+"/"+KICKS_PER_RING,"#bff0ff");
+  spark(px,py, 12, "#bff0ff"); Snd.kick(edge);
 }
 
-/* ===== MISS — it sailed past unkicked; the charge leaks away, nothing else ===== */
-function miss(sh){ sh.counted=true; missed++; chain=0; flash=0.3; flashCol=0;
+/* ===== A clump comes off the wall ===== */
+function knockLint(L,sh){ L.on=false; L.pop=0.45; lintLeft--; sh.swHits++;
+  bestSweep=Math.max(bestSweep,sh.swHits);
+  const r=RIM*LINT_R, x=CX+Math.cos(L.ang)*r, y=CY+Math.sin(L.ang)*r;
+  spark(x,y,6,"#e8dcc4"); Snd.lint(sh.swHits);
+  if(sh.swHits>1) pop(x,y,"×"+sh.swHits,"#bff0ff");
+  if(lintLeft<=0){ pop(CX,CY-44,"RING CLEAR","#bff0ff"); Snd.clear(); dive(); }
+}
+
+/* ===== MISS — it sailed past unkicked; a wasted ball and nothing more ===== */
+function miss(sh){ sh.counted=true; missed++; flash=0.3; flashCol=0;
   if(window.DC) DC.input('shirt@'+CLOCK_LABEL[sh.idx], false);
   pop(CX+Math.cos(sh.ang)*RIM*0.72, CY+Math.sin(sh.ang)*RIM*0.72, "MISSED", "#a89e88");
   Snd.miss();
 }
 
-/* ===== THE DIVE — spend the static, drop to the next interior ring =====
+/* ===== THE DIVE — the wall is stripped, so the way down opens =====
    The world moves, never the player: the rings sweep outward past the sock while it
    holds its screen radius, and the next ring in arrives right under it as they land. */
-function dive(){ diveT=DIVE_T; chain=0; shake=6; flash=0.6; flashCol=1;
-  for(const sh of shirts){ if(!sh.on||sh.deflected) continue;   // you drop past whatever was still rising
-    sh.deflected=true; sh.counted=true; sh.dav=SHIRT_SPIN*0.6; sh.dr=SHIRT_FLY*1.4; sh.life=0.6; }
+function dive(){ diveT=DIVE_T; shake=6; flash=0.6; flashCol=1;
+  for(const sh of shirts){ if(!sh.on) continue;                // you drop past everything still in the air
+    sh.sweeping=false; sh.deflected=true; sh.counted=true;
+    sh.dav=SHIRT_SPIN*0.6; sh.dr=SHIRT_FLY*1.4; sh.life=0.6; }
   const px=CX+Math.cos(a)*RIM*SOCK_R, py=CY+Math.sin(a)*RIM*SOCK_R;
-  spark(px,py,18,"#bff0ff");
-  pop(CX,CY-44,"STATIC FULL","#bff0ff"); Snd.dive();
+  spark(px,py,18,"#bff0ff"); Snd.dive();
 }
 
 /* ===== Update ===== */
@@ -251,33 +305,38 @@ function update(dt){
     // --- the dive: the walls sweep out one ring, then the clock starts again ---
     if(diveT>0){ diveT-=dt; ringPh=1-clamp(diveT/DIVE_T,0,1);
       if(diveT<=0){ diveT=0; ringPh=0; depth++; spawnT=SPAWN_INT;   // ring 7 wraps back to ring 6, one deeper
-        pop(CX,CY,"RING "+(depth+1),"#bff0ff"); }
+        seedLint(); pop(CX,CY,"RING "+(depth+1),"#bff0ff"); }
     } else {
       // --- metronome: one shirt every 3s on the clock, ALWAYS on the beat ---
       spawnT-=dt; if(spawnT<=0){ launchShirt(); spawnT=SPAWN_INT; }
     }
 
-    // --- each shirt rises; kick it at the plane or lose the charge ---
+    // --- the wall creeps with the drum, so a shot has to be led ---
+    if(diveT<=0){ for(const L of lint){ if(L.on) L.ang=(L.ang+LINT_DRIFT*dt+TAU)%TAU; else if(L.pop>0) L.pop-=dt; } }
+
+    // --- each shirt rises; kick it at the plane, then it sweeps the wall ---
     for(const sh of shirts){ if(!sh.on) continue;
-      if(!sh.deflected){
+      if(sh.sweeping){                                        // the ball, running along the wall
+        const d=Math.min(sh.swLeft, SWEEP_SPD*dt);
+        sh.ang=(sh.ang+sh.swDir*d+TAU)%TAU; sh.swLeft-=d; sh.rot+=sh.swDir*9*dt;
+        for(const L of lint){ if(L.on && Math.abs(angDiff(L.ang,sh.ang))<LINT_HW) knockLint(L,sh); }
+        if(sh.swLeft<=0){ sh.sweeping=false; sh.deflected=true; sh.dr=SHIRT_FLY; sh.life=0.5; }
+      } else if(!sh.deflected){
         sh.z += sh.zs*dt;
         if(!sh.counted && sh.z>=HITLO && sh.z<=HITHI && diveT<=0){
           if(Math.abs(angDiff(a,sh.ang))<CONTACT_ARC){ kick(sh); }
         }
         if(!sh.counted && sh.z>HITHI) miss(sh);               // sailed past unkicked
         if(sh.z>1.35) sh.on=false;
-      } else {                                                // kicked: spin + fly off, fade
+      } else {                                                // spent: spin + fly off, fade
         sh.life-=dt; sh.rot+=sh.dav*dt; sh.ang+=sh.dav*0.15*dt;
         sh.z += (sh.zs*0.4 + sh.dr*0.002)*dt; sh.dr*=(1-1.5*dt);
         if(sh.life<=0) sh.on=false;
       }
     }
-    // static charge readout eases toward the chain it actually holds
-    const target=clamp(chain/KICKS_PER_RING,0,1);
+    // ring-cleared readout eases toward the wall you have actually stripped
+    const target=lintTotal?clamp((lintTotal-lintLeft)/lintTotal,0,1):0;
     stShow += (target-stShow)*Math.min(1,(target>stShow?14:6)*dt);
-    if(chain>0 && Math.random()<dt*7){                        // charged sock crackles
-      const px=CX+Math.cos(a)*RIM*SOCK_R, py=CY+Math.sin(a)*RIM*SOCK_R;
-      spark(px+(Math.random()-0.5)*10,py+(Math.random()-0.5)*10,1,"#bff0ff"); }
   }
   // fx
   for(const s of sparks){ if(!s.on) continue; s.life-=dt; if(s.life<=0){s.on=false;continue;} s.x+=s.vx*dt; s.y+=s.vy*dt; s.vy+=90*dt; }
@@ -335,6 +394,18 @@ function draw(){
   // the rim
   ctx.strokeStyle="rgba(200,150,90,0.6)"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(CX,CY,RIM,0,TAU); ctx.stroke();
 
+  // THE WALL — lint clumps on the band just outside the sock's orbit
+  { const lr=RIM*LINT_R*Math.pow(1+ringPh*0.10,1);              // rides out with the dive
+    ctx.imageSmoothingEnabled=true;
+    for(const L of lint){ const x=CX+Math.cos(L.ang)*lr, y=CY+Math.sin(L.ang)*lr;
+      if(L.on){ const sz=13+L.fuzz*4;
+        ctx.save(); ctx.translate(x,y); ctx.rotate(L.ang+drumRot*0.5);
+        ctx.drawImage(LINT_SPR,-sz/2,-sz/2,sz,sz); ctx.restore();
+      } else if(L.pop>0){ const f=L.pop/0.45;                    // the puff it leaves behind
+        ctx.globalAlpha=f*0.7; ctx.strokeStyle="#e8dcc4"; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(x,y,4+(1-f)*11,0,TAU); ctx.stroke(); ctx.globalAlpha=1; } }
+    ctx.imageSmoothingEnabled=false; }
+
   // THE SHIRTS (far → near)
   ctx.imageSmoothingEnabled=true;
   for(const sh of [...shirts].filter(s=>s.on).sort((p,q)=>p.z-q.z)){
@@ -365,36 +436,39 @@ function draw(){
   for(const s of sparks){ if(!s.on) continue; ctx.globalAlpha=Math.max(0,s.life*2.4); ctx.fillStyle=s.col; ctx.fillRect(s.x-1.5,s.y-1.5,3,3); } ctx.globalAlpha=1;
   for(const p of pops){ if(!p.on) continue; ctx.globalAlpha=Math.min(1,p.life*1.6); txt(p.txt,p.x,p.y,12,p.col,800); } ctx.globalAlpha=1;
 
-  // HUD — where you are (ring), what you've done (kicks), what's next (the static bar)
+  // HUD — where you are (ring), what you've done (kicks), what's left (the wall)
   txt("KICKS",44,16,8,"rgba(255,255,255,0.5)",700,"left"); txt(""+kicks,44,32,20,"#bff0ff",800,"left");
-  txt("CHAIN",VW-44,16,8,"rgba(255,255,255,0.5)",700,"right");
-  txt(chain+"/"+KICKS_PER_RING,VW-44,32,20,chain>0?"#bff0ff":"#efe9db",800,"right");
+  txt("LINT",VW-44,16,8,"rgba(255,255,255,0.5)",700,"right");
+  txt(""+lintLeft,VW-44,32,20,lintLeft<=2?"#bff0ff":"#efe9db",800,"right");
   txt("RING "+(depth+1),CX,18,13,"#efe9db",800);
-  txt("best chain "+bestChain+"   missed "+missed, CX, 34, 8, "rgba(220,210,190,0.55)",600);
-  // the static bar — drum.html's charge language, and the only thing standing between
-  // you and the next ring down
+  txt("best sweep ×"+bestSweep+"   missed "+missed, CX, 34, 8, "rgba(220,210,190,0.55)",600);
+  // Both bars live in the dead corners OUTSIDE the drum — the sock rides the bottom of
+  // that circle, and the thing you are steering must never sit under a HUD element.
   if(mode==="play"){
-    txt("STATIC",CX-84,VH-22,8,"rgba(220,210,190,0.55)",700,"right");
-    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(CX-70,VH-26,140,8);
-    ctx.fillStyle=stShow>=1?"#bff0ff":stShow>0.34?"#9fd8ef":"#5b8fa8"; ctx.fillRect(CX-70,VH-26,140*stShow,8);
-    for(let i=1;i<KICKS_PER_RING;i++){ ctx.fillStyle="rgba(13,11,9,0.9)"; ctx.fillRect(CX-70+140*i/KICKS_PER_RING-1,VH-26,2,8); }
-    // next-shirt countdown pip
+    // how much of this ring you have stripped, one notch per clump
+    txt("RING",8,VH-26,8,"rgba(220,210,190,0.55)",700,"left");
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(8,VH-18,108,8);
+    ctx.fillStyle=stShow>=1?"#bff0ff":stShow>0.34?"#9fd8ef":"#5b8fa8"; ctx.fillRect(8,VH-18,108*stShow,8);
+    for(let i=1;i<lintTotal;i++){ ctx.fillStyle="rgba(13,11,9,0.9)"; ctx.fillRect(8+108*i/lintTotal-1,VH-18,1,8); }
+    // next ball on the clock
     const f=1-clamp(spawnT/SPAWN_INT,0,1);
-    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(CX-30,VH-34,60,3);
-    ctx.fillStyle="#ff9a6a"; ctx.fillRect(CX-30,VH-34,60*f,3); }
+    txt("NEXT",VW-8,VH-26,8,"rgba(220,210,190,0.55)",700,"right");
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(VW-116,VH-18,108,8);
+    ctx.fillStyle="#ff9a6a"; ctx.fillRect(VW-116,VH-18,108*f,8); }
 
   if(flash>0){ ctx.fillStyle=(flashCol?"rgba(150,225,255,":"rgba(255,150,90,")+(flash*0.35)+")"; ctx.fillRect(-12,-12,VW+24,VH+24); }
   ctx.restore();
 
   if(mode==="ready"){ ctx.fillStyle="rgba(10,8,6,0.74)"; ctx.fillRect(0,0,VW,VH);
-    txt("SHIRT FEEL-LAB",CX,64,24,"#efe9db",800);
-    txt("the STATIC KICK pattern",CX,86,10,"#bff0ff",700);
-    txt("A shirt every 3s on the clock: 12 → 3 → 6 → 9",CX,110,10,"#d8cdb6",500);
-    txt("swing the parachuting sock INTO it — every kick builds static",CX,126,10,"#d8cdb6",500);
-    txt(KICKS_PER_RING+" kicks in a row drops you to the next interior ring",CX,142,10,"#bff0ff",600);
-    txt("let one sail past and the static drains — no harm, just practice",CX,158,9,"#a89e88",500);
-    txt("←→  swing",CX,182,11,"#9bf0d0",700);
-    txt("press SPACE / tap to begin",CX,204,10,"#c9b0ff",700); }
+    txt("SHIRT FEEL-LAB",CX,58,24,"#efe9db",800);
+    txt("the LINT BREAKER pattern",CX,80,10,"#bff0ff",700);
+    txt("you are the paddle · the shirt is the ball · the lint is the wall",CX,104,10,"#d8cdb6",500);
+    txt("a shirt every 3s on the clock: 12 → 3 → 6 → 9 — swing INTO it",CX,120,10,"#d8cdb6",500);
+    txt("catch it at the EDGE of your swing and it sweeps half the ring",CX,136,10,"#d8cdb6",500);
+    txt("strip the ring of lint and you drop to the next one",CX,152,10,"#bff0ff",600);
+    txt("let one sail past and you have only wasted a ball",CX,168,9,"#a89e88",500);
+    txt("←→  swing",CX,190,11,"#9bf0d0",700);
+    txt("press SPACE / tap to begin",CX,210,10,"#c9b0ff",700); }
 }
 
 /* ===== Loop ===== */
@@ -420,7 +494,12 @@ const DC = DevCockpit.mount({
     { key:'spawn',  label:'seconds per shirt',  min:0.8, max:6,   step:0.1,  get:()=>SPAWN_INT,   set:v=>SPAWN_INT=v },
     { key:'karc',   label:'kick arc',           min:0.1, max:1.2, step:0.02, get:()=>CONTACT_ARC, set:v=>CONTACT_ARC=v },
     { key:'kknock', label:'kick knockback',     min:0,   max:7,   step:0.1,  get:()=>SOCK_KICK,   set:v=>SOCK_KICK=v },
-    { key:'perring',label:'kicks per ring',     min:1,   max:8,   step:1,    get:()=>KICKS_PER_RING, set:v=>KICKS_PER_RING=v },
+    { key:'lintn',  label:'lint on ring 1',     min:3,   max:20,  step:1,    get:()=>LINT_N,      set:v=>{ LINT_N=v; seedLint(); } },
+    { key:'lintadd',label:'+lint per ring',     min:0,   max:4,   step:1,    get:()=>LINT_PER_RING, set:v=>LINT_PER_RING=v },
+    { key:'swbase', label:'sweep: centre hit',  min:0.2, max:3,   step:0.05, get:()=>SWEEP_BASE,  set:v=>SWEEP_BASE=v },
+    { key:'swedge', label:'sweep: edge bonus',  min:0,   max:4,   step:0.05, get:()=>SWEEP_EDGE,  set:v=>SWEEP_EDGE=v },
+    { key:'swspd',  label:'sweep speed',        min:0.8, max:8,   step:0.1,  get:()=>SWEEP_SPD,   set:v=>SWEEP_SPD=v },
+    { key:'drift',  label:'wall drift',         min:0,   max:0.6, step:0.01, get:()=>LINT_DRIFT,  set:v=>LINT_DRIFT=v },
     { key:'ramp',   label:'depth ramp (×/ring)',min:0.8, max:1,   step:0.01, get:()=>DEPTH_RAMP,  set:v=>DEPTH_RAMP=v },
   ],
   actions: [
@@ -429,6 +508,7 @@ const DC = DevCockpit.mount({
     { label:'send a shirt to 6',  run:()=>devShirt(2) },
     { label:'send a shirt to 9',  run:()=>devShirt(3) },
     { label:'dive a ring now',    run:()=>{ if(diveT<=0) dive(); } },
+    { label:'reseed the wall',    run:()=>seedLint() },
     { label:'lane order: clock / shuffle', run:()=>{ SHUFFLE=SHUFFLE?0:1; } },
     { label:'clear the air',      run:()=>{ for(const sh of shirts) sh.on=false; } },
   ],
@@ -443,6 +523,7 @@ window.devShirt = (idx)=>{
 };
 /* DEV:END ================================================================= */
 
+seedLint();                 // so the ready screen has a real wall behind it, not an empty ring
 requestAnimationFrame(frame);
 </script>
 </body>
