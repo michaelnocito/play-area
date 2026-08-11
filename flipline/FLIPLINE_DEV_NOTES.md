@@ -558,3 +558,50 @@ on the 3s beat through deflections — fixed a one-shirt-object bug where a defl
 fly-off skipped the next launch (now a 5-slot shirt pool). Deflection knockback genuinely throws
 the sock off its lane, so with no corrective input it drifts into later shirts (intended — the
 player steers to recover). Roadmap next: PARASAIL + STATIC-CLING PULSE (see ROADMAP §FREE-FALL REBUILD).
+
+**⚠️ The DODGES + STREAK objective above is superseded — see §STATIC KICK below. The feel it was
+built to test (drift weight, knockback recovery, the 3s metronome) is untouched; only the goal flipped.**
+
+## ⚡ STATIC KICK — the lab's new objective (🔷 Mike 2026-08-11) — §static-kick
+`proto/shirt-test.html`, same one-shirt playground. **You now KICK the laundry instead of dodging it.**
+Every kick builds STATIC; `KICKS_PER_RING` (3) **in a row** is enough charge to DIVE to the next
+interior ring. Miss a shirt and the static drains to nothing — no damage, still practice.
+
+**Shape of it:**
+- **The kick** = contact at the plane, which was the old bonk, re-voiced as the reward: `kick()`
+  pays `kicks`/`chain`, crackles `#bff0ff` (drum.html's static language), thumps + a crackle that
+  climbs a step per chain link, and keeps the old `SOCK_KICK` angular knock + `SOCK_RECOIL` bounce.
+  **That knockback is now the whole skill tax** — it throws you off the lane you just cleared, so
+  you cannot park on the clock and farm. Knobbed (`kick knockback`) because it is the feel to gate.
+- **The dive** (`dive()`, `DIVE_T` 0.55s) moves the WORLD, never the player — the E3 lesson from
+  drum.html. `ringPh` slides every wall ring one slot outward, so ring 6 sweeps past the rim and
+  ring 5 arrives exactly under the sock as it lands; `depth++` and `ringPh` wraps to 0, which is
+  seamless because the rings are procedural. Anything still rising gets punted (you drop past it)
+  and the metronome restarts on the new ring rather than handing you a free miss.
+- **The ramp**: `riseTime() = SHIRT_TRAVEL × DEPTH_RAMP^depth`, floored at `RISE_MIN` 1.10s. Deeper
+  ring = less warning, never less than a swing needs. Set `depth ramp` to 1.00 to isolate the feel.
+- **Colour**: the live lane, its aim guide, the arriving-shirt arc and the target arc all moved
+  from danger-red to static-blue — the lane is now somewhere you WANT to be. 🔶 **Flag for Mike:**
+  the shirts themselves are still hot-red, and drum canon is *red = damage*. If the kick verb
+  graduates out of the lab, kickable laundry needs its own palette or the language cracks.
+- **Cockpit**: 9 knobs (added `kick arc`, `kick knockback`, `kicks per ring`, `depth ramp`), actions
+  `dive a ring now` + `lane order: clock / shuffle` (`SHUFFLE` off by default — the fixed clock is
+  what makes parking possible to measure).
+
+**Verified — `node shirt-lab-harness.js` 16/16** (new file, mirrors `flipline-harness.js`; drives the
+real `update()` at a fixed dt with the metronome parked): a swing into a shirt kicks; 2 kicks is not
+enough; the 3rd spends the static; the dive clears the air, resets the chain, lands one ring deeper
+inside a single beat (0.65s incl. hit-stop) and wraps `ringPh` to exactly 0; a miss costs the charge
+and nothing else; the ramp floors at 1.10s. **Fairness gate:** with lanes shuffled the worst swing is
+half the drum, measured at **0.83s against the tightest 1.10s warning** (76% — deep rings are hard,
+not unfair). Live pass in the browser (audio stubbed before any input): no console errors, chain →
+static bar → dive → RING 2 all read on screen.
+
+**Test steps** (`proto/shirt-test.html`, `?dev=1` for the cockpit):
+- **SK-a** Read the ready screen. Is the objective obvious BEFORE you play — kick, not dodge?
+- **SK-b** Swing into the first shirt. Does the kick land like a boot connecting, or like the old bonk?
+- **SK-c** Kick three in a row. Does the static bar filling make you want the third one?
+- **SK-d** Watch the dive. Does it read as YOU dropping a ring, or as the walls moving?
+- **SK-e** Deliberately miss one at 2/3. Does losing the charge sting the right amount, or too much?
+- **SK-f** Ride to ring 5+. Does the shortening warning read as pressure or as unfairness?
+- **SK-g** Cockpit → `kick knockback`: try 0, 3.4, 6. Which one makes the next lane worth fighting for?

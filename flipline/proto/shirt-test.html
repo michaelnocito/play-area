@@ -24,9 +24,15 @@
    ODD SOCK — SHIRT FEEL-LAB (🔷 Mike 2026-07-24: the "chase the rabbit" playground)
    Mario-64 method — scaled down: nail the FALL/PARACHUTE feel against ONE obstacle
    before building any content. A single shirt arrives every 3s on a fixed clock
-   (12 → 3 → 6 → 9, repeat). You drift the parachuting sock to dodge it. RUN INTO it
-   and you DEFLECT — both of you get thrown off trajectory (no damage; it's practice).
-   Count your dodges + streak.
+   (12 → 3 → 6 → 9, repeat) and you swing the parachuting sock to meet it.
+
+   🔷 THE STATIC KICK PATTERN (Mike 2026-08-11) — the objective is now the opposite
+   of a dodge drill: you KICK the laundry. Every kick builds STATIC, and KICKS_PER_RING
+   (3) in a row is enough charge to DIVE to the next interior ring — the walls sweep
+   outward past you and the shaft gets one ring tighter. Miss a shirt and the static
+   drains; nothing else is lost, it is still practice.
+   The dive moves the WORLD, never the player (the E3 lesson from drum.html): the sock
+   holds its screen radius while the rings rush out and the next one arrives under it.
 
    Controls: ←→ / A D swing.   (R = reset)
    ROADMAP abilities (not here yet): PARASAIL slow-fall+inflate · STATIC-CLING PULSE shove.
@@ -43,7 +49,9 @@ addEventListener("resize",resize); resize();
 
 /* ===== Geometry ===== */
 const CX=240, CY=135, RIM=116;
-const PERSP=1.9, SOCK_R=0.90;
+const PERSP=1.9;
+const RINGS_Z=6.4, SOCK_Z=6/RINGS_Z;        // the sock rides the 6th wall ring…
+const SOCK_R=Math.pow(SOCK_Z,PERSP);        // …so its radius IS that ring's radius
 const HITLO=0.92, HITHI=1.05;
 
 /* ===== Parachute-drift feel (the thing being tuned) ===== */
@@ -57,16 +65,22 @@ const CANOPY_BILLOW=0.7;               // how full the canopy reads (always open
 let   SPAWN_INT=3.0;                   // one shirt every 3 seconds
 const CLOCK=[-Math.PI/2, 0, Math.PI/2, Math.PI];   // 12, 3, 6, 9 o'clock (canvas angles)
 const CLOCK_LABEL=["12","3","6","9"];
-let   SHIRT_TRAVEL=2.55;               // seconds for a shirt to rise from deep → the sock plane
-let   SHIRT_ZSPD=1/SHIRT_TRAVEL;
-const CONTACT_ARC=0.34;                // angular overlap that counts as running into the shirt
-let   CLEAR_ARC=0.34;                  // must be at least this far to score a clean dodge
+let   SHIRT_TRAVEL=2.55;               // seconds for a shirt to rise from deep → the sock plane (ring 1)
+let   CONTACT_ARC=0.34;                // angular overlap that lands a kick (the whole target now)
+let   SHUFFLE=0;                       // 0 = the fixed 12/3/6/9 clock · 1 = random lane each time
 
-/* ===== Deflection (both thrown off trajectory) ===== */
-const SOCK_KICK=3.4;                   // angular knockback to the sock (rad/s)
+/* ===== The kick (both thrown off trajectory — that is the skill tax) ===== */
+let   SOCK_KICK=3.4;                   // angular knockback to the sock (rad/s) — what stops you parking
 const SOCK_RECOIL=70;                  // radial recoil "thrown off" (px/s, springs back)
 const R_SPRING=44, R_DAMP=7.5;         // sock radial-offset spring
-const SHIRT_SPIN=7.0, SHIRT_FLY=150;   // the shirt spins + flies off after a bonk
+const SHIRT_SPIN=7.0, SHIRT_FLY=150;   // the shirt spins + flies off once it is punted
+
+/* ===== STATIC → the dive (the new objective) ===== */
+let   KICKS_PER_RING=3;                // kicks in a row that charge one ring's worth of static
+const DIVE_T=0.55;                     // seconds the drop to the next interior ring takes
+let   DEPTH_RAMP=0.94;                 // shirt rise time × this per ring — deeper = less warning
+const RISE_MIN=1.10;                   // …floored here, so the ramp can never outrun a swing
+function riseTime(){ return Math.max(RISE_MIN, SHIRT_TRAVEL*Math.pow(DEPTH_RAMP,depth)); }
 
 /* ===== Audio (trimmed) ===== */
 const Snd={ctx:null,g:null,
@@ -83,8 +97,11 @@ const Snd={ctx:null,g:null,
     g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.12,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
     o.connect(g); g.connect(this.g); o.start(t); o.stop(t+dur+0.03); },
   tick(){ this.b(1200,900,0.03,"square",0.04); },              // clock tick as a shirt launches
-  whoosh(){ this.b(300,700,0.12,"triangle",0.06); },           // a clean dodge
-  bonk(){ this.b(150,70,0.12,"sawtooth",0.13); this.b(420,180,0.14,"triangle",0.09); }, // deflection thud+boing
+  whoosh(){ this.b(300,700,0.12,"triangle",0.06); },
+  kick(n){ this.b(150,70,0.12,"sawtooth",0.13);                // the boot: thud…
+           this.b(760+n*220,1500+n*260,0.13,"triangle",0.10); },  // …then static crackling up the chain
+  miss(){ this.b(260,150,0.16,"sine",0.07); },                 // it sailed past — the charge leaks away
+  dive(){ this.b(760,180,0.5,"triangle",0.11); this.b(180,60,0.5,"sawtooth",0.07); }, // dropping a ring
   streak(f){ this.b(f,f*1.5,0.12,"triangle",0.09); }
 };
 
@@ -135,10 +152,11 @@ let mode="ready";                       // ready | play
 let a=Math.PI/2, av=0, sway=0, swayV=0;
 let rOff=0, rOffV=0;                     // sock radial recoil offset (springs back)
 let t=0, spawnT=0, clockIdx=0, nextIdx=0;
-let dodges=0, streak=0, bestStreak=0, bonks=0;
-let shake=0, hitStop=0, flash=0, drumRot=0;
+let kicks=0, chain=0, bestChain=0, missed=0;
+let depth=0, ringPh=0, diveT=0, stShow=0;   // depth = rings dropped · ringPh = the walls sweeping out
+let shake=0, hitStop=0, flash=0, flashCol=0, drumRot=0;   // flashCol 0 = warm miss, 1 = static blue
 const keys={}, touches={};
-const shirts=[]; for(let i=0;i<5;i++) shirts.push({on:false,z:0,ang:0,idx:0,counted:false,deflected:false,dav:0,dr:0,rot:0,pal:0,life:0});
+const shirts=[]; for(let i=0;i<5;i++) shirts.push({on:false,z:0,zs:0.4,ang:0,idx:0,counted:false,deflected:false,dav:0,dr:0,rot:0,pal:0,life:0});
 const sparks=[]; for(let i=0;i<30;i++) sparks.push({on:false,x:0,y:0,vx:0,vy:0,life:0,col:"#fff"});
 const pops=[];   for(let i=0;i<8;i++)  pops.push({on:false,x:0,y:0,txt:"",life:0,col:"#fff"});
 
@@ -150,14 +168,16 @@ function spark(px,py,n,col){ for(let k=0;k<n;k++){ const s=sparks.find(q=>!q.on)
 function pop(px,py,txt,col){ const p=pops.find(q=>!q.on); if(!p)return; p.on=true; p.x=px; p.y=py; p.txt=txt; p.col=col; p.life=0.9; }
 
 function reset(){ a=Math.PI/2; av=0; sway=0; swayV=0; rOff=0; rOffV=0; t=0;
-  spawnT=0; clockIdx=0; nextIdx=0; dodges=0; streak=0; bestStreak=0; bonks=0; shake=0; hitStop=0; flash=0;
+  spawnT=0; clockIdx=0; nextIdx=0; kicks=0; chain=0; bestChain=0; missed=0;
+  depth=0; ringPh=0; diveT=0; stShow=0; shake=0; hitStop=0; flash=0; flashCol=0;
   for(const s of shirts) s.on=false; for(const s of sparks) s.on=false; for(const p of pops) p.on=false; }
 
 function launchShirt(){ const s=shirts.find(q=>!q.on) || shirts.find(q=>q.deflected); if(!s) return;
-  s.on=true; s.z=0.05; s.ang=CLOCK[clockIdx]; s.idx=clockIdx;
+  s.on=true; s.z=0.05; s.ang=CLOCK[clockIdx]; s.idx=clockIdx; s.zs=1/riseTime();
   if(window.DC) DC.telegraph('shirt@'+CLOCK_LABEL[clockIdx]);   // reaction readout: the rise IS the telegraph
   s.counted=false; s.deflected=false; s.dav=0; s.dr=0; s.rot=0; s.pal=(Math.random()*SHIRTS.length)|0; s.life=0;
-  clockIdx=(clockIdx+1)%4; nextIdx=clockIdx; Snd.tick(); }
+  clockIdx = SHUFFLE ? (Math.random()*4)|0 : (clockIdx+1)%4;
+  nextIdx=clockIdx; Snd.tick(); }
 function activeShirt(){ let best=null,bz=-1; for(const s of shirts){ if(s.on&&!s.deflected&&s.z>bz){best=s;bz=s.z;} } return best; }
 
 /* ===== Input ===== */
@@ -173,18 +193,40 @@ addEventListener("touchstart",e=>{ Snd.ensure(); if(mode!=="play"){ reset(); mod
 addEventListener("touchmove",e=>{ for(const tc of e.changedTouches) if(touches[tc.identifier]) touches[tc.identifier].x=tpos(tc); e.preventDefault(); },{passive:false});
 addEventListener("touchend",e=>{ for(const tc of e.changedTouches) delete touches[tc.identifier]; e.preventDefault(); },{passive:false});
 
-/* ===== Deflection — both thrown off trajectory ===== */
-function deflect(sh){ let side=angDiff(a,sh.ang); if(Math.abs(side)<0.02) side=(Math.random()<0.5?-1:1)*0.02;
+/* ===== THE KICK — you meet the shirt, both get thrown, the static builds ===== */
+function kick(sh){ let side=angDiff(a,sh.ang); if(Math.abs(side)<0.02) side=(Math.random()<0.5?-1:1)*0.02;
   const s=Math.sign(side);
-  av += s*SOCK_KICK;  av=clamp(av,-AV_MAX*1.5,AV_MAX*1.5);   // sock swung away
-  rOffV += SOCK_RECOIL;                                        // and bounced outward
+  av += s*SOCK_KICK;  av=clamp(av,-AV_MAX*1.5,AV_MAX*1.5);   // the boot swings you off your lane…
+  rOffV += SOCK_RECOIL;                                        // …and bounces you outward
   sh.deflected=true; sh.counted=true; sh.dav = -s*SHIRT_SPIN; sh.dr = SHIRT_FLY; sh.life=0.7;
-  bonks++; streak=0; hitStop=0.08; shake=8; flash=0.5;
-  if(window.DC) DC.input('shirt', false);   // reaction readout: the swing did not beat it
+  kicks++; chain++; bestChain=Math.max(bestChain,chain);
+  hitStop=0.08; shake=8; flash=0.45; flashCol=1;
+  if(window.DC) DC.input('shirt@'+CLOCK_LABEL[sh.idx], true);  // reaction readout: the swing reached it
   const zz=Math.min(1,sh.z), r=RIM*Math.pow(zz,PERSP);
   const cx=CX+Math.cos(sh.ang)*r, cy=CY+Math.sin(sh.ang)*r;
-  spark((cx+ (CX+Math.cos(a)*RIM*SOCK_R))/2, (cy+(CY+Math.sin(a)*RIM*SOCK_R))/2, 12, "#ffd0a0");
-  pop(CX,CY-40,"BONK!","#ff9a6a"); Snd.bonk();
+  const px=CX+Math.cos(a)*RIM*SOCK_R, py=CY+Math.sin(a)*RIM*SOCK_R;
+  spark((cx+px)/2,(cy+py)/2, 14, "#bff0ff");
+  Snd.kick(Math.min(chain,KICKS_PER_RING));
+  if(chain>=KICKS_PER_RING) dive();
+  else pop(CX,CY-40,"KICK  "+chain+"/"+KICKS_PER_RING,"#bff0ff");
+}
+
+/* ===== MISS — it sailed past unkicked; the charge leaks away, nothing else ===== */
+function miss(sh){ sh.counted=true; missed++; chain=0; flash=0.3; flashCol=0;
+  if(window.DC) DC.input('shirt@'+CLOCK_LABEL[sh.idx], false);
+  pop(CX+Math.cos(sh.ang)*RIM*0.72, CY+Math.sin(sh.ang)*RIM*0.72, "MISSED", "#a89e88");
+  Snd.miss();
+}
+
+/* ===== THE DIVE — spend the static, drop to the next interior ring =====
+   The world moves, never the player: the rings sweep outward past the sock while it
+   holds its screen radius, and the next ring in arrives right under it as they land. */
+function dive(){ diveT=DIVE_T; chain=0; shake=6; flash=0.6; flashCol=1;
+  for(const sh of shirts){ if(!sh.on||sh.deflected) continue;   // you drop past whatever was still rising
+    sh.deflected=true; sh.counted=true; sh.dav=SHIRT_SPIN*0.6; sh.dr=SHIRT_FLY*1.4; sh.life=0.6; }
+  const px=CX+Math.cos(a)*RIM*SOCK_R, py=CY+Math.sin(a)*RIM*SOCK_R;
+  spark(px,py,18,"#bff0ff");
+  pop(CX,CY-44,"STATIC FULL","#bff0ff"); Snd.dive();
 }
 
 /* ===== Update ===== */
@@ -206,29 +248,36 @@ function update(dt){
     // sock radial recoil spring-back
     rOffV += (-rOff*R_SPRING - rOffV*R_DAMP)*dt; rOff += rOffV*dt;
 
-    // --- metronome: one shirt every 3s on the clock, ALWAYS on the beat ---
-    spawnT-=dt; if(spawnT<=0){ launchShirt(); spawnT=SPAWN_INT; }
+    // --- the dive: the walls sweep out one ring, then the clock starts again ---
+    if(diveT>0){ diveT-=dt; ringPh=1-clamp(diveT/DIVE_T,0,1);
+      if(diveT<=0){ diveT=0; ringPh=0; depth++; spawnT=SPAWN_INT;   // ring 7 wraps back to ring 6, one deeper
+        pop(CX,CY,"RING "+(depth+1),"#bff0ff"); }
+    } else {
+      // --- metronome: one shirt every 3s on the clock, ALWAYS on the beat ---
+      spawnT-=dt; if(spawnT<=0){ launchShirt(); spawnT=SPAWN_INT; }
+    }
 
-    // --- each shirt rises; dodge / deflect at the plane ---
+    // --- each shirt rises; kick it at the plane or lose the charge ---
     for(const sh of shirts){ if(!sh.on) continue;
       if(!sh.deflected){
-        sh.z += SHIRT_ZSPD*dt;
-        if(!sh.counted && sh.z>=HITLO && sh.z<=HITHI){
-          if(Math.abs(angDiff(a,sh.ang))<CONTACT_ARC){ deflect(sh); }
+        sh.z += sh.zs*dt;
+        if(!sh.counted && sh.z>=HITLO && sh.z<=HITHI && diveT<=0){
+          if(Math.abs(angDiff(a,sh.ang))<CONTACT_ARC){ kick(sh); }
         }
-        if(!sh.counted && sh.z>HITHI){                       // sailed past clean → DODGE
-          sh.counted=true; dodges++; streak++; bestStreak=Math.max(bestStreak,streak);
-          if(window.DC) DC.input('shirt@'+CLOCK_LABEL[sh.idx], true);   // reaction readout
-          pop(CX+Math.cos(sh.ang)*RIM*0.7, CY+Math.sin(sh.ang)*RIM*0.7, "DODGE", "#9bf0d0");
-          Snd.whoosh(); if(streak>0 && streak%5===0){ Snd.streak(520+streak*8); pop(CX,CY-40,streak+" STREAK!","#ffd45a"); }
-        }
+        if(!sh.counted && sh.z>HITHI) miss(sh);               // sailed past unkicked
         if(sh.z>1.35) sh.on=false;
-      } else {                                                // deflected: spin + fly off, fade
+      } else {                                                // kicked: spin + fly off, fade
         sh.life-=dt; sh.rot+=sh.dav*dt; sh.ang+=sh.dav*0.15*dt;
-        sh.z += (SHIRT_ZSPD*0.4 + sh.dr*0.002)*dt; sh.dr*=(1-1.5*dt);
+        sh.z += (sh.zs*0.4 + sh.dr*0.002)*dt; sh.dr*=(1-1.5*dt);
         if(sh.life<=0) sh.on=false;
       }
     }
+    // static charge readout eases toward the chain it actually holds
+    const target=clamp(chain/KICKS_PER_RING,0,1);
+    stShow += (target-stShow)*Math.min(1,(target>stShow?14:6)*dt);
+    if(chain>0 && Math.random()<dt*7){                        // charged sock crackles
+      const px=CX+Math.cos(a)*RIM*SOCK_R, py=CY+Math.sin(a)*RIM*SOCK_R;
+      spark(px+(Math.random()-0.5)*10,py+(Math.random()-0.5)*10,1,"#bff0ff"); }
   }
   // fx
   for(const s of sparks){ if(!s.on) continue; s.life-=dt; if(s.life<=0){s.on=false;continue;} s.x+=s.vx*dt; s.y+=s.vy*dt; s.vy+=90*dt; }
@@ -247,11 +296,18 @@ function draw(){
   ctx.fillStyle="#100c09"; ctx.fillRect(-12,-12,VW+24,VH+24);
   ctx.imageSmoothingEnabled=false;
 
-  // shaft wall rings (the drum you're falling down)
-  for(let ring=6;ring>=1;ring--){ const z=ring/6.4, r=RIM*Math.pow(z,PERSP);
-    ctx.strokeStyle="rgba(120,86,54,"+(0.08+z*0.20)+")"; ctx.lineWidth=1.2+z*2;
+  // shaft wall rings (the drum you're falling down). ringPh slides them all one slot
+  // outward during a dive, so the ring you land on rises to meet the sock.
+  for(let ring=7;ring>=0;ring--){ const z=(ring+ringPh)/RINGS_Z; if(z>1.22) continue;
+    const r=RIM*Math.pow(z,PERSP);
+    const live=clamp(1-Math.abs(z-SOCK_Z)/0.10,0,1);      // the ring under the sock's feet
+    const chg=live*stShow;                                 // …which glows as the static builds
+    ctx.strokeStyle = live>0
+      ? "rgba("+(120+71*chg)+","+(86+154*chg)+","+(54+201*chg)+","+(0.10+z*0.20+live*0.30)+")"
+      : "rgba(120,86,54,"+(0.08+z*0.20)+")";
+    ctx.lineWidth=1.2+z*2+live*1.4;
     ctx.beginPath(); ctx.arc(CX,CY,r,0,TAU); ctx.stroke();
-    const n=10+ring*4; ctx.fillStyle="rgba(255,190,110,"+(0.04+z*0.09)+")";
+    const n=10+ring*4; ctx.fillStyle="rgba("+(255-64*chg)+","+(190+50*chg)+","+(110+145*chg)+","+(0.04+z*0.09+live*0.10)+")";
     for(let k=0;k<n;k++){ const an=drumRot*(0.4+z)+k*TAU/n; ctx.fillRect(CX+Math.cos(an)*r-1,CY+Math.sin(an)*r-1,2,2); } }
 
   // wind streaks (the plunge read)
@@ -260,17 +316,21 @@ function draw(){
       const r0=RIM*Math.pow(zA*0.6,PERSP), r1=RIM*Math.pow(Math.min(1,zA*0.6+0.13),PERSP);
       ctx.beginPath(); ctx.moveTo(CX+Math.cos(an)*r0,CY+Math.sin(an)*r0); ctx.lineTo(CX+Math.cos(an)*r1,CY+Math.sin(an)*r1); ctx.stroke(); } }
 
-  // CLOCK FACE on the rim — 12 / 3 / 6 / 9, the incoming lane highlighted
+  // CLOCK FACE on the rim — 12 / 3 / 6 / 9. The live lane is where you are HEADED now,
+  // so it reads in static blue (go here), not danger red (keep away).
   const act=activeShirt();
   for(let i=0;i<4;i++){ const an=CLOCK[i], next=act?act.idx:nextIdx;
     const on=(i===next), tx=CX+Math.cos(an)*(RIM+16), ty=CY+Math.sin(an)*(RIM+16);
-    ctx.strokeStyle=on?"rgba(255,120,90,0.9)":"rgba(200,150,90,0.35)"; ctx.lineWidth=on?3:2;
+    ctx.strokeStyle=on?"rgba(191,240,255,0.9)":"rgba(200,150,90,0.35)"; ctx.lineWidth=on?3:2;
     ctx.beginPath(); ctx.moveTo(CX+Math.cos(an)*(RIM+4),CY+Math.sin(an)*(RIM+4));
     ctx.lineTo(CX+Math.cos(an)*(RIM+11),CY+Math.sin(an)*(RIM+11)); ctx.stroke();
-    txt(CLOCK_LABEL[i],tx,ty,on?11:9, on?"#ff9a6a":"rgba(200,180,150,0.55)", on?800:600);
-    // aim guide from centre to the active clock lane
-    if(on){ ctx.strokeStyle="rgba(255,120,90,0.12)"; ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(CX,CY); ctx.lineTo(CX+Math.cos(an)*RIM,CY+Math.sin(an)*RIM); ctx.stroke(); } }
+    txt(CLOCK_LABEL[i],tx,ty,on?11:9, on?"#bff0ff":"rgba(200,180,150,0.55)", on?800:600);
+    // aim guide from centre to the lane you want to be standing in
+    if(on){ ctx.strokeStyle="rgba(191,240,255,0.14)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(CX,CY); ctx.lineTo(CX+Math.cos(an)*RIM,CY+Math.sin(an)*RIM); ctx.stroke();
+      // the kick target: the arc your swing has to be inside when it arrives
+      ctx.strokeStyle="rgba(191,240,255,0.30)"; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(CX,CY,RIM*SOCK_R,an-CONTACT_ARC,an+CONTACT_ARC); ctx.stroke(); } }
 
   // the rim
   ctx.strokeStyle="rgba(200,150,90,0.6)"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(CX,CY,RIM,0,TAU); ctx.stroke();
@@ -281,7 +341,7 @@ function draw(){
     const zz=Math.min(1,sh.z), r=RIM*Math.pow(zz,PERSP);
     const sx=CX+Math.cos(sh.ang)*r, sy=CY+Math.sin(sh.ang)*r, gs=Math.max(12,26*zz);
     const near=zz>0.8?(zz-0.8)/0.2:0;
-    if(near>0 && !sh.deflected){ ctx.strokeStyle="rgba(255,84,104,0.3)"; ctx.lineWidth=4+near*6;
+    if(near>0 && !sh.deflected){ ctx.strokeStyle="rgba(191,240,255,"+(0.16+0.24*near)+")"; ctx.lineWidth=4+near*6;
       ctx.beginPath(); ctx.arc(CX,CY,r,sh.ang-0.28,sh.ang+0.28); ctx.stroke(); }
     ctx.globalAlpha=sh.deflected?Math.max(0,sh.life/0.7):(0.4+0.6*zz);
     ctx.save(); ctx.translate(sx,sy);
@@ -305,25 +365,36 @@ function draw(){
   for(const s of sparks){ if(!s.on) continue; ctx.globalAlpha=Math.max(0,s.life*2.4); ctx.fillStyle=s.col; ctx.fillRect(s.x-1.5,s.y-1.5,3,3); } ctx.globalAlpha=1;
   for(const p of pops){ if(!p.on) continue; ctx.globalAlpha=Math.min(1,p.life*1.6); txt(p.txt,p.x,p.y,12,p.col,800); } ctx.globalAlpha=1;
 
-  // HUD
-  txt("DODGES",44,16,8,"rgba(255,255,255,0.5)",700,"left"); txt(""+dodges,44,32,20,"#9bf0d0",800,"left");
-  txt("STREAK",VW-44,16,8,"rgba(255,255,255,0.5)",700,"right"); txt(""+streak,VW-44,32,20,streak>=5?"#ffd45a":"#efe9db",800,"right");
-  txt("best "+bestStreak+"   bonks "+bonks, CX, VH-12, 8, "rgba(220,210,190,0.55)",600);
-  // next-shirt countdown pip
-  if(mode==="play"){ const f=1-clamp(spawnT/SPAWN_INT,0,1);
-    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(CX-30,VH-26,60,3);
-    ctx.fillStyle="#ff9a6a"; ctx.fillRect(CX-30,VH-26,60*f,3); }
+  // HUD — where you are (ring), what you've done (kicks), what's next (the static bar)
+  txt("KICKS",44,16,8,"rgba(255,255,255,0.5)",700,"left"); txt(""+kicks,44,32,20,"#bff0ff",800,"left");
+  txt("CHAIN",VW-44,16,8,"rgba(255,255,255,0.5)",700,"right");
+  txt(chain+"/"+KICKS_PER_RING,VW-44,32,20,chain>0?"#bff0ff":"#efe9db",800,"right");
+  txt("RING "+(depth+1),CX,18,13,"#efe9db",800);
+  txt("best chain "+bestChain+"   missed "+missed, CX, 34, 8, "rgba(220,210,190,0.55)",600);
+  // the static bar — drum.html's charge language, and the only thing standing between
+  // you and the next ring down
+  if(mode==="play"){
+    txt("STATIC",CX-84,VH-22,8,"rgba(220,210,190,0.55)",700,"right");
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(CX-70,VH-26,140,8);
+    ctx.fillStyle=stShow>=1?"#bff0ff":stShow>0.34?"#9fd8ef":"#5b8fa8"; ctx.fillRect(CX-70,VH-26,140*stShow,8);
+    for(let i=1;i<KICKS_PER_RING;i++){ ctx.fillStyle="rgba(13,11,9,0.9)"; ctx.fillRect(CX-70+140*i/KICKS_PER_RING-1,VH-26,2,8); }
+    // next-shirt countdown pip
+    const f=1-clamp(spawnT/SPAWN_INT,0,1);
+    ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fillRect(CX-30,VH-34,60,3);
+    ctx.fillStyle="#ff9a6a"; ctx.fillRect(CX-30,VH-34,60*f,3); }
 
-  if(flash>0){ ctx.fillStyle="rgba(255,150,90,"+(flash*0.35)+")"; ctx.fillRect(-12,-12,VW+24,VH+24); }
+  if(flash>0){ ctx.fillStyle=(flashCol?"rgba(150,225,255,":"rgba(255,150,90,")+(flash*0.35)+")"; ctx.fillRect(-12,-12,VW+24,VH+24); }
   ctx.restore();
 
   if(mode==="ready"){ ctx.fillStyle="rgba(10,8,6,0.74)"; ctx.fillRect(0,0,VW,VH);
-    txt("SHIRT FEEL-LAB",CX,72,24,"#efe9db",800);
-    txt("A shirt every 3s on the clock: 12 → 3 → 6 → 9",CX,104,10,"#d8cdb6",500);
-    txt("swing the parachuting sock clear of it",CX,120,10,"#d8cdb6",500);
-    txt("run into it and you both bounce off — no harm, just practice",CX,138,9,"#a89e88",500);
-    txt("←→  swing",CX,166,11,"#9bf0d0",700);
-    txt("press SPACE / tap to begin",CX,190,10,"#c9b0ff",700); }
+    txt("SHIRT FEEL-LAB",CX,64,24,"#efe9db",800);
+    txt("the STATIC KICK pattern",CX,86,10,"#bff0ff",700);
+    txt("A shirt every 3s on the clock: 12 → 3 → 6 → 9",CX,110,10,"#d8cdb6",500);
+    txt("swing the parachuting sock INTO it — every kick builds static",CX,126,10,"#d8cdb6",500);
+    txt(KICKS_PER_RING+" kicks in a row drops you to the next interior ring",CX,142,10,"#bff0ff",600);
+    txt("let one sail past and the static drains — no harm, just practice",CX,158,9,"#a89e88",500);
+    txt("←→  swing",CX,182,11,"#9bf0d0",700);
+    txt("press SPACE / tap to begin",CX,204,10,"#c9b0ff",700); }
 }
 
 /* ===== Loop ===== */
@@ -336,8 +407,8 @@ function frame(now){ if(!last){ last=now; requestAnimationFrame(frame); return; 
 /* DEV:BEGIN — dev cockpit for the shirt feel-lab ==============================
    A feel-lab without instrumentation is just a small game (BUILD_PILLARS "A").
    The shirt's rise time IS the telegraph here, so the reaction readout is the
-   control that matters: it says how many frames you actually took to swing
-   clear, and whether the swing beat the shirt.
+   control that matters: it says how many frames you actually took to swing onto
+   the lane, and whether the swing got there before the shirt did.
    ========================================================================= */
 const DC = DevCockpit.mount({
   game: 'odd-sock-shirt-lab',
@@ -345,15 +416,20 @@ const DC = DevCockpit.mount({
     { key:'nudge',  label:'swing accel',        min:4,   max:40,  step:0.5,  get:()=>NUDGE_ACC,   set:v=>NUDGE_ACC=v },
     { key:'avmax',  label:'max swing speed',    min:1,   max:8,   step:0.1,  get:()=>AV_MAX,      set:v=>AV_MAX=v },
     { key:'drag',   label:'air drag',           min:0.4, max:8,   step:0.1,  get:()=>LAT_DRAG,    set:v=>LAT_DRAG=v },
-    { key:'travel', label:'shirt rise (s)',     min:0.8, max:5,   step:0.05, get:()=>SHIRT_TRAVEL,set:v=>{ SHIRT_TRAVEL=v; SHIRT_ZSPD=1/v; } },
+    { key:'travel', label:'shirt rise (s)',     min:0.8, max:5,   step:0.05, get:()=>SHIRT_TRAVEL,set:v=>SHIRT_TRAVEL=v },
     { key:'spawn',  label:'seconds per shirt',  min:0.8, max:6,   step:0.1,  get:()=>SPAWN_INT,   set:v=>SPAWN_INT=v },
-    { key:'clear',  label:'clean-dodge arc',    min:0.1, max:1.2, step:0.02, get:()=>CLEAR_ARC,   set:v=>CLEAR_ARC=v },
+    { key:'karc',   label:'kick arc',           min:0.1, max:1.2, step:0.02, get:()=>CONTACT_ARC, set:v=>CONTACT_ARC=v },
+    { key:'kknock', label:'kick knockback',     min:0,   max:7,   step:0.1,  get:()=>SOCK_KICK,   set:v=>SOCK_KICK=v },
+    { key:'perring',label:'kicks per ring',     min:1,   max:8,   step:1,    get:()=>KICKS_PER_RING, set:v=>KICKS_PER_RING=v },
+    { key:'ramp',   label:'depth ramp (×/ring)',min:0.8, max:1,   step:0.01, get:()=>DEPTH_RAMP,  set:v=>DEPTH_RAMP=v },
   ],
   actions: [
     { label:'send a shirt to 12', run:()=>devShirt(0) },
     { label:'send a shirt to 3',  run:()=>devShirt(1) },
     { label:'send a shirt to 6',  run:()=>devShirt(2) },
     { label:'send a shirt to 9',  run:()=>devShirt(3) },
+    { label:'dive a ring now',    run:()=>{ if(diveT<=0) dive(); } },
+    { label:'lane order: clock / shuffle', run:()=>{ SHUFFLE=SHUFFLE?0:1; } },
     { label:'clear the air',      run:()=>{ for(const sh of shirts) sh.on=false; } },
   ],
   reset: ()=>{ reset(); mode='play'; },
@@ -361,7 +437,7 @@ const DC = DevCockpit.mount({
 window.DC = DC;
 window.devShirt = (idx)=>{
   const sh = shirts.find(x=>!x.on); if(!sh) return;
-  sh.on=true; sh.z=0; sh.idx=idx; sh.ang=CLOCK[idx]; sh.counted=false; sh.deflected=false;
+  sh.on=true; sh.z=0; sh.idx=idx; sh.ang=CLOCK[idx]; sh.zs=1/riseTime(); sh.counted=false; sh.deflected=false;
   sh.dav=0; sh.dr=0; sh.rot=0; sh.pal=idx%PAL.length; sh.life=0;
   DC.telegraph('shirt@'+CLOCK_LABEL[idx]);
 };
